@@ -443,6 +443,7 @@ impl GameClient {
         let node_counts = self.current_node_perf_counts();
         self.perf.record_mesh(MeshRecord {
             vertices: vertices.len(),
+            normals: normals.len(),
             reported_vertices,
             cpu_proxy_mesh,
             compact_shadow_proxy_mesh,
@@ -995,8 +996,10 @@ struct PerfStats {
     avg_collision_ms: f64,
     max_collision_ms: f64,
     last_vertices: usize,
+    last_normals: usize,
     last_reported_vertices: usize,
     total_vertices: usize,
+    total_normals: usize,
     collision_bodies: i32,
     node_counts: NodePerfCounts,
     chunk_bytes_loaded: usize,
@@ -1007,10 +1010,12 @@ struct PerfStats {
     last_parse_ms: f64,
     cpu_proxy_meshes_built: u64,
     compact_shadow_proxy_meshes_built: u64,
+    compact_shadow_proxy_normals_saved: usize,
 }
 
 struct MeshRecord {
     vertices: usize,
+    normals: usize,
     reported_vertices: usize,
     cpu_proxy_mesh: bool,
     compact_shadow_proxy_mesh: bool,
@@ -1042,13 +1047,18 @@ impl PerfStats {
         self.avg_collision_ms += (record.collision_ms - self.avg_collision_ms) / n;
         self.max_collision_ms = self.max_collision_ms.max(record.collision_ms);
         self.last_vertices = record.vertices;
+        self.last_normals = record.normals;
         self.last_reported_vertices = record.reported_vertices;
         self.total_vertices = self.total_vertices.saturating_add(record.vertices);
+        self.total_normals = self.total_normals.saturating_add(record.normals);
         if record.cpu_proxy_mesh {
             self.cpu_proxy_meshes_built += 1;
         }
         if record.compact_shadow_proxy_mesh {
             self.compact_shadow_proxy_meshes_built += 1;
+            self.compact_shadow_proxy_normals_saved = self
+                .compact_shadow_proxy_normals_saved
+                .saturating_add(record.vertices);
         }
         self.collision_bodies = record.collision_bodies;
         self.node_counts = record.node_counts;
@@ -1595,7 +1605,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} jobs={} cpu_proxy={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} mem={:.1}MB{}",
+            "queue={} jobs={} cpu_proxy={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.mesh_jobs_completed,
             self.perf.node_counts.rendered_submeshes,
@@ -1606,6 +1616,7 @@ impl GameClient {
             gpu_terrain_shadow_proxy_mode().as_str(),
             gpu_terrain_shadow_proxy_mesh_mode().as_str(),
             self.perf.compact_shadow_proxy_meshes_built,
+            self.perf.compact_shadow_proxy_normals_saved,
             self.perf.cpu_proxy_meshes_built,
             self.perf.node_counts.total_collision_bodies,
             self.perf.last_mesh_ms,
@@ -1622,6 +1633,8 @@ impl GameClient {
             self.perf.last_vertices,
             self.perf.last_reported_vertices,
             self.perf.total_vertices,
+            self.perf.last_normals,
+            self.perf.total_normals,
             self.perf.chunk_bytes_loaded as f64 / (1024.0 * 1024.0),
             gpu_terrain_text,
         );
@@ -1761,5 +1774,44 @@ mod tests {
         assert!(!compact.compacts_shadow_only_mesh(true, false, false));
         assert!(!compact.compacts_shadow_only_mesh(false, false, true));
         assert!(!GpuTerrainShadowProxyMeshMode::Full.compacts_shadow_only_mesh(true, false, true));
+    }
+
+    #[test]
+    fn perf_records_compact_shadow_proxy_normal_savings() {
+        let mut perf = PerfStats::default();
+
+        perf.record_mesh(MeshRecord {
+            vertices: 24,
+            normals: 0,
+            reported_vertices: 24,
+            cpu_proxy_mesh: true,
+            compact_shadow_proxy_mesh: true,
+            mesh_ms: 1.0,
+            timing: meshing::MeshTiming::default(),
+            collision_ms: 0.0,
+            collision_bodies: 0,
+            node_counts: NodePerfCounts::default(),
+        });
+
+        assert_eq!(perf.last_normals, 0);
+        assert_eq!(perf.total_normals, 0);
+        assert_eq!(perf.compact_shadow_proxy_normals_saved, 24);
+
+        perf.record_mesh(MeshRecord {
+            vertices: 12,
+            normals: 12,
+            reported_vertices: 12,
+            cpu_proxy_mesh: true,
+            compact_shadow_proxy_mesh: false,
+            mesh_ms: 1.0,
+            timing: meshing::MeshTiming::default(),
+            collision_ms: 0.0,
+            collision_bodies: 0,
+            node_counts: NodePerfCounts::default(),
+        });
+
+        assert_eq!(perf.last_normals, 12);
+        assert_eq!(perf.total_normals, 12);
+        assert_eq!(perf.compact_shadow_proxy_normals_saved, 24);
     }
 }

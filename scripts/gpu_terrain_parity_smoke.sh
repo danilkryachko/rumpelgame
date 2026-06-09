@@ -115,6 +115,7 @@ validate_common_marker() {
   require_metric_ge "$marker_path" "proxy_shadow" 0
   require_metric_ge "$marker_path" "proxy_both" 0
   require_metric_ge "$marker_path" "proxy_shadow_only" 0
+  require_metric_ge "$marker_path" "compact_shadow_normals_saved" 0
   require_metric_eq "$marker_path" "proxy_coll" "$(metric "collision" "$marker_path")"
 }
 
@@ -210,12 +211,14 @@ validate_parity_markers() {
   require_metric_eq "$cpu_marker" "proxy_both" 0
   require_metric_eq "$cpu_marker" "proxy_shadow_only" 0
   require_metric_eq "$cpu_marker" "compact_shadow_proxy" 0
+  require_metric_eq "$cpu_marker" "compact_shadow_normals_saved" 0
 
   require_metric_ge "$gpu_marker" "gpu_frames" 1
   require_metric_ge "$gpu_marker" "gpu_subchunks" 1
   require_metric_ge "$gpu_marker" "gpu_faces" 1
   require_metric_ge "$gpu_marker" "fast_proxy" 1
   require_metric_eq "$gpu_marker" "compact_shadow_proxy" 0
+  require_metric_eq "$gpu_marker" "compact_shadow_normals_saved" 0
   require_metric_ge "$gpu_marker" "proxy_shadow" 1
   require_metric_ge "$gpu_marker" "proxy_both" 1
 
@@ -226,6 +229,7 @@ validate_parity_markers() {
   require_metric_eq "$radius_marker" "proxy_both" "$(metric "collision" "$radius_marker")"
   require_metric_eq "$radius_marker" "proxy_shadow_only" 0
   require_metric_eq "$radius_marker" "compact_shadow_proxy" 0
+  require_metric_eq "$radius_marker" "compact_shadow_normals_saved" 0
   require_metric_ge "$radius_marker" "fast_proxy" 1
 
   validate_common_marker "$collision_only_marker" "default" "collision_only" "full"
@@ -236,6 +240,7 @@ validate_parity_markers() {
   require_metric_eq "$collision_only_marker" "proxy_both" 0
   require_metric_eq "$collision_only_marker" "proxy_shadow_only" 0
   require_metric_eq "$collision_only_marker" "compact_shadow_proxy" 0
+  require_metric_eq "$collision_only_marker" "compact_shadow_normals_saved" 0
   require_metric_ge "$collision_only_marker" "fast_proxy" 1
 
   validate_common_marker "$compact_shadow_marker" "default" "conservative" "compact"
@@ -246,6 +251,10 @@ validate_parity_markers() {
   require_metric_ge "$compact_shadow_marker" "proxy_both" 1
   require_metric_ge "$compact_shadow_marker" "proxy_shadow_only" 1
   require_metric_ge "$compact_shadow_marker" "compact_shadow_proxy" 1
+  require_metric_ge \
+    "$compact_shadow_marker" \
+    "compact_shadow_normals_saved" \
+    "$(metric "compact_shadow_proxy" "$compact_shadow_marker")"
   require_metric_ge "$compact_shadow_marker" "fast_proxy" 1
 
   validate_pose_pair \
@@ -271,11 +280,13 @@ validate_pose_pair() {
   require_metric_absent "$cpu_marker" "gpu_subchunks"
   require_metric_eq "$cpu_marker" "fast_proxy" 0
   require_metric_eq "$cpu_marker" "compact_shadow_proxy" 0
+  require_metric_eq "$cpu_marker" "compact_shadow_normals_saved" 0
   require_metric_ge "$gpu_marker" "gpu_frames" 1
   require_metric_ge "$gpu_marker" "gpu_subchunks" 1
   require_metric_ge "$gpu_marker" "gpu_faces" 1
   require_metric_ge "$gpu_marker" "fast_proxy" 1
   require_metric_eq "$gpu_marker" "compact_shadow_proxy" 0
+  require_metric_eq "$gpu_marker" "compact_shadow_normals_saved" 0
 
   cpu_luma="$(float_metric "avg_luma" "$cpu_marker")"
   gpu_luma="$(float_metric "avg_luma" "$gpu_marker")"
