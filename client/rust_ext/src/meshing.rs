@@ -11,7 +11,10 @@ pub struct ComputeMesher {
 impl ComputeMesher {
     pub fn new() -> Option<Self> {
         let mut rs = RenderingServer::singleton();
-        let mut rd = rs.get_rendering_device()?;
+        let mut rd = match rs.create_local_rendering_device() {
+            Some(device) => device,
+            None => { godot_print!("Error: create_local_rendering_device returned None"); return None; }
+        };
 
         let shader_code = include_str!("../../shaders/mesher.glsl");
         

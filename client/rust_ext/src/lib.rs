@@ -112,7 +112,7 @@ impl GameClient {
                 
                 if vertices.len() > 0 {
                     let mut arrays = Array::new();
-                    arrays.resize(14, &Variant::nil());
+                    arrays.resize(13, &Variant::nil());
                     arrays.set(0, &vertices.to_variant());
                     
                     let mut array_mesh = godot::classes::ArrayMesh::new_gd();
