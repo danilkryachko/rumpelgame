@@ -91,12 +91,14 @@ validate_common_marker() {
   expected_pose="$2"
   expected_shadow_mode="$3"
   expected_shadow_mesh="$4"
+  expected_shadow_path="$5"
   screenshot_path="${marker_path%.txt}"
 
   test -s "$screenshot_path" || fail "missing screenshot $screenshot_path"
   test -s "$marker_path" || fail "missing marker $marker_path"
   grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke summary in $marker_path"
   grep -q "pose=\"$expected_pose\"" "$marker_path" || fail "unexpected pose in $marker_path"
+  grep -q "shadow_path=$expected_shadow_path" "$marker_path" || fail "unexpected shadow path in $marker_path"
   grep -q "shadow_mode=$expected_shadow_mode" "$marker_path" || fail "unexpected shadow mode in $marker_path"
   grep -q "shadow_mesh=$expected_shadow_mesh" "$marker_path" || fail "unexpected shadow mesh in $marker_path"
   grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"
@@ -132,6 +134,14 @@ run_case() {
   if [ "$shadow_mesh" = "" ] || [ "$shadow_mesh" = "default" ]; then
     expected_shadow_mesh="compact"
   fi
+  expected_shadow_path="godot_proxy"
+  if [ "$gpu_flag" != "1" ]; then
+    expected_shadow_path="arraymesh"
+  elif [ "$shadow_mode" = "collision_only" ]; then
+    expected_shadow_path="diagnostic_no_shadow_proxy"
+  elif [ "$shadow_radius" = "0" ]; then
+    expected_shadow_path="scene_shadows_disabled"
+  fi
 
   rm -f "$screenshot_path" "$marker_path"
 
@@ -151,7 +161,7 @@ run_case() {
       "$GODOT_BIN" --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
   )
 
-  validate_common_marker "$marker_path" "$pose" "$shadow_mode" "$expected_shadow_mesh"
+  validate_common_marker "$marker_path" "$pose" "$shadow_mode" "$expected_shadow_mesh" "$expected_shadow_path"
   cat "$marker_path"
   if command -v sips >/dev/null 2>&1; then
     sips -g pixelWidth -g pixelHeight "$screenshot_path"
@@ -204,9 +214,9 @@ validate_parity_markers() {
   compact_shadow_marker="$OUT_DIR/gpu-terrain-compact-shadow-parity.png.txt"
   compact_lighting_shadow_marker="$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
 
-  validate_common_marker "$cpu_marker" "default" "conservative" "full"
-  validate_common_marker "$gpu_marker" "default" "conservative" "compact"
-  validate_common_marker "$radius_marker" "default" "conservative" "full"
+  validate_common_marker "$cpu_marker" "default" "conservative" "full" "arraymesh"
+  validate_common_marker "$gpu_marker" "default" "conservative" "compact" "godot_proxy"
+  validate_common_marker "$radius_marker" "default" "conservative" "full" "godot_proxy"
   validate_pose_pair_with_mesh "$cpu_marker" "$gpu_marker" "default" "full" "compact"
 
   require_metric_absent "$cpu_marker" "gpu_frames"
@@ -240,7 +250,7 @@ validate_parity_markers() {
   require_metric_eq "$radius_marker" "compact_shadow_normals_saved" 0
   require_metric_ge "$radius_marker" "fast_proxy" 1
 
-  validate_common_marker "$collision_only_marker" "default" "collision_only" "full"
+  validate_common_marker "$collision_only_marker" "default" "collision_only" "full" "diagnostic_no_shadow_proxy"
   require_metric_ge "$collision_only_marker" "gpu_frames" 1
   require_metric_ge "$collision_only_marker" "gpu_subchunks" 1
   require_metric_eq "$collision_only_marker" "cpu_proxy" "$(metric "collision" "$collision_only_marker")"
@@ -255,7 +265,7 @@ validate_parity_markers() {
   require_metric_eq "$collision_only_marker" "mesh_shadow_only" 0
   require_metric_ge "$collision_only_marker" "fast_proxy" 1
 
-  validate_common_marker "$compact_shadow_marker" "default" "conservative" "compact"
+  validate_common_marker "$compact_shadow_marker" "default" "conservative" "compact" "godot_proxy"
   require_metric_ge "$compact_shadow_marker" "gpu_frames" 1
   require_metric_ge "$compact_shadow_marker" "gpu_subchunks" 1
   require_metric_ge "$compact_shadow_marker" "gpu_faces" 1
@@ -300,8 +310,8 @@ validate_pose_pair_with_mesh() {
   expected_cpu_shadow_mesh="$4"
   expected_gpu_shadow_mesh="$5"
 
-  validate_common_marker "$cpu_marker" "$pose" "conservative" "$expected_cpu_shadow_mesh"
-  validate_common_marker "$gpu_marker" "$pose" "conservative" "$expected_gpu_shadow_mesh"
+  validate_common_marker "$cpu_marker" "$pose" "conservative" "$expected_cpu_shadow_mesh" "arraymesh"
+  validate_common_marker "$gpu_marker" "$pose" "conservative" "$expected_gpu_shadow_mesh" "godot_proxy"
 
   require_metric_absent "$cpu_marker" "gpu_frames"
   require_metric_absent "$cpu_marker" "gpu_subchunks"
@@ -380,8 +390,8 @@ validate_compact_shadow_pose_pair() {
   compact_marker="$2"
   pose="$3"
 
-  validate_common_marker "$full_marker" "$pose" "conservative" "full"
-  validate_common_marker "$compact_marker" "$pose" "conservative" "compact"
+  validate_common_marker "$full_marker" "$pose" "conservative" "full" "godot_proxy"
+  validate_common_marker "$compact_marker" "$pose" "conservative" "compact" "godot_proxy"
 
   require_metric_ge "$full_marker" "gpu_frames" 1
   require_metric_ge "$full_marker" "gpu_subchunks" 1

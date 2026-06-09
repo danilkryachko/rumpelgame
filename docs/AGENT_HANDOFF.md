@@ -278,6 +278,14 @@ Checks:
   - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (35/35), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
+- Latest terrain shadow-path visibility slice passed:
+  - Rust perf text now includes `shadow_path=...`, with a pure `terrain_shadow_path_decision()` helper covered by a unit test. The values make the current shadow strategy explicit: `arraymesh` for CPU/fallback terrain, `godot_proxy` for the conservative GPU-visible production path, `scene_shadows_disabled` when scene shadows resolve to radius `0`, and `diagnostic_no_shadow_proxy` for `collision_only`.
+  - `scripts/gpu_terrain_parity_smoke.sh` now requires the expected `shadow_path` in CPU, GPU conservative, compact proxy, radius, multi-pose, and collision-only markers. This keeps `collision_only` visibly diagnostic and protects the current Godot shadow-proxy production path from accidental removal.
+  - Behavior is unchanged: GPU terrain render remains opt-in, conservative Godot shadow proxies remain active, and ArrayMesh fallback remains intact.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (36/36), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+  - Fresh direct parity captures passed across all ten marker files; examples include `shadow_path=arraymesh` for CPU fallback, `shadow_path=godot_proxy` for conservative GPU cases, and `shadow_path=diagnostic_no_shadow_proxy` for the collision-only diagnostic case.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 sh ./scripts/gpu_terrain_parity_smoke.sh` passed against the fresh artifacts. Direct executable wrapper launch can still stall in this Codex PTY environment, matching the known wrapper issue; use explicit `sh` or direct Godot commands for the reliable local gate.
 
 Useful log lines:
 
