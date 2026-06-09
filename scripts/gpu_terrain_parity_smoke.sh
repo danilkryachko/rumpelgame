@@ -88,11 +88,13 @@ require_float_metric_ge() {
 
 validate_common_marker() {
   marker_path="$1"
+  expected_pose="$2"
   screenshot_path="${marker_path%.txt}"
 
   test -s "$screenshot_path" || fail "missing screenshot $screenshot_path"
   test -s "$marker_path" || fail "missing marker $marker_path"
   grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke summary in $marker_path"
+  grep -q "pose=\"$expected_pose\"" "$marker_path" || fail "unexpected pose in $marker_path"
   grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"
   grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
   require_metric_ge "$marker_path" "terrain_samples" 1
@@ -116,6 +118,7 @@ run_case() {
   name="$1"
   gpu_flag="$2"
   shadow_radius="$3"
+  pose="$4"
   screenshot_path="$OUT_DIR/$name.png"
   marker_path="$screenshot_path.txt"
 
@@ -127,6 +130,7 @@ run_case() {
     "$TIMEOUT_BIN" "$GODOT_TIMEOUT_SEC" /usr/bin/env \
       RUMPELMC_GPU_TERRAIN_RENDER="$gpu_flag" \
       RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE="$shadow_radius" \
+      RUMPELMC_VISUAL_SMOKE_POSE="$pose" \
       RUMPELMC_VISUAL_SMOKE_PATH="$screenshot_path" \
       RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
       RUMPELMC_VISUAL_SMOKE_HIDE_HUD=1 \
@@ -134,7 +138,7 @@ run_case() {
       "$GODOT_BIN" --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
   )
 
-  validate_common_marker "$marker_path"
+  validate_common_marker "$marker_path" "$pose"
   cat "$marker_path"
   if command -v sips >/dev/null 2>&1; then
     sips -g pixelWidth -g pixelHeight "$screenshot_path"
@@ -184,9 +188,10 @@ validate_parity_markers() {
   gpu_marker="$OUT_DIR/gpu-terrain-parity.png.txt"
   radius_marker="$OUT_DIR/gpu-terrain-radius1-parity.png.txt"
 
-  validate_common_marker "$cpu_marker"
-  validate_common_marker "$gpu_marker"
-  validate_common_marker "$radius_marker"
+  validate_common_marker "$cpu_marker" "default"
+  validate_common_marker "$gpu_marker" "default"
+  validate_common_marker "$radius_marker" "default"
+  validate_pose_pair "$cpu_marker" "$gpu_marker" "default"
 
   require_metric_absent "$cpu_marker" "gpu_frames"
   require_metric_absent "$cpu_marker" "gpu_subchunks"
@@ -210,11 +215,38 @@ validate_parity_markers() {
   require_metric_eq "$radius_marker" "proxy_shadow_only" 0
   require_metric_ge "$radius_marker" "fast_proxy" 1
 
+  validate_pose_pair \
+    "$OUT_DIR/cpu-arraymesh-atlas-depth-parity.png.txt" \
+    "$OUT_DIR/gpu-terrain-atlas-depth-parity.png.txt" \
+    "atlas_depth"
+
+  validate_pose_pair \
+    "$OUT_DIR/cpu-arraymesh-lighting-shadow-parity.png.txt" \
+    "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" \
+    "lighting_shadow"
+}
+
+validate_pose_pair() {
+  cpu_marker="$1"
+  gpu_marker="$2"
+  pose="$3"
+
+  validate_common_marker "$cpu_marker" "$pose"
+  validate_common_marker "$gpu_marker" "$pose"
+
+  require_metric_absent "$cpu_marker" "gpu_frames"
+  require_metric_absent "$cpu_marker" "gpu_subchunks"
+  require_metric_eq "$cpu_marker" "fast_proxy" 0
+  require_metric_ge "$gpu_marker" "gpu_frames" 1
+  require_metric_ge "$gpu_marker" "gpu_subchunks" 1
+  require_metric_ge "$gpu_marker" "gpu_faces" 1
+  require_metric_ge "$gpu_marker" "fast_proxy" 1
+
   cpu_luma="$(float_metric "avg_luma" "$cpu_marker")"
   gpu_luma="$(float_metric "avg_luma" "$gpu_marker")"
   test -n "$cpu_luma" || fail "missing CPU avg_luma"
   test -n "$gpu_luma" || fail "missing GPU avg_luma"
-  require_float_delta_le "$cpu_luma" "$gpu_luma" "$MAX_AVG_LUMA_DELTA" "avg_luma"
+  require_float_delta_le "$cpu_luma" "$gpu_luma" "$MAX_AVG_LUMA_DELTA" "$pose avg_luma"
 
   cpu_luma_range="$(float_metric "terrain_luma_range" "$cpu_marker")"
   gpu_luma_range="$(float_metric "terrain_luma_range" "$gpu_marker")"
@@ -224,7 +256,7 @@ validate_parity_markers() {
     "$cpu_luma_range" \
     "$gpu_luma_range" \
     "$MAX_TERRAIN_LUMA_RANGE_DELTA" \
-    "terrain_luma_range"
+    "$pose terrain_luma_range"
 
   cpu_terrain_samples="$(metric "terrain_samples" "$cpu_marker")"
   gpu_terrain_samples="$(metric "terrain_samples" "$gpu_marker")"
@@ -233,7 +265,7 @@ validate_parity_markers() {
     "$gpu_terrain_samples" \
     "$MAX_TERRAIN_SAMPLE_DELTA_PERCENT" \
     "$MIN_TERRAIN_SAMPLE_DELTA" \
-    "terrain_samples"
+    "$pose terrain_samples"
 
   cpu_terrain_color_buckets="$(metric "terrain_color_buckets" "$cpu_marker")"
   gpu_terrain_color_buckets="$(metric "terrain_color_buckets" "$gpu_marker")"
@@ -242,7 +274,7 @@ validate_parity_markers() {
     "$gpu_terrain_color_buckets" \
     "$MAX_TERRAIN_COLOR_BUCKET_DELTA_PERCENT" \
     "$MIN_TERRAIN_COLOR_BUCKET_DELTA" \
-    "terrain_color_buckets"
+    "$pose terrain_color_buckets"
 
   cpu_terrain_chroma_samples="$(metric "terrain_chroma_samples" "$cpu_marker")"
   gpu_terrain_chroma_samples="$(metric "terrain_chroma_samples" "$gpu_marker")"
@@ -251,13 +283,17 @@ validate_parity_markers() {
     "$gpu_terrain_chroma_samples" \
     "$MAX_TERRAIN_SAMPLE_DELTA_PERCENT" \
     "$MIN_TERRAIN_SAMPLE_DELTA" \
-    "terrain_chroma_samples"
+    "$pose terrain_chroma_samples"
 }
 
 if [ "$VALIDATE_ONLY" != "1" ]; then
-  run_case "cpu-arraymesh-parity" "0" ""
-  run_case "gpu-terrain-parity" "1" ""
-  run_case "gpu-terrain-radius1-parity" "1" "1"
+  run_case "cpu-arraymesh-parity" "0" "" "default"
+  run_case "gpu-terrain-parity" "1" "" "default"
+  run_case "gpu-terrain-radius1-parity" "1" "1" "default"
+  run_case "cpu-arraymesh-atlas-depth-parity" "0" "" "atlas_depth"
+  run_case "gpu-terrain-atlas-depth-parity" "1" "" "atlas_depth"
+  run_case "cpu-arraymesh-lighting-shadow-parity" "0" "" "lighting_shadow"
+  run_case "gpu-terrain-lighting-shadow-parity" "1" "" "lighting_shadow"
 fi
 
 validate_parity_markers

@@ -7,6 +7,7 @@ const SERVER_CONNECT_TIMEOUT_MS = 250
 const VISUAL_SMOKE_PATH_ENV = "RUMPELMC_VISUAL_SMOKE_PATH"
 const VISUAL_SMOKE_DELAY_ENV = "RUMPELMC_VISUAL_SMOKE_DELAY_SEC"
 const VISUAL_SMOKE_HIDE_HUD_ENV = "RUMPELMC_VISUAL_SMOKE_HIDE_HUD"
+const VISUAL_SMOKE_POSE_ENV = "RUMPELMC_VISUAL_SMOKE_POSE"
 const VISUAL_SMOKE_DEFAULT_DELAY_SEC = 6.0
 const VISUAL_SMOKE_SKY_COLOR = Color(0.34, 0.43, 0.54)
 const VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD = 0.08
@@ -17,6 +18,7 @@ const VISUAL_SMOKE_MIN_TERRAIN_CHROMA_SAMPLES = 8
 const VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE = 0.06
 const VISUAL_SMOKE_COLOR_BUCKET_LEVELS = 6
 const VISUAL_SMOKE_CHROMA_THRESHOLD = 0.05
+const VISUAL_SMOKE_DEFAULT_POSE = "default"
 
 var server_pid: int = -1
 var manage_server_lifecycle: bool = false
@@ -191,6 +193,11 @@ func run_visual_smoke_if_requested():
 	timer.start()
 
 func capture_visual_smoke(screenshot_path: String):
+	var pose_name = normalized_visual_smoke_pose()
+	apply_visual_smoke_pose(pose_name)
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+
 	var image = get_viewport().get_texture().get_image()
 	var output_path = globalize_smoke_path(screenshot_path)
 	DirAccess.make_dir_recursive_absolute(output_path.get_base_dir())
@@ -209,8 +216,9 @@ func capture_visual_smoke(screenshot_path: String):
 		smoke_err = FAILED
 	if smoke_err == OK and metrics["terrain_luma_range"] < VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE:
 		smoke_err = FAILED
-	var summary = "Visual smoke screenshot saved path=%s size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
+		pose_name,
 		image.get_width(),
 		image.get_height(),
 		metrics["avg_luma"],
@@ -262,6 +270,43 @@ func globalize_smoke_path(path: String) -> String:
 	if path.begins_with("res://") or path.begins_with("user://"):
 		return ProjectSettings.globalize_path(path)
 	return path
+
+func normalized_visual_smoke_pose() -> String:
+	var pose = OS.get_environment(VISUAL_SMOKE_POSE_ENV).strip_edges().to_lower()
+	if pose.is_empty():
+		return VISUAL_SMOKE_DEFAULT_POSE
+	return pose
+
+func apply_visual_smoke_pose(pose_name: String):
+	var player = get_tree().root.find_child("Player", true, false) as Node3D
+	if not player:
+		return
+
+	var camera = visual_smoke_player_camera(player)
+	if not camera:
+		return
+
+	match pose_name:
+		VISUAL_SMOKE_DEFAULT_POSE:
+			return
+		"atlas_depth":
+			apply_visual_smoke_look_at(player, camera, Vector3(16.0, 76.0, 24.0), Vector3(16.0, 62.0, 3.0))
+		"lighting_shadow":
+			apply_visual_smoke_look_at(player, camera, Vector3(7.0, 78.0, 25.0), Vector3(25.0, 61.0, 5.0))
+		_:
+			log_event("Unknown visual smoke pose: %s" % pose_name)
+
+func visual_smoke_player_camera(player: Node) -> Camera3D:
+	for child in player.get_children():
+		if child is Camera3D:
+			return child
+	return null
+
+func apply_visual_smoke_look_at(player: Node3D, camera: Camera3D, position: Vector3, target: Vector3):
+	player.global_position = position
+	player.rotation = Vector3.ZERO
+	camera.position = Vector3(0.0, 1.6, 0.0)
+	camera.look_at(target, Vector3.UP)
 
 func image_visual_metrics(image: Image) -> Dictionary:
 	var width = image.get_width()
