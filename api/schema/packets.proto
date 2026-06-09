@@ -16,9 +16,22 @@ message ClientPosition {
   float z = 3;
 }
 
+message BlockAction {
+  enum ActionType {
+    DESTROY = 0;
+    PLACE = 1;
+  }
+  ActionType action = 1;
+  int32 x = 2;
+  int32 y = 3;
+  int32 z = 4;
+  uint32 block_id = 5; // Ignored for DESTROY
+}
+
 message Packet {
   oneof payload {
     ChunkData chunk = 1;
     ClientPosition position = 2;
+    BlockAction block_action = 3;
   }
 }

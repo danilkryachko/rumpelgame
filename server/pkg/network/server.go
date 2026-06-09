@@ -58,24 +58,76 @@ func (s *Server) handleConnection(conn net.Conn) {
 		},
 	}
 
-	data, err := proto.Marshal(packet)
-	if err != nil {
-		log.Printf("Failed to marshal packet: %v", err)
+	if err := s.sendPacket(conn, packet); err != nil {
+		log.Printf("Failed to send chunk: %v", err)
 		return
 	}
+	log.Printf("Sent chunk data to %s", conn.RemoteAddr())
 
-	// Отправляем длину пакета (4 байта), затем сам пакет
+	// Чтение пакетов в цикле
+	for {
+		lenBuf := make([]byte, 4)
+		if _, err := conn.Read(lenBuf); err != nil {
+			log.Printf("Client disconnected: %v", err)
+			return
+		}
+		length := binary.LittleEndian.Uint32(lenBuf)
+
+		dataBuf := make([]byte, length)
+		if _, err := conn.Read(dataBuf); err != nil {
+			log.Printf("Error reading packet: %v", err)
+			return
+		}
+
+		clientPacket := &api.Packet{}
+		if err := proto.Unmarshal(dataBuf, clientPacket); err != nil {
+			log.Printf("Error unmarshaling: %v", err)
+			continue
+		}
+
+		switch p := clientPacket.Payload.(type) {
+		case *api.Packet_BlockAction:
+			action := p.BlockAction
+			log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
+
+			if action.Action == api.BlockAction_DESTROY {
+				chunk.SetBlock(int(action.X), int(action.Y), int(action.Z), world.BlockID(0))
+			} else if action.Action == api.BlockAction_PLACE {
+				chunk.SetBlock(int(action.X), int(action.Y), int(action.Z), world.BlockID(action.BlockId))
+			}
+
+			// Отправляем обновленный чанк обратно
+			updatePacket := &api.Packet{
+				Payload: &api.Packet_Chunk{
+					Chunk: &api.ChunkData{
+						X:      chunk.X,
+						Z:      chunk.Z,
+						Blocks: chunk.Serialize(),
+					},
+				},
+			}
+			s.sendPacket(conn, updatePacket)
+
+		default:
+			log.Printf("Unknown packet received")
+		}
+	}
+}
+
+func (s *Server) sendPacket(conn net.Conn, packet *api.Packet) error {
+	data, err := proto.Marshal(packet)
+	if err != nil {
+		return err
+	}
+
 	lenBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(lenBuf, uint32(len(data)))
 
 	if _, err := conn.Write(lenBuf); err != nil {
-		log.Printf("Failed to write packet length: %v", err)
-		return
+		return err
 	}
 	if _, err := conn.Write(data); err != nil {
-		log.Printf("Failed to write packet data: %v", err)
-		return
+		return err
 	}
-
-	log.Printf("Sent chunk data to %s", conn.RemoteAddr())
+	return nil
 }

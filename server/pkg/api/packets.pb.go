@@ -21,6 +21,52 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type BlockAction_ActionType int32
+
+const (
+	BlockAction_DESTROY BlockAction_ActionType = 0
+	BlockAction_PLACE   BlockAction_ActionType = 1
+)
+
+// Enum value maps for BlockAction_ActionType.
+var (
+	BlockAction_ActionType_name = map[int32]string{
+		0: "DESTROY",
+		1: "PLACE",
+	}
+	BlockAction_ActionType_value = map[string]int32{
+		"DESTROY": 0,
+		"PLACE":   1,
+	}
+)
+
+func (x BlockAction_ActionType) Enum() *BlockAction_ActionType {
+	p := new(BlockAction_ActionType)
+	*p = x
+	return p
+}
+
+func (x BlockAction_ActionType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (BlockAction_ActionType) Descriptor() protoreflect.EnumDescriptor {
+	return file_packets_proto_enumTypes[0].Descriptor()
+}
+
+func (BlockAction_ActionType) Type() protoreflect.EnumType {
+	return &file_packets_proto_enumTypes[0]
+}
+
+func (x BlockAction_ActionType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use BlockAction_ActionType.Descriptor instead.
+func (BlockAction_ActionType) EnumDescriptor() ([]byte, []int) {
+	return file_packets_proto_rawDescGZIP(), []int{2, 0}
+}
+
 type ChunkData struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	X     int32                  `protobuf:"varint,1,opt,name=x,proto3" json:"x,omitempty"`
@@ -142,12 +188,89 @@ func (x *ClientPosition) GetZ() float32 {
 	return 0
 }
 
+type BlockAction struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Action        BlockAction_ActionType `protobuf:"varint,1,opt,name=action,proto3,enum=rumpelmc.api.BlockAction_ActionType" json:"action,omitempty"`
+	X             int32                  `protobuf:"varint,2,opt,name=x,proto3" json:"x,omitempty"`
+	Y             int32                  `protobuf:"varint,3,opt,name=y,proto3" json:"y,omitempty"`
+	Z             int32                  `protobuf:"varint,4,opt,name=z,proto3" json:"z,omitempty"`
+	BlockId       uint32                 `protobuf:"varint,5,opt,name=block_id,json=blockId,proto3" json:"block_id,omitempty"` // Ignored for DESTROY
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BlockAction) Reset() {
+	*x = BlockAction{}
+	mi := &file_packets_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BlockAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BlockAction) ProtoMessage() {}
+
+func (x *BlockAction) ProtoReflect() protoreflect.Message {
+	mi := &file_packets_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BlockAction.ProtoReflect.Descriptor instead.
+func (*BlockAction) Descriptor() ([]byte, []int) {
+	return file_packets_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *BlockAction) GetAction() BlockAction_ActionType {
+	if x != nil {
+		return x.Action
+	}
+	return BlockAction_DESTROY
+}
+
+func (x *BlockAction) GetX() int32 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *BlockAction) GetY() int32 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+func (x *BlockAction) GetZ() int32 {
+	if x != nil {
+		return x.Z
+	}
+	return 0
+}
+
+func (x *BlockAction) GetBlockId() uint32 {
+	if x != nil {
+		return x.BlockId
+	}
+	return 0
+}
+
 type Packet struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*Packet_Chunk
 	//	*Packet_Position
+	//	*Packet_BlockAction
 	Payload       isPacket_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -155,7 +278,7 @@ type Packet struct {
 
 func (x *Packet) Reset() {
 	*x = Packet{}
-	mi := &file_packets_proto_msgTypes[2]
+	mi := &file_packets_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -167,7 +290,7 @@ func (x *Packet) String() string {
 func (*Packet) ProtoMessage() {}
 
 func (x *Packet) ProtoReflect() protoreflect.Message {
-	mi := &file_packets_proto_msgTypes[2]
+	mi := &file_packets_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -180,7 +303,7 @@ func (x *Packet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Packet.ProtoReflect.Descriptor instead.
 func (*Packet) Descriptor() ([]byte, []int) {
-	return file_packets_proto_rawDescGZIP(), []int{2}
+	return file_packets_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Packet) GetPayload() isPacket_Payload {
@@ -208,6 +331,15 @@ func (x *Packet) GetPosition() *ClientPosition {
 	return nil
 }
 
+func (x *Packet) GetBlockAction() *BlockAction {
+	if x != nil {
+		if x, ok := x.Payload.(*Packet_BlockAction); ok {
+			return x.BlockAction
+		}
+	}
+	return nil
+}
+
 type isPacket_Payload interface {
 	isPacket_Payload()
 }
@@ -220,9 +352,15 @@ type Packet_Position struct {
 	Position *ClientPosition `protobuf:"bytes,2,opt,name=position,proto3,oneof"`
 }
 
+type Packet_BlockAction struct {
+	BlockAction *BlockAction `protobuf:"bytes,3,opt,name=block_action,json=blockAction,proto3,oneof"`
+}
+
 func (*Packet_Chunk) isPacket_Payload() {}
 
 func (*Packet_Position) isPacket_Payload() {}
+
+func (*Packet_BlockAction) isPacket_Payload() {}
 
 var File_packets_proto protoreflect.FileDescriptor
 
@@ -236,10 +374,21 @@ const file_packets_proto_rawDesc = "" +
 	"\x0eClientPosition\x12\f\n" +
 	"\x01x\x18\x01 \x01(\x02R\x01x\x12\f\n" +
 	"\x01y\x18\x02 \x01(\x02R\x01y\x12\f\n" +
-	"\x01z\x18\x03 \x01(\x02R\x01z\"\x80\x01\n" +
+	"\x01z\x18\x03 \x01(\x02R\x01z\"\xb6\x01\n" +
+	"\vBlockAction\x12<\n" +
+	"\x06action\x18\x01 \x01(\x0e2$.rumpelmc.api.BlockAction.ActionTypeR\x06action\x12\f\n" +
+	"\x01x\x18\x02 \x01(\x05R\x01x\x12\f\n" +
+	"\x01y\x18\x03 \x01(\x05R\x01y\x12\f\n" +
+	"\x01z\x18\x04 \x01(\x05R\x01z\x12\x19\n" +
+	"\bblock_id\x18\x05 \x01(\rR\ablockId\"$\n" +
+	"\n" +
+	"ActionType\x12\v\n" +
+	"\aDESTROY\x10\x00\x12\t\n" +
+	"\x05PLACE\x10\x01\"\xc0\x01\n" +
 	"\x06Packet\x12/\n" +
 	"\x05chunk\x18\x01 \x01(\v2\x17.rumpelmc.api.ChunkDataH\x00R\x05chunk\x12:\n" +
-	"\bposition\x18\x02 \x01(\v2\x1c.rumpelmc.api.ClientPositionH\x00R\bpositionB\t\n" +
+	"\bposition\x18\x02 \x01(\v2\x1c.rumpelmc.api.ClientPositionH\x00R\bposition\x12>\n" +
+	"\fblock_action\x18\x03 \x01(\v2\x19.rumpelmc.api.BlockActionH\x00R\vblockActionB\t\n" +
 	"\apayloadB\x19Z\x17rumpelmc/server/pkg/apib\x06proto3"
 
 var (
@@ -254,20 +403,25 @@ func file_packets_proto_rawDescGZIP() []byte {
 	return file_packets_proto_rawDescData
 }
 
-var file_packets_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_packets_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_packets_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_packets_proto_goTypes = []any{
-	(*ChunkData)(nil),      // 0: rumpelmc.api.ChunkData
-	(*ClientPosition)(nil), // 1: rumpelmc.api.ClientPosition
-	(*Packet)(nil),         // 2: rumpelmc.api.Packet
+	(BlockAction_ActionType)(0), // 0: rumpelmc.api.BlockAction.ActionType
+	(*ChunkData)(nil),           // 1: rumpelmc.api.ChunkData
+	(*ClientPosition)(nil),      // 2: rumpelmc.api.ClientPosition
+	(*BlockAction)(nil),         // 3: rumpelmc.api.BlockAction
+	(*Packet)(nil),              // 4: rumpelmc.api.Packet
 }
 var file_packets_proto_depIdxs = []int32{
-	0, // 0: rumpelmc.api.Packet.chunk:type_name -> rumpelmc.api.ChunkData
-	1, // 1: rumpelmc.api.Packet.position:type_name -> rumpelmc.api.ClientPosition
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0, // 0: rumpelmc.api.BlockAction.action:type_name -> rumpelmc.api.BlockAction.ActionType
+	1, // 1: rumpelmc.api.Packet.chunk:type_name -> rumpelmc.api.ChunkData
+	2, // 2: rumpelmc.api.Packet.position:type_name -> rumpelmc.api.ClientPosition
+	3, // 3: rumpelmc.api.Packet.block_action:type_name -> rumpelmc.api.BlockAction
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_packets_proto_init() }
@@ -275,22 +429,24 @@ func file_packets_proto_init() {
 	if File_packets_proto != nil {
 		return
 	}
-	file_packets_proto_msgTypes[2].OneofWrappers = []any{
+	file_packets_proto_msgTypes[3].OneofWrappers = []any{
 		(*Packet_Chunk)(nil),
 		(*Packet_Position)(nil),
+		(*Packet_BlockAction)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_packets_proto_rawDesc), len(file_packets_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   3,
+			NumEnums:      1,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_packets_proto_goTypes,
 		DependencyIndexes: file_packets_proto_depIdxs,
+		EnumInfos:         file_packets_proto_enumTypes,
 		MessageInfos:      file_packets_proto_msgTypes,
 	}.Build()
 	File_packets_proto = out.File
