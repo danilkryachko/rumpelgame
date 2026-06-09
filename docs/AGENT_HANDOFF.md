@@ -32,6 +32,7 @@ Done:
 - Added opt-in CPU shadow proxy strategy selection through `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE`. The default remains `conservative`; `collision_only` drops shadow-only CPU proxies while preserving nearby collision proxies. Rust perf text now includes `shadow_mode=...`.
 - Added opt-in compact shadow-only CPU proxy meshes through `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=compact`. The default remains `full`; compact mode only affects GPU-visible shadow-only proxies and leaves collision proxies plus CPU fallback meshes on the full ArrayMesh path. Rust perf text now includes `shadow_mesh=...` and `compact_shadow_proxy=...`.
 - Added compact proxy payload measurement to Rust perf text: `compact_shadow_normals_saved=...`, plus `normals last=... total=...`. The parity gate now requires zero saved normals outside compact mode and positive saved normals in the compact shadow-proxy case.
+- Extended the parity gate with a compact `lighting_shadow` pose case. It compares compact shadow-only proxy rendering against the full GPU `lighting_shadow` marker using the same visual metric envelopes before compact can be considered for default use.
 - Kept visible CPU fallback behavior unchanged: CPU-only rendering and failed GPU uploads still use the existing compute mesher with UVs/materials.
 - Added visual smoke capture hooks in `client/main.gd` through `RUMPELMC_VISUAL_SMOKE_PATH`, `RUMPELMC_VISUAL_SMOKE_DELAY_SEC`, and `RUMPELMC_VISUAL_SMOKE_HIDE_HUD`.
 - Strengthened visual smoke validation with `terrain_samples` and `smoke_err`; sky-only frames now fail even if the image is bright and GPU counters are nonzero.
@@ -79,6 +80,8 @@ Relevant files:
 - `logs/gpu_terrain_visual_smoke/parity/gpu-terrain-collision-only-parity.png.txt`
 - `logs/gpu_terrain_visual_smoke/parity/gpu-terrain-compact-shadow-parity.png`
 - `logs/gpu_terrain_visual_smoke/parity/gpu-terrain-compact-shadow-parity.png.txt`
+- `logs/gpu_terrain_visual_smoke/parity/gpu-terrain-compact-lighting-shadow-parity.png`
+- `logs/gpu_terrain_visual_smoke/parity/gpu-terrain-compact-lighting-shadow-parity.png.txt`
 - `logs/godot-gpu-terrain-smoke.log`
 - `logs/godot-gpu-terrain-atlas-smoke.log`
 - `logs/godot-gpu-terrain-depth-smoke.log`
@@ -175,6 +178,11 @@ Checks:
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
   - Compact marker: `cpu_proxy=70`, `proxy_coll=10`, `proxy_shadow=70`, `proxy_both=10`, `proxy_shadow_only=60`, `shadow_mesh=compact`, `compact_shadow_proxy=98`, `compact_shadow_normals_saved=1327104`, `collision=10`, `gpu_frames=145`.
   - Full/default GPU marker: `shadow_mesh=full`, `compact_shadow_proxy=0`, `compact_shadow_normals_saved=0`, `normals last=18432 total=1575360`.
+- Latest compact shadow visual parity slice passed:
+  - `sh -n scripts/gpu_terrain_parity_smoke.sh` passed.
+  - Direct compact lighting/shadow capture passed: `gpu-terrain-compact-lighting-shadow-parity.png`, `pose="lighting_shadow"`, `terrain_samples=453`, `terrain_color_buckets=11`, `terrain_luma_range=0.3570`, `shadow_mesh=compact`, `compact_shadow_proxy=97`, `compact_shadow_normals_saved=1320960`, `collision=10`, `gpu_frames=141`.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the full parity artifact set, including the compact-vs-full `lighting_shadow` visual metric pair.
+  - `./scripts/check.sh fast` passed; Rust tests remained 16/16.
 
 Useful log lines:
 
@@ -201,6 +209,7 @@ Useful log lines:
 - `Visual smoke screenshot saved ... parity/gpu-terrain-radius1-parity.png ... cpu_proxy=10 proxy_coll=10 proxy_shadow=10 proxy_both=10 proxy_shadow_only=0 ...`
 - `Visual smoke screenshot saved ... parity/gpu-terrain-atlas-depth-parity.png pose="atlas_depth" ... terrain_samples=510 terrain_color_buckets=9 terrain_luma_range=0.3294 ...`
 - `Visual smoke screenshot saved ... parity/gpu-terrain-lighting-shadow-parity.png pose="lighting_shadow" ... terrain_samples=453 terrain_color_buckets=10 terrain_luma_range=0.3570 ...`
+- `Visual smoke screenshot saved ... parity/gpu-terrain-compact-lighting-shadow-parity.png pose="lighting_shadow" ... shadow_mesh=compact compact_shadow_proxy=97 compact_shadow_normals_saved=1320960 ...`
 
 Known limitations:
 
@@ -216,7 +225,7 @@ Known limitations:
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, retained CPU proxy meshes can now be built from packed GPU terrain faces after the GPU visible path is confirmed. These proxy meshes intentionally omit UVs because they are used for collision and `SHADOWS_ONLY`, not visible terrain.
 - `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE=collision_only` is diagnostic only for now. It confirms how much CPU work is shadow-proxy-only, but it must not become the default until GPU terrain has a dedicated shadow-compatible path or native Godot shadow-map participation.
 - `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=compact` is diagnostic/opt-in only for now. It removes normals from shadow-only proxy ArrayMeshes, but it is still a Godot shadow proxy and does not replace native RD shadow-map participation.
-- `scripts/gpu_terrain_parity_smoke.sh` can validate existing artifacts with `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1`. It now expects markers produced by the extended visual smoke metrics and multi-pose support in `client/main.gd`, plus proxy reason counters, `shadow_mode=...`, `shadow_mesh=...`, and `compact_shadow_normals_saved=...` from `client/rust_ext/src/lib.rs`. In this Codex PTY environment, launching Godot through shell wrappers can still stall before project logs appear, so direct Godot commands plus validate-only are the reliable local gate.
+- `scripts/gpu_terrain_parity_smoke.sh` can validate existing artifacts with `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1`. It now expects markers produced by the extended visual smoke metrics and multi-pose support in `client/main.gd`, plus proxy reason counters, `shadow_mode=...`, `shadow_mesh=...`, and `compact_shadow_normals_saved=...` from `client/rust_ext/src/lib.rs`. It validates CPU/GPU pose parity and compact-vs-full `lighting_shadow` parity. In this Codex PTY environment, launching Godot through shell wrappers can still stall before project logs appear, so direct Godot commands plus validate-only are the reliable local gate.
 - The custom RD compositor draw still does not natively participate in Godot shadow maps as a real shadow caster/receiver. Full shadow parity without ArrayMesh proxy needs a separate render integration plan.
 - Final ArrayMesh replacement for distant terrain is not finished.
 - Keep the working tree small and commit completed slices; `diff_guard` is expected to stay green after the dirty-tree cleanup baseline.
@@ -224,7 +233,7 @@ Known limitations:
 Next steps:
 
 1. After any GPU terrain edit, run the parity gate: direct CPU/GPU/radius=1 visual smoke captures with `RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1`, then `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh`.
-2. Measure the CPU/memory impact of `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=compact` before considering it as a default; it reduces proxy payload for shadow-only chunks but still needs explicit shadow visual verification.
+2. Measure runtime CPU/frame impact of `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=compact` before considering it as a default; it now has smoke-level shadow visual parity coverage, but still needs runtime performance evidence.
 3. Decide the production shadow path next: either build a dedicated low-cost shadow proxy or make the RD terrain participate in Godot shadow maps. The new `collision_only` mode is useful for measurement, not a production default.
 4. Do not make `collision_only` or compact shadow proxies default, and do not remove conservative shadow proxies, until multi-pose parity and visible shadow behavior are explicitly verified.
 5. Continue reducing CPU ArrayMesh generation for distant chunks while preserving nearby collision meshes, shadow proxy requirements, and the fallback path.

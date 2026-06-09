@@ -198,6 +198,7 @@ validate_parity_markers() {
   radius_marker="$OUT_DIR/gpu-terrain-radius1-parity.png.txt"
   collision_only_marker="$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
   compact_shadow_marker="$OUT_DIR/gpu-terrain-compact-shadow-parity.png.txt"
+  compact_lighting_shadow_marker="$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
 
   validate_common_marker "$cpu_marker" "default" "conservative" "full"
   validate_common_marker "$gpu_marker" "default" "conservative" "full"
@@ -266,6 +267,11 @@ validate_parity_markers() {
     "$OUT_DIR/cpu-arraymesh-lighting-shadow-parity.png.txt" \
     "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" \
     "lighting_shadow"
+
+  validate_compact_shadow_pose_pair \
+    "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" \
+    "$compact_lighting_shadow_marker" \
+    "lighting_shadow"
 }
 
 validate_pose_pair() {
@@ -288,48 +294,87 @@ validate_pose_pair() {
   require_metric_eq "$gpu_marker" "compact_shadow_proxy" 0
   require_metric_eq "$gpu_marker" "compact_shadow_normals_saved" 0
 
-  cpu_luma="$(float_metric "avg_luma" "$cpu_marker")"
-  gpu_luma="$(float_metric "avg_luma" "$gpu_marker")"
-  test -n "$cpu_luma" || fail "missing CPU avg_luma"
-  test -n "$gpu_luma" || fail "missing GPU avg_luma"
-  require_float_delta_le "$cpu_luma" "$gpu_luma" "$MAX_AVG_LUMA_DELTA" "$pose avg_luma"
+  validate_visual_metric_pair "$cpu_marker" "$gpu_marker" "$pose"
+}
 
-  cpu_luma_range="$(float_metric "terrain_luma_range" "$cpu_marker")"
-  gpu_luma_range="$(float_metric "terrain_luma_range" "$gpu_marker")"
-  test -n "$cpu_luma_range" || fail "missing CPU terrain_luma_range"
-  test -n "$gpu_luma_range" || fail "missing GPU terrain_luma_range"
+validate_visual_metric_pair() {
+  left_marker="$1"
+  right_marker="$2"
+  label="$3"
+
+  left_luma="$(float_metric "avg_luma" "$left_marker")"
+  right_luma="$(float_metric "avg_luma" "$right_marker")"
+  test -n "$left_luma" || fail "missing left avg_luma for $label"
+  test -n "$right_luma" || fail "missing right avg_luma for $label"
+  require_float_delta_le "$left_luma" "$right_luma" "$MAX_AVG_LUMA_DELTA" "$label avg_luma"
+
+  left_luma_range="$(float_metric "terrain_luma_range" "$left_marker")"
+  right_luma_range="$(float_metric "terrain_luma_range" "$right_marker")"
+  test -n "$left_luma_range" || fail "missing left terrain_luma_range for $label"
+  test -n "$right_luma_range" || fail "missing right terrain_luma_range for $label"
   require_float_delta_le \
-    "$cpu_luma_range" \
-    "$gpu_luma_range" \
+    "$left_luma_range" \
+    "$right_luma_range" \
     "$MAX_TERRAIN_LUMA_RANGE_DELTA" \
-    "$pose terrain_luma_range"
+    "$label terrain_luma_range"
 
-  cpu_terrain_samples="$(metric "terrain_samples" "$cpu_marker")"
-  gpu_terrain_samples="$(metric "terrain_samples" "$gpu_marker")"
+  left_terrain_samples="$(metric "terrain_samples" "$left_marker")"
+  right_terrain_samples="$(metric "terrain_samples" "$right_marker")"
   require_int_delta_percent_le \
-    "$cpu_terrain_samples" \
-    "$gpu_terrain_samples" \
+    "$left_terrain_samples" \
+    "$right_terrain_samples" \
     "$MAX_TERRAIN_SAMPLE_DELTA_PERCENT" \
     "$MIN_TERRAIN_SAMPLE_DELTA" \
-    "$pose terrain_samples"
+    "$label terrain_samples"
 
-  cpu_terrain_color_buckets="$(metric "terrain_color_buckets" "$cpu_marker")"
-  gpu_terrain_color_buckets="$(metric "terrain_color_buckets" "$gpu_marker")"
+  left_terrain_color_buckets="$(metric "terrain_color_buckets" "$left_marker")"
+  right_terrain_color_buckets="$(metric "terrain_color_buckets" "$right_marker")"
   require_int_delta_percent_le \
-    "$cpu_terrain_color_buckets" \
-    "$gpu_terrain_color_buckets" \
+    "$left_terrain_color_buckets" \
+    "$right_terrain_color_buckets" \
     "$MAX_TERRAIN_COLOR_BUCKET_DELTA_PERCENT" \
     "$MIN_TERRAIN_COLOR_BUCKET_DELTA" \
-    "$pose terrain_color_buckets"
+    "$label terrain_color_buckets"
 
-  cpu_terrain_chroma_samples="$(metric "terrain_chroma_samples" "$cpu_marker")"
-  gpu_terrain_chroma_samples="$(metric "terrain_chroma_samples" "$gpu_marker")"
+  left_terrain_chroma_samples="$(metric "terrain_chroma_samples" "$left_marker")"
+  right_terrain_chroma_samples="$(metric "terrain_chroma_samples" "$right_marker")"
   require_int_delta_percent_le \
-    "$cpu_terrain_chroma_samples" \
-    "$gpu_terrain_chroma_samples" \
+    "$left_terrain_chroma_samples" \
+    "$right_terrain_chroma_samples" \
     "$MAX_TERRAIN_SAMPLE_DELTA_PERCENT" \
     "$MIN_TERRAIN_SAMPLE_DELTA" \
-    "$pose terrain_chroma_samples"
+    "$label terrain_chroma_samples"
+}
+
+validate_compact_shadow_pose_pair() {
+  full_marker="$1"
+  compact_marker="$2"
+  pose="$3"
+
+  validate_common_marker "$full_marker" "$pose" "conservative" "full"
+  validate_common_marker "$compact_marker" "$pose" "conservative" "compact"
+
+  require_metric_ge "$full_marker" "gpu_frames" 1
+  require_metric_ge "$full_marker" "gpu_subchunks" 1
+  require_metric_ge "$full_marker" "gpu_faces" 1
+  require_metric_ge "$full_marker" "fast_proxy" 1
+  require_metric_eq "$full_marker" "compact_shadow_proxy" 0
+  require_metric_eq "$full_marker" "compact_shadow_normals_saved" 0
+
+  require_metric_ge "$compact_marker" "gpu_frames" 1
+  require_metric_ge "$compact_marker" "gpu_subchunks" 1
+  require_metric_ge "$compact_marker" "gpu_faces" 1
+  require_metric_ge "$compact_marker" "fast_proxy" 1
+  require_metric_ge "$compact_marker" "proxy_shadow" 1
+  require_metric_ge "$compact_marker" "proxy_both" 1
+  require_metric_ge "$compact_marker" "proxy_shadow_only" 1
+  require_metric_ge "$compact_marker" "compact_shadow_proxy" 1
+  require_metric_ge \
+    "$compact_marker" \
+    "compact_shadow_normals_saved" \
+    "$(metric "compact_shadow_proxy" "$compact_marker")"
+
+  validate_visual_metric_pair "$full_marker" "$compact_marker" "$pose compact"
 }
 
 if [ "$VALIDATE_ONLY" != "1" ]; then
@@ -342,6 +387,7 @@ if [ "$VALIDATE_ONLY" != "1" ]; then
   run_case "gpu-terrain-atlas-depth-parity" "1" "" "atlas_depth" "conservative" "full"
   run_case "cpu-arraymesh-lighting-shadow-parity" "0" "" "lighting_shadow" "conservative" "full"
   run_case "gpu-terrain-lighting-shadow-parity" "1" "" "lighting_shadow" "conservative" "full"
+  run_case "gpu-terrain-compact-lighting-shadow-parity" "1" "" "lighting_shadow" "conservative" "compact"
 fi
 
 validate_parity_markers
