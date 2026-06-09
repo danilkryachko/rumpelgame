@@ -214,6 +214,11 @@ Checks:
   - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (20/20), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+- Latest GPU terrain shader push-constant layout guard slice passed:
+  - Added a Rust unit test that reads the included GPU terrain render shader and verifies the GLSL push-constant order matches the Rust byte layout: clip matrix, lighting block, then atlas layout.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (21/21), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
 
 Useful log lines:
 

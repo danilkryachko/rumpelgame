@@ -1581,6 +1581,31 @@ mod tests {
     }
 
     #[test]
+    fn render_shader_push_constant_layout_matches_rust_bytes() {
+        let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
+        let clip_idx = vertex_source
+            .find("mat4 clip_from_world;")
+            .expect("clip matrix push constant");
+        let light_direction_idx = vertex_source
+            .find("vec4 light_direction_ambient;")
+            .expect("light direction push constant");
+        let light_color_idx = vertex_source
+            .find("vec4 light_color_energy;")
+            .expect("light color push constant");
+        let atlas_idx = vertex_source
+            .find("vec4 atlas_layout;")
+            .expect("atlas layout push constant");
+
+        assert!(clip_idx < light_direction_idx);
+        assert!(light_direction_idx < light_color_idx);
+        assert!(light_color_idx < atlas_idx);
+        assert_eq!(CLIP_FROM_WORLD_PUSH_CONSTANT_BYTES, 64);
+        assert_eq!(TERRAIN_LIGHTING_PUSH_CONSTANT_BYTES, 32);
+        assert_eq!(TERRAIN_ATLAS_PUSH_CONSTANT_BYTES, 16);
+        assert_eq!(TERRAIN_PUSH_CONSTANT_BYTES, 112);
+    }
+
+    #[test]
     fn cpu_proxy_mesh_uses_packed_face_geometry() {
         let batch = PackedFaceBatch {
             faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS)],
