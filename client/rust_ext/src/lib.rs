@@ -640,31 +640,31 @@ impl GameClient {
     }
 
     fn subchunk_needs_collision(&self, key: SubchunkKey) -> bool {
-        let Some(center) = self.current_player_chunk else {
-            return key.chunk_x == 0 && key.chunk_z == 0;
-        };
-        chunk_within_radius((key.chunk_x, key.chunk_z), center, COLLISION_CHUNK_DISTANCE)
+        subchunk_needs_collision(key, self.current_player_chunk)
     }
 
     fn subchunk_needs_cpu_proxy(&self, key: SubchunkKey) -> bool {
         if !self.gpu_terrain_visible_render_active() {
-            return true;
+            return subchunk_needs_cpu_proxy(false, false, false);
         }
 
-        self.subchunk_needs_collision(key) || self.subchunk_needs_shadow_proxy(key)
+        let needs_collision = self.subchunk_needs_collision(key);
+        let needs_shadow_proxy = !needs_collision && self.subchunk_needs_shadow_proxy(key);
+        subchunk_needs_cpu_proxy(true, needs_collision, needs_shadow_proxy)
     }
 
     fn subchunk_needs_shadow_proxy(&self, key: SubchunkKey) -> bool {
-        if !gpu_terrain_shadow_proxy_mode().keeps_shadow_proxies() {
+        let mode = gpu_terrain_shadow_proxy_mode();
+        if !mode.keeps_shadow_proxies() {
             return false;
         }
 
-        let Some(center) = self.current_player_chunk else {
-            return key.chunk_x == 0 && key.chunk_z == 0;
-        };
-
-        let radius = self.terrain_shadow_proxy_chunk_distance();
-        radius > 0 && chunk_within_radius((key.chunk_x, key.chunk_z), center, radius)
+        subchunk_needs_shadow_proxy(
+            key,
+            self.current_player_chunk,
+            mode,
+            self.terrain_shadow_proxy_chunk_distance(),
+        )
     }
 
     fn terrain_shadow_proxy_chunk_distance(&self) -> i32 {
@@ -1192,6 +1192,37 @@ fn chunk_within_radius(a: (i32, i32), b: (i32, i32), radius: i32) -> bool {
     let dz = i64::from(a.1 - b.1);
     let radius = i64::from(radius);
     dx * dx + dz * dz <= radius * radius
+}
+
+fn subchunk_needs_collision(key: SubchunkKey, current_player_chunk: Option<(i32, i32)>) -> bool {
+    let Some(center) = current_player_chunk else {
+        return key.chunk_x == 0 && key.chunk_z == 0;
+    };
+    chunk_within_radius((key.chunk_x, key.chunk_z), center, COLLISION_CHUNK_DISTANCE)
+}
+
+fn subchunk_needs_shadow_proxy(
+    key: SubchunkKey,
+    current_player_chunk: Option<(i32, i32)>,
+    mode: GpuTerrainShadowProxyMode,
+    radius: i32,
+) -> bool {
+    if !mode.keeps_shadow_proxies() || radius <= 0 {
+        return false;
+    }
+
+    let Some(center) = current_player_chunk else {
+        return key.chunk_x == 0 && key.chunk_z == 0;
+    };
+    chunk_within_radius((key.chunk_x, key.chunk_z), center, radius)
+}
+
+fn subchunk_needs_cpu_proxy(
+    gpu_visible_render_active: bool,
+    needs_collision: bool,
+    needs_shadow_proxy: bool,
+) -> bool {
+    !gpu_visible_render_active || needs_collision || needs_shadow_proxy
 }
 
 fn gpu_terrain_stats_enabled() -> bool {
@@ -1921,6 +1952,89 @@ mod tests {
             DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE
         );
         assert_eq!(terrain_shadow_proxy_chunk_distance(None, None), 6);
+    }
+
+    #[test]
+    fn subchunk_collision_proxy_tracks_player_radius() {
+        let origin = SubchunkKey {
+            chunk_x: 0,
+            sub_y: 3,
+            chunk_z: 0,
+        };
+        let near = SubchunkKey {
+            chunk_x: 6,
+            sub_y: 3,
+            chunk_z: -7,
+        };
+        let far = SubchunkKey {
+            chunk_x: 8,
+            sub_y: 3,
+            chunk_z: -7,
+        };
+
+        assert!(subchunk_needs_collision(origin, None));
+        assert!(!subchunk_needs_collision(near, None));
+        assert!(subchunk_needs_collision(near, Some((5, -7))));
+        assert!(!subchunk_needs_collision(far, Some((5, -7))));
+    }
+
+    #[test]
+    fn subchunk_shadow_proxy_tracks_mode_radius_and_player_chunk() {
+        let origin = SubchunkKey {
+            chunk_x: 0,
+            sub_y: 4,
+            chunk_z: 0,
+        };
+        let near = SubchunkKey {
+            chunk_x: 4,
+            sub_y: 4,
+            chunk_z: -7,
+        };
+        let far = SubchunkKey {
+            chunk_x: 9,
+            sub_y: 4,
+            chunk_z: -7,
+        };
+
+        assert!(!subchunk_needs_shadow_proxy(
+            origin,
+            None,
+            GpuTerrainShadowProxyMode::Conservative,
+            0
+        ));
+        assert!(subchunk_needs_shadow_proxy(
+            origin,
+            None,
+            GpuTerrainShadowProxyMode::Conservative,
+            5
+        ));
+        assert!(!subchunk_needs_shadow_proxy(
+            origin,
+            None,
+            GpuTerrainShadowProxyMode::CollisionOnly,
+            5
+        ));
+        assert!(subchunk_needs_shadow_proxy(
+            near,
+            Some((5, -7)),
+            GpuTerrainShadowProxyMode::Conservative,
+            2
+        ));
+        assert!(!subchunk_needs_shadow_proxy(
+            far,
+            Some((5, -7)),
+            GpuTerrainShadowProxyMode::Conservative,
+            2
+        ));
+    }
+
+    #[test]
+    fn subchunk_cpu_proxy_keeps_fallback_collision_or_shadow_only_reasons() {
+        assert!(subchunk_needs_cpu_proxy(false, false, false));
+        assert!(subchunk_needs_cpu_proxy(true, true, false));
+        assert!(subchunk_needs_cpu_proxy(true, false, true));
+        assert!(subchunk_needs_cpu_proxy(true, true, true));
+        assert!(!subchunk_needs_cpu_proxy(true, false, false));
     }
 
     #[test]

@@ -230,6 +230,12 @@ Checks:
   - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (25/25), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
+- Latest CPU proxy decision guard slice passed:
+  - `GameClient::subchunk_needs_collision()`, `subchunk_needs_shadow_proxy()`, and `subchunk_needs_cpu_proxy()` now delegate to pure helpers covered by unit tests. The tests lock the fallback rule, nearby collision radius, conservative-vs-collision-only shadow mode, shadow radius behavior, and the rule that GPU-visible subchunks without collision or shadow reasons may drop their CPU proxy.
+  - The shadow helper now treats `radius <= 0` as no shadow proxy even before `current_player_chunk` is known, matching disabled Godot shadows and avoiding an origin-only shadow proxy in that state.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (28/28), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
 
 Useful log lines:
 
