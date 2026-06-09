@@ -1053,11 +1053,22 @@ struct NodePerfCounts {
 
 impl NodePerfCounts {
     fn record_mesh_render_state(&mut self, mesh_instance: &Gd<godot::classes::MeshInstance3D>) {
-        if mesh_instance.is_visible() {
+        self.record_mesh_render_state_values(
+            mesh_instance.is_visible(),
+            mesh_instance.get_cast_shadows_setting(),
+        );
+    }
+
+    fn record_mesh_render_state_values(
+        &mut self,
+        visible: bool,
+        shadow_setting: godot::classes::geometry_instance_3d::ShadowCastingSetting,
+    ) {
+        if visible {
             self.visible_submeshes += 1;
         }
 
-        match mesh_instance.get_cast_shadows_setting() {
+        match shadow_setting {
             godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF => {
                 self.shadow_off_submeshes += 1;
             }
@@ -2247,6 +2258,29 @@ mod tests {
             collision_only.shadow_setting(),
             godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF
         );
+    }
+
+    #[test]
+    fn node_perf_counts_record_visible_and_shadow_state_buckets() {
+        let mut counts = NodePerfCounts::default();
+
+        counts.record_mesh_render_state_values(
+            true,
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::DOUBLE_SIDED,
+        );
+        counts.record_mesh_render_state_values(
+            false,
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
+        );
+        counts.record_mesh_render_state_values(
+            true,
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::SHADOWS_ONLY,
+        );
+
+        assert_eq!(counts.visible_submeshes, 2);
+        assert_eq!(counts.shadow_off_submeshes, 1);
+        assert_eq!(counts.shadow_double_sided_submeshes, 1);
+        assert_eq!(counts.shadow_only_submeshes, 1);
     }
 
     #[test]

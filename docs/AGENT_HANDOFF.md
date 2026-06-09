@@ -266,6 +266,12 @@ Checks:
   - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (33/33), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
+- Latest terrain mesh render-state counter guard slice passed:
+  - `NodePerfCounts::record_mesh_render_state()` now delegates the visible/shadow bucket updates to a pure helper covered by a unit test. The test locks the `mesh_visible`, `mesh_shadow_off`, `mesh_shadow_double`, and `mesh_shadow_only` buckets that the parity gate uses for collision-only and proxy render-state regressions.
+  - Behavior is unchanged for real `MeshInstance3D` nodes; the helper only makes the counter mapping reviewable without constructing Godot scene nodes in unit tests.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (34/34), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
 
 Useful log lines:
 
