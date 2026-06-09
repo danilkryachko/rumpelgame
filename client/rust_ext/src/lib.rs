@@ -322,16 +322,23 @@ impl GameClient {
                 .is_some();
         }
 
-        if uploaded_to_gpu && !self.subchunk_needs_cpu_proxy(key) {
+        let needs_cpu_proxy = self.subchunk_needs_cpu_proxy(key);
+        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
+        let mesh_build_plan = terrain_mesh_build_plan(
+            uploaded_to_gpu,
+            gpu_visible_render_active,
+            needs_cpu_proxy,
+            packed_faces.is_some(),
+        );
+        if mesh_build_plan == TerrainMeshBuildPlan::RemoveCpuNode {
             self.remove_cpu_subchunk_mesh_node(key);
             return;
         }
 
-        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
         let should_have_collision = self.subchunk_needs_collision(key);
         let should_have_shadow_proxy =
             gpu_visible_render_active && self.subchunk_needs_shadow_proxy(key);
-        let cpu_proxy_mesh = uploaded_to_gpu && gpu_visible_render_active && packed_faces.is_some();
+        let cpu_proxy_mesh = mesh_build_plan == TerrainMeshBuildPlan::CpuProxyMesh;
         let compact_shadow_proxy_mesh = gpu_terrain_shadow_proxy_mesh_mode()
             .compacts_shadow_only_mesh(
                 cpu_proxy_mesh,
@@ -1244,6 +1251,29 @@ fn chunks_to_refresh_after_gpu_attach(
     loaded_chunks.into_iter().collect()
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TerrainMeshBuildPlan {
+    RemoveCpuNode,
+    CpuProxyMesh,
+    FullArrayMesh,
+}
+
+fn terrain_mesh_build_plan(
+    uploaded_to_gpu: bool,
+    gpu_visible_render_active: bool,
+    needs_cpu_proxy: bool,
+    has_packed_faces: bool,
+) -> TerrainMeshBuildPlan {
+    if uploaded_to_gpu && !needs_cpu_proxy {
+        return TerrainMeshBuildPlan::RemoveCpuNode;
+    }
+    if uploaded_to_gpu && gpu_visible_render_active && has_packed_faces {
+        return TerrainMeshBuildPlan::CpuProxyMesh;
+    }
+
+    TerrainMeshBuildPlan::FullArrayMesh
+}
+
 fn gpu_terrain_stats_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| GPU_TERRAIN_PROTOTYPE_STATS || env_flag_enabled(GPU_TERRAIN_STATS_ENV))
@@ -2095,6 +2125,30 @@ mod tests {
         assert_eq!(
             chunks_to_refresh_after_gpu_attach(loaded_chunks.iter().copied(), true),
             loaded_chunks
+        );
+    }
+
+    #[test]
+    fn terrain_mesh_build_plan_preserves_gpu_proxy_and_fallback_paths() {
+        assert_eq!(
+            terrain_mesh_build_plan(true, true, false, true),
+            TerrainMeshBuildPlan::RemoveCpuNode
+        );
+        assert_eq!(
+            terrain_mesh_build_plan(true, true, true, true),
+            TerrainMeshBuildPlan::CpuProxyMesh
+        );
+        assert_eq!(
+            terrain_mesh_build_plan(true, true, true, false),
+            TerrainMeshBuildPlan::FullArrayMesh
+        );
+        assert_eq!(
+            terrain_mesh_build_plan(true, false, true, true),
+            TerrainMeshBuildPlan::FullArrayMesh
+        );
+        assert_eq!(
+            terrain_mesh_build_plan(false, true, true, true),
+            TerrainMeshBuildPlan::FullArrayMesh
         );
     }
 

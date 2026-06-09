@@ -248,6 +248,12 @@ Checks:
   - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (30/30), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
+- Latest GPU terrain mesh-build plan guard slice passed:
+  - `GameClient::render_subchunk_mesh()` now delegates the CPU mesh path choice to a pure `TerrainMeshBuildPlan` helper covered by a unit test. The test locks the three production-sensitive outcomes: remove the CPU node when uploaded GPU terrain has no CPU proxy reason, build a packed-face CPU proxy only after the GPU visible path is active and packed faces are available, and fall back to the full ArrayMesh path otherwise.
+  - This preserves the ArrayMesh fallback for failed GPU uploads, pre-confirmation GPU state, and missing packed-face data while making future distant CPU mesh removal changes easier to review.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (31/31), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
 
 Useful log lines:
 
