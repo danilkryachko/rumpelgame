@@ -632,6 +632,10 @@ impl GameClient {
     }
 
     fn subchunk_needs_shadow_proxy(&self, key: SubchunkKey) -> bool {
+        if !gpu_terrain_shadow_proxy_mode().keeps_shadow_proxies() {
+            return false;
+        }
+
         let Some(center) = self.current_player_chunk else {
             return key.chunk_x == 0 && key.chunk_z == 0;
         };
@@ -686,15 +690,19 @@ impl GameClient {
             return;
         }
 
-        let shadow_radius = self.terrain_shadow_proxy_chunk_distance();
+        let shadow_radius = if gpu_terrain_shadow_proxy_mode().keeps_shadow_proxies() {
+            self.terrain_shadow_proxy_chunk_distance()
+        } else {
+            0
+        };
         let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
         for coord in loaded_chunks {
             let was_near = previous.is_some_and(|prev| {
                 chunk_within_radius(coord, prev, COLLISION_CHUNK_DISTANCE)
-                    || chunk_within_radius(coord, prev, shadow_radius)
+                    || (shadow_radius > 0 && chunk_within_radius(coord, prev, shadow_radius))
             });
             let is_near = chunk_within_radius(coord, current, COLLISION_CHUNK_DISTANCE)
-                || chunk_within_radius(coord, current, shadow_radius);
+                || (shadow_radius > 0 && chunk_within_radius(coord, current, shadow_radius));
             if was_near || is_near {
                 self.enqueue_chunk_subchunks(coord.0, coord.1);
             }
@@ -1071,6 +1079,7 @@ const GPU_TERRAIN_UPLOAD_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD";
 const GPU_TERRAIN_RENDER_ENV: &str = "RUMPELMC_GPU_TERRAIN_RENDER";
 const GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE";
+const GPU_TERRAIN_SHADOW_PROXY_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE";
 const ATLAS_COLUMNS: f32 = 10.0;
 const FACE_LEFT: u32 = 0;
 const FACE_RIGHT: u32 = 1;
@@ -1144,6 +1153,43 @@ fn gpu_terrain_shadow_proxy_chunk_distance_override() -> Option<i32> {
         std::env::var(GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV)
             .ok()
             .and_then(|value| value.trim().parse::<i32>().ok())
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GpuTerrainShadowProxyMode {
+    Conservative,
+    CollisionOnly,
+}
+
+impl GpuTerrainShadowProxyMode {
+    fn from_env_value(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "conservative" | "default" => Some(Self::Conservative),
+            "collision_only" | "collision-only" | "collision" => Some(Self::CollisionOnly),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Conservative => "conservative",
+            Self::CollisionOnly => "collision_only",
+        }
+    }
+
+    fn keeps_shadow_proxies(self) -> bool {
+        matches!(self, Self::Conservative)
+    }
+}
+
+fn gpu_terrain_shadow_proxy_mode() -> GpuTerrainShadowProxyMode {
+    static MODE: OnceLock<GpuTerrainShadowProxyMode> = OnceLock::new();
+    *MODE.get_or_init(|| {
+        std::env::var(GPU_TERRAIN_SHADOW_PROXY_MODE_ENV)
+            .ok()
+            .and_then(|value| GpuTerrainShadowProxyMode::from_env_value(&value))
+            .unwrap_or(GpuTerrainShadowProxyMode::Conservative)
     })
 }
 
@@ -1487,7 +1533,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} jobs={} cpu_proxy={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} mem={:.1}MB{}",
+            "queue={} jobs={} cpu_proxy={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_mode={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.mesh_jobs_completed,
             self.perf.node_counts.rendered_submeshes,
@@ -1495,6 +1541,7 @@ impl GameClient {
             self.perf.node_counts.cpu_proxy_shadow,
             self.perf.node_counts.cpu_proxy_both,
             self.perf.node_counts.cpu_proxy_shadow_only,
+            gpu_terrain_shadow_proxy_mode().as_str(),
             self.perf.cpu_proxy_meshes_built,
             self.perf.node_counts.total_collision_bodies,
             self.perf.last_mesh_ms,
@@ -1610,5 +1657,18 @@ mod tests {
         assert_eq!(key.chunk_z, 3);
         assert!(subchunk_key_from_mesh_name("SubchunkMesh_-2_7_3_extra").is_none());
         assert!(subchunk_key_from_mesh_name("ChunkMesh_-2_7_3").is_none());
+    }
+
+    #[test]
+    fn shadow_proxy_mode_parses_supported_values() {
+        assert_eq!(
+            GpuTerrainShadowProxyMode::from_env_value(""),
+            Some(GpuTerrainShadowProxyMode::Conservative)
+        );
+        assert_eq!(
+            GpuTerrainShadowProxyMode::from_env_value("collision-only"),
+            Some(GpuTerrainShadowProxyMode::CollisionOnly)
+        );
+        assert_eq!(GpuTerrainShadowProxyMode::from_env_value("invalid"), None);
     }
 }

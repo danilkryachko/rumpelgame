@@ -6,7 +6,7 @@ OUT_DIR="${1:-"$ROOT_DIR/logs/gpu_terrain_visual_smoke/parity"}"
 GODOT_BIN="${GODOT_BIN:-/opt/homebrew/bin/godot}"
 TIMEOUT_BIN="${TIMEOUT_BIN:-/opt/homebrew/bin/timeout}"
 GODOT_TIMEOUT_SEC="${GODOT_TIMEOUT_SEC:-90}"
-GODOT_QUIT_AFTER_FRAMES="${GODOT_QUIT_AFTER_FRAMES:-800}"
+GODOT_QUIT_AFTER_FRAMES="${GODOT_QUIT_AFTER_FRAMES:-2000}"
 SMOKE_DELAY_SEC="${SMOKE_DELAY_SEC:-4.0}"
 MAX_AVG_LUMA_DELTA="${MAX_AVG_LUMA_DELTA:-0.16}"
 MAX_TERRAIN_LUMA_RANGE_DELTA="${MAX_TERRAIN_LUMA_RANGE_DELTA:-0.12}"
@@ -89,12 +89,14 @@ require_float_metric_ge() {
 validate_common_marker() {
   marker_path="$1"
   expected_pose="$2"
+  expected_shadow_mode="$3"
   screenshot_path="${marker_path%.txt}"
 
   test -s "$screenshot_path" || fail "missing screenshot $screenshot_path"
   test -s "$marker_path" || fail "missing marker $marker_path"
   grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke summary in $marker_path"
   grep -q "pose=\"$expected_pose\"" "$marker_path" || fail "unexpected pose in $marker_path"
+  grep -q "shadow_mode=$expected_shadow_mode" "$marker_path" || fail "unexpected shadow mode in $marker_path"
   grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"
   grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
   require_metric_ge "$marker_path" "terrain_samples" 1
@@ -119,6 +121,7 @@ run_case() {
   gpu_flag="$2"
   shadow_radius="$3"
   pose="$4"
+  shadow_mode="$5"
   screenshot_path="$OUT_DIR/$name.png"
   marker_path="$screenshot_path.txt"
 
@@ -130,6 +133,7 @@ run_case() {
     "$TIMEOUT_BIN" "$GODOT_TIMEOUT_SEC" /usr/bin/env \
       RUMPELMC_GPU_TERRAIN_RENDER="$gpu_flag" \
       RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE="$shadow_radius" \
+      RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE="$shadow_mode" \
       RUMPELMC_VISUAL_SMOKE_POSE="$pose" \
       RUMPELMC_VISUAL_SMOKE_PATH="$screenshot_path" \
       RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
@@ -138,7 +142,7 @@ run_case() {
       "$GODOT_BIN" --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
   )
 
-  validate_common_marker "$marker_path" "$pose"
+  validate_common_marker "$marker_path" "$pose" "$shadow_mode"
   cat "$marker_path"
   if command -v sips >/dev/null 2>&1; then
     sips -g pixelWidth -g pixelHeight "$screenshot_path"
@@ -187,10 +191,11 @@ validate_parity_markers() {
   cpu_marker="$OUT_DIR/cpu-arraymesh-parity.png.txt"
   gpu_marker="$OUT_DIR/gpu-terrain-parity.png.txt"
   radius_marker="$OUT_DIR/gpu-terrain-radius1-parity.png.txt"
+  collision_only_marker="$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
 
-  validate_common_marker "$cpu_marker" "default"
-  validate_common_marker "$gpu_marker" "default"
-  validate_common_marker "$radius_marker" "default"
+  validate_common_marker "$cpu_marker" "default" "conservative"
+  validate_common_marker "$gpu_marker" "default" "conservative"
+  validate_common_marker "$radius_marker" "default" "conservative"
   validate_pose_pair "$cpu_marker" "$gpu_marker" "default"
 
   require_metric_absent "$cpu_marker" "gpu_frames"
@@ -215,6 +220,15 @@ validate_parity_markers() {
   require_metric_eq "$radius_marker" "proxy_shadow_only" 0
   require_metric_ge "$radius_marker" "fast_proxy" 1
 
+  validate_common_marker "$collision_only_marker" "default" "collision_only"
+  require_metric_ge "$collision_only_marker" "gpu_frames" 1
+  require_metric_ge "$collision_only_marker" "gpu_subchunks" 1
+  require_metric_eq "$collision_only_marker" "cpu_proxy" "$(metric "collision" "$collision_only_marker")"
+  require_metric_eq "$collision_only_marker" "proxy_shadow" 0
+  require_metric_eq "$collision_only_marker" "proxy_both" 0
+  require_metric_eq "$collision_only_marker" "proxy_shadow_only" 0
+  require_metric_ge "$collision_only_marker" "fast_proxy" 1
+
   validate_pose_pair \
     "$OUT_DIR/cpu-arraymesh-atlas-depth-parity.png.txt" \
     "$OUT_DIR/gpu-terrain-atlas-depth-parity.png.txt" \
@@ -231,8 +245,8 @@ validate_pose_pair() {
   gpu_marker="$2"
   pose="$3"
 
-  validate_common_marker "$cpu_marker" "$pose"
-  validate_common_marker "$gpu_marker" "$pose"
+  validate_common_marker "$cpu_marker" "$pose" "conservative"
+  validate_common_marker "$gpu_marker" "$pose" "conservative"
 
   require_metric_absent "$cpu_marker" "gpu_frames"
   require_metric_absent "$cpu_marker" "gpu_subchunks"
@@ -287,13 +301,14 @@ validate_pose_pair() {
 }
 
 if [ "$VALIDATE_ONLY" != "1" ]; then
-  run_case "cpu-arraymesh-parity" "0" "" "default"
-  run_case "gpu-terrain-parity" "1" "" "default"
-  run_case "gpu-terrain-radius1-parity" "1" "1" "default"
-  run_case "cpu-arraymesh-atlas-depth-parity" "0" "" "atlas_depth"
-  run_case "gpu-terrain-atlas-depth-parity" "1" "" "atlas_depth"
-  run_case "cpu-arraymesh-lighting-shadow-parity" "0" "" "lighting_shadow"
-  run_case "gpu-terrain-lighting-shadow-parity" "1" "" "lighting_shadow"
+  run_case "cpu-arraymesh-parity" "0" "" "default" "conservative"
+  run_case "gpu-terrain-parity" "1" "" "default" "conservative"
+  run_case "gpu-terrain-radius1-parity" "1" "1" "default" "conservative"
+  run_case "gpu-terrain-collision-only-parity" "1" "" "default" "collision_only"
+  run_case "cpu-arraymesh-atlas-depth-parity" "0" "" "atlas_depth" "conservative"
+  run_case "gpu-terrain-atlas-depth-parity" "1" "" "atlas_depth" "conservative"
+  run_case "cpu-arraymesh-lighting-shadow-parity" "0" "" "lighting_shadow" "conservative"
+  run_case "gpu-terrain-lighting-shadow-parity" "1" "" "lighting_shadow" "conservative"
 fi
 
 validate_parity_markers
