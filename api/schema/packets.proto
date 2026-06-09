@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package rumpelmc.api;
+option go_package = "rumpelmc/server/pkg/api";
+
+message ChunkData {
+  int32 x = 1;
+  int32 z = 2;
+  // Compacted block IDs or full array
+  bytes blocks = 3;
+}
+
+message ClientPosition {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+message Packet {
+  oneof payload {
+    ChunkData chunk = 1;
+    ClientPosition position = 2;
+  }
+}

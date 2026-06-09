@@ -1,0 +1,13 @@
+[gdextension]
+
+compatibility_minimum=4.1
+format=3
+
+[libraries]
+
+macos.debug="res://rust_ext/target/debug/librust_ext.dylib"
+macos.release="res://rust_ext/target/release/librust_ext.dylib"
+windows.debug.x86_64="res://rust_ext/target/debug/rust_ext.dll"
+windows.release.x86_64="res://rust_ext/target/release/rust_ext.dll"
+windows.debug.x86_32="res://rust_ext/target/debug/rust_ext.dll"
+windows.release.x86_32="res://rust_ext/target/release/rust_ext.dll"

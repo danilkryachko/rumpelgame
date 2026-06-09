@@ -1,0 +1,16 @@
+[package]
+name = "rust_ext"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy_ecs = "0.18.1"
+godot = "0.5.3"
+prost = "0.14.4"
+
+[lib]
+crate-type = ["cdylib"]
+
+[build-dependencies]
+prost-build = "0.14.4"
+
