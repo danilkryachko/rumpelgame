@@ -1,8 +1,13 @@
 use godot::prelude::*;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::Range;
+use std::time::Instant;
 
 mod api;
-mod network;
+mod blocks;
+mod gpu_terrain;
 mod meshing;
+mod network;
 mod player;
 
 struct RumpelmcExtension;
@@ -10,55 +15,119 @@ struct RumpelmcExtension;
 #[gdextension]
 unsafe impl ExtensionLibrary for RumpelmcExtension {}
 
-use std::sync::mpsc::{Receiver, channel};
+use std::sync::{
+    OnceLock,
+    mpsc::{Receiver, channel},
+};
 
 #[derive(GodotClass)]
 #[class(base=Node)]
 pub struct GameClient {
     base: Base<Node>,
     mesher: Option<meshing::ComputeMesher>,
+    gpu_terrain: Option<gpu_terrain::GpuTerrainBufferPool>,
+    gpu_terrain_compositor: Option<gpu_terrain::GpuTerrainCompositor>,
+    gpu_visible_transition_applied: bool,
     network: Option<network::NetworkClient>,
-    packet_receiver: Option<Receiver<crate::api::api::Packet>>,
+    packet_receiver: Option<Receiver<crate::api::Packet>>,
+    player_spawned: bool,
+    texture_debug_stand_visible: bool,
+    chunk_material: Option<Gd<godot::classes::Material>>,
+    chunk_blocks: HashMap<(i32, i32), Vec<u8>>,
+    mesh_queue: VecDeque<SubchunkKey>,
+    queued_subchunks: HashSet<SubchunkKey>,
+    position_send_timer: f64,
+    current_player_chunk: Option<(i32, i32)>,
+    last_block_action: String,
+    last_chunk_event: String,
+    last_save_event: String,
+    perf: PerfStats,
 }
 
 #[godot_api]
 impl INode for GameClient {
     fn init(base: Base<Node>) -> Self {
-        Self { 
+        Self {
             base,
             mesher: None,
+            gpu_terrain: None,
+            gpu_terrain_compositor: None,
+            gpu_visible_transition_applied: false,
             network: None,
             packet_receiver: None,
+            player_spawned: false,
+            texture_debug_stand_visible: false,
+            chunk_material: None,
+            chunk_blocks: HashMap::new(),
+            mesh_queue: VecDeque::new(),
+            queued_subchunks: HashSet::new(),
+            position_send_timer: 0.0,
+            current_player_chunk: None,
+            last_block_action: "n/a".to_string(),
+            last_chunk_event: "n/a".to_string(),
+            last_save_event: "n/a".to_string(),
+            perf: PerfStats::default(),
         }
     }
 
     fn ready(&mut self) {
-        godot_print!("GameClient ready! Initializing ComputeMesher...");
+        self.emit_debug_log("GameClient ready; initializing ComputeMesher");
         self.mesher = meshing::ComputeMesher::new();
         if self.mesher.is_none() {
-            godot_print!("Failed to initialize ComputeMesher!");
+            self.emit_debug_log("Failed to initialize ComputeMesher");
         } else {
-            godot_print!("ComputeMesher initialized successfully.");
+            self.emit_debug_log("ComputeMesher initialized successfully");
         }
 
-        godot_print!("Connecting to server...");
-        
+        let gpu_terrain_render = gpu_terrain_render_enabled();
+        if gpu_terrain_upload_enabled() {
+            self.gpu_terrain = gpu_terrain::GpuTerrainBufferPool::new(gpu_terrain_render);
+            if self.gpu_terrain.is_some() {
+                self.emit_debug_log(&format!(
+                    "GPU terrain buffer pool initialized; debug_render={gpu_terrain_render}"
+                ));
+            } else {
+                self.emit_debug_log(
+                    "GPU terrain buffer pool unavailable; using ArrayMesh fallback",
+                );
+            }
+        }
+        if gpu_terrain_render && self.gpu_terrain.is_some() {
+            let callback = self
+                .base()
+                .callable(&StringName::from("on_gpu_terrain_compositor"));
+            self.gpu_terrain_compositor = gpu_terrain::GpuTerrainCompositor::new(&callback);
+            if self.gpu_terrain_compositor.is_some() {
+                self.emit_debug_log("GPU terrain compositor initialized");
+            } else {
+                self.emit_debug_log("GPU terrain compositor unavailable");
+            }
+        }
+
+        self.emit_debug_log("Connecting to server");
+
         match network::NetworkClient::connect("127.0.0.1:25565") {
             Ok(client) => {
-                godot_print!("Connected to server successfully!");
-                
-                let stream_clone = client.try_clone_stream().expect("Failed to clone TCP stream");
-                let mut reader_client = network::NetworkClient { stream: stream_clone };
-                
+                self.emit_debug_log("Connected to server successfully");
+
+                let stream_clone = client
+                    .try_clone_stream()
+                    .expect("Failed to clone TCP stream");
+                let mut reader_client = network::NetworkClient {
+                    stream: stream_clone,
+                };
+
                 let (tx, rx) = channel();
                 self.packet_receiver = Some(rx);
                 self.network = Some(client);
-                
+
                 std::thread::spawn(move || {
                     loop {
                         match reader_client.receive_packet() {
                             Ok(packet) => {
-                                if tx.send(packet).is_err() { break; }
+                                if tx.send(packet).is_err() {
+                                    break;
+                                }
                             }
                             Err(e) => {
                                 println!("Network reader thread error: {}", e);
@@ -69,26 +138,20 @@ impl INode for GameClient {
                 });
             }
             Err(e) => {
-                godot_print!("Failed to connect to server: {}", e);
+                self.emit_debug_log(&format!("Failed to connect to server: {e}"));
             }
         }
-        
-        // 4. Create Player instead of static camera
-        let mut player = crate::player::Player::new_alloc();
-        // Подключаем сигнал
-        let callable = self.base().callable(&StringName::from("on_block_broken"));
-        player.connect(&StringName::from("block_broken"), &callable);
-        
-        let callable_placed = self.base().callable(&StringName::from("on_block_placed"));
-        player.connect(&StringName::from("block_placed"), &callable_placed);
-        
-        let mut player_node = player.upcast::<godot::classes::Node3D>();
-        player_node.set_position(Vector3::new(16.0, 80.0, 16.0));
-        
-        self.base_mut().add_child(&player_node.upcast::<godot::classes::Node>());
+
+        self.emit_debug_log("Waiting for first chunk before spawning player");
     }
 
-    fn process(&mut self, _delta: f64) {
+    fn process(&mut self, delta: f64) {
+        self.position_send_timer -= delta;
+        if self.position_send_timer <= 0.0 {
+            self.position_send_timer = 0.5;
+            self.update_player_position_state();
+        }
+
         let mut packets = Vec::new();
         if let Some(rx) = &self.packet_receiver {
             while let Ok(packet) = rx.try_recv() {
@@ -96,100 +159,1400 @@ impl INode for GameClient {
             }
         }
         for packet in packets {
-            if let Some(crate::api::api::packet::Payload::Chunk(chunk)) = packet.payload {
+            if let Some(crate::api::packet::Payload::Chunk(chunk)) = packet.payload {
                 self.update_chunk(chunk);
             }
+        }
+        self.process_mesh_queue();
+        self.sync_gpu_terrain_lighting();
+        self.update_gpu_visible_transition();
+        if gpu_terrain_render_enabled()
+            && let Some(gpu_terrain) = &mut self.gpu_terrain
+        {
+            gpu_terrain.render_debug_offscreen_once();
         }
     }
 }
 
 impl GameClient {
-    fn update_chunk(&mut self, chunk: crate::api::api::ChunkData) {
-        godot_print!("Received/Updated Chunk! X: {}, Z: {}, Blocks length: {}", chunk.x, chunk.z, chunk.blocks.len());
-        if let Some(mesher) = &mut self.mesher {
-            if let Some((vertices, normals)) = mesher.mesh_chunk(&chunk.blocks) {
-                godot_print!("Meshing complete! Generated {} vertices.", vertices.len());
-                
-                if vertices.len() > 0 {
-                    let mut arrays = Array::new();
-                    arrays.resize(13, &Variant::nil());
-                    arrays.set(0, &vertices.to_variant());
-                    arrays.set(1, &normals.to_variant());
-                    
-                    let mut array_mesh = godot::classes::ArrayMesh::new_gd();
-                    array_mesh.add_surface_from_arrays(godot::classes::mesh::PrimitiveType::TRIANGLES, &arrays);
-                    
-                    // Check if MeshInstance3D already exists
-                    if let Some(mut mesh_instance) = self.base().try_get_node_as::<godot::classes::MeshInstance3D>("ChunkMesh") {
-                        mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
-                        
-                        let mut material = godot::classes::StandardMaterial3D::new_gd();
-                        material.set_cull_mode(godot::classes::base_material_3d::CullMode::DISABLED);
-                        material.set_albedo(Color::from_rgb(0.5, 0.8, 0.3)); // Трава
-                        mesh_instance.set_material_override(&material.upcast::<godot::classes::Material>());
-                        
-                        // Удаляем старую коллизию, если она есть
-                        if let Some(mut old_col) = mesh_instance.try_get_node_as::<godot::classes::StaticBody3D>("ChunkMesh_col") {
-                            mesh_instance.remove_child(&old_col.upcast::<godot::classes::Node>());
-                        }
-                        mesh_instance.create_trimesh_collision();
-                    } else {
-                        // Create MeshInstance3D
-                        let mut mesh_instance = godot::classes::MeshInstance3D::new_alloc();
-                        mesh_instance.set_name(&StringName::from("ChunkMesh"));
-                        mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
-                        // Create material to disable culling
-                        let mut material = godot::classes::StandardMaterial3D::new_gd();
-                        material.set_cull_mode(godot::classes::base_material_3d::CullMode::DISABLED);
-                        material.set_albedo(Color::from_rgb(0.5, 0.8, 0.3)); // Трава
-                        mesh_instance.set_material_override(&material.upcast::<godot::classes::Material>());
-                        
-                        mesh_instance.create_trimesh_collision();
-                        self.base_mut().add_child(&mesh_instance.upcast::<godot::classes::Node>());
+    fn spawn_player(&mut self) {
+        if self.player_spawned {
+            return;
+        }
+
+        let mut player = crate::player::Player::new_alloc();
+
+        let callable = self.base().callable(&StringName::from("on_block_broken"));
+        player.connect(&StringName::from("block_broken"), &callable);
+
+        let callable_placed = self.base().callable(&StringName::from("on_block_placed"));
+        player.connect(&StringName::from("block_placed"), &callable_placed);
+
+        let callable_log = self
+            .base()
+            .callable(&StringName::from("on_player_debug_log"));
+        player.connect(&StringName::from("debug_log"), &callable_log);
+
+        let mut player_node = player.upcast::<godot::classes::Node3D>();
+        player_node.set_name(&StringName::from("Player"));
+        player_node.set_position(Vector3::new(16.0, 68.0, 16.0));
+
+        self.base_mut()
+            .add_child(&player_node.upcast::<godot::classes::Node>());
+
+        self.player_spawned = true;
+        self.emit_debug_log("Player spawned after chunk collision was created");
+        self.attach_gpu_terrain_compositor_to_player_camera();
+    }
+
+    fn update_chunk(&mut self, chunk: crate::api::ChunkData) {
+        let chunk_x = chunk.x;
+        let chunk_z = chunk.z;
+        self.emit_debug_log(&format!(
+            "Chunk received x={} z={} blocks={}",
+            chunk_x,
+            chunk_z,
+            chunk.blocks.len()
+        ));
+        self.last_chunk_event = format!("received {chunk_x},{chunk_z}");
+        self.last_save_event = format!("chunk {chunk_x},{chunk_z} updated");
+
+        self.chunk_blocks.insert((chunk_x, chunk_z), chunk.blocks);
+        self.perf.chunk_bytes_loaded = self.total_chunk_bytes_loaded();
+        self.enqueue_chunk_subchunks(chunk_x, chunk_z);
+
+        for (x, z) in chunk_neighbors(chunk_x, chunk_z) {
+            if self.chunk_blocks.contains_key(&(x, z)) {
+                self.enqueue_chunk_subchunks(x, z);
+            }
+        }
+
+        if let Some(center) = self.current_player_chunk {
+            self.unload_far_chunks(center);
+        }
+
+        if chunk_x == 0 && chunk_z == 0 {
+            let spawn_lower = SubchunkKey {
+                chunk_x: 0,
+                sub_y: 0,
+                chunk_z: 0,
+            };
+            let spawn_upper = SubchunkKey {
+                chunk_x: 0,
+                sub_y: 1,
+                chunk_z: 0,
+            };
+            self.queued_subchunks.remove(&spawn_lower);
+            self.queued_subchunks.remove(&spawn_upper);
+            self.render_subchunk_mesh(spawn_lower);
+            self.render_subchunk_mesh(spawn_upper);
+            self.spawn_player();
+        }
+    }
+
+    fn process_mesh_queue(&mut self) {
+        let mut processed = 0;
+        let mut drained = 0;
+        while processed < MAX_MESH_JOBS_PER_FRAME && drained < MAX_MESH_QUEUE_DRAINS_PER_FRAME {
+            let Some(key) = self.mesh_queue.pop_front() else {
+                break;
+            };
+            drained += 1;
+            if !self.queued_subchunks.remove(&key) {
+                continue;
+            }
+
+            if !self.chunk_blocks.contains_key(&(key.chunk_x, key.chunk_z)) {
+                continue;
+            }
+            self.render_subchunk_mesh(key);
+            processed += 1;
+        }
+        self.perf.mesh_queue_depth = self.mesh_queue.len();
+    }
+
+    fn enqueue_chunk_subchunks(&mut self, chunk_x: i32, chunk_z: i32) {
+        for sub_y in 0..SUBCHUNKS_PER_CHUNK {
+            if self.subchunk_has_blocks(chunk_x, sub_y, chunk_z) {
+                self.enqueue_subchunk(SubchunkKey {
+                    chunk_x,
+                    sub_y,
+                    chunk_z,
+                });
+            } else {
+                self.remove_subchunk_mesh(SubchunkKey {
+                    chunk_x,
+                    sub_y,
+                    chunk_z,
+                });
+            }
+        }
+    }
+
+    fn enqueue_subchunk(&mut self, key: SubchunkKey) {
+        if self.queued_subchunks.insert(key) {
+            self.mesh_queue.push_back(key);
+        }
+        self.perf.mesh_queue_depth = self.mesh_queue.len();
+    }
+
+    fn render_subchunk_mesh(&mut self, key: SubchunkKey) {
+        let build_start = Instant::now();
+        let Some(padded_blocks) = self.build_padded_subchunk_blocks(key) else {
+            return;
+        };
+        let needs_gpu_faces = gpu_terrain_stats_enabled() || gpu_terrain_upload_enabled();
+        let packed_faces = needs_gpu_faces.then(|| gpu_terrain::build_packed_faces(&padded_blocks));
+        if gpu_terrain_stats_enabled()
+            && let Some(packed_faces) = &packed_faces
+        {
+            godot_print!(
+                "GPU terrain prototype {}: faces={} bytes={}",
+                subchunk_mesh_name(key),
+                packed_faces.face_count(),
+                packed_faces.byte_len()
+            );
+        }
+        let mut uploaded_to_gpu = !gpu_terrain_upload_enabled();
+        if gpu_terrain_upload_enabled()
+            && let (Some(gpu_terrain), Some(packed_faces)) = (&mut self.gpu_terrain, &packed_faces)
+        {
+            uploaded_to_gpu = gpu_terrain
+                .upload_subchunk(gpu_subchunk_key(key), packed_faces)
+                .is_some();
+        }
+
+        if uploaded_to_gpu && !self.subchunk_needs_cpu_proxy(key) {
+            self.remove_cpu_subchunk_mesh_node(key);
+            return;
+        }
+
+        let cpu_proxy_mesh =
+            uploaded_to_gpu && self.gpu_terrain_visible_render_active() && packed_faces.is_some();
+        let (vertices, normals, uvs, timing, reported_vertices): (
+            PackedVector3Array,
+            PackedVector3Array,
+            PackedVector2Array,
+            meshing::MeshTiming,
+            usize,
+        ) = if cpu_proxy_mesh {
+            let proxy_mesh = packed_faces
+                .as_ref()
+                .expect("packed faces are built for uploaded GPU terrain")
+                .build_cpu_proxy_mesh();
+            let reported_vertices = proxy_mesh.vertices.len();
+            (
+                proxy_mesh.vertices,
+                proxy_mesh.normals,
+                PackedVector2Array::new(),
+                meshing::MeshTiming::default(),
+                reported_vertices,
+            )
+        } else {
+            let Some(mesher) = &mut self.mesher else {
+                return;
+            };
+            let Some(mesh_result) = mesher.mesh_chunk(&padded_blocks) else {
+                return;
+            };
+            (
+                mesh_result.vertices,
+                mesh_result.normals,
+                mesh_result.uvs,
+                mesh_result.timing,
+                mesh_result.reported_vertex_count,
+            )
+        };
+
+        if vertices.is_empty() {
+            self.remove_subchunk_mesh(key);
+            return;
+        }
+        let mesh_ms = build_start.elapsed().as_secs_f64() * 1000.0;
+
+        let mut arrays = Array::new();
+        arrays.resize(13, &Variant::nil());
+        arrays.set(0, &vertices.to_variant());
+        arrays.set(1, &normals.to_variant());
+        if !uvs.is_empty() {
+            arrays.set(4, &uvs.to_variant());
+        }
+
+        let mut array_mesh = godot::classes::ArrayMesh::new_gd();
+        array_mesh.add_surface_from_arrays(godot::classes::mesh::PrimitiveType::TRIANGLES, &arrays);
+
+        let mesh_name = subchunk_mesh_name(key);
+        let chunk_position = Vector3::new(
+            key.chunk_x as f32 * CHUNK_SIZE,
+            key.sub_y as f32 * SUBCHUNK_SIZE,
+            key.chunk_z as f32 * CHUNK_SIZE,
+        );
+        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
+        let should_have_collision = self.subchunk_needs_collision(key);
+        let collision_start = Instant::now();
+        let collision_bodies;
+
+        if let Some(mut mesh_instance) = self
+            .base()
+            .try_get_node_as::<godot::classes::MeshInstance3D>(&mesh_name)
+        {
+            mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
+            mesh_instance.set_position(chunk_position);
+            configure_terrain_mesh_render_mode(&mut mesh_instance, gpu_visible_render_active);
+
+            let material = self.get_chunk_material();
+            mesh_instance.set_material_override(&material);
+
+            clear_mesh_collisions(&mut mesh_instance);
+            if should_have_collision {
+                mesh_instance.create_trimesh_collision();
+            }
+            collision_bodies = count_static_body_children(&mesh_instance);
+        } else {
+            let mut mesh_instance = godot::classes::MeshInstance3D::new_alloc();
+            mesh_instance.set_name(&StringName::from(&mesh_name));
+            mesh_instance.set_position(chunk_position);
+            mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
+            configure_terrain_mesh_render_mode(&mut mesh_instance, gpu_visible_render_active);
+
+            let material = self.get_chunk_material();
+            mesh_instance.set_material_override(&material);
+
+            let mesh_node = mesh_instance.clone().upcast::<godot::classes::Node>();
+            self.base_mut().add_child(&mesh_node);
+            if should_have_collision {
+                mesh_instance.create_trimesh_collision();
+            }
+            collision_bodies = count_static_body_children(&mesh_instance);
+        }
+
+        let collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
+        let (rendered_submeshes, total_collision_bodies) = self.current_node_perf_counts();
+        self.perf.record_mesh(MeshRecord {
+            vertices: vertices.len(),
+            reported_vertices,
+            cpu_proxy_mesh,
+            mesh_ms,
+            timing,
+            collision_ms,
+            collision_bodies,
+            rendered_submeshes,
+            total_collision_bodies,
+        });
+    }
+
+    fn emit_debug_log(&mut self, message: &str) {
+        godot_print!("{}", message);
+        self.base_mut()
+            .emit_signal(&StringName::from("debug_log"), &[message.to_variant()]);
+    }
+
+    fn ensure_texture_debug_stand(&mut self) -> Gd<godot::classes::MeshInstance3D> {
+        if let Some(stand) = self
+            .base()
+            .try_get_node_as::<godot::classes::MeshInstance3D>("TextureDebugStand")
+        {
+            return stand;
+        }
+
+        let mut stand = godot::classes::MeshInstance3D::new_alloc();
+        stand.set_name(&StringName::from("TextureDebugStand"));
+        stand.set_mesh(&create_texture_debug_stand_mesh().upcast::<godot::classes::Mesh>());
+        let material = self.get_chunk_material();
+        stand.set_material_override(&material);
+        stand.set_visible(false);
+
+        let node = stand.clone().upcast::<godot::classes::Node>();
+        self.base_mut().add_child(&node);
+        stand
+    }
+
+    fn texture_debug_stand_position(&self) -> Vector3 {
+        if let Some(player) = self
+            .base()
+            .try_get_node_as::<godot::classes::Node3D>("Player")
+        {
+            return player.get_global_position() + Vector3::new(3.0, 0.0, -5.0);
+        }
+
+        Vector3::new(19.0, 68.0, 11.0)
+    }
+
+    fn get_chunk_material(&mut self) -> Gd<godot::classes::Material> {
+        if let Some(material) = &self.chunk_material {
+            return material.clone();
+        }
+
+        let material = create_chunk_material().upcast::<godot::classes::Material>();
+        self.chunk_material = Some(material.clone());
+        material
+    }
+
+    fn send_packet_to_server(&mut self, packet: &crate::api::Packet) {
+        let Some(network) = &mut self.network else {
+            return;
+        };
+
+        if let Err(e) = network.send_packet(packet) {
+            godot_print!("Failed to send BlockAction: {}", e);
+        }
+    }
+
+    fn update_player_position_state(&mut self) {
+        let Some(player) = self
+            .base()
+            .try_get_node_as::<godot::classes::Node3D>("Player")
+        else {
+            return;
+        };
+
+        let pos = player.get_global_position();
+        let chunk = chunk_coord_for_position(pos.x, pos.z);
+        let previous_chunk = self.current_player_chunk;
+        if previous_chunk != Some(chunk) {
+            self.current_player_chunk = Some(chunk);
+            self.last_chunk_event = format!("player chunk {},{}", chunk.0, chunk.1);
+            self.emit_debug_log(&format!("Player entered chunk {},{}", chunk.0, chunk.1));
+            self.enqueue_collision_refresh(previous_chunk, chunk);
+            self.enqueue_cpu_proxy_refresh(previous_chunk, chunk);
+        }
+
+        let packet = crate::api::Packet {
+            payload: Some(crate::api::packet::Payload::Position(
+                crate::api::ClientPosition {
+                    x: pos.x,
+                    y: pos.y,
+                    z: pos.z,
+                },
+            )),
+        };
+        self.send_packet_to_server(&packet);
+        self.unload_far_chunks(chunk);
+    }
+
+    fn build_padded_subchunk_blocks(&self, key: SubchunkKey) -> Option<Vec<u8>> {
+        let mut padded = vec![0u8; PADDED_BLOCK_BYTES];
+        let center = self.chunk_blocks.get(&(key.chunk_x, key.chunk_z))?;
+        let y_start = key.sub_y as usize * SUBCHUNK_H;
+        let y_end = y_start + SUBCHUNK_H;
+
+        copy_chunk_region(
+            center,
+            &mut padded,
+            ChunkRegion::new(0..32, y_start..y_end, 0..32),
+            (1, 1, 1),
+        );
+
+        if y_start > 0 {
+            copy_chunk_region(
+                center,
+                &mut padded,
+                ChunkRegion::new(0..32, y_start - 1..y_start, 0..32),
+                (1, 0, 1),
+            );
+        }
+        if y_end < CHUNK_H {
+            copy_chunk_region(
+                center,
+                &mut padded,
+                ChunkRegion::new(0..32, y_end..y_end + 1, 0..32),
+                (1, 33, 1),
+            );
+        }
+
+        if let Some(west) = self.chunk_blocks.get(&(key.chunk_x - 1, key.chunk_z)) {
+            copy_chunk_region(
+                west,
+                &mut padded,
+                ChunkRegion::new(31..32, y_start..y_end, 0..32),
+                (0, 1, 1),
+            );
+        }
+        if let Some(east) = self.chunk_blocks.get(&(key.chunk_x + 1, key.chunk_z)) {
+            copy_chunk_region(
+                east,
+                &mut padded,
+                ChunkRegion::new(0..1, y_start..y_end, 0..32),
+                (33, 1, 1),
+            );
+        }
+        if let Some(back) = self.chunk_blocks.get(&(key.chunk_x, key.chunk_z - 1)) {
+            copy_chunk_region(
+                back,
+                &mut padded,
+                ChunkRegion::new(0..32, y_start..y_end, 31..32),
+                (1, 1, 0),
+            );
+        }
+        if let Some(front) = self.chunk_blocks.get(&(key.chunk_x, key.chunk_z + 1)) {
+            copy_chunk_region(
+                front,
+                &mut padded,
+                ChunkRegion::new(0..32, y_start..y_end, 0..1),
+                (1, 1, 33),
+            );
+        }
+
+        Some(padded)
+    }
+
+    fn subchunk_has_blocks(&self, chunk_x: i32, sub_y: i32, chunk_z: i32) -> bool {
+        let Some(blocks) = self.chunk_blocks.get(&(chunk_x, chunk_z)) else {
+            return false;
+        };
+        let y_start = sub_y as usize * SUBCHUNK_H;
+        let y_end = (y_start + SUBCHUNK_H).min(CHUNK_H);
+        for y in y_start..y_end {
+            for z in 0..CHUNK_D {
+                for x in 0..CHUNK_W {
+                    let idx = chunk_byte_index(x, y, z);
+                    if idx + BLOCK_BYTES <= blocks.len()
+                        && u16::from_le_bytes([blocks[idx], blocks[idx + 1]]) != 0
+                    {
+                        return true;
                     }
+                }
+            }
+        }
+        false
+    }
+
+    fn subchunk_needs_collision(&self, key: SubchunkKey) -> bool {
+        let Some(center) = self.current_player_chunk else {
+            return key.chunk_x == 0 && key.chunk_z == 0;
+        };
+        chunk_within_radius((key.chunk_x, key.chunk_z), center, COLLISION_CHUNK_DISTANCE)
+    }
+
+    fn subchunk_needs_cpu_proxy(&self, key: SubchunkKey) -> bool {
+        if !self.gpu_terrain_visible_render_active() {
+            return true;
+        }
+
+        self.subchunk_needs_collision(key) || self.subchunk_needs_shadow_proxy(key)
+    }
+
+    fn subchunk_needs_shadow_proxy(&self, key: SubchunkKey) -> bool {
+        let Some(center) = self.current_player_chunk else {
+            return key.chunk_x == 0 && key.chunk_z == 0;
+        };
+
+        let radius = self.terrain_shadow_proxy_chunk_distance();
+        radius > 0 && chunk_within_radius((key.chunk_x, key.chunk_z), center, radius)
+    }
+
+    fn terrain_shadow_proxy_chunk_distance(&self) -> i32 {
+        if let Some(radius) = gpu_terrain_shadow_proxy_chunk_distance_override() {
+            return radius.clamp(0, CLIENT_KEEP_CHUNK_DISTANCE);
+        }
+
+        let shadow_distance = self
+            .scene_directional_shadow_distance()
+            .unwrap_or(DEFAULT_GPU_TERRAIN_SHADOW_PROXY_DISTANCE);
+        if !shadow_distance.is_finite() || shadow_distance <= 0.0 {
+            return DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE;
+        }
+
+        ((shadow_distance / CHUNK_SIZE).ceil() as i32 + 1).clamp(0, CLIENT_KEEP_CHUNK_DISTANCE)
+    }
+
+    fn scene_directional_shadow_distance(&self) -> Option<f32> {
+        let parent = self.base().get_parent()?;
+        let sun = parent.try_get_node_as::<godot::classes::DirectionalLight3D>("SunLight")?;
+        if !sun.has_shadow() {
+            return Some(0.0);
+        }
+
+        Some(sun.get_param(godot::classes::light_3d::Param::SHADOW_MAX_DISTANCE))
+    }
+
+    fn total_chunk_bytes_loaded(&self) -> usize {
+        self.chunk_blocks.values().map(Vec::len).sum()
+    }
+
+    fn enqueue_collision_refresh(&mut self, previous: Option<(i32, i32)>, current: (i32, i32)) {
+        let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
+        for coord in loaded_chunks {
+            let was_near = previous
+                .is_some_and(|prev| chunk_within_radius(coord, prev, COLLISION_CHUNK_DISTANCE));
+            let is_near = chunk_within_radius(coord, current, COLLISION_CHUNK_DISTANCE);
+            if was_near || is_near {
+                self.refresh_chunk_collisions(coord.0, coord.1);
+            }
+        }
+    }
+
+    fn enqueue_cpu_proxy_refresh(&mut self, previous: Option<(i32, i32)>, current: (i32, i32)) {
+        if !gpu_terrain_render_enabled() {
+            return;
+        }
+
+        let shadow_radius = self.terrain_shadow_proxy_chunk_distance();
+        let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
+        for coord in loaded_chunks {
+            let was_near = previous.is_some_and(|prev| {
+                chunk_within_radius(coord, prev, COLLISION_CHUNK_DISTANCE)
+                    || chunk_within_radius(coord, prev, shadow_radius)
+            });
+            let is_near = chunk_within_radius(coord, current, COLLISION_CHUNK_DISTANCE)
+                || chunk_within_radius(coord, current, shadow_radius);
+            if was_near || is_near {
+                self.enqueue_chunk_subchunks(coord.0, coord.1);
+            }
+        }
+    }
+
+    fn refresh_chunk_collisions(&mut self, chunk_x: i32, chunk_z: i32) {
+        for sub_y in 0..SUBCHUNKS_PER_CHUNK {
+            self.refresh_subchunk_collision(SubchunkKey {
+                chunk_x,
+                sub_y,
+                chunk_z,
+            });
+        }
+    }
+
+    fn refresh_subchunk_collision(&mut self, key: SubchunkKey) {
+        let mesh_name = subchunk_mesh_name(key);
+        let Some(mut mesh_instance) = self
+            .base()
+            .try_get_node_as::<godot::classes::MeshInstance3D>(&mesh_name)
+        else {
+            return;
+        };
+
+        let needs_collision = self.subchunk_needs_collision(key);
+        let has_collision = count_static_body_children(&mesh_instance) > 0;
+        if needs_collision == has_collision {
+            return;
+        }
+
+        let collision_start = Instant::now();
+        clear_mesh_collisions(&mut mesh_instance);
+        if needs_collision {
+            mesh_instance.create_trimesh_collision();
+        }
+        self.perf.last_collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
+        self.perf.max_collision_ms = self.perf.max_collision_ms.max(self.perf.last_collision_ms);
+        self.refresh_node_perf_counts();
+    }
+
+    fn unload_far_chunks(&mut self, center: (i32, i32)) {
+        let to_unload: Vec<(i32, i32)> = self
+            .chunk_blocks
+            .keys()
+            .copied()
+            .filter(|coord| !chunk_within_radius(*coord, center, CLIENT_KEEP_CHUNK_DISTANCE))
+            .collect();
+        if to_unload.is_empty() {
+            return;
+        }
+
+        let mut rerender = HashSet::new();
+        for coord in to_unload {
+            self.chunk_blocks.remove(&coord);
+            self.remove_chunk_meshes(coord.0, coord.1);
+            self.last_chunk_event = format!("unloaded {},{}", coord.0, coord.1);
+            self.emit_debug_log(&format!("Chunk unloaded {},{}", coord.0, coord.1));
+
+            for neighbor in chunk_neighbors(coord.0, coord.1) {
+                if self.chunk_blocks.contains_key(&neighbor) {
+                    rerender.insert(neighbor);
+                }
+            }
+        }
+
+        for (x, z) in rerender {
+            self.enqueue_chunk_subchunks(x, z);
+        }
+    }
+
+    fn remove_chunk_meshes(&mut self, chunk_x: i32, chunk_z: i32) {
+        for sub_y in 0..SUBCHUNKS_PER_CHUNK {
+            let key = SubchunkKey {
+                chunk_x,
+                sub_y,
+                chunk_z,
+            };
+            self.queued_subchunks.remove(&key);
+            self.remove_subchunk_mesh(key);
+        }
+    }
+
+    fn remove_subchunk_mesh(&mut self, key: SubchunkKey) {
+        if let Some(gpu_terrain) = &mut self.gpu_terrain {
+            gpu_terrain.remove_subchunk(gpu_subchunk_key(key));
+        }
+
+        self.remove_cpu_subchunk_mesh_node(key);
+    }
+
+    fn remove_cpu_subchunk_mesh_node(&mut self, key: SubchunkKey) {
+        let mesh_name = subchunk_mesh_name(key);
+        let Some(mut mesh_node) = self
+            .base()
+            .try_get_node_as::<godot::classes::MeshInstance3D>(&mesh_name)
+        else {
+            return;
+        };
+
+        self.base_mut()
+            .remove_child(&mesh_node.clone().upcast::<godot::classes::Node>());
+        mesh_node.queue_free();
+        self.refresh_node_perf_counts();
+    }
+
+    fn refresh_node_perf_counts(&mut self) {
+        let (rendered_submeshes, total_collision_bodies) = self.current_node_perf_counts();
+        self.perf.rendered_submeshes = rendered_submeshes;
+        self.perf.total_collision_bodies = total_collision_bodies;
+    }
+
+    fn current_node_perf_counts(&self) -> (i32, i32) {
+        let mut rendered_submeshes = 0;
+        let mut total_collision_bodies = 0;
+        for idx in 0..self.base().get_child_count() {
+            let Some(child) = self.base().get_child(idx) else {
+                continue;
+            };
+            if !child.get_name().to_string().starts_with("SubchunkMesh_") {
+                continue;
+            }
+            rendered_submeshes += 1;
+            let Ok(mesh_instance) = child.try_cast::<godot::classes::MeshInstance3D>() else {
+                continue;
+            };
+            total_collision_bodies += count_static_body_children(&mesh_instance);
+        }
+        (rendered_submeshes, total_collision_bodies)
+    }
+
+    fn attach_gpu_terrain_compositor_to_player_camera(&mut self) {
+        if !gpu_terrain_render_enabled() {
+            return;
+        }
+        let Some(camera_rid) = self.player_camera_rid() else {
+            return;
+        };
+        let Some(compositor) = &mut self.gpu_terrain_compositor else {
+            return;
+        };
+        if compositor.attach_to_camera(camera_rid) {
+            self.emit_debug_log("GPU terrain compositor attached to player camera");
+        }
+    }
+
+    fn sync_gpu_terrain_lighting(&mut self) {
+        if !gpu_terrain_render_enabled() {
+            return;
+        }
+
+        let Some(lighting) = self.gpu_terrain_lighting_from_scene() else {
+            return;
+        };
+        let Some(gpu_terrain) = &mut self.gpu_terrain else {
+            return;
+        };
+
+        gpu_terrain.set_lighting(lighting);
+    }
+
+    fn gpu_terrain_lighting_from_scene(&self) -> Option<gpu_terrain::GpuTerrainLighting> {
+        let parent = self.base().get_parent()?;
+        let sun = parent.try_get_node_as::<godot::classes::DirectionalLight3D>("SunLight")?;
+        let transform = sun.get_global_transform();
+        let direction_to_light = transform.basis.col_c();
+        let color = sun.get_color();
+        let energy = sun.get_param(godot::classes::light_3d::Param::ENERGY);
+
+        Some(gpu_terrain::GpuTerrainLighting::directional(
+            direction_to_light,
+            color,
+            energy,
+        ))
+    }
+
+    fn gpu_terrain_visible_render_active(&self) -> bool {
+        gpu_terrain_render_enabled()
+            && self
+                .gpu_terrain_compositor
+                .as_ref()
+                .is_some_and(gpu_terrain::GpuTerrainCompositor::is_attached)
+            && self
+                .gpu_terrain
+                .as_ref()
+                .is_some_and(gpu_terrain::GpuTerrainBufferPool::visible_render_confirmed)
+    }
+
+    fn update_gpu_visible_transition(&mut self) {
+        let active = self.gpu_terrain_visible_render_active();
+        if active == self.gpu_visible_transition_applied {
+            return;
+        }
+
+        self.gpu_visible_transition_applied = active;
+        self.refresh_terrain_mesh_render_modes();
+        if active {
+            self.emit_debug_log("GPU terrain visible path confirmed");
+            self.refresh_cpu_proxies_after_gpu_attach();
+        }
+    }
+
+    fn refresh_terrain_mesh_render_modes(&mut self) {
+        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
+        for idx in 0..self.base().get_child_count() {
+            let Some(child) = self.base().get_child(idx) else {
+                continue;
+            };
+            if !child.get_name().to_string().starts_with("SubchunkMesh_") {
+                continue;
+            }
+            let Ok(mut mesh_instance) = child.try_cast::<godot::classes::MeshInstance3D>() else {
+                continue;
+            };
+            configure_terrain_mesh_render_mode(&mut mesh_instance, gpu_visible_render_active);
+        }
+    }
+
+    fn refresh_cpu_proxies_after_gpu_attach(&mut self) {
+        if !self.gpu_terrain_visible_render_active() {
+            return;
+        }
+
+        let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
+        for (chunk_x, chunk_z) in loaded_chunks {
+            self.enqueue_chunk_subchunks(chunk_x, chunk_z);
+        }
+    }
+
+    fn player_camera_rid(&self) -> Option<Rid> {
+        let player = self
+            .base()
+            .try_get_node_as::<godot::classes::Node>("Player")?;
+        for idx in 0..player.get_child_count() {
+            let Some(child) = player.get_child(idx) else {
+                continue;
+            };
+            let Ok(camera) = child.try_cast::<godot::classes::Camera3D>() else {
+                continue;
+            };
+            return Some(camera.get_camera_rid());
+        }
+        None
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct SubchunkKey {
+    chunk_x: i32,
+    sub_y: i32,
+    chunk_z: i32,
+}
+
+#[derive(Default)]
+struct PerfStats {
+    mesh_queue_depth: usize,
+    mesh_jobs_completed: u64,
+    last_mesh_ms: f64,
+    avg_mesh_ms: f64,
+    max_mesh_ms: f64,
+    last_collision_ms: f64,
+    avg_collision_ms: f64,
+    max_collision_ms: f64,
+    last_vertices: usize,
+    last_reported_vertices: usize,
+    total_vertices: usize,
+    collision_bodies: i32,
+    rendered_submeshes: i32,
+    total_collision_bodies: i32,
+    chunk_bytes_loaded: usize,
+    last_prepare_ms: f64,
+    last_submit_ms: f64,
+    last_sync_ms: f64,
+    last_readback_ms: f64,
+    last_parse_ms: f64,
+    cpu_proxy_meshes_built: u64,
+}
+
+struct MeshRecord {
+    vertices: usize,
+    reported_vertices: usize,
+    cpu_proxy_mesh: bool,
+    mesh_ms: f64,
+    timing: meshing::MeshTiming,
+    collision_ms: f64,
+    collision_bodies: i32,
+    rendered_submeshes: i32,
+    total_collision_bodies: i32,
+}
+
+impl PerfStats {
+    fn record_mesh(&mut self, record: MeshRecord) {
+        self.mesh_jobs_completed += 1;
+        let n = self.mesh_jobs_completed as f64;
+        self.last_mesh_ms = record.mesh_ms;
+        self.avg_mesh_ms += (record.mesh_ms - self.avg_mesh_ms) / n;
+        self.max_mesh_ms = self.max_mesh_ms.max(record.mesh_ms);
+        self.last_collision_ms = record.collision_ms;
+        self.avg_collision_ms += (record.collision_ms - self.avg_collision_ms) / n;
+        self.max_collision_ms = self.max_collision_ms.max(record.collision_ms);
+        self.last_vertices = record.vertices;
+        self.last_reported_vertices = record.reported_vertices;
+        self.total_vertices = self.total_vertices.saturating_add(record.vertices);
+        if record.cpu_proxy_mesh {
+            self.cpu_proxy_meshes_built += 1;
+        }
+        self.collision_bodies = record.collision_bodies;
+        self.rendered_submeshes = record.rendered_submeshes;
+        self.total_collision_bodies = record.total_collision_bodies;
+        self.last_prepare_ms = record.timing.prepare_ms;
+        self.last_submit_ms = record.timing.submit_ms;
+        self.last_sync_ms = record.timing.sync_ms;
+        self.last_readback_ms = record.timing.readback_ms;
+        self.last_parse_ms = record.timing.parse_ms;
+    }
+}
+
+struct ChunkRegion {
+    x: Range<usize>,
+    y: Range<usize>,
+    z: Range<usize>,
+}
+
+impl ChunkRegion {
+    fn new(x: Range<usize>, y: Range<usize>, z: Range<usize>) -> Self {
+        Self { x, y, z }
+    }
+}
+
+const CHUNK_SIZE: f32 = 32.0;
+const SUBCHUNK_SIZE: f32 = 32.0;
+const CHUNK_W: usize = 32;
+const CHUNK_H: usize = 512;
+const CHUNK_D: usize = 32;
+const SUBCHUNK_H: usize = 32;
+const SUBCHUNKS_PER_CHUNK: i32 = (CHUNK_H / SUBCHUNK_H) as i32;
+const PADDED_W: usize = 34;
+const PADDED_H: usize = 34;
+const PADDED_D: usize = 34;
+const BLOCK_BYTES: usize = 2;
+const PADDED_BLOCK_BYTES: usize = PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES;
+const CLIENT_KEEP_CHUNK_DISTANCE: i32 = 10;
+const COLLISION_CHUNK_DISTANCE: i32 = 1;
+const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_DISTANCE: f32 = 160.0;
+const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE: i32 = 5;
+const MAX_MESH_JOBS_PER_FRAME: usize = 1;
+const MAX_MESH_QUEUE_DRAINS_PER_FRAME: usize = 32;
+const GPU_TERRAIN_PROTOTYPE_STATS: bool = false;
+const GPU_TERRAIN_PROTOTYPE_UPLOAD: bool = false;
+const GPU_TERRAIN_PROTOTYPE_RENDER: bool = false;
+const GPU_TERRAIN_STATS_ENV: &str = "RUMPELMC_GPU_TERRAIN_STATS";
+const GPU_TERRAIN_UPLOAD_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD";
+const GPU_TERRAIN_RENDER_ENV: &str = "RUMPELMC_GPU_TERRAIN_RENDER";
+const GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV: &str =
+    "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE";
+const ATLAS_COLUMNS: f32 = 10.0;
+const FACE_LEFT: u32 = 0;
+const FACE_RIGHT: u32 = 1;
+const FACE_BOTTOM: u32 = 2;
+const FACE_TOP: u32 = 3;
+const FACE_BACK: u32 = 4;
+const FACE_FRONT: u32 = 5;
+
+fn subchunk_mesh_name(key: SubchunkKey) -> String {
+    format!("SubchunkMesh_{}_{}_{}", key.chunk_x, key.sub_y, key.chunk_z)
+}
+
+fn gpu_subchunk_key(key: SubchunkKey) -> gpu_terrain::GpuSubchunkKey {
+    gpu_terrain::GpuSubchunkKey {
+        chunk_x: key.chunk_x,
+        sub_y: key.sub_y,
+        chunk_z: key.chunk_z,
+    }
+}
+
+fn chunk_neighbors(x: i32, z: i32) -> [(i32, i32); 4] {
+    [(x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)]
+}
+
+fn chunk_within_radius(a: (i32, i32), b: (i32, i32), radius: i32) -> bool {
+    let dx = i64::from(a.0 - b.0);
+    let dz = i64::from(a.1 - b.1);
+    let radius = i64::from(radius);
+    dx * dx + dz * dz <= radius * radius
+}
+
+fn gpu_terrain_stats_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| GPU_TERRAIN_PROTOTYPE_STATS || env_flag_enabled(GPU_TERRAIN_STATS_ENV))
+}
+
+fn gpu_terrain_upload_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        GPU_TERRAIN_PROTOTYPE_UPLOAD
+            || env_flag_enabled(GPU_TERRAIN_UPLOAD_ENV)
+            || gpu_terrain_render_enabled()
+    })
+}
+
+fn gpu_terrain_render_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED
+        .get_or_init(|| GPU_TERRAIN_PROTOTYPE_RENDER || env_flag_enabled(GPU_TERRAIN_RENDER_ENV))
+}
+
+fn gpu_terrain_shadow_proxy_chunk_distance_override() -> Option<i32> {
+    static OVERRIDE: OnceLock<Option<i32>> = OnceLock::new();
+    *OVERRIDE.get_or_init(|| {
+        std::env::var(GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV)
+            .ok()
+            .and_then(|value| value.trim().parse::<i32>().ok())
+    })
+}
+
+fn env_flag_enabled(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
+fn chunk_coord_for_position(x: f32, z: f32) -> (i32, i32) {
+    (
+        (x.floor() as i32).div_euclid(CHUNK_W as i32),
+        (z.floor() as i32).div_euclid(CHUNK_D as i32),
+    )
+}
+
+fn copy_chunk_region(
+    source: &[u8],
+    padded: &mut [u8],
+    source_region: ChunkRegion,
+    padded_start: (usize, usize, usize),
+) {
+    let width = source_region.x.end - source_region.x.start;
+    let height = source_region.y.end - source_region.y.start;
+    let depth = source_region.z.end - source_region.z.start;
+    for dy in 0..height {
+        for dx in 0..width {
+            for dz in 0..depth {
+                let sx = source_region.x.start + dx;
+                let sy = source_region.y.start + dy;
+                let sz = source_region.z.start + dz;
+                let px = padded_start.0 + dx;
+                let py = padded_start.1 + dy;
+                let pz = padded_start.2 + dz;
+
+                let src = chunk_byte_index(sx, sy, sz);
+                let dst = padded_byte_index(px, py, pz);
+                if src + BLOCK_BYTES <= source.len() && dst + BLOCK_BYTES <= padded.len() {
+                    padded[dst..dst + BLOCK_BYTES].copy_from_slice(&source[src..src + BLOCK_BYTES]);
                 }
             }
         }
     }
 }
 
+fn chunk_byte_index(x: usize, y: usize, z: usize) -> usize {
+    (x + y * CHUNK_W * CHUNK_D + z * CHUNK_W) * BLOCK_BYTES
+}
+
+fn padded_byte_index(x: usize, y: usize, z: usize) -> usize {
+    (x + y * PADDED_W * PADDED_D + z * PADDED_W) * BLOCK_BYTES
+}
+
+fn create_texture_debug_stand_mesh() -> Gd<godot::classes::ArrayMesh> {
+    let mut vertices = PackedVector3Array::new();
+    let mut normals = PackedVector3Array::new();
+    let mut uvs = PackedVector2Array::new();
+
+    for (idx, block_id) in blocks::PLACEABLE_BLOCKS.into_iter().enumerate() {
+        let base = Vector3::new(idx as f32 * 1.4, 0.0, 0.0);
+        for face in [
+            FACE_LEFT,
+            FACE_RIGHT,
+            FACE_BOTTOM,
+            FACE_TOP,
+            FACE_BACK,
+            FACE_FRONT,
+        ] {
+            push_debug_face(base, block_id, face, &mut vertices, &mut normals, &mut uvs);
+        }
+    }
+
+    let mut arrays = Array::new();
+    arrays.resize(13, &Variant::nil());
+    arrays.set(0, &vertices.to_variant());
+    arrays.set(1, &normals.to_variant());
+    arrays.set(4, &uvs.to_variant());
+
+    let mut mesh = godot::classes::ArrayMesh::new_gd();
+    mesh.add_surface_from_arrays(godot::classes::mesh::PrimitiveType::TRIANGLES, &arrays);
+    mesh
+}
+
+fn push_debug_face(
+    pos: Vector3,
+    block_id: u32,
+    face_idx: u32,
+    vertices: &mut PackedVector3Array,
+    normals: &mut PackedVector3Array,
+    uvs: &mut PackedVector2Array,
+) {
+    let (p0, p1, p2, p3, normal) = match face_idx {
+        FACE_LEFT => (
+            pos + Vector3::new(0.0, 0.0, 1.0),
+            pos + Vector3::new(0.0, 1.0, 1.0),
+            pos + Vector3::new(0.0, 1.0, 0.0),
+            pos + Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+        ),
+        FACE_RIGHT => (
+            pos + Vector3::new(1.0, 0.0, 0.0),
+            pos + Vector3::new(1.0, 1.0, 0.0),
+            pos + Vector3::new(1.0, 1.0, 1.0),
+            pos + Vector3::new(1.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        FACE_BOTTOM => (
+            pos + Vector3::new(0.0, 0.0, 1.0),
+            pos + Vector3::new(0.0, 0.0, 0.0),
+            pos + Vector3::new(1.0, 0.0, 0.0),
+            pos + Vector3::new(1.0, 0.0, 1.0),
+            Vector3::new(0.0, -1.0, 0.0),
+        ),
+        FACE_TOP => (
+            pos + Vector3::new(0.0, 1.0, 0.0),
+            pos + Vector3::new(0.0, 1.0, 1.0),
+            pos + Vector3::new(1.0, 1.0, 1.0),
+            pos + Vector3::new(1.0, 1.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ),
+        FACE_BACK => (
+            pos + Vector3::new(1.0, 0.0, 0.0),
+            pos + Vector3::new(0.0, 0.0, 0.0),
+            pos + Vector3::new(0.0, 1.0, 0.0),
+            pos + Vector3::new(1.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        ),
+        _ => (
+            pos + Vector3::new(0.0, 0.0, 1.0),
+            pos + Vector3::new(1.0, 0.0, 1.0),
+            pos + Vector3::new(1.0, 1.0, 1.0),
+            pos + Vector3::new(0.0, 1.0, 1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+    };
+
+    let (uv0, uv1, uv2, uv3) = face_uvs(face_idx);
+    let tile = texture_tile(block_id, face_idx);
+    for (point, uv) in [
+        (p0, uv0),
+        (p2, uv2),
+        (p1, uv1),
+        (p0, uv0),
+        (p3, uv3),
+        (p2, uv2),
+    ] {
+        vertices.push(point);
+        normals.push(normal);
+        uvs.push(atlas_uv(uv, tile));
+    }
+}
+
+fn face_uvs(face_idx: u32) -> (Vector2, Vector2, Vector2, Vector2) {
+    match face_idx {
+        FACE_LEFT | FACE_RIGHT => (
+            Vector2::new(0.0, 1.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1.0, 0.0),
+            Vector2::new(1.0, 1.0),
+        ),
+        FACE_BACK => (
+            Vector2::new(1.0, 1.0),
+            Vector2::new(0.0, 1.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1.0, 0.0),
+        ),
+        FACE_FRONT => (
+            Vector2::new(0.0, 1.0),
+            Vector2::new(1.0, 1.0),
+            Vector2::new(1.0, 0.0),
+            Vector2::new(0.0, 0.0),
+        ),
+        _ => (
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 1.0),
+            Vector2::new(1.0, 1.0),
+            Vector2::new(1.0, 0.0),
+        ),
+    }
+}
+
+fn texture_tile(block_id: u32, face_idx: u32) -> u32 {
+    blocks::tile_for_face(block_id, face_idx, FACE_TOP, FACE_BOTTOM)
+}
+
+fn atlas_uv(tile_uv: Vector2, tile_index: u32) -> Vector2 {
+    Vector2::new((tile_index as f32 + tile_uv.x) / ATLAS_COLUMNS, tile_uv.y)
+}
+
+fn create_chunk_material() -> Gd<godot::classes::StandardMaterial3D> {
+    let mut material = godot::classes::StandardMaterial3D::new_gd();
+    material.set_cull_mode(godot::classes::base_material_3d::CullMode::DISABLED);
+    material.set_albedo(Color::WHITE);
+    material.set_shading_mode(godot::classes::base_material_3d::ShadingMode::UNSHADED);
+    material.set_specular_mode(godot::classes::base_material_3d::SpecularMode::DISABLED);
+    material.set_specular(0.0);
+    material.set_roughness(1.0);
+    material.set_flag(godot::classes::base_material_3d::Flags::DISABLE_FOG, true);
+    material.set_flag(
+        godot::classes::base_material_3d::Flags::DISABLE_AMBIENT_LIGHT,
+        true,
+    );
+    material.set_texture_filter(godot::classes::base_material_3d::TextureFilter::NEAREST);
+    material.set_transparency(godot::classes::base_material_3d::Transparency::DISABLED);
+    material.set_depth_draw_mode(godot::classes::base_material_3d::DepthDrawMode::OPAQUE_ONLY);
+
+    let mut loader = godot::classes::ResourceLoader::singleton();
+    if let Some(resource) = loader.load("res://assets/textures/blocks/block_texture_atlas.png")
+        && let Ok(texture) = resource.try_cast::<godot::classes::Texture2D>()
+    {
+        material.set_texture(
+            godot::classes::base_material_3d::TextureParam::ALBEDO,
+            &texture,
+        );
+    }
+
+    material
+}
+
+fn configure_terrain_mesh_render_mode(
+    mesh_instance: &mut Gd<godot::classes::MeshInstance3D>,
+    gpu_visible_render_active: bool,
+) {
+    let shadow_setting = if gpu_visible_render_active {
+        godot::classes::geometry_instance_3d::ShadowCastingSetting::SHADOWS_ONLY
+    } else {
+        godot::classes::geometry_instance_3d::ShadowCastingSetting::DOUBLE_SIDED
+    };
+    mesh_instance.set_cast_shadows_setting(shadow_setting);
+}
+
+fn clear_mesh_collisions(mesh_instance: &mut Gd<godot::classes::MeshInstance3D>) {
+    for idx in (0..mesh_instance.get_child_count()).rev() {
+        let Some(mut child) = mesh_instance.get_child(idx) else {
+            continue;
+        };
+        if child
+            .clone()
+            .try_cast::<godot::classes::StaticBody3D>()
+            .is_ok()
+        {
+            mesh_instance.remove_child(&child);
+            child.queue_free();
+        }
+    }
+}
+
+fn count_static_body_children(mesh_instance: &Gd<godot::classes::MeshInstance3D>) -> i32 {
+    let mut count = 0;
+    for idx in 0..mesh_instance.get_child_count() {
+        let Some(child) = mesh_instance.get_child(idx) else {
+            continue;
+        };
+        if child.try_cast::<godot::classes::StaticBody3D>().is_ok() {
+            count += 1;
+        }
+    }
+    count
+}
+
 #[godot_api]
 impl GameClient {
     #[func]
-    fn on_block_broken(&mut self, x: i32, y: i32, z: i32) {
-        godot_print!("Network sending BlockAction DESTROY: {}, {}, {}", x, y, z);
-        
-        let packet = crate::api::api::Packet {
-            payload: Some(crate::api::api::packet::Payload::BlockAction(crate::api::api::BlockAction {
-                action: crate::api::api::block_action::ActionType::Destroy as i32,
-                x, y, z,
-                block_id: 0,
-            })),
+    fn toggle_texture_debug_stand(&mut self) {
+        self.texture_debug_stand_visible = !self.texture_debug_stand_visible;
+        let position = self.texture_debug_stand_position();
+        let mut stand = self.ensure_texture_debug_stand();
+        stand.set_position(position);
+        stand.set_visible(self.texture_debug_stand_visible);
+
+        let state = if self.texture_debug_stand_visible {
+            "shown"
+        } else {
+            "hidden"
         };
-        
-        if let Some(network) = &mut self.network {
-            if let Err(e) = network.send_packet(&packet) {
-                godot_print!("Failed to send BlockAction: {}", e);
-            }
+        self.emit_debug_log(&format!("Texture debug stand {state}"));
+    }
+
+    #[func]
+    fn is_texture_debug_stand_visible(&self) -> bool {
+        self.texture_debug_stand_visible
+    }
+
+    #[func]
+    fn get_loaded_chunk_count(&self) -> i32 {
+        self.chunk_blocks.len() as i32
+    }
+
+    #[func]
+    fn get_rendered_chunk_count(&self) -> i32 {
+        self.perf.rendered_submeshes
+    }
+
+    #[func]
+    fn get_chunk_collision_count(&self) -> i32 {
+        self.perf.total_collision_bodies
+    }
+
+    #[func]
+    fn get_current_chunk_text(&self) -> GString {
+        let text = self
+            .current_player_chunk
+            .map(|(x, z)| format!("{x},{z}"))
+            .unwrap_or_else(|| "n/a".to_string());
+        GString::from(text.as_str())
+    }
+
+    #[func]
+    fn get_last_chunk_event_text(&self) -> GString {
+        GString::from(self.last_chunk_event.as_str())
+    }
+
+    #[func]
+    fn get_last_block_action_text(&self) -> GString {
+        GString::from(self.last_block_action.as_str())
+    }
+
+    #[func]
+    fn get_last_save_text(&self) -> GString {
+        GString::from(self.last_save_event.as_str())
+    }
+
+    #[func]
+    fn get_perf_text(&self) -> GString {
+        let gpu_terrain_text = self
+            .gpu_terrain
+            .as_ref()
+            .map(|pool| {
+                let stats = pool.stats();
+                format!(
+                    " gpu_subchunks={} gpu_draws={} gpu_faces={} gpu_frames={} gpu_mem={:.1}MB",
+                    stats.subchunks,
+                    stats.draw_count,
+                    stats.faces,
+                    stats.compositor_frames,
+                    stats.bytes as f64 / (1024.0 * 1024.0)
+                )
+            })
+            .unwrap_or_default();
+        let text = format!(
+            "queue={} jobs={} cpu_proxy={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} mem={:.1}MB{}",
+            self.perf.mesh_queue_depth,
+            self.perf.mesh_jobs_completed,
+            self.perf.rendered_submeshes,
+            self.perf.cpu_proxy_meshes_built,
+            self.perf.total_collision_bodies,
+            self.perf.last_mesh_ms,
+            self.perf.avg_mesh_ms,
+            self.perf.max_mesh_ms,
+            self.perf.last_prepare_ms,
+            self.perf.last_submit_ms,
+            self.perf.last_sync_ms,
+            self.perf.last_readback_ms,
+            self.perf.last_parse_ms,
+            self.perf.last_collision_ms,
+            self.perf.avg_collision_ms,
+            self.perf.max_collision_ms,
+            self.perf.last_vertices,
+            self.perf.last_reported_vertices,
+            self.perf.total_vertices,
+            self.perf.chunk_bytes_loaded as f64 / (1024.0 * 1024.0),
+            gpu_terrain_text,
+        );
+        GString::from(text.as_str())
+    }
+
+    #[func]
+    fn get_block_name(&self, block_id: i32) -> GString {
+        blocks::name(block_id as u32).into()
+    }
+
+    #[func]
+    fn on_player_debug_log(&mut self, message: GString) {
+        self.emit_debug_log(&message.to_string());
+    }
+
+    #[func]
+    fn on_gpu_terrain_compositor(
+        &mut self,
+        callback_type: i32,
+        render_data: Gd<godot::classes::RenderData>,
+    ) {
+        if let Some(gpu_terrain) = &mut self.gpu_terrain {
+            gpu_terrain.render_compositor(callback_type, render_data);
         }
     }
 
     #[func]
-    fn on_block_placed(&mut self, x: i32, y: i32, z: i32, block_id: i32) {
-        godot_print!("Network sending BlockAction PLACE: {}, {}, {} ID: {}", x, y, z, block_id);
-        
-        let packet = crate::api::api::Packet {
-            payload: Some(crate::api::api::packet::Payload::BlockAction(crate::api::api::BlockAction {
-                action: crate::api::api::block_action::ActionType::Place as i32,
-                x, y, z,
-                block_id: block_id as u32,
-            })),
+    fn on_block_broken(&mut self, x: i32, y: i32, z: i32) {
+        self.last_block_action = format!("destroy {x},{y},{z}");
+        self.last_save_event = format!(
+            "pending chunk {},{}",
+            x.div_euclid(CHUNK_W as i32),
+            z.div_euclid(CHUNK_D as i32)
+        );
+        self.emit_debug_log(&format!("Block destroy sent: {x}, {y}, {z}"));
+
+        let packet = crate::api::Packet {
+            payload: Some(crate::api::packet::Payload::BlockAction(
+                crate::api::BlockAction {
+                    action: crate::api::block_action::ActionType::Destroy as i32,
+                    x,
+                    y,
+                    z,
+                    block_id: 0,
+                },
+            )),
         };
-        
-        if let Some(network) = &mut self.network {
-            if let Err(e) = network.send_packet(&packet) {
-                godot_print!("Failed to send BlockAction: {}", e);
-            }
-        }
+
+        self.send_packet_to_server(&packet);
     }
+
+    #[func]
+    fn on_block_placed(&mut self, x: i32, y: i32, z: i32, block_id: i32) {
+        if !blocks::is_placeable(block_id as u32) {
+            self.emit_debug_log(&format!("Skipped invalid place id={block_id}"));
+            return;
+        }
+
+        self.last_block_action = format!("place {} at {x},{y},{z}", blocks::name(block_id as u32));
+        self.last_save_event = format!(
+            "pending chunk {},{}",
+            x.div_euclid(CHUNK_W as i32),
+            z.div_euclid(CHUNK_D as i32)
+        );
+        self.emit_debug_log(&format!("Block place sent: {x}, {y}, {z} id={block_id}"));
+
+        let packet = crate::api::Packet {
+            payload: Some(crate::api::packet::Payload::BlockAction(
+                crate::api::BlockAction {
+                    action: crate::api::block_action::ActionType::Place as i32,
+                    x,
+                    y,
+                    z,
+                    block_id: block_id as u32,
+                },
+            )),
+        };
+
+        self.send_packet_to_server(&packet);
+    }
+
+    #[signal]
+    fn debug_log(message: GString);
 }
