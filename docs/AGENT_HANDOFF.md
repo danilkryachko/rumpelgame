@@ -209,6 +209,11 @@ Checks:
   - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (19/19), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+- Latest opaque solid GPU terrain shader guard slice passed:
+  - Added a Rust unit test that reads the included GPU terrain render shader and verifies the solid pass forces fragment alpha to `1.0` and does not use `texel.a`. This protects the prior grass/solid block transparency regression.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (20/20), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
 
 Useful log lines:
 

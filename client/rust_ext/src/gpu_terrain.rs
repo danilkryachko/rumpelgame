@@ -1573,6 +1573,14 @@ mod tests {
     }
 
     #[test]
+    fn solid_gpu_terrain_fragment_forces_opaque_alpha() {
+        let (_, fragment_source) = split_render_shader_source().expect("render shader stages");
+
+        assert!(fragment_source.contains("frag_color = vec4(texel.rgb * lighting_in, 1.0);"));
+        assert!(!fragment_source.contains("texel.a"));
+    }
+
+    #[test]
     fn cpu_proxy_mesh_uses_packed_face_geometry() {
         let batch = PackedFaceBatch {
             faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS)],
