@@ -1,13 +1,31 @@
-# AI GUIDELINES
+# AI Guidelines
 
-1. **NO SLOP:** Keep the code DRY. No magic numbers. Use proper structs, traits, and interfaces.
-2. **MAXIMUM MODULARITY:** Every single feature MUST be a separate module or package.
-   - In Go: isolate features into `/pkg/feature_name`.
-   - In Rust: isolate features into `mod feature_name` or separate local crates.
-3. **Branching Workflow:**
-   - Create a feature branch (`feat/name`).
-   - Implement, write unit tests.
-   - Ensure `clippy` and `golangci-lint` pass with no warnings.
-   - Merge to `main` and delete the feature branch.
-3. **No Degradation:** Always consult `ARCHITECTURE.md` before making design changes.
-4. **AgentMemory:** Use `agentmemory` to persist critical decisions.
+These rules are for AI-assisted development in this repository. Keep them concrete and update them only when repeated agent behavior needs correction.
+
+## Scope Control
+
+- Prefer existing module boundaries. Add a new package, module, crate, or abstraction only when it removes real complexity or matches an existing local pattern.
+- Keep patches focused on the requested task.
+- Do not refactor unrelated code.
+- Do not rewrite whole files when a small patch is enough.
+
+## Required Docs
+
+- Read `docs/ARCHITECTURE.md` before design changes.
+- Read `docs/STORAGE.md` before storage or persistence changes.
+- Read `docs/PROTOCOL.md` before protocol or packet schema changes.
+- Read `docs/CODE_REVIEW.md` before review passes and sensitive changes.
+- Use `docs/AGENT_MEMORY.md` only for stable project decisions and invariants.
+
+## Checks
+
+- Run `./scripts/check.sh fast` for normal code changes.
+- Run `./scripts/check.sh full` for broad changes or before handing off a larger patch.
+- Run `./scripts/diff_guard.sh` before finalizing broad or sensitive changes.
+
+## Sensitive Changes
+
+- PostgreSQL and RocksDB are the approved databases.
+- Storage, networking, world generation, chunk serialization, persistence, and Rust GDExtension changes require a review pass before finalizing.
+- Protocol changes must account for both client and server behavior.
+- Generated files, Godot import files, and local database files should not be changed casually.
