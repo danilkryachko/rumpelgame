@@ -668,18 +668,10 @@ impl GameClient {
     }
 
     fn terrain_shadow_proxy_chunk_distance(&self) -> i32 {
-        if let Some(radius) = gpu_terrain_shadow_proxy_chunk_distance_override() {
-            return radius.clamp(0, CLIENT_KEEP_CHUNK_DISTANCE);
-        }
-
-        let shadow_distance = self
-            .scene_directional_shadow_distance()
-            .unwrap_or(DEFAULT_GPU_TERRAIN_SHADOW_PROXY_DISTANCE);
-        if !shadow_distance.is_finite() || shadow_distance <= 0.0 {
-            return DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE;
-        }
-
-        ((shadow_distance / CHUNK_SIZE).ceil() as i32 + 1).clamp(0, CLIENT_KEEP_CHUNK_DISTANCE)
+        terrain_shadow_proxy_chunk_distance(
+            gpu_terrain_shadow_proxy_chunk_distance_override(),
+            self.scene_directional_shadow_distance(),
+        )
     }
 
     fn scene_directional_shadow_distance(&self) -> Option<f32> {
@@ -1232,6 +1224,31 @@ fn gpu_terrain_shadow_proxy_chunk_distance_override() -> Option<i32> {
             .ok()
             .and_then(|value| value.trim().parse::<i32>().ok())
     })
+}
+
+fn terrain_shadow_proxy_chunk_distance(
+    override_radius: Option<i32>,
+    scene_shadow_distance: Option<f32>,
+) -> i32 {
+    if let Some(radius) = override_radius {
+        return radius.clamp(0, CLIENT_KEEP_CHUNK_DISTANCE);
+    }
+
+    let Some(shadow_distance) = scene_shadow_distance else {
+        return shadow_distance_to_chunk_radius(DEFAULT_GPU_TERRAIN_SHADOW_PROXY_DISTANCE);
+    };
+    if !shadow_distance.is_finite() {
+        return DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE;
+    }
+    if shadow_distance <= 0.0 {
+        return 0;
+    }
+
+    shadow_distance_to_chunk_radius(shadow_distance)
+}
+
+fn shadow_distance_to_chunk_radius(shadow_distance: f32) -> i32 {
+    ((shadow_distance / CHUNK_SIZE).ceil() as i32 + 1).clamp(0, CLIENT_KEEP_CHUNK_DISTANCE)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1861,6 +1878,49 @@ mod tests {
             Some(GpuTerrainShadowProxyMode::CollisionOnly)
         );
         assert_eq!(GpuTerrainShadowProxyMode::from_env_value("invalid"), None);
+    }
+
+    #[test]
+    fn shadow_proxy_radius_prefers_clamped_override() {
+        assert_eq!(
+            terrain_shadow_proxy_chunk_distance(Some(-2), Some(160.0)),
+            0
+        );
+        assert_eq!(
+            terrain_shadow_proxy_chunk_distance(Some(CLIENT_KEEP_CHUNK_DISTANCE + 5), Some(32.0)),
+            CLIENT_KEEP_CHUNK_DISTANCE
+        );
+    }
+
+    #[test]
+    fn shadow_proxy_radius_tracks_scene_shadow_distance() {
+        assert_eq!(terrain_shadow_proxy_chunk_distance(None, Some(32.0)), 2);
+        assert_eq!(
+            terrain_shadow_proxy_chunk_distance(
+                None,
+                Some(DEFAULT_GPU_TERRAIN_SHADOW_PROXY_DISTANCE)
+            ),
+            6
+        );
+        assert_eq!(
+            terrain_shadow_proxy_chunk_distance(None, Some(1_000_000.0)),
+            CLIENT_KEEP_CHUNK_DISTANCE
+        );
+    }
+
+    #[test]
+    fn shadow_proxy_radius_handles_disabled_or_unavailable_scene_shadows() {
+        assert_eq!(terrain_shadow_proxy_chunk_distance(None, Some(0.0)), 0);
+        assert_eq!(terrain_shadow_proxy_chunk_distance(None, Some(-1.0)), 0);
+        assert_eq!(
+            terrain_shadow_proxy_chunk_distance(None, Some(f32::NAN)),
+            DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE
+        );
+        assert_eq!(
+            terrain_shadow_proxy_chunk_distance(None, Some(f32::INFINITY)),
+            DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE
+        );
+        assert_eq!(terrain_shadow_proxy_chunk_distance(None, None), 6);
     }
 
     #[test]

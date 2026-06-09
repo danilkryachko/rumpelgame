@@ -4,7 +4,7 @@ This file is the current continuation state for Codex threads. Update it after n
 
 ## Latest Snapshot
 
-Date: 2026-06-09
+Date: 2026-06-10
 
 Goal:
 
@@ -224,6 +224,12 @@ Checks:
   - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (22/22), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+- Latest GPU terrain shadow-proxy radius slice passed:
+  - `GameClient::terrain_shadow_proxy_chunk_distance()` now delegates to a pure helper covered by unit tests. Explicit radius overrides are clamped, finite Godot shadow distance is converted to chunk radius, disabled scene shadows return radius `0`, unavailable scene data uses the conservative default distance, and non-finite distances fall back to `DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE`.
+  - This keeps the default conservative shadow-proxy behavior when the `SunLight` cannot be inspected, while avoiding unnecessary shadow-only CPU proxies when Godot shadows are explicitly disabled.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (25/25), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
 
 Useful log lines:
 
