@@ -7,6 +7,7 @@ pub struct Player {
     base: Base<CharacterBody3D>,
     camera: Option<Gd<Camera3D>>,
     mouse_sensitivity: f32,
+    selected_block: i32,
 }
 
 #[godot_api]
@@ -16,6 +17,7 @@ impl ICharacterBody3D for Player {
             base,
             camera: None,
             mouse_sensitivity: 0.002,
+            selected_block: 1,
         }
     }
 
@@ -77,6 +79,11 @@ impl ICharacterBody3D for Player {
             }
         }
         
+        if input.is_action_just_pressed(&StringName::from("select_1")) { self.selected_block = 1; }
+        if input.is_action_just_pressed(&StringName::from("select_2")) { self.selected_block = 2; }
+        if input.is_action_just_pressed(&StringName::from("select_3")) { self.selected_block = 3; }
+        if input.is_action_just_pressed(&StringName::from("select_4")) { self.selected_block = 4; }
+        
         if input.is_action_just_pressed(&StringName::from("place_block")) {
             if let Some(camera) = &mut self.camera {
                 if let Some(raycast) = camera.try_get_node_as::<godot::classes::RayCast3D>("BlockRayCast") {
@@ -90,10 +97,9 @@ impl ICharacterBody3D for Player {
                         let by = block_pos.y.floor() as i32;
                         let bz = block_pos.z.floor() as i32;
                         
-                        // ID = 2 (dirt / grass for MVP)
-                        let block_id: i32 = 2; 
+                        let block_id = self.selected_block; 
                         
-                        godot_print!("Player places block at: {}, {}, {}", bx, by, bz);
+                        godot_print!("Player places block at: {}, {}, {} ID: {}", bx, by, bz, block_id);
                         self.base_mut().emit_signal(&StringName::from("block_placed"), &[bx.to_variant(), by.to_variant(), bz.to_variant(), block_id.to_variant()]);
                     }
                 }

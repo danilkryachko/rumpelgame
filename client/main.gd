@@ -20,6 +20,15 @@ func _ready():
 	print("Adding GameClient node...")
 	var client = ClassDB.instantiate("GameClient")
 	add_child(client)
+	
+	print("Adding HUD...")
+	var hud_script = load("res://hud.gd")
+	if hud_script:
+		var hud = hud_script.new()
+		hud.name = "HUD"
+		add_child(hud)
+	else:
+		print("Failed to load hud.gd!")
 
 func _exit_tree():
 	# TODO: kill the server process when Godot closes
