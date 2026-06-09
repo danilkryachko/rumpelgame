@@ -1,5 +1,6 @@
 use godot::prelude::*;
 use godot::classes::{CharacterBody3D, Camera3D, InputEventMouseMotion, InputEvent, Input, ICharacterBody3D};
+use godot::global::{Key, MouseButton};
 
 #[derive(GodotClass)]
 #[class(base=CharacterBody3D)]
@@ -59,7 +60,8 @@ impl ICharacterBody3D for Player {
         
         // Клик мышкой
         let input = Input::singleton();
-        if input.is_action_just_pressed(&StringName::from("break_block")) {
+        // Left click = MouseButton::LEFT
+        if input.is_mouse_button_pressed(MouseButton::LEFT) {
             if let Some(camera) = &mut self.camera {
                 if let Some(raycast) = camera.try_get_node_as::<godot::classes::RayCast3D>("BlockRayCast") {
                     if raycast.is_colliding() {
@@ -79,12 +81,13 @@ impl ICharacterBody3D for Player {
             }
         }
         
-        if input.is_action_just_pressed(&StringName::from("select_1")) { self.selected_block = 1; }
-        if input.is_action_just_pressed(&StringName::from("select_2")) { self.selected_block = 2; }
-        if input.is_action_just_pressed(&StringName::from("select_3")) { self.selected_block = 3; }
-        if input.is_action_just_pressed(&StringName::from("select_4")) { self.selected_block = 4; }
+        if input.is_physical_key_pressed(Key::KEY_1) { self.selected_block = 1; }
+        if input.is_physical_key_pressed(Key::KEY_2) { self.selected_block = 2; }
+        if input.is_physical_key_pressed(Key::KEY_3) { self.selected_block = 3; }
+        if input.is_physical_key_pressed(Key::KEY_4) { self.selected_block = 4; }
         
-        if input.is_action_just_pressed(&StringName::from("place_block")) {
+        // Right click = MouseButton::RIGHT
+        if input.is_mouse_button_pressed(MouseButton::RIGHT) {
             if let Some(camera) = &mut self.camera {
                 if let Some(raycast) = camera.try_get_node_as::<godot::classes::RayCast3D>("BlockRayCast") {
                     if raycast.is_colliding() {
@@ -106,7 +109,7 @@ impl ICharacterBody3D for Player {
             }
         }
         
-        if input.is_action_just_pressed(&StringName::from("ui_cancel")) {
+        if input.is_physical_key_pressed(Key::ESCAPE) {
             Input::singleton().set_mouse_mode(godot::classes::input::MouseMode::VISIBLE);
         }
     }
@@ -117,13 +120,17 @@ impl ICharacterBody3D for Player {
         // Простое перемещение для MVP (без нормальной физики и прыжков)
         let mut dir = Vector3::ZERO;
         
-        if input.is_action_pressed(&StringName::from("move_forward")) { dir.z -= 1.0; }
-        if input.is_action_pressed(&StringName::from("move_backward")) { dir.z += 1.0; }
-        if input.is_action_pressed(&StringName::from("move_left")) { dir.x -= 1.0; }
-        if input.is_action_pressed(&StringName::from("move_right")) { dir.x += 1.0; }
+        if input.is_physical_key_pressed(Key::W) { dir.z -= 1.0; }
+        if input.is_physical_key_pressed(Key::S) { dir.z += 1.0; }
+        if input.is_physical_key_pressed(Key::A) { dir.x -= 1.0; }
+        if input.is_physical_key_pressed(Key::D) { dir.x += 1.0; }
+        
+        if dir != Vector3::ZERO {
+            dir = dir.normalized();
+        }
         
         let basis = self.base().get_transform().basis;
-        let movement = basis * dir.normalized() * 5.0; // Скорость 5 м/с
+        let movement = basis * dir * 5.0; // Скорость 5 м/с
         
         let mut velocity = self.base().get_velocity();
         velocity.x = movement.x;
