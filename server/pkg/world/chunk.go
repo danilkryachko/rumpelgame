@@ -1,5 +1,9 @@
 package world
 
+import (
+	"encoding/binary"
+)
+
 const (
 	ChunkWidth  = 32
 	ChunkDepth  = 32
@@ -59,4 +63,12 @@ func (c *Chunk) GenerateFlat() {
 			}
 		}
 	}
+}
+
+func (c *Chunk) Serialize() []byte {
+	buf := make([]byte, len(c.Blocks)*2)
+	for i, b := range c.Blocks {
+		binary.LittleEndian.PutUint16(buf[i*2:], uint16(b))
+	}
+	return buf
 }
