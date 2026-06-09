@@ -1251,11 +1251,27 @@ fn create_multisample_state() -> Gd<RdPipelineMultisampleState> {
 }
 
 fn create_depth_state(enable_depth: bool) -> Gd<RdPipelineDepthStencilState> {
+    let config = terrain_depth_state_config(enable_depth);
     let mut state = RdPipelineDepthStencilState::new_gd();
-    state.set_enable_depth_test(enable_depth);
-    state.set_enable_depth_write(enable_depth);
-    state.set_depth_compare_operator(CompareOperator::GREATER_OR_EQUAL);
+    state.set_enable_depth_test(config.enable_depth_test);
+    state.set_enable_depth_write(config.enable_depth_write);
+    state.set_depth_compare_operator(config.compare_operator);
     state
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TerrainDepthStateConfig {
+    enable_depth_test: bool,
+    enable_depth_write: bool,
+    compare_operator: CompareOperator,
+}
+
+fn terrain_depth_state_config(enable_depth: bool) -> TerrainDepthStateConfig {
+    TerrainDepthStateConfig {
+        enable_depth_test: enable_depth,
+        enable_depth_write: enable_depth,
+        compare_operator: CompareOperator::GREATER_OR_EQUAL,
+    }
 }
 
 fn create_color_blend_state() -> Gd<RdPipelineColorBlendState> {
@@ -1603,6 +1619,25 @@ mod tests {
         assert_eq!(TERRAIN_LIGHTING_PUSH_CONSTANT_BYTES, 32);
         assert_eq!(TERRAIN_ATLAS_PUSH_CONSTANT_BYTES, 16);
         assert_eq!(TERRAIN_PUSH_CONSTANT_BYTES, 112);
+    }
+
+    #[test]
+    fn scene_depth_state_uses_reverse_z_compare() {
+        let depth_disabled = terrain_depth_state_config(false);
+        assert!(!depth_disabled.enable_depth_test);
+        assert!(!depth_disabled.enable_depth_write);
+        assert_eq!(
+            depth_disabled.compare_operator,
+            CompareOperator::GREATER_OR_EQUAL
+        );
+
+        let depth_enabled = terrain_depth_state_config(true);
+        assert!(depth_enabled.enable_depth_test);
+        assert!(depth_enabled.enable_depth_write);
+        assert_eq!(
+            depth_enabled.compare_operator,
+            CompareOperator::GREATER_OR_EQUAL
+        );
     }
 
     #[test]
