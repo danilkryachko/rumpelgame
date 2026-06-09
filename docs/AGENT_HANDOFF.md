@@ -197,6 +197,12 @@ Checks:
   - Direct baseline GPU capture with empty `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=` passed: `shadow_mesh=compact`, `compact_shadow_proxy=95`, `compact_shadow_normals_saved=1284096`, `collision=10`, `gpu_frames=138`.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the full parity artifact set; explicit `full` markers remain as control/opt-out cases.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+- Latest collision-only render-state slice passed:
+  - Collision-only CPU proxies now use `visible=false` and `ShadowCastingSetting::OFF` when a subchunk has a GPU slot but does not need a shadow proxy. CPU fallback meshes stay visible/double-sided if a subchunk is not actually backed by a GPU slot.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (17/17), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Direct collision-only capture passed: `proxy_shadow=0`, `proxy_both=0`, `proxy_shadow_only=0`, `collision=10`, `gpu_frames=133`, `terrain_samples=256`.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the full parity artifact set.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
 
 Useful log lines:
 
@@ -237,7 +243,7 @@ Known limitations:
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, CPU ArrayMesh nodes become `SHADOWS_ONLY` only after the GPU visible render path has rendered at least one compositor frame; this avoids double visible terrain while preserving fallback if GPU setup fails or a subchunk fails GPU upload.
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, CPU ArrayMesh nodes are still kept where needed for nearby collision and the conservative Godot shadow-map proxy. Distant CPU `MeshInstance3D` removal has started, but the retained proxy radius is intentionally conservative.
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, retained CPU proxy meshes can now be built from packed GPU terrain faces after the GPU visible path is confirmed. These proxy meshes intentionally omit UVs because they are used for collision and `SHADOWS_ONLY`, not visible terrain.
-- `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE=collision_only` is diagnostic only for now. It confirms how much CPU work is shadow-proxy-only, but it must not become the default until GPU terrain has a dedicated shadow-compatible path or native Godot shadow-map participation.
+- `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE=collision_only` is diagnostic only for now. It confirms how much CPU work is shadow-proxy-only. In this mode retained collision CPU proxies are invisible and do not cast shadows, but it must not become the default until GPU terrain has a dedicated shadow-compatible path or native Godot shadow-map participation.
 - `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=compact` is now the default for GPU-visible shadow-only CPU proxy meshes. Use `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=full` for a control run or opt-out. This is still a Godot shadow proxy and does not replace native RD shadow-map participation.
 - `scripts/gpu_terrain_parity_smoke.sh` can validate existing artifacts with `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1`. It now expects markers produced by the extended visual smoke metrics and multi-pose support in `client/main.gd`, plus proxy reason counters, `shadow_mode=...`, `shadow_mesh=...`, and `compact_shadow_normals_saved=...` from `client/rust_ext/src/lib.rs`. It validates CPU/GPU pose parity and compact-vs-full `lighting_shadow` parity. In this Codex PTY environment, launching Godot through shell wrappers can still stall before project logs appear, so direct Godot commands plus validate-only are the reliable local gate.
 - `scripts/gpu_terrain_compact_proxy_benchmark.sh` defaults to report mode over existing parity artifacts. Use `RUMPELMC_COMPACT_PROXY_BENCH_CAPTURE=1` only when the local shell/Godot wrapper is known to be reliable, or prefer direct Godot captures followed by benchmark report mode.

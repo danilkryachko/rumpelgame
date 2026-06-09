@@ -647,6 +647,10 @@ impl GpuTerrainBufferPool {
         self.draw_dirty = true;
     }
 
+    pub fn has_subchunk(&self, key: GpuSubchunkKey) -> bool {
+        self.slots.contains_key(&key)
+    }
+
     pub fn stats(&self) -> GpuTerrainStats {
         GpuTerrainStats {
             subchunks: self.slots.len(),

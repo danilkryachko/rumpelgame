@@ -411,7 +411,11 @@ impl GameClient {
         {
             mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
             mesh_instance.set_position(chunk_position);
-            configure_terrain_mesh_render_mode(&mut mesh_instance, gpu_visible_render_active);
+            configure_terrain_mesh_render_mode(
+                &mut mesh_instance,
+                cpu_proxy_mesh,
+                should_have_shadow_proxy,
+            );
 
             let material = self.get_chunk_material();
             mesh_instance.set_material_override(&material);
@@ -426,7 +430,11 @@ impl GameClient {
             mesh_instance.set_name(&StringName::from(&mesh_name));
             mesh_instance.set_position(chunk_position);
             mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
-            configure_terrain_mesh_render_mode(&mut mesh_instance, gpu_visible_render_active);
+            configure_terrain_mesh_render_mode(
+                &mut mesh_instance,
+                cpu_proxy_mesh,
+                should_have_shadow_proxy,
+            );
 
             let material = self.get_chunk_material();
             mesh_instance.set_material_override(&material);
@@ -939,13 +947,23 @@ impl GameClient {
             let Some(child) = self.base().get_child(idx) else {
                 continue;
             };
-            if !child.get_name().to_string().starts_with("SubchunkMesh_") {
+            let Some(key) = subchunk_key_from_mesh_name(&child.get_name().to_string()) else {
                 continue;
-            }
+            };
             let Ok(mut mesh_instance) = child.try_cast::<godot::classes::MeshInstance3D>() else {
                 continue;
             };
-            configure_terrain_mesh_render_mode(&mut mesh_instance, gpu_visible_render_active);
+            let cpu_proxy_mesh = gpu_visible_render_active
+                && self
+                    .gpu_terrain
+                    .as_ref()
+                    .is_some_and(|gpu_terrain| gpu_terrain.has_subchunk(gpu_subchunk_key(key)));
+            let needs_shadow_proxy = cpu_proxy_mesh && self.subchunk_needs_shadow_proxy(key);
+            configure_terrain_mesh_render_mode(
+                &mut mesh_instance,
+                cpu_proxy_mesh,
+                needs_shadow_proxy,
+            );
         }
         self.refresh_node_perf_counts();
     }
@@ -1484,16 +1502,50 @@ fn create_chunk_material() -> Gd<godot::classes::StandardMaterial3D> {
     material
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TerrainMeshRenderMode {
+    VisibleDoubleSided,
+    ShadowsOnly,
+    CollisionOnly,
+}
+
+impl TerrainMeshRenderMode {
+    fn from_proxy_state(cpu_proxy_mesh: bool, needs_shadow_proxy: bool) -> Self {
+        if !cpu_proxy_mesh {
+            return Self::VisibleDoubleSided;
+        }
+        if needs_shadow_proxy {
+            Self::ShadowsOnly
+        } else {
+            Self::CollisionOnly
+        }
+    }
+
+    fn is_visible(self) -> bool {
+        !matches!(self, Self::CollisionOnly)
+    }
+
+    fn shadow_setting(self) -> godot::classes::geometry_instance_3d::ShadowCastingSetting {
+        match self {
+            Self::VisibleDoubleSided => {
+                godot::classes::geometry_instance_3d::ShadowCastingSetting::DOUBLE_SIDED
+            }
+            Self::ShadowsOnly => {
+                godot::classes::geometry_instance_3d::ShadowCastingSetting::SHADOWS_ONLY
+            }
+            Self::CollisionOnly => godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
+        }
+    }
+}
+
 fn configure_terrain_mesh_render_mode(
     mesh_instance: &mut Gd<godot::classes::MeshInstance3D>,
-    gpu_visible_render_active: bool,
+    cpu_proxy_mesh: bool,
+    needs_shadow_proxy: bool,
 ) {
-    let shadow_setting = if gpu_visible_render_active {
-        godot::classes::geometry_instance_3d::ShadowCastingSetting::SHADOWS_ONLY
-    } else {
-        godot::classes::geometry_instance_3d::ShadowCastingSetting::DOUBLE_SIDED
-    };
-    mesh_instance.set_cast_shadows_setting(shadow_setting);
+    let mode = TerrainMeshRenderMode::from_proxy_state(cpu_proxy_mesh, needs_shadow_proxy);
+    mesh_instance.set_visible(mode.is_visible());
+    mesh_instance.set_cast_shadows_setting(mode.shadow_setting());
 }
 
 fn clear_mesh_collisions(mesh_instance: &mut Gd<godot::classes::MeshInstance3D>) {
@@ -1778,6 +1830,37 @@ mod tests {
         assert!(!compact.compacts_shadow_only_mesh(true, false, false));
         assert!(!compact.compacts_shadow_only_mesh(false, false, true));
         assert!(!GpuTerrainShadowProxyMeshMode::Full.compacts_shadow_only_mesh(true, false, true));
+    }
+
+    #[test]
+    fn terrain_mesh_render_mode_matches_proxy_role() {
+        let fallback = TerrainMeshRenderMode::from_proxy_state(false, false);
+        assert_eq!(fallback, TerrainMeshRenderMode::VisibleDoubleSided);
+        assert!(fallback.is_visible());
+        assert_eq!(
+            fallback.shadow_setting(),
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::DOUBLE_SIDED
+        );
+        assert_eq!(
+            TerrainMeshRenderMode::from_proxy_state(false, true),
+            TerrainMeshRenderMode::VisibleDoubleSided
+        );
+
+        let shadow_proxy = TerrainMeshRenderMode::from_proxy_state(true, true);
+        assert_eq!(shadow_proxy, TerrainMeshRenderMode::ShadowsOnly);
+        assert!(shadow_proxy.is_visible());
+        assert_eq!(
+            shadow_proxy.shadow_setting(),
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::SHADOWS_ONLY
+        );
+
+        let collision_only = TerrainMeshRenderMode::from_proxy_state(true, false);
+        assert_eq!(collision_only, TerrainMeshRenderMode::CollisionOnly);
+        assert!(!collision_only.is_visible());
+        assert_eq!(
+            collision_only.shadow_setting(),
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF
+        );
     }
 
     #[test]
