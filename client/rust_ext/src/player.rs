@@ -23,6 +23,15 @@ impl ICharacterBody3D for Player {
     }
 
     fn ready(&mut self) {
+        // Добавляем коллизию игроку
+        let mut collision = godot::classes::CollisionShape3D::new_alloc();
+        let mut shape = godot::classes::CapsuleShape3D::new_gd();
+        shape.set_radius(0.4);
+        shape.set_height(1.8);
+        collision.set_shape(&shape.upcast::<godot::classes::Shape3D>());
+        collision.set_position(Vector3::new(0.0, 0.9, 0.0));
+        self.base_mut().add_child(&collision.upcast::<godot::classes::Node>());
+
         // Создаем камеру
         let mut camera = Camera3D::new_alloc();
         camera.set_position(Vector3::new(0.0, 1.6, 0.0)); // Рост персонажа
