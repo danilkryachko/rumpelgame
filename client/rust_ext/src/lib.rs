@@ -79,6 +79,9 @@ impl INode for GameClient {
         let callable = self.base().callable(&StringName::from("on_block_broken"));
         player.connect(&StringName::from("block_broken"), &callable);
         
+        let callable_placed = self.base().callable(&StringName::from("on_block_placed"));
+        player.connect(&StringName::from("block_placed"), &callable_placed);
+        
         let mut player_node = player.upcast::<godot::classes::Node3D>();
         player_node.set_position(Vector3::new(16.0, 80.0, 16.0));
         
@@ -149,6 +152,25 @@ impl GameClient {
                 action: crate::api::api::block_action::ActionType::Destroy as i32,
                 x, y, z,
                 block_id: 0,
+            })),
+        };
+        
+        if let Some(network) = &mut self.network {
+            if let Err(e) = network.send_packet(&packet) {
+                godot_print!("Failed to send BlockAction: {}", e);
+            }
+        }
+    }
+
+    #[func]
+    fn on_block_placed(&mut self, x: i32, y: i32, z: i32, block_id: i32) {
+        godot_print!("Network sending BlockAction PLACE: {}, {}, {} ID: {}", x, y, z, block_id);
+        
+        let packet = crate::api::api::Packet {
+            payload: Some(crate::api::api::packet::Payload::BlockAction(crate::api::api::BlockAction {
+                action: crate::api::api::block_action::ActionType::Place as i32,
+                x, y, z,
+                block_id: block_id as u32,
             })),
         };
         

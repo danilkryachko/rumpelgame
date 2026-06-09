@@ -77,6 +77,29 @@ impl ICharacterBody3D for Player {
             }
         }
         
+        if input.is_action_just_pressed(&StringName::from("place_block")) {
+            if let Some(camera) = &mut self.camera {
+                if let Some(raycast) = camera.try_get_node_as::<godot::classes::RayCast3D>("BlockRayCast") {
+                    if raycast.is_colliding() {
+                        let hit_point = raycast.get_collision_point();
+                        // Немного отдаляемся от блока по нормали, чтобы получить координаты соседнего "пустого" блока
+                        let normal = raycast.get_collision_normal();
+                        let block_pos = hit_point + normal * 0.1;
+                        
+                        let bx = block_pos.x.floor() as i32;
+                        let by = block_pos.y.floor() as i32;
+                        let bz = block_pos.z.floor() as i32;
+                        
+                        // ID = 2 (dirt / grass for MVP)
+                        let block_id: i32 = 2; 
+                        
+                        godot_print!("Player places block at: {}, {}, {}", bx, by, bz);
+                        self.base_mut().emit_signal(&StringName::from("block_placed"), &[bx.to_variant(), by.to_variant(), bz.to_variant(), block_id.to_variant()]);
+                    }
+                }
+            }
+        }
+        
         if input.is_action_just_pressed(&StringName::from("ui_cancel")) {
             Input::singleton().set_mouse_mode(godot::classes::input::MouseMode::VISIBLE);
         }
@@ -111,4 +134,7 @@ impl ICharacterBody3D for Player {
 impl Player {
     #[signal]
     fn block_broken(x: i32, y: i32, z: i32);
+    
+    #[signal]
+    fn block_placed(x: i32, y: i32, z: i32, block_id: i32);
 }
