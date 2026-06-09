@@ -910,15 +910,15 @@ impl GameClient {
     }
 
     fn gpu_terrain_visible_render_active(&self) -> bool {
-        gpu_terrain_render_enabled()
-            && self
-                .gpu_terrain_compositor
+        gpu_terrain_visible_render_active_decision(
+            gpu_terrain_render_enabled(),
+            self.gpu_terrain_compositor
                 .as_ref()
-                .is_some_and(gpu_terrain::GpuTerrainCompositor::is_attached)
-            && self
-                .gpu_terrain
+                .is_some_and(gpu_terrain::GpuTerrainCompositor::is_attached),
+            self.gpu_terrain
                 .as_ref()
-                .is_some_and(gpu_terrain::GpuTerrainBufferPool::visible_render_confirmed)
+                .is_some_and(gpu_terrain::GpuTerrainBufferPool::visible_render_confirmed),
+        )
     }
 
     fn update_gpu_visible_transition(&mut self) {
@@ -1300,6 +1300,14 @@ fn gpu_terrain_render_decision(env_state: Option<bool>) -> bool {
 fn gpu_terrain_render_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| gpu_terrain_render_decision(env_flag_state(GPU_TERRAIN_RENDER_ENV)))
+}
+
+fn gpu_terrain_visible_render_active_decision(
+    render_enabled: bool,
+    compositor_attached: bool,
+    visible_render_confirmed: bool,
+) -> bool {
+    render_enabled && compositor_attached && visible_render_confirmed
 }
 
 fn gpu_terrain_shadow_proxy_chunk_distance_override() -> Option<i32> {
@@ -1958,6 +1966,20 @@ mod tests {
         assert!(gpu_terrain_upload_decision(true, false));
         assert!(gpu_terrain_upload_decision(false, true));
         assert!(gpu_terrain_upload_decision(true, true));
+    }
+
+    #[test]
+    fn gpu_visible_render_waits_for_flag_attachment_and_confirmed_frame() {
+        assert!(!gpu_terrain_visible_render_active_decision(
+            false, true, true
+        ));
+        assert!(!gpu_terrain_visible_render_active_decision(
+            true, false, true
+        ));
+        assert!(!gpu_terrain_visible_render_active_decision(
+            true, true, false
+        ));
+        assert!(gpu_terrain_visible_render_active_decision(true, true, true));
     }
 
     #[test]

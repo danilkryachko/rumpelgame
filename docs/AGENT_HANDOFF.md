@@ -260,6 +260,12 @@ Checks:
   - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (32/32), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
+- Latest GPU terrain visible activation guard slice passed:
+  - `GameClient::gpu_terrain_visible_render_active()` now delegates its decision to a pure helper covered by a unit test. The test locks the delayed transition invariant: CPU fallback/proxy nodes are only allowed to switch after the render flag is enabled, the compositor is attached, and the GPU terrain buffer pool has confirmed at least one visible render frame.
+  - This protects the visible-path transition from hiding or removing ArrayMesh fallback too early when GPU setup is only partially complete.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (33/33), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
 
 Useful log lines:
 
