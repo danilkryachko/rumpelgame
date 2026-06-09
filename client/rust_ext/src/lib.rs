@@ -1147,6 +1147,7 @@ const MAX_MESH_QUEUE_DRAINS_PER_FRAME: usize = 32;
 const GPU_TERRAIN_PROTOTYPE_STATS: bool = false;
 const GPU_TERRAIN_PROTOTYPE_UPLOAD: bool = false;
 const GPU_TERRAIN_PROTOTYPE_RENDER: bool = false;
+const GPU_TERRAIN_RENDER_DEFAULT_ENABLED: bool = false;
 const GPU_TERRAIN_STATS_ENV: &str = "RUMPELMC_GPU_TERRAIN_STATS";
 const GPU_TERRAIN_UPLOAD_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD";
 const GPU_TERRAIN_RENDER_ENV: &str = "RUMPELMC_GPU_TERRAIN_RENDER";
@@ -1215,10 +1216,13 @@ fn gpu_terrain_upload_enabled() -> bool {
     })
 }
 
+fn gpu_terrain_render_decision(env_state: Option<bool>) -> bool {
+    GPU_TERRAIN_PROTOTYPE_RENDER || env_state.unwrap_or(GPU_TERRAIN_RENDER_DEFAULT_ENABLED)
+}
+
 fn gpu_terrain_render_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED
-        .get_or_init(|| GPU_TERRAIN_PROTOTYPE_RENDER || env_flag_enabled(GPU_TERRAIN_RENDER_ENV))
+    *ENABLED.get_or_init(|| gpu_terrain_render_decision(env_flag_state(GPU_TERRAIN_RENDER_ENV)))
 }
 
 fn gpu_terrain_shadow_proxy_chunk_distance_override() -> Option<i32> {
@@ -1309,13 +1313,22 @@ fn gpu_terrain_shadow_proxy_mesh_mode() -> GpuTerrainShadowProxyMeshMode {
     })
 }
 
+fn flag_state_from_value(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+fn env_flag_state(name: &str) -> Option<bool> {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| flag_state_from_value(&value))
+}
+
 fn env_flag_enabled(name: &str) -> bool {
-    std::env::var(name).is_ok_and(|value| {
-        matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        )
-    })
+    env_flag_state(name) == Some(true)
 }
 
 fn chunk_coord_for_position(x: f32, z: f32) -> (i32, i32) {
@@ -1816,6 +1829,25 @@ mod tests {
         assert_eq!(key.chunk_z, 3);
         assert!(subchunk_key_from_mesh_name("SubchunkMesh_-2_7_3_extra").is_none());
         assert!(subchunk_key_from_mesh_name("ChunkMesh_-2_7_3").is_none());
+    }
+
+    #[test]
+    fn flag_state_parses_supported_values() {
+        assert_eq!(flag_state_from_value("1"), Some(true));
+        assert_eq!(flag_state_from_value(" TRUE "), Some(true));
+        assert_eq!(flag_state_from_value("on"), Some(true));
+        assert_eq!(flag_state_from_value("0"), Some(false));
+        assert_eq!(flag_state_from_value("false"), Some(false));
+        assert_eq!(flag_state_from_value("off"), Some(false));
+        assert_eq!(flag_state_from_value(""), None);
+        assert_eq!(flag_state_from_value("invalid"), None);
+    }
+
+    #[test]
+    fn gpu_terrain_render_remains_opt_in_with_explicit_enable() {
+        assert!(!gpu_terrain_render_decision(None));
+        assert!(gpu_terrain_render_decision(Some(true)));
+        assert!(!gpu_terrain_render_decision(Some(false)));
     }
 
     #[test]

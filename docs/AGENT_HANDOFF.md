@@ -204,6 +204,11 @@ Checks:
   - Direct collision-only capture passed after adding render-state counters: `mesh_visible=0`, `mesh_shadow_off=10`, `mesh_shadow_double=0`, `mesh_shadow_only=0`, `proxy_shadow=0`, `proxy_both=0`, `proxy_shadow_only=0`, `collision=10`, `gpu_frames=104`, `terrain_samples=256`.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the full parity artifact set.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+- Latest GPU terrain render flag safety slice passed:
+  - `RUMPELMC_GPU_TERRAIN_RENDER` remains opt-in by default; the Rust decision helper now has a unit test that default/no env stays disabled, explicit true enables, and explicit false disables.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (19/19), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
 
 Useful log lines:
 
