@@ -123,6 +123,11 @@ impl GameClient {
                     if let Some(mut mesh_instance) = self.base().try_get_node_as::<godot::classes::MeshInstance3D>("ChunkMesh") {
                         mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
                         
+                        let mut material = godot::classes::StandardMaterial3D::new_gd();
+                        material.set_cull_mode(godot::classes::base_material_3d::CullMode::DISABLED);
+                        material.set_albedo(Color::from_rgb(0.5, 0.8, 0.3)); // Трава
+                        mesh_instance.set_material_override(&material.upcast::<godot::classes::Material>());
+                        
                         // Удаляем старую коллизию, если она есть
                         if let Some(mut old_col) = mesh_instance.try_get_node_as::<godot::classes::StaticBody3D>("ChunkMesh_col") {
                             mesh_instance.remove_child(&old_col.upcast::<godot::classes::Node>());
@@ -133,6 +138,12 @@ impl GameClient {
                         let mut mesh_instance = godot::classes::MeshInstance3D::new_alloc();
                         mesh_instance.set_name(&StringName::from("ChunkMesh"));
                         mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
+                        // Create material to disable culling
+                        let mut material = godot::classes::StandardMaterial3D::new_gd();
+                        material.set_cull_mode(godot::classes::base_material_3d::CullMode::DISABLED);
+                        material.set_albedo(Color::from_rgb(0.5, 0.8, 0.3)); // Трава
+                        mesh_instance.set_material_override(&material.upcast::<godot::classes::Material>());
+                        
                         mesh_instance.create_trimesh_collision();
                         self.base_mut().add_child(&mesh_instance.upcast::<godot::classes::Node>());
                     }
