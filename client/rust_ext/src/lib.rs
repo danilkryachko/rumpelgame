@@ -843,17 +843,7 @@ impl GameClient {
 
             let needs_collision = self.subchunk_needs_collision(key);
             let needs_shadow = gpu_visible && self.subchunk_needs_shadow_proxy(key);
-            if needs_collision {
-                counts.cpu_proxy_collision += 1;
-            }
-            if needs_shadow {
-                counts.cpu_proxy_shadow += 1;
-            }
-            if needs_collision && needs_shadow {
-                counts.cpu_proxy_both += 1;
-            } else if needs_shadow {
-                counts.cpu_proxy_shadow_only += 1;
-            }
+            counts.record_cpu_proxy_reasons(needs_collision, needs_shadow);
 
             let Ok(mesh_instance) = child.try_cast::<godot::classes::MeshInstance3D>() else {
                 continue;
@@ -1052,6 +1042,20 @@ struct NodePerfCounts {
 }
 
 impl NodePerfCounts {
+    fn record_cpu_proxy_reasons(&mut self, needs_collision: bool, needs_shadow: bool) {
+        if needs_collision {
+            self.cpu_proxy_collision += 1;
+        }
+        if needs_shadow {
+            self.cpu_proxy_shadow += 1;
+        }
+        if needs_collision && needs_shadow {
+            self.cpu_proxy_both += 1;
+        } else if needs_shadow {
+            self.cpu_proxy_shadow_only += 1;
+        }
+    }
+
     fn record_mesh_render_state(&mut self, mesh_instance: &Gd<godot::classes::MeshInstance3D>) {
         self.record_mesh_render_state_values(
             mesh_instance.is_visible(),
@@ -2281,6 +2285,21 @@ mod tests {
         assert_eq!(counts.shadow_off_submeshes, 1);
         assert_eq!(counts.shadow_double_sided_submeshes, 1);
         assert_eq!(counts.shadow_only_submeshes, 1);
+    }
+
+    #[test]
+    fn node_perf_counts_record_cpu_proxy_reason_buckets() {
+        let mut counts = NodePerfCounts::default();
+
+        counts.record_cpu_proxy_reasons(true, false);
+        counts.record_cpu_proxy_reasons(false, true);
+        counts.record_cpu_proxy_reasons(true, true);
+        counts.record_cpu_proxy_reasons(false, false);
+
+        assert_eq!(counts.cpu_proxy_collision, 2);
+        assert_eq!(counts.cpu_proxy_shadow, 2);
+        assert_eq!(counts.cpu_proxy_both, 1);
+        assert_eq!(counts.cpu_proxy_shadow_only, 1);
     }
 
     #[test]
