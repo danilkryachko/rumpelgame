@@ -249,6 +249,10 @@ validate_parity_markers() {
   require_metric_eq "$collision_only_marker" "proxy_shadow_only" 0
   require_metric_eq "$collision_only_marker" "compact_shadow_proxy" 0
   require_metric_eq "$collision_only_marker" "compact_shadow_normals_saved" 0
+  require_metric_eq "$collision_only_marker" "mesh_visible" 0
+  require_metric_eq "$collision_only_marker" "mesh_shadow_off" "$(metric "cpu_proxy" "$collision_only_marker")"
+  require_metric_eq "$collision_only_marker" "mesh_shadow_double" 0
+  require_metric_eq "$collision_only_marker" "mesh_shadow_only" 0
   require_metric_ge "$collision_only_marker" "fast_proxy" 1
 
   validate_common_marker "$compact_shadow_marker" "default" "conservative" "compact"

@@ -865,6 +865,7 @@ impl GameClient {
             let Ok(mesh_instance) = child.try_cast::<godot::classes::MeshInstance3D>() else {
                 continue;
             };
+            counts.record_mesh_render_state(&mesh_instance);
             counts.total_collision_bodies += count_static_body_children(&mesh_instance);
         }
         counts
@@ -1047,11 +1048,36 @@ struct MeshRecord {
 #[derive(Clone, Copy, Default)]
 struct NodePerfCounts {
     rendered_submeshes: i32,
+    visible_submeshes: i32,
+    shadow_off_submeshes: i32,
+    shadow_double_sided_submeshes: i32,
+    shadow_only_submeshes: i32,
     total_collision_bodies: i32,
     cpu_proxy_collision: i32,
     cpu_proxy_shadow: i32,
     cpu_proxy_both: i32,
     cpu_proxy_shadow_only: i32,
+}
+
+impl NodePerfCounts {
+    fn record_mesh_render_state(&mut self, mesh_instance: &Gd<godot::classes::MeshInstance3D>) {
+        if mesh_instance.is_visible() {
+            self.visible_submeshes += 1;
+        }
+
+        match mesh_instance.get_cast_shadows_setting() {
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF => {
+                self.shadow_off_submeshes += 1;
+            }
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::DOUBLE_SIDED => {
+                self.shadow_double_sided_submeshes += 1;
+            }
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::SHADOWS_ONLY => {
+                self.shadow_only_submeshes += 1;
+            }
+            _ => {}
+        }
+    }
 }
 
 impl PerfStats {
@@ -1657,10 +1683,14 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} jobs={} cpu_proxy={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "queue={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.mesh_jobs_completed,
             self.perf.node_counts.rendered_submeshes,
+            self.perf.node_counts.visible_submeshes,
+            self.perf.node_counts.shadow_off_submeshes,
+            self.perf.node_counts.shadow_double_sided_submeshes,
+            self.perf.node_counts.shadow_only_submeshes,
             self.perf.node_counts.cpu_proxy_collision,
             self.perf.node_counts.cpu_proxy_shadow,
             self.perf.node_counts.cpu_proxy_both,
