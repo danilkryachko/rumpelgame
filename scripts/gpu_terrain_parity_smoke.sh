@@ -128,6 +128,10 @@ run_case() {
   shadow_mesh="$6"
   screenshot_path="$OUT_DIR/$name.png"
   marker_path="$screenshot_path.txt"
+  expected_shadow_mesh="$shadow_mesh"
+  if [ "$shadow_mesh" = "" ] || [ "$shadow_mesh" = "default" ]; then
+    expected_shadow_mesh="compact"
+  fi
 
   rm -f "$screenshot_path" "$marker_path"
 
@@ -147,7 +151,7 @@ run_case() {
       "$GODOT_BIN" --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
   )
 
-  validate_common_marker "$marker_path" "$pose" "$shadow_mode" "$shadow_mesh"
+  validate_common_marker "$marker_path" "$pose" "$shadow_mode" "$expected_shadow_mesh"
   cat "$marker_path"
   if command -v sips >/dev/null 2>&1; then
     sips -g pixelWidth -g pixelHeight "$screenshot_path"
@@ -201,9 +205,9 @@ validate_parity_markers() {
   compact_lighting_shadow_marker="$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
 
   validate_common_marker "$cpu_marker" "default" "conservative" "full"
-  validate_common_marker "$gpu_marker" "default" "conservative" "full"
+  validate_common_marker "$gpu_marker" "default" "conservative" "compact"
   validate_common_marker "$radius_marker" "default" "conservative" "full"
-  validate_pose_pair "$cpu_marker" "$gpu_marker" "default"
+  validate_pose_pair_with_mesh "$cpu_marker" "$gpu_marker" "default" "full" "compact"
 
   require_metric_absent "$cpu_marker" "gpu_frames"
   require_metric_absent "$cpu_marker" "gpu_subchunks"
@@ -218,8 +222,11 @@ validate_parity_markers() {
   require_metric_ge "$gpu_marker" "gpu_subchunks" 1
   require_metric_ge "$gpu_marker" "gpu_faces" 1
   require_metric_ge "$gpu_marker" "fast_proxy" 1
-  require_metric_eq "$gpu_marker" "compact_shadow_proxy" 0
-  require_metric_eq "$gpu_marker" "compact_shadow_normals_saved" 0
+  require_metric_ge "$gpu_marker" "compact_shadow_proxy" 1
+  require_metric_ge \
+    "$gpu_marker" \
+    "compact_shadow_normals_saved" \
+    "$(metric "compact_shadow_proxy" "$gpu_marker")"
   require_metric_ge "$gpu_marker" "proxy_shadow" 1
   require_metric_ge "$gpu_marker" "proxy_both" 1
 
@@ -279,8 +286,18 @@ validate_pose_pair() {
   gpu_marker="$2"
   pose="$3"
 
-  validate_common_marker "$cpu_marker" "$pose" "conservative" "full"
-  validate_common_marker "$gpu_marker" "$pose" "conservative" "full"
+  validate_pose_pair_with_mesh "$cpu_marker" "$gpu_marker" "$pose" "full" "full"
+}
+
+validate_pose_pair_with_mesh() {
+  cpu_marker="$1"
+  gpu_marker="$2"
+  pose="$3"
+  expected_cpu_shadow_mesh="$4"
+  expected_gpu_shadow_mesh="$5"
+
+  validate_common_marker "$cpu_marker" "$pose" "conservative" "$expected_cpu_shadow_mesh"
+  validate_common_marker "$gpu_marker" "$pose" "conservative" "$expected_gpu_shadow_mesh"
 
   require_metric_absent "$cpu_marker" "gpu_frames"
   require_metric_absent "$cpu_marker" "gpu_subchunks"
@@ -291,8 +308,16 @@ validate_pose_pair() {
   require_metric_ge "$gpu_marker" "gpu_subchunks" 1
   require_metric_ge "$gpu_marker" "gpu_faces" 1
   require_metric_ge "$gpu_marker" "fast_proxy" 1
-  require_metric_eq "$gpu_marker" "compact_shadow_proxy" 0
-  require_metric_eq "$gpu_marker" "compact_shadow_normals_saved" 0
+  if [ "$expected_gpu_shadow_mesh" = "compact" ]; then
+    require_metric_ge "$gpu_marker" "compact_shadow_proxy" 1
+    require_metric_ge \
+      "$gpu_marker" \
+      "compact_shadow_normals_saved" \
+      "$(metric "compact_shadow_proxy" "$gpu_marker")"
+  else
+    require_metric_eq "$gpu_marker" "compact_shadow_proxy" 0
+    require_metric_eq "$gpu_marker" "compact_shadow_normals_saved" 0
+  fi
 
   validate_visual_metric_pair "$cpu_marker" "$gpu_marker" "$pose"
 }
@@ -379,7 +404,7 @@ validate_compact_shadow_pose_pair() {
 
 if [ "$VALIDATE_ONLY" != "1" ]; then
   run_case "cpu-arraymesh-parity" "0" "" "default" "conservative" "full"
-  run_case "gpu-terrain-parity" "1" "" "default" "conservative" "full"
+  run_case "gpu-terrain-parity" "1" "" "default" "conservative" ""
   run_case "gpu-terrain-radius1-parity" "1" "1" "default" "conservative" "full"
   run_case "gpu-terrain-collision-only-parity" "1" "" "default" "collision_only" "full"
   run_case "gpu-terrain-compact-shadow-parity" "1" "" "default" "conservative" "compact"

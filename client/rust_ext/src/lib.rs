@@ -1232,8 +1232,8 @@ enum GpuTerrainShadowProxyMeshMode {
 impl GpuTerrainShadowProxyMeshMode {
     fn from_env_value(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
-            "" | "full" | "default" => Some(Self::Full),
-            "compact" | "vertex_only" | "vertex-only" => Some(Self::Compact),
+            "" | "compact" | "default" | "vertex_only" | "vertex-only" => Some(Self::Compact),
+            "full" => Some(Self::Full),
             _ => None,
         }
     }
@@ -1261,7 +1261,7 @@ fn gpu_terrain_shadow_proxy_mesh_mode() -> GpuTerrainShadowProxyMeshMode {
         std::env::var(GPU_TERRAIN_SHADOW_PROXY_MESH_ENV)
             .ok()
             .and_then(|value| GpuTerrainShadowProxyMeshMode::from_env_value(&value))
-            .unwrap_or(GpuTerrainShadowProxyMeshMode::Full)
+            .unwrap_or(GpuTerrainShadowProxyMeshMode::Compact)
     })
 }
 
@@ -1753,6 +1753,10 @@ mod tests {
     fn shadow_proxy_mesh_mode_parses_supported_values() {
         assert_eq!(
             GpuTerrainShadowProxyMeshMode::from_env_value(""),
+            Some(GpuTerrainShadowProxyMeshMode::Compact)
+        );
+        assert_eq!(
+            GpuTerrainShadowProxyMeshMode::from_env_value("full"),
             Some(GpuTerrainShadowProxyMeshMode::Full)
         );
         assert_eq!(
