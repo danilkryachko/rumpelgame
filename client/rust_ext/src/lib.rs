@@ -339,12 +339,12 @@ impl GameClient {
         let should_have_shadow_proxy =
             gpu_visible_render_active && self.subchunk_needs_shadow_proxy(key);
         let cpu_proxy_mesh = mesh_build_plan == TerrainMeshBuildPlan::CpuProxyMesh;
-        let compact_shadow_proxy_mesh = gpu_terrain_shadow_proxy_mesh_mode()
-            .compacts_shadow_only_mesh(
-                cpu_proxy_mesh,
-                should_have_collision,
-                should_have_shadow_proxy,
-            );
+        let cpu_proxy_mesh_payload = terrain_cpu_proxy_mesh_payload(
+            gpu_terrain_shadow_proxy_mesh_mode(),
+            cpu_proxy_mesh,
+            should_have_collision,
+            should_have_shadow_proxy,
+        );
         let (vertices, normals, uvs, timing, reported_vertices): (
             PackedVector3Array,
             PackedVector3Array,
@@ -355,7 +355,7 @@ impl GameClient {
             let packed_faces = packed_faces
                 .as_ref()
                 .expect("packed faces are built for uploaded GPU terrain");
-            let proxy_mesh = if compact_shadow_proxy_mesh {
+            let proxy_mesh = if cpu_proxy_mesh_payload.uses_compact_mesh() {
                 packed_faces.build_compact_cpu_proxy_mesh()
             } else {
                 packed_faces.build_cpu_proxy_mesh()
@@ -461,7 +461,8 @@ impl GameClient {
             normals: normals.len(),
             reported_vertices,
             cpu_proxy_mesh,
-            compact_shadow_proxy_mesh,
+            compact_shadow_proxy_mesh: cpu_proxy_mesh_payload.compact_shadow_proxy_mesh,
+            compact_collision_proxy_mesh: cpu_proxy_mesh_payload.compact_collision_proxy_mesh,
             mesh_ms,
             timing,
             collision_ms,
@@ -1023,6 +1024,8 @@ struct PerfStats {
     cpu_proxy_meshes_built: u64,
     compact_shadow_proxy_meshes_built: u64,
     compact_shadow_proxy_normals_saved: usize,
+    compact_collision_proxy_meshes_built: u64,
+    compact_collision_proxy_normals_saved: usize,
 }
 
 struct MeshRecord {
@@ -1031,6 +1034,7 @@ struct MeshRecord {
     reported_vertices: usize,
     cpu_proxy_mesh: bool,
     compact_shadow_proxy_mesh: bool,
+    compact_collision_proxy_mesh: bool,
     mesh_ms: f64,
     timing: meshing::MeshTiming,
     collision_ms: f64,
@@ -1120,6 +1124,12 @@ impl PerfStats {
             self.compact_shadow_proxy_meshes_built += 1;
             self.compact_shadow_proxy_normals_saved = self
                 .compact_shadow_proxy_normals_saved
+                .saturating_add(record.vertices);
+        }
+        if record.compact_collision_proxy_mesh {
+            self.compact_collision_proxy_meshes_built += 1;
+            self.compact_collision_proxy_normals_saved = self
+                .compact_collision_proxy_normals_saved
                 .saturating_add(record.vertices);
         }
         self.collision_bodies = record.collision_bodies;
@@ -1473,6 +1483,38 @@ impl GpuTerrainShadowProxyMeshMode {
         needs_shadow_proxy: bool,
     ) -> bool {
         matches!(self, Self::Compact) && cpu_proxy_mesh && !needs_collision && needs_shadow_proxy
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TerrainCpuProxyMeshPayload {
+    compact_shadow_proxy_mesh: bool,
+    compact_collision_proxy_mesh: bool,
+}
+
+impl TerrainCpuProxyMeshPayload {
+    fn uses_compact_mesh(self) -> bool {
+        self.compact_shadow_proxy_mesh || self.compact_collision_proxy_mesh
+    }
+}
+
+fn terrain_cpu_proxy_mesh_payload(
+    shadow_mesh_mode: GpuTerrainShadowProxyMeshMode,
+    cpu_proxy_mesh: bool,
+    needs_collision: bool,
+    needs_shadow_proxy: bool,
+) -> TerrainCpuProxyMeshPayload {
+    if !cpu_proxy_mesh {
+        return TerrainCpuProxyMeshPayload::default();
+    }
+
+    TerrainCpuProxyMeshPayload {
+        compact_shadow_proxy_mesh: shadow_mesh_mode.compacts_shadow_only_mesh(
+            cpu_proxy_mesh,
+            needs_collision,
+            needs_shadow_proxy,
+        ),
+        compact_collision_proxy_mesh: needs_collision && !needs_shadow_proxy,
     }
 }
 
@@ -1870,7 +1912,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "queue={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.mesh_jobs_completed,
             self.perf.node_counts.rendered_submeshes,
@@ -1887,6 +1929,8 @@ impl GameClient {
             gpu_terrain_shadow_proxy_mesh_mode().as_str(),
             self.perf.compact_shadow_proxy_meshes_built,
             self.perf.compact_shadow_proxy_normals_saved,
+            self.perf.compact_collision_proxy_meshes_built,
+            self.perf.compact_collision_proxy_normals_saved,
             self.perf.cpu_proxy_meshes_built,
             self.perf.node_counts.total_collision_bodies,
             self.perf.last_mesh_ms,
@@ -2304,6 +2348,53 @@ mod tests {
     }
 
     #[test]
+    fn cpu_proxy_mesh_payload_compacts_shadow_or_collision_only_roles() {
+        let no_proxy = terrain_cpu_proxy_mesh_payload(
+            GpuTerrainShadowProxyMeshMode::Compact,
+            false,
+            true,
+            false,
+        );
+        assert_eq!(no_proxy, TerrainCpuProxyMeshPayload::default());
+        assert!(!no_proxy.uses_compact_mesh());
+
+        let shadow_only = terrain_cpu_proxy_mesh_payload(
+            GpuTerrainShadowProxyMeshMode::Compact,
+            true,
+            false,
+            true,
+        );
+        assert_eq!(
+            shadow_only,
+            TerrainCpuProxyMeshPayload {
+                compact_shadow_proxy_mesh: true,
+                compact_collision_proxy_mesh: false,
+            }
+        );
+        assert!(shadow_only.uses_compact_mesh());
+
+        let collision_and_shadow = terrain_cpu_proxy_mesh_payload(
+            GpuTerrainShadowProxyMeshMode::Compact,
+            true,
+            true,
+            true,
+        );
+        assert_eq!(collision_and_shadow, TerrainCpuProxyMeshPayload::default());
+        assert!(!collision_and_shadow.uses_compact_mesh());
+
+        let collision_only =
+            terrain_cpu_proxy_mesh_payload(GpuTerrainShadowProxyMeshMode::Full, true, true, false);
+        assert_eq!(
+            collision_only,
+            TerrainCpuProxyMeshPayload {
+                compact_shadow_proxy_mesh: false,
+                compact_collision_proxy_mesh: true,
+            }
+        );
+        assert!(collision_only.uses_compact_mesh());
+    }
+
+    #[test]
     fn terrain_mesh_render_mode_matches_proxy_role() {
         let fallback = TerrainMeshRenderMode::from_proxy_state(false, false);
         assert_eq!(fallback, TerrainMeshRenderMode::VisibleDoubleSided);
@@ -2382,6 +2473,7 @@ mod tests {
             reported_vertices: 24,
             cpu_proxy_mesh: true,
             compact_shadow_proxy_mesh: true,
+            compact_collision_proxy_mesh: false,
             mesh_ms: 1.0,
             timing: meshing::MeshTiming::default(),
             collision_ms: 0.0,
@@ -2399,6 +2491,7 @@ mod tests {
             reported_vertices: 12,
             cpu_proxy_mesh: true,
             compact_shadow_proxy_mesh: false,
+            compact_collision_proxy_mesh: false,
             mesh_ms: 1.0,
             timing: meshing::MeshTiming::default(),
             collision_ms: 0.0,
@@ -2408,6 +2501,24 @@ mod tests {
 
         assert_eq!(perf.last_normals, 12);
         assert_eq!(perf.total_normals, 12);
+        assert_eq!(perf.compact_shadow_proxy_normals_saved, 24);
+
+        perf.record_mesh(MeshRecord {
+            vertices: 18,
+            normals: 0,
+            reported_vertices: 18,
+            cpu_proxy_mesh: true,
+            compact_shadow_proxy_mesh: false,
+            compact_collision_proxy_mesh: true,
+            mesh_ms: 1.0,
+            timing: meshing::MeshTiming::default(),
+            collision_ms: 0.0,
+            collision_bodies: 0,
+            node_counts: NodePerfCounts::default(),
+        });
+
+        assert_eq!(perf.compact_collision_proxy_meshes_built, 1);
+        assert_eq!(perf.compact_collision_proxy_normals_saved, 18);
         assert_eq!(perf.compact_shadow_proxy_normals_saved, 24);
     }
 }

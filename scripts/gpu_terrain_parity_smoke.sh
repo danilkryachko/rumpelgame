@@ -118,6 +118,8 @@ validate_common_marker() {
   require_metric_ge "$marker_path" "proxy_both" 0
   require_metric_ge "$marker_path" "proxy_shadow_only" 0
   require_metric_ge "$marker_path" "compact_shadow_normals_saved" 0
+  require_metric_ge "$marker_path" "compact_collision_proxy" 0
+  require_metric_ge "$marker_path" "compact_collision_normals_saved" 0
   require_metric_eq "$marker_path" "proxy_coll" "$(metric "collision" "$marker_path")"
 }
 
@@ -227,6 +229,8 @@ validate_parity_markers() {
   require_metric_eq "$cpu_marker" "proxy_shadow_only" 0
   require_metric_eq "$cpu_marker" "compact_shadow_proxy" 0
   require_metric_eq "$cpu_marker" "compact_shadow_normals_saved" 0
+  require_metric_eq "$cpu_marker" "compact_collision_proxy" 0
+  require_metric_eq "$cpu_marker" "compact_collision_normals_saved" 0
 
   require_metric_ge "$gpu_marker" "gpu_frames" 1
   require_metric_ge "$gpu_marker" "gpu_subchunks" 1
@@ -239,6 +243,8 @@ validate_parity_markers() {
     "$(metric "compact_shadow_proxy" "$gpu_marker")"
   require_metric_ge "$gpu_marker" "proxy_shadow" 1
   require_metric_ge "$gpu_marker" "proxy_both" 1
+  require_metric_eq "$gpu_marker" "compact_collision_proxy" 0
+  require_metric_eq "$gpu_marker" "compact_collision_normals_saved" 0
 
   require_metric_ge "$radius_marker" "gpu_frames" 1
   require_metric_ge "$radius_marker" "gpu_subchunks" 1
@@ -248,6 +254,8 @@ validate_parity_markers() {
   require_metric_eq "$radius_marker" "proxy_shadow_only" 0
   require_metric_eq "$radius_marker" "compact_shadow_proxy" 0
   require_metric_eq "$radius_marker" "compact_shadow_normals_saved" 0
+  require_metric_eq "$radius_marker" "compact_collision_proxy" 0
+  require_metric_eq "$radius_marker" "compact_collision_normals_saved" 0
   require_metric_ge "$radius_marker" "fast_proxy" 1
 
   validate_common_marker "$collision_only_marker" "default" "collision_only" "full" "diagnostic_no_shadow_proxy"
@@ -259,6 +267,11 @@ validate_parity_markers() {
   require_metric_eq "$collision_only_marker" "proxy_shadow_only" 0
   require_metric_eq "$collision_only_marker" "compact_shadow_proxy" 0
   require_metric_eq "$collision_only_marker" "compact_shadow_normals_saved" 0
+  require_metric_eq "$collision_only_marker" "compact_collision_proxy" "$(metric "fast_proxy" "$collision_only_marker")"
+  require_metric_ge \
+    "$collision_only_marker" \
+    "compact_collision_normals_saved" \
+    "$(metric "compact_collision_proxy" "$collision_only_marker")"
   require_metric_eq "$collision_only_marker" "mesh_visible" 0
   require_metric_eq "$collision_only_marker" "mesh_shadow_off" "$(metric "cpu_proxy" "$collision_only_marker")"
   require_metric_eq "$collision_only_marker" "mesh_shadow_double" 0
@@ -277,6 +290,8 @@ validate_parity_markers() {
     "$compact_shadow_marker" \
     "compact_shadow_normals_saved" \
     "$(metric "compact_shadow_proxy" "$compact_shadow_marker")"
+  require_metric_eq "$compact_shadow_marker" "compact_collision_proxy" 0
+  require_metric_eq "$compact_shadow_marker" "compact_collision_normals_saved" 0
   require_metric_ge "$compact_shadow_marker" "fast_proxy" 1
 
   validate_pose_pair \
@@ -318,10 +333,14 @@ validate_pose_pair_with_mesh() {
   require_metric_eq "$cpu_marker" "fast_proxy" 0
   require_metric_eq "$cpu_marker" "compact_shadow_proxy" 0
   require_metric_eq "$cpu_marker" "compact_shadow_normals_saved" 0
+  require_metric_eq "$cpu_marker" "compact_collision_proxy" 0
+  require_metric_eq "$cpu_marker" "compact_collision_normals_saved" 0
   require_metric_ge "$gpu_marker" "gpu_frames" 1
   require_metric_ge "$gpu_marker" "gpu_subchunks" 1
   require_metric_ge "$gpu_marker" "gpu_faces" 1
   require_metric_ge "$gpu_marker" "fast_proxy" 1
+  require_metric_eq "$gpu_marker" "compact_collision_proxy" 0
+  require_metric_eq "$gpu_marker" "compact_collision_normals_saved" 0
   if [ "$expected_gpu_shadow_mesh" = "compact" ]; then
     require_metric_ge "$gpu_marker" "compact_shadow_proxy" 1
     require_metric_ge \
@@ -399,11 +418,15 @@ validate_compact_shadow_pose_pair() {
   require_metric_ge "$full_marker" "fast_proxy" 1
   require_metric_eq "$full_marker" "compact_shadow_proxy" 0
   require_metric_eq "$full_marker" "compact_shadow_normals_saved" 0
+  require_metric_eq "$full_marker" "compact_collision_proxy" 0
+  require_metric_eq "$full_marker" "compact_collision_normals_saved" 0
 
   require_metric_ge "$compact_marker" "gpu_frames" 1
   require_metric_ge "$compact_marker" "gpu_subchunks" 1
   require_metric_ge "$compact_marker" "gpu_faces" 1
   require_metric_ge "$compact_marker" "fast_proxy" 1
+  require_metric_eq "$compact_marker" "compact_collision_proxy" 0
+  require_metric_eq "$compact_marker" "compact_collision_normals_saved" 0
   require_metric_ge "$compact_marker" "proxy_shadow" 1
   require_metric_ge "$compact_marker" "proxy_both" 1
   require_metric_ge "$compact_marker" "proxy_shadow_only" 1

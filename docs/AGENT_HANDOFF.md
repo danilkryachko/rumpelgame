@@ -286,6 +286,14 @@ Checks:
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
   - Fresh direct parity captures passed across all ten marker files; examples include `shadow_path=arraymesh` for CPU fallback, `shadow_path=godot_proxy` for conservative GPU cases, and `shadow_path=diagnostic_no_shadow_proxy` for the collision-only diagnostic case.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 sh ./scripts/gpu_terrain_parity_smoke.sh` passed against the fresh artifacts. Direct executable wrapper launch can still stall in this Codex PTY environment, matching the known wrapper issue; use explicit `sh` or direct Godot commands for the reliable local gate.
+- Latest collision-only compact proxy slice passed:
+  - Collision-only CPU proxy meshes now use the same vertex-only compact payload as compact shadow-only proxies. This applies only when a GPU-visible proxy needs collision and does not need a Godot shadow proxy; conservative collision+shadow proxies and ArrayMesh fallback stay on the full mesh path.
+  - Rust perf text now includes `compact_collision_proxy=...` and `compact_collision_normals_saved=...`. `fast_proxy` remains the total packed-face CPU proxy counter, while the new compact collision counters make the collision-only diagnostic payload reduction explicit.
+  - `scripts/gpu_terrain_parity_smoke.sh` now requires zero compact-collision payload in CPU fallback and conservative shadow-proxy cases, and requires `compact_collision_proxy == fast_proxy` in the `collision_only` diagnostic marker.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (37/37), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+  - Fresh direct parity captures passed across all ten marker files. The collision-only marker included `compact_collision_proxy=20`, `compact_collision_normals_saved=186192`, `fast_proxy=20`, `mesh_visible=0`, `mesh_shadow_off=10`, and `shadow_path=diagnostic_no_shadow_proxy`.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 sh ./scripts/gpu_terrain_parity_smoke.sh` passed against the fresh artifacts.
 
 Useful log lines:
 
