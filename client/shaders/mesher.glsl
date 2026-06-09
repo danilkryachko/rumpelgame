@@ -57,11 +57,11 @@ void add_face(vec3 pos, vec3 normal, uint block_id, uint face_idx) {
     }
 
     push_vertex(start_v + 0u, p0, normal, vec2(0.0,0.0));
-    push_vertex(start_v + 1u, p1, normal, vec2(0.0,1.0));
-    push_vertex(start_v + 2u, p2, normal, vec2(1.0,1.0));
+    push_vertex(start_v + 1u, p2, normal, vec2(1.0,1.0));
+    push_vertex(start_v + 2u, p1, normal, vec2(0.0,1.0));
     push_vertex(start_v + 3u, p0, normal, vec2(0.0,0.0));
-    push_vertex(start_v + 4u, p2, normal, vec2(1.0,1.0));
-    push_vertex(start_v + 5u, p3, normal, vec2(1.0,0.0));
+    push_vertex(start_v + 4u, p3, normal, vec2(1.0,0.0));
+    push_vertex(start_v + 5u, p2, normal, vec2(1.0,1.0));
 }
 
 void main() {

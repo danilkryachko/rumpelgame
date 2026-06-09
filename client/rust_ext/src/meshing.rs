@@ -46,7 +46,7 @@ impl ComputeMesher {
         })
     }
 
-    pub fn mesh_chunk(&mut self, voxel_data: &[u8]) -> Option<PackedVector3Array> {
+    pub fn mesh_chunk(&mut self, voxel_data: &[u8]) -> Option<(PackedVector3Array, PackedVector3Array)> {
         godot_print!("ComputeMesher: received chunk of {} bytes, starting GPU dispatch.", voxel_data.len());
         
         let mut gpu_voxels = Vec::with_capacity(voxel_data.len() * 2);
@@ -98,17 +98,23 @@ impl ComputeMesher {
             godot_print!("Compute Shader generated {} vertices.", vertex_count);
 
             let mut vertices = PackedVector3Array::new();
+            let mut normals = PackedVector3Array::new();
             for i in 0..vertex_count {
                 let offset = 4 + i * 32; 
-                if offset + 12 > out_slice.len() { break; } 
+                if offset + 24 > out_slice.len() { break; } 
                 
                 let x = f32::from_le_bytes([out_slice[offset+0], out_slice[offset+1], out_slice[offset+2], out_slice[offset+3]]);
                 let y = f32::from_le_bytes([out_slice[offset+4], out_slice[offset+5], out_slice[offset+6], out_slice[offset+7]]);
                 let z = f32::from_le_bytes([out_slice[offset+8], out_slice[offset+9], out_slice[offset+10], out_slice[offset+11]]);
                 
+                let nx = f32::from_le_bytes([out_slice[offset+12], out_slice[offset+13], out_slice[offset+14], out_slice[offset+15]]);
+                let ny = f32::from_le_bytes([out_slice[offset+16], out_slice[offset+17], out_slice[offset+18], out_slice[offset+19]]);
+                let nz = f32::from_le_bytes([out_slice[offset+20], out_slice[offset+21], out_slice[offset+22], out_slice[offset+23]]);
+                
                 vertices.push(Vector3::new(x, y, z));
+                normals.push(Vector3::new(nx, ny, nz));
             }
-            Some(vertices)
+            Some((vertices, normals))
         } else {
             None
         }

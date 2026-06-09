@@ -107,13 +107,14 @@ impl GameClient {
     fn update_chunk(&mut self, chunk: crate::api::api::ChunkData) {
         godot_print!("Received/Updated Chunk! X: {}, Z: {}, Blocks length: {}", chunk.x, chunk.z, chunk.blocks.len());
         if let Some(mesher) = &mut self.mesher {
-            if let Some(vertices) = mesher.mesh_chunk(&chunk.blocks) {
+            if let Some((vertices, normals)) = mesher.mesh_chunk(&chunk.blocks) {
                 godot_print!("Meshing complete! Generated {} vertices.", vertices.len());
                 
                 if vertices.len() > 0 {
                     let mut arrays = Array::new();
                     arrays.resize(13, &Variant::nil());
                     arrays.set(0, &vertices.to_variant());
+                    arrays.set(1, &normals.to_variant());
                     
                     let mut array_mesh = godot::classes::ArrayMesh::new_gd();
                     array_mesh.add_surface_from_arrays(godot::classes::mesh::PrimitiveType::TRIANGLES, &arrays);
