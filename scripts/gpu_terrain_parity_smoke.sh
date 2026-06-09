@@ -105,6 +105,11 @@ validate_common_marker() {
   require_metric_ge "$marker_path" "terrain_color_buckets" "$MIN_TERRAIN_COLOR_BUCKETS"
   require_metric_ge "$marker_path" "terrain_chroma_samples" "$MIN_TERRAIN_CHROMA_SAMPLES"
   require_float_metric_ge "$marker_path" "terrain_luma_range" "$MIN_TERRAIN_LUMA_RANGE"
+  require_metric_ge "$marker_path" "proxy_coll" 1
+  require_metric_ge "$marker_path" "proxy_shadow" 0
+  require_metric_ge "$marker_path" "proxy_both" 0
+  require_metric_ge "$marker_path" "proxy_shadow_only" 0
+  require_metric_eq "$marker_path" "proxy_coll" "$(metric "collision" "$marker_path")"
 }
 
 run_case() {
@@ -186,15 +191,23 @@ validate_parity_markers() {
   require_metric_absent "$cpu_marker" "gpu_frames"
   require_metric_absent "$cpu_marker" "gpu_subchunks"
   require_metric_eq "$cpu_marker" "fast_proxy" 0
+  require_metric_eq "$cpu_marker" "proxy_shadow" 0
+  require_metric_eq "$cpu_marker" "proxy_both" 0
+  require_metric_eq "$cpu_marker" "proxy_shadow_only" 0
 
   require_metric_ge "$gpu_marker" "gpu_frames" 1
   require_metric_ge "$gpu_marker" "gpu_subchunks" 1
   require_metric_ge "$gpu_marker" "gpu_faces" 1
   require_metric_ge "$gpu_marker" "fast_proxy" 1
+  require_metric_ge "$gpu_marker" "proxy_shadow" 1
+  require_metric_ge "$gpu_marker" "proxy_both" 1
 
   require_metric_ge "$radius_marker" "gpu_frames" 1
   require_metric_ge "$radius_marker" "gpu_subchunks" 1
   require_metric_eq "$radius_marker" "cpu_proxy" "$(metric "collision" "$radius_marker")"
+  require_metric_eq "$radius_marker" "proxy_shadow" "$(metric "collision" "$radius_marker")"
+  require_metric_eq "$radius_marker" "proxy_both" "$(metric "collision" "$radius_marker")"
+  require_metric_eq "$radius_marker" "proxy_shadow_only" 0
   require_metric_ge "$radius_marker" "fast_proxy" 1
 
   cpu_luma="$(float_metric "avg_luma" "$cpu_marker")"

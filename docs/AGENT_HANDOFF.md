@@ -28,12 +28,13 @@ Done:
 - Added a delayed visible-path transition: CPU fallback/proxy nodes are not hidden or removed until the GPU compositor has produced at least one frame, and a subchunk keeps CPU fallback if its GPU upload did not produce a slot.
 - Added a GPU-visible refresh so existing CPU subchunk nodes are re-evaluated once the GPU compositor becomes the confirmed visible terrain path, instead of waiting for later player movement or chunk updates.
 - Added a faster CPU shadow/collision proxy path for opt-in GPU terrain: after successful GPU upload and confirmed GPU visible rendering, retained CPU proxy `ArrayMesh` geometry is built directly from `PackedFaceBatch` vertices/normals instead of rerunning the full compute mesher/readback/UV path.
+- Added CPU proxy reason counters to the Rust client perf text: `proxy_coll`, `proxy_shadow`, `proxy_both`, and `proxy_shadow_only`. These counters explain why retained CPU `SubchunkMesh_*` nodes still exist in the opt-in GPU terrain path.
 - Kept visible CPU fallback behavior unchanged: CPU-only rendering and failed GPU uploads still use the existing compute mesher with UVs/materials.
 - Added visual smoke capture hooks in `client/main.gd` through `RUMPELMC_VISUAL_SMOKE_PATH`, `RUMPELMC_VISUAL_SMOKE_DELAY_SEC`, and `RUMPELMC_VISUAL_SMOKE_HIDE_HUD`.
 - Strengthened visual smoke validation with `terrain_samples` and `smoke_err`; sky-only frames now fail even if the image is bright and GPU counters are nonzero.
 - Extended visual smoke markers with region, color-bucket, chroma, and terrain-luma-range metrics so parity can catch atlas/color/lighting/depth distribution regressions beyond a basic non-sky frame.
 - Added `scripts/gpu_terrain_visual_smoke.sh` as a CPU/GPU smoke wrapper; in the current Codex PTY environment direct Godot commands are the reliable gate because the wrapper can stall before project logs appear.
-- Added `scripts/gpu_terrain_parity_smoke.sh` as a CPU/GPU/radius=1 parity gate. It validates marker files for `smoke_err=0`, terrain samples, region coverage, atlas/color diversity, terrain luma range, CPU fallback counters, GPU counters, fast proxy usage, radius=1 proxy/collision parity, and conservative CPU/GPU visual envelopes.
+- Added `scripts/gpu_terrain_parity_smoke.sh` as a CPU/GPU/radius=1 parity gate. It validates marker files for `smoke_err=0`, terrain samples, region coverage, atlas/color diversity, terrain luma range, CPU fallback counters, CPU proxy reason counters, GPU counters, fast proxy usage, radius=1 proxy/collision parity, and conservative CPU/GPU visual envelopes.
 - Added `RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1` for automated visual smokes so player input does not accidentally break/place blocks and mutate the world during capture.
 - Added GPU terrain log/perf visibility, including `gpu_frames`.
 - Kept ArrayMesh terrain fallback active.
@@ -129,6 +130,13 @@ Checks:
 - Latest `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the extended parity artifacts.
 - Latest `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed after the extended visual metrics slice; `golangci-lint` is not installed locally and was skipped by the script.
 - Latest `./scripts/diff_guard.sh` passed on the small 3-file slice before commit.
+- Latest proxy-reason counter slice passed:
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (11/11), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+  - Parity captures were refreshed with the new perf counters and `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed.
+  - CPU fallback marker: `cpu_proxy=80`, `proxy_coll=10`, `proxy_shadow=0`, `proxy_both=0`, `proxy_shadow_only=0`, `collision=10`.
+  - GPU default marker: `cpu_proxy=82`, `proxy_coll=10`, `proxy_shadow=82`, `proxy_both=10`, `proxy_shadow_only=72`, `collision=10`.
+  - GPU radius=1 marker: `cpu_proxy=10`, `proxy_coll=10`, `proxy_shadow=10`, `proxy_both=10`, `proxy_shadow_only=0`, `collision=10`.
 
 Useful log lines:
 
@@ -151,6 +159,8 @@ Useful log lines:
 - `Visual smoke screenshot saved ... parity/cpu-arraymesh-parity.png ... terrain_color_buckets=8 terrain_chroma_samples=256 terrain_luma_range=0.3655 ...`
 - `Visual smoke screenshot saved ... parity/gpu-terrain-parity.png ... terrain_color_buckets=8 terrain_chroma_samples=256 terrain_luma_range=0.3532 ... gpu_frames=143 ...`
 - `Visual smoke screenshot saved ... parity/gpu-terrain-radius1-parity.png ... terrain_color_buckets=8 terrain_chroma_samples=256 terrain_luma_range=0.3532 ... cpu_proxy=10 fast_proxy=20 ... gpu_frames=149 ...`
+- `Visual smoke screenshot saved ... parity/gpu-terrain-parity.png ... cpu_proxy=82 proxy_coll=10 proxy_shadow=82 proxy_both=10 proxy_shadow_only=72 ...`
+- `Visual smoke screenshot saved ... parity/gpu-terrain-radius1-parity.png ... cpu_proxy=10 proxy_coll=10 proxy_shadow=10 proxy_both=10 proxy_shadow_only=0 ...`
 
 Known limitations:
 
@@ -164,7 +174,7 @@ Known limitations:
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, CPU ArrayMesh nodes become `SHADOWS_ONLY` only after the GPU visible render path has rendered at least one compositor frame; this avoids double visible terrain while preserving fallback if GPU setup fails or a subchunk fails GPU upload.
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, CPU ArrayMesh nodes are still kept where needed for nearby collision and the conservative Godot shadow-map proxy. Distant CPU `MeshInstance3D` removal has started, but the retained proxy radius is intentionally conservative.
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, retained CPU proxy meshes can now be built from packed GPU terrain faces after the GPU visible path is confirmed. These proxy meshes intentionally omit UVs because they are used for collision and `SHADOWS_ONLY`, not visible terrain.
-- `scripts/gpu_terrain_parity_smoke.sh` can validate existing artifacts with `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1`. It now expects markers produced by the extended visual smoke metrics in `client/main.gd`. In this Codex PTY environment, launching Godot through shell wrappers can still stall before project logs appear, so direct Godot commands plus validate-only are the reliable local gate.
+- `scripts/gpu_terrain_parity_smoke.sh` can validate existing artifacts with `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1`. It now expects markers produced by the extended visual smoke metrics in `client/main.gd` and the proxy reason counters from `client/rust_ext/src/lib.rs`. In this Codex PTY environment, launching Godot through shell wrappers can still stall before project logs appear, so direct Godot commands plus validate-only are the reliable local gate.
 - The custom RD compositor draw still does not natively participate in Godot shadow maps as a real shadow caster/receiver. Full shadow parity without ArrayMesh proxy needs a separate render integration plan.
 - Final ArrayMesh replacement for distant terrain is not finished.
 - Keep the working tree small and commit completed slices; `diff_guard` is expected to stay green after the dirty-tree cleanup baseline.
@@ -172,7 +182,7 @@ Known limitations:
 Next steps:
 
 1. After any GPU terrain edit, run the parity gate: direct CPU/GPU/radius=1 visual smoke captures with `RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1`, then `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh`.
-2. Tighten the CPU shadow-proxy strategy only after parity stays stable: keep a conservative invisible/nearby ArrayMesh proxy, build a lower-cost dedicated shadow proxy, or implement native shadow-map participation for the custom RD path. Do not disable the ArrayMesh shadow proxy until the replacement is verified.
-3. Expand parity validation toward real shadow behavior and atlas orientation/depth checks beyond the current luma/terrain-sample envelope.
+2. Add multi-pose parity smoke next: keep the current default camera, add an atlas/depth-sensitive pose, and add a lighting/shadow-sensitive pose. Reuse direct Godot captures plus validate-only in this Codex PTY environment.
+3. Tighten the CPU shadow-proxy strategy only after parity stays stable: the latest default GPU marker shows `proxy_shadow_only=72`, so most retained CPU meshes are shadow-only and should be targeted by a dedicated shadow proxy or native shadow integration plan.
 4. Continue reducing CPU ArrayMesh generation for distant chunks while preserving nearby collision meshes, shadow proxy requirements, and the fallback path.
 5. Run `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full`, parity visual smoke validation, and `./scripts/diff_guard.sh` before handing off again.

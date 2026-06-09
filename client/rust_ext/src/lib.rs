@@ -427,7 +427,7 @@ impl GameClient {
         }
 
         let collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
-        let (rendered_submeshes, total_collision_bodies) = self.current_node_perf_counts();
+        let node_counts = self.current_node_perf_counts();
         self.perf.record_mesh(MeshRecord {
             vertices: vertices.len(),
             reported_vertices,
@@ -436,8 +436,7 @@ impl GameClient {
             timing,
             collision_ms,
             collision_bodies,
-            rendered_submeshes,
-            total_collision_bodies,
+            node_counts,
         });
     }
 
@@ -803,28 +802,41 @@ impl GameClient {
     }
 
     fn refresh_node_perf_counts(&mut self) {
-        let (rendered_submeshes, total_collision_bodies) = self.current_node_perf_counts();
-        self.perf.rendered_submeshes = rendered_submeshes;
-        self.perf.total_collision_bodies = total_collision_bodies;
+        self.perf.node_counts = self.current_node_perf_counts();
     }
 
-    fn current_node_perf_counts(&self) -> (i32, i32) {
-        let mut rendered_submeshes = 0;
-        let mut total_collision_bodies = 0;
+    fn current_node_perf_counts(&self) -> NodePerfCounts {
+        let mut counts = NodePerfCounts::default();
+        let gpu_visible = self.gpu_terrain_visible_render_active();
         for idx in 0..self.base().get_child_count() {
             let Some(child) = self.base().get_child(idx) else {
                 continue;
             };
-            if !child.get_name().to_string().starts_with("SubchunkMesh_") {
+            let Some(key) = subchunk_key_from_mesh_name(&child.get_name().to_string()) else {
                 continue;
+            };
+            counts.rendered_submeshes += 1;
+
+            let needs_collision = self.subchunk_needs_collision(key);
+            let needs_shadow = gpu_visible && self.subchunk_needs_shadow_proxy(key);
+            if needs_collision {
+                counts.cpu_proxy_collision += 1;
             }
-            rendered_submeshes += 1;
+            if needs_shadow {
+                counts.cpu_proxy_shadow += 1;
+            }
+            if needs_collision && needs_shadow {
+                counts.cpu_proxy_both += 1;
+            } else if needs_shadow {
+                counts.cpu_proxy_shadow_only += 1;
+            }
+
             let Ok(mesh_instance) = child.try_cast::<godot::classes::MeshInstance3D>() else {
                 continue;
             };
-            total_collision_bodies += count_static_body_children(&mesh_instance);
+            counts.total_collision_bodies += count_static_body_children(&mesh_instance);
         }
-        (rendered_submeshes, total_collision_bodies)
+        counts
     }
 
     fn attach_gpu_terrain_compositor_to_player_camera(&mut self) {
@@ -912,6 +924,7 @@ impl GameClient {
             };
             configure_terrain_mesh_render_mode(&mut mesh_instance, gpu_visible_render_active);
         }
+        self.refresh_node_perf_counts();
     }
 
     fn refresh_cpu_proxies_after_gpu_attach(&mut self) {
@@ -963,8 +976,7 @@ struct PerfStats {
     last_reported_vertices: usize,
     total_vertices: usize,
     collision_bodies: i32,
-    rendered_submeshes: i32,
-    total_collision_bodies: i32,
+    node_counts: NodePerfCounts,
     chunk_bytes_loaded: usize,
     last_prepare_ms: f64,
     last_submit_ms: f64,
@@ -982,8 +994,17 @@ struct MeshRecord {
     timing: meshing::MeshTiming,
     collision_ms: f64,
     collision_bodies: i32,
+    node_counts: NodePerfCounts,
+}
+
+#[derive(Clone, Copy, Default)]
+struct NodePerfCounts {
     rendered_submeshes: i32,
     total_collision_bodies: i32,
+    cpu_proxy_collision: i32,
+    cpu_proxy_shadow: i32,
+    cpu_proxy_both: i32,
+    cpu_proxy_shadow_only: i32,
 }
 
 impl PerfStats {
@@ -1003,8 +1024,7 @@ impl PerfStats {
             self.cpu_proxy_meshes_built += 1;
         }
         self.collision_bodies = record.collision_bodies;
-        self.rendered_submeshes = record.rendered_submeshes;
-        self.total_collision_bodies = record.total_collision_bodies;
+        self.node_counts = record.node_counts;
         self.last_prepare_ms = record.timing.prepare_ms;
         self.last_submit_ms = record.timing.submit_ms;
         self.last_sync_ms = record.timing.sync_ms;
@@ -1061,6 +1081,22 @@ const FACE_FRONT: u32 = 5;
 
 fn subchunk_mesh_name(key: SubchunkKey) -> String {
     format!("SubchunkMesh_{}_{}_{}", key.chunk_x, key.sub_y, key.chunk_z)
+}
+
+fn subchunk_key_from_mesh_name(name: &str) -> Option<SubchunkKey> {
+    let mut parts = name.strip_prefix("SubchunkMesh_")?.split('_');
+    let chunk_x = parts.next()?.parse::<i32>().ok()?;
+    let sub_y = parts.next()?.parse::<i32>().ok()?;
+    let chunk_z = parts.next()?.parse::<i32>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+
+    Some(SubchunkKey {
+        chunk_x,
+        sub_y,
+        chunk_z,
+    })
 }
 
 fn gpu_subchunk_key(key: SubchunkKey) -> gpu_terrain::GpuSubchunkKey {
@@ -1401,12 +1437,12 @@ impl GameClient {
 
     #[func]
     fn get_rendered_chunk_count(&self) -> i32 {
-        self.perf.rendered_submeshes
+        self.perf.node_counts.rendered_submeshes
     }
 
     #[func]
     fn get_chunk_collision_count(&self) -> i32 {
-        self.perf.total_collision_bodies
+        self.perf.node_counts.total_collision_bodies
     }
 
     #[func]
@@ -1451,12 +1487,16 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} jobs={} cpu_proxy={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} mem={:.1}MB{}",
+            "queue={} jobs={} cpu_proxy={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.mesh_jobs_completed,
-            self.perf.rendered_submeshes,
+            self.perf.node_counts.rendered_submeshes,
+            self.perf.node_counts.cpu_proxy_collision,
+            self.perf.node_counts.cpu_proxy_shadow,
+            self.perf.node_counts.cpu_proxy_both,
+            self.perf.node_counts.cpu_proxy_shadow_only,
             self.perf.cpu_proxy_meshes_built,
-            self.perf.total_collision_bodies,
+            self.perf.node_counts.total_collision_bodies,
             self.perf.last_mesh_ms,
             self.perf.avg_mesh_ms,
             self.perf.max_mesh_ms,
@@ -1555,4 +1595,20 @@ impl GameClient {
 
     #[signal]
     fn debug_log(message: GString);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subchunk_key_from_mesh_name_parses_expected_format() {
+        let key = subchunk_key_from_mesh_name("SubchunkMesh_-2_7_3").expect("valid subchunk key");
+
+        assert_eq!(key.chunk_x, -2);
+        assert_eq!(key.sub_y, 7);
+        assert_eq!(key.chunk_z, 3);
+        assert!(subchunk_key_from_mesh_name("SubchunkMesh_-2_7_3_extra").is_none());
+        assert!(subchunk_key_from_mesh_name("ChunkMesh_-2_7_3").is_none());
+    }
 }
