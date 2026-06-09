@@ -2,6 +2,8 @@ package network
 
 import (
 	"encoding/binary"
+	"fmt"
+	"io"
 	"log"
 	"net"
 
@@ -10,13 +12,20 @@ import (
 	"rumpelmc/server/pkg/world"
 )
 
+const maxPacketSize = 16 * 1024 * 1024
+const viewDistance int32 = 10
+const chunkForgetDistance int32 = viewDistance + 1
+const chunksPerUpdate = 6
+
 type Server struct {
 	address string
+	world   *world.World
 }
 
-func NewServer(address string) *Server {
+func NewServer(address string, gameWorld *world.World) *Server {
 	return &Server{
 		address: address,
+		world:   gameWorld,
 	}
 }
 
@@ -44,74 +53,118 @@ func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 	log.Printf("Client connected: %s", conn.RemoteAddr())
 
-	// Генерируем тестовый чанк и отправляем его
-	chunk := world.NewChunk(0, 0)
-	chunk.GenerateFlat()
-
-	packet := &api.Packet{
-		Payload: &api.Packet_Chunk{
-			Chunk: &api.ChunkData{
-				X:      chunk.X,
-				Z:      chunk.Z,
-				Blocks: chunk.Serialize(),
-			},
-		},
-	}
-
-	if err := s.sendPacket(conn, packet); err != nil {
-		log.Printf("Failed to send chunk: %v", err)
+	sentChunks := make(map[world.ChunkCoord]bool)
+	if err := s.sendChunksAround(conn, 0, 0, sentChunks); err != nil {
+		log.Printf("Failed to send initial chunks: %v", err)
 		return
 	}
-	log.Printf("Sent chunk data to %s", conn.RemoteAddr())
+	log.Printf("Started progressive chunk stream radius=%d batch=%d to %s", viewDistance, chunksPerUpdate, conn.RemoteAddr())
 
 	// Чтение пакетов в цикле
 	for {
-		lenBuf := make([]byte, 4)
-		if _, err := conn.Read(lenBuf); err != nil {
+		clientPacket, err := s.receivePacket(conn)
+		if err != nil {
 			log.Printf("Client disconnected: %v", err)
 			return
 		}
-		length := binary.LittleEndian.Uint32(lenBuf)
-
-		dataBuf := make([]byte, length)
-		if _, err := conn.Read(dataBuf); err != nil {
-			log.Printf("Error reading packet: %v", err)
-			return
-		}
-
-		clientPacket := &api.Packet{}
-		if err := proto.Unmarshal(dataBuf, clientPacket); err != nil {
-			log.Printf("Error unmarshaling: %v", err)
-			continue
-		}
 
 		switch p := clientPacket.Payload.(type) {
+		case *api.Packet_Position:
+			center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
+			forgetFarSentChunks(sentChunks, center.X, center.Z, chunkForgetDistance)
+			if err := s.sendChunksAround(conn, center.X, center.Z, sentChunks); err != nil {
+				log.Printf("Failed to send chunks around %d,%d: %v", center.X, center.Z, err)
+				return
+			}
+
 		case *api.Packet_BlockAction:
 			action := p.BlockAction
 			log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
 
+			block := world.Air
 			if action.Action == api.BlockAction_DESTROY {
-				chunk.SetBlock(int(action.X), int(action.Y), int(action.Z), world.BlockID(0))
+				block = world.Air
 			} else if action.Action == api.BlockAction_PLACE {
-				chunk.SetBlock(int(action.X), int(action.Y), int(action.Z), world.BlockID(action.BlockId))
+				block = world.BlockID(action.BlockId)
+				if !world.IsPlaceable(block) {
+					log.Printf("Ignored invalid place block id=%d", action.BlockId)
+					continue
+				}
 			}
 
-			// Отправляем обновленный чанк обратно
-			updatePacket := &api.Packet{
-				Payload: &api.Packet_Chunk{
-					Chunk: &api.ChunkData{
-						X:      chunk.X,
-						Z:      chunk.Z,
-						Blocks: chunk.Serialize(),
-					},
-				},
+			snapshot, err := s.world.SetBlockGlobal(action.X, action.Y, action.Z, block)
+			if err != nil {
+				log.Printf("Failed to update block: %v", err)
+				return
 			}
-			s.sendPacket(conn, updatePacket)
+
+			if err := s.sendChunk(conn, snapshot); err != nil {
+				log.Printf("Failed to send updated chunk %d,%d: %v", snapshot.X, snapshot.Z, err)
+				return
+			}
 
 		default:
 			log.Printf("Unknown packet received")
 		}
 	}
+}
+
+func forgetFarSentChunks(sentChunks map[world.ChunkCoord]bool, centerX, centerZ, distance int32) {
+	for coord := range sentChunks {
+		if !world.ChunkWithinRadius(coord, centerX, centerZ, distance) {
+			delete(sentChunks, coord)
+		}
+	}
+}
+
+func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChunks map[world.ChunkCoord]bool) error {
+	chunks, err := s.world.ChunksAround(centerX, centerZ, viewDistance, sentChunks, chunksPerUpdate)
+	if err != nil {
+		return err
+	}
+	for _, chunk := range chunks {
+		if err := s.sendChunk(conn, chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) sendChunk(conn net.Conn, chunk world.ChunkSnapshot) error {
+	packet := &api.Packet{
+		Payload: &api.Packet_Chunk{
+			Chunk: &api.ChunkData{
+				X:      chunk.X,
+				Z:      chunk.Z,
+				Blocks: chunk.Blocks,
+			},
+		},
+	}
+	return s.sendPacket(conn, packet)
+}
+
+func (s *Server) receivePacket(conn net.Conn) (*api.Packet, error) {
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return nil, err
+	}
+
+	length := binary.LittleEndian.Uint32(lenBuf)
+	if length > maxPacketSize {
+		return nil, fmt.Errorf("packet too large: %d bytes", length)
+	}
+
+	dataBuf := make([]byte, length)
+	if _, err := io.ReadFull(conn, dataBuf); err != nil {
+		return nil, err
+	}
+
+	packet := &api.Packet{}
+	if err := proto.Unmarshal(dataBuf, packet); err != nil {
+		return nil, err
+	}
+
+	return packet, nil
 }
 
 func (s *Server) sendPacket(conn net.Conn, packet *api.Packet) error {
@@ -123,11 +176,26 @@ func (s *Server) sendPacket(conn net.Conn, packet *api.Packet) error {
 	lenBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(lenBuf, uint32(len(data)))
 
-	if _, err := conn.Write(lenBuf); err != nil {
+	if err := writeFull(conn, lenBuf); err != nil {
 		return err
 	}
-	if _, err := conn.Write(data); err != nil {
+	if err := writeFull(conn, data); err != nil {
 		return err
 	}
+	return nil
+}
+
+func writeFull(writer io.Writer, data []byte) error {
+	for len(data) > 0 {
+		n, err := writer.Write(data)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		data = data[n:]
+	}
+
 	return nil
 }
