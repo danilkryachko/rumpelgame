@@ -1282,10 +1282,15 @@ fn gpu_terrain_stats_enabled() -> bool {
 fn gpu_terrain_upload_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
-        GPU_TERRAIN_PROTOTYPE_UPLOAD
-            || env_flag_enabled(GPU_TERRAIN_UPLOAD_ENV)
-            || gpu_terrain_render_enabled()
+        gpu_terrain_upload_decision(
+            env_flag_enabled(GPU_TERRAIN_UPLOAD_ENV),
+            gpu_terrain_render_enabled(),
+        )
     })
+}
+
+fn gpu_terrain_upload_decision(upload_env_enabled: bool, render_enabled: bool) -> bool {
+    GPU_TERRAIN_PROTOTYPE_UPLOAD || upload_env_enabled || render_enabled
 }
 
 fn gpu_terrain_render_decision(env_state: Option<bool>) -> bool {
@@ -1945,6 +1950,14 @@ mod tests {
         assert!(!gpu_terrain_render_decision(None));
         assert!(gpu_terrain_render_decision(Some(true)));
         assert!(!gpu_terrain_render_decision(Some(false)));
+    }
+
+    #[test]
+    fn gpu_terrain_upload_follows_explicit_upload_or_render_enable() {
+        assert!(!gpu_terrain_upload_decision(false, false));
+        assert!(gpu_terrain_upload_decision(true, false));
+        assert!(gpu_terrain_upload_decision(false, true));
+        assert!(gpu_terrain_upload_decision(true, true));
     }
 
     #[test]

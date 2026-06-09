@@ -254,6 +254,12 @@ Checks:
   - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (31/31), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
   - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
   - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
+- Latest GPU terrain upload flag guard slice passed:
+  - `gpu_terrain_upload_enabled()` now delegates its decision to a pure helper covered by a unit test. The test locks that upload stays off by default, explicit upload enables it, and opt-in GPU render also enables upload so visible GPU terrain cannot run without GPU face uploads.
+  - This preserves the current invariant that `RUMPELMC_GPU_TERRAIN_RENDER` itself remains opt-in while keeping the render/upload dependency explicit and reviewable.
+  - Rust: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (32/32), and `cargo build --manifest-path client/rust_ext/Cargo.toml`.
+  - Full check: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed; `golangci-lint` is not installed locally and was skipped by the script.
+  - `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the current parity artifacts.
 
 Useful log lines:
 
