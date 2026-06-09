@@ -712,13 +712,7 @@ impl GameClient {
         };
         let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
         for coord in loaded_chunks {
-            let was_near = previous.is_some_and(|prev| {
-                chunk_within_radius(coord, prev, COLLISION_CHUNK_DISTANCE)
-                    || (shadow_radius > 0 && chunk_within_radius(coord, prev, shadow_radius))
-            });
-            let is_near = chunk_within_radius(coord, current, COLLISION_CHUNK_DISTANCE)
-                || (shadow_radius > 0 && chunk_within_radius(coord, current, shadow_radius));
-            if was_near || is_near {
+            if chunk_needs_cpu_proxy_refresh(coord, previous, current, shadow_radius) {
                 self.enqueue_chunk_subchunks(coord.0, coord.1);
             }
         }
@@ -1223,6 +1217,21 @@ fn subchunk_needs_cpu_proxy(
     needs_shadow_proxy: bool,
 ) -> bool {
     !gpu_visible_render_active || needs_collision || needs_shadow_proxy
+}
+
+fn chunk_needs_cpu_proxy_refresh(
+    coord: (i32, i32),
+    previous: Option<(i32, i32)>,
+    current: (i32, i32),
+    shadow_radius: i32,
+) -> bool {
+    previous.is_some_and(|prev| chunk_has_cpu_proxy_reason(coord, prev, shadow_radius))
+        || chunk_has_cpu_proxy_reason(coord, current, shadow_radius)
+}
+
+fn chunk_has_cpu_proxy_reason(coord: (i32, i32), center: (i32, i32), shadow_radius: i32) -> bool {
+    chunk_within_radius(coord, center, COLLISION_CHUNK_DISTANCE)
+        || (shadow_radius > 0 && chunk_within_radius(coord, center, shadow_radius))
 }
 
 fn gpu_terrain_stats_enabled() -> bool {
@@ -2035,6 +2044,34 @@ mod tests {
         assert!(subchunk_needs_cpu_proxy(true, false, true));
         assert!(subchunk_needs_cpu_proxy(true, true, true));
         assert!(!subchunk_needs_cpu_proxy(true, false, false));
+    }
+
+    #[test]
+    fn cpu_proxy_refresh_tracks_collision_and_shadow_radius_edges() {
+        assert!(chunk_needs_cpu_proxy_refresh((1, 0), None, (0, 0), 0));
+        assert!(!chunk_needs_cpu_proxy_refresh((2, 0), None, (0, 0), 0));
+
+        assert!(chunk_needs_cpu_proxy_refresh(
+            (1, 0),
+            Some((0, 0)),
+            (4, 0),
+            0
+        ));
+        assert!(chunk_needs_cpu_proxy_refresh(
+            (4, 0),
+            Some((0, 0)),
+            (3, 0),
+            0
+        ));
+
+        assert!(chunk_needs_cpu_proxy_refresh((4, 0), None, (0, 0), 5));
+        assert!(!chunk_needs_cpu_proxy_refresh((4, 0), None, (0, 0), 0));
+        assert!(!chunk_needs_cpu_proxy_refresh(
+            (8, 0),
+            Some((0, 0)),
+            (1, 0),
+            5
+        ));
     }
 
     #[test]
