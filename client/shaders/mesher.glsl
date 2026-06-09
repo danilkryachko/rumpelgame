@@ -1,4 +1,3 @@
-#[compute]
 #version 450
 
 const uint CHUNK_W = 32;
