@@ -61,7 +61,7 @@ impl INode for GameClient {
                                 if tx.send(packet).is_err() { break; }
                             }
                             Err(e) => {
-                                godot_print!("Network reader thread error: {}", e);
+                                println!("Network reader thread error: {}", e);
                                 break;
                             }
                         }
