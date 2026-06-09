@@ -327,8 +327,17 @@ impl GameClient {
             return;
         }
 
-        let cpu_proxy_mesh =
-            uploaded_to_gpu && self.gpu_terrain_visible_render_active() && packed_faces.is_some();
+        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
+        let should_have_collision = self.subchunk_needs_collision(key);
+        let should_have_shadow_proxy =
+            gpu_visible_render_active && self.subchunk_needs_shadow_proxy(key);
+        let cpu_proxy_mesh = uploaded_to_gpu && gpu_visible_render_active && packed_faces.is_some();
+        let compact_shadow_proxy_mesh = gpu_terrain_shadow_proxy_mesh_mode()
+            .compacts_shadow_only_mesh(
+                cpu_proxy_mesh,
+                should_have_collision,
+                should_have_shadow_proxy,
+            );
         let (vertices, normals, uvs, timing, reported_vertices): (
             PackedVector3Array,
             PackedVector3Array,
@@ -336,10 +345,14 @@ impl GameClient {
             meshing::MeshTiming,
             usize,
         ) = if cpu_proxy_mesh {
-            let proxy_mesh = packed_faces
+            let packed_faces = packed_faces
                 .as_ref()
-                .expect("packed faces are built for uploaded GPU terrain")
-                .build_cpu_proxy_mesh();
+                .expect("packed faces are built for uploaded GPU terrain");
+            let proxy_mesh = if compact_shadow_proxy_mesh {
+                packed_faces.build_compact_cpu_proxy_mesh()
+            } else {
+                packed_faces.build_cpu_proxy_mesh()
+            };
             let reported_vertices = proxy_mesh.vertices.len();
             (
                 proxy_mesh.vertices,
@@ -373,7 +386,9 @@ impl GameClient {
         let mut arrays = Array::new();
         arrays.resize(13, &Variant::nil());
         arrays.set(0, &vertices.to_variant());
-        arrays.set(1, &normals.to_variant());
+        if !normals.is_empty() {
+            arrays.set(1, &normals.to_variant());
+        }
         if !uvs.is_empty() {
             arrays.set(4, &uvs.to_variant());
         }
@@ -387,8 +402,6 @@ impl GameClient {
             key.sub_y as f32 * SUBCHUNK_SIZE,
             key.chunk_z as f32 * CHUNK_SIZE,
         );
-        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
-        let should_have_collision = self.subchunk_needs_collision(key);
         let collision_start = Instant::now();
         let collision_bodies;
 
@@ -432,6 +445,7 @@ impl GameClient {
             vertices: vertices.len(),
             reported_vertices,
             cpu_proxy_mesh,
+            compact_shadow_proxy_mesh,
             mesh_ms,
             timing,
             collision_ms,
@@ -992,12 +1006,14 @@ struct PerfStats {
     last_readback_ms: f64,
     last_parse_ms: f64,
     cpu_proxy_meshes_built: u64,
+    compact_shadow_proxy_meshes_built: u64,
 }
 
 struct MeshRecord {
     vertices: usize,
     reported_vertices: usize,
     cpu_proxy_mesh: bool,
+    compact_shadow_proxy_mesh: bool,
     mesh_ms: f64,
     timing: meshing::MeshTiming,
     collision_ms: f64,
@@ -1030,6 +1046,9 @@ impl PerfStats {
         self.total_vertices = self.total_vertices.saturating_add(record.vertices);
         if record.cpu_proxy_mesh {
             self.cpu_proxy_meshes_built += 1;
+        }
+        if record.compact_shadow_proxy_mesh {
+            self.compact_shadow_proxy_meshes_built += 1;
         }
         self.collision_bodies = record.collision_bodies;
         self.node_counts = record.node_counts;
@@ -1080,6 +1099,7 @@ const GPU_TERRAIN_RENDER_ENV: &str = "RUMPELMC_GPU_TERRAIN_RENDER";
 const GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE";
 const GPU_TERRAIN_SHADOW_PROXY_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE";
+const GPU_TERRAIN_SHADOW_PROXY_MESH_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH";
 const ATLAS_COLUMNS: f32 = 10.0;
 const FACE_LEFT: u32 = 0;
 const FACE_RIGHT: u32 = 1;
@@ -1190,6 +1210,48 @@ fn gpu_terrain_shadow_proxy_mode() -> GpuTerrainShadowProxyMode {
             .ok()
             .and_then(|value| GpuTerrainShadowProxyMode::from_env_value(&value))
             .unwrap_or(GpuTerrainShadowProxyMode::Conservative)
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GpuTerrainShadowProxyMeshMode {
+    Full,
+    Compact,
+}
+
+impl GpuTerrainShadowProxyMeshMode {
+    fn from_env_value(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "full" | "default" => Some(Self::Full),
+            "compact" | "vertex_only" | "vertex-only" => Some(Self::Compact),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Compact => "compact",
+        }
+    }
+
+    fn compacts_shadow_only_mesh(
+        self,
+        cpu_proxy_mesh: bool,
+        needs_collision: bool,
+        needs_shadow_proxy: bool,
+    ) -> bool {
+        matches!(self, Self::Compact) && cpu_proxy_mesh && !needs_collision && needs_shadow_proxy
+    }
+}
+
+fn gpu_terrain_shadow_proxy_mesh_mode() -> GpuTerrainShadowProxyMeshMode {
+    static MODE: OnceLock<GpuTerrainShadowProxyMeshMode> = OnceLock::new();
+    *MODE.get_or_init(|| {
+        std::env::var(GPU_TERRAIN_SHADOW_PROXY_MESH_ENV)
+            .ok()
+            .and_then(|value| GpuTerrainShadowProxyMeshMode::from_env_value(&value))
+            .unwrap_or(GpuTerrainShadowProxyMeshMode::Full)
     })
 }
 
@@ -1533,7 +1595,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} jobs={} cpu_proxy={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_mode={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} mem={:.1}MB{}",
+            "queue={} jobs={} cpu_proxy={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.mesh_jobs_completed,
             self.perf.node_counts.rendered_submeshes,
@@ -1542,6 +1604,8 @@ impl GameClient {
             self.perf.node_counts.cpu_proxy_both,
             self.perf.node_counts.cpu_proxy_shadow_only,
             gpu_terrain_shadow_proxy_mode().as_str(),
+            gpu_terrain_shadow_proxy_mesh_mode().as_str(),
+            self.perf.compact_shadow_proxy_meshes_built,
             self.perf.cpu_proxy_meshes_built,
             self.perf.node_counts.total_collision_bodies,
             self.perf.last_mesh_ms,
@@ -1670,5 +1734,32 @@ mod tests {
             Some(GpuTerrainShadowProxyMode::CollisionOnly)
         );
         assert_eq!(GpuTerrainShadowProxyMode::from_env_value("invalid"), None);
+    }
+
+    #[test]
+    fn shadow_proxy_mesh_mode_parses_supported_values() {
+        assert_eq!(
+            GpuTerrainShadowProxyMeshMode::from_env_value(""),
+            Some(GpuTerrainShadowProxyMeshMode::Full)
+        );
+        assert_eq!(
+            GpuTerrainShadowProxyMeshMode::from_env_value("vertex-only"),
+            Some(GpuTerrainShadowProxyMeshMode::Compact)
+        );
+        assert_eq!(
+            GpuTerrainShadowProxyMeshMode::from_env_value("invalid"),
+            None
+        );
+    }
+
+    #[test]
+    fn compact_shadow_proxy_mesh_only_applies_to_shadow_only_cpu_proxy() {
+        let compact = GpuTerrainShadowProxyMeshMode::Compact;
+
+        assert!(compact.compacts_shadow_only_mesh(true, false, true));
+        assert!(!compact.compacts_shadow_only_mesh(true, true, true));
+        assert!(!compact.compacts_shadow_only_mesh(true, false, false));
+        assert!(!compact.compacts_shadow_only_mesh(false, false, true));
+        assert!(!GpuTerrainShadowProxyMeshMode::Full.compacts_shadow_only_mesh(true, false, true));
     }
 }

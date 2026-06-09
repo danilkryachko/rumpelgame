@@ -90,6 +90,7 @@ validate_common_marker() {
   marker_path="$1"
   expected_pose="$2"
   expected_shadow_mode="$3"
+  expected_shadow_mesh="$4"
   screenshot_path="${marker_path%.txt}"
 
   test -s "$screenshot_path" || fail "missing screenshot $screenshot_path"
@@ -97,6 +98,7 @@ validate_common_marker() {
   grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke summary in $marker_path"
   grep -q "pose=\"$expected_pose\"" "$marker_path" || fail "unexpected pose in $marker_path"
   grep -q "shadow_mode=$expected_shadow_mode" "$marker_path" || fail "unexpected shadow mode in $marker_path"
+  grep -q "shadow_mesh=$expected_shadow_mesh" "$marker_path" || fail "unexpected shadow mesh in $marker_path"
   grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"
   grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
   require_metric_ge "$marker_path" "terrain_samples" 1
@@ -122,6 +124,7 @@ run_case() {
   shadow_radius="$3"
   pose="$4"
   shadow_mode="$5"
+  shadow_mesh="$6"
   screenshot_path="$OUT_DIR/$name.png"
   marker_path="$screenshot_path.txt"
 
@@ -134,6 +137,7 @@ run_case() {
       RUMPELMC_GPU_TERRAIN_RENDER="$gpu_flag" \
       RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE="$shadow_radius" \
       RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE="$shadow_mode" \
+      RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH="$shadow_mesh" \
       RUMPELMC_VISUAL_SMOKE_POSE="$pose" \
       RUMPELMC_VISUAL_SMOKE_PATH="$screenshot_path" \
       RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
@@ -142,7 +146,7 @@ run_case() {
       "$GODOT_BIN" --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
   )
 
-  validate_common_marker "$marker_path" "$pose" "$shadow_mode"
+  validate_common_marker "$marker_path" "$pose" "$shadow_mode" "$shadow_mesh"
   cat "$marker_path"
   if command -v sips >/dev/null 2>&1; then
     sips -g pixelWidth -g pixelHeight "$screenshot_path"
@@ -192,10 +196,11 @@ validate_parity_markers() {
   gpu_marker="$OUT_DIR/gpu-terrain-parity.png.txt"
   radius_marker="$OUT_DIR/gpu-terrain-radius1-parity.png.txt"
   collision_only_marker="$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
+  compact_shadow_marker="$OUT_DIR/gpu-terrain-compact-shadow-parity.png.txt"
 
-  validate_common_marker "$cpu_marker" "default" "conservative"
-  validate_common_marker "$gpu_marker" "default" "conservative"
-  validate_common_marker "$radius_marker" "default" "conservative"
+  validate_common_marker "$cpu_marker" "default" "conservative" "full"
+  validate_common_marker "$gpu_marker" "default" "conservative" "full"
+  validate_common_marker "$radius_marker" "default" "conservative" "full"
   validate_pose_pair "$cpu_marker" "$gpu_marker" "default"
 
   require_metric_absent "$cpu_marker" "gpu_frames"
@@ -204,11 +209,13 @@ validate_parity_markers() {
   require_metric_eq "$cpu_marker" "proxy_shadow" 0
   require_metric_eq "$cpu_marker" "proxy_both" 0
   require_metric_eq "$cpu_marker" "proxy_shadow_only" 0
+  require_metric_eq "$cpu_marker" "compact_shadow_proxy" 0
 
   require_metric_ge "$gpu_marker" "gpu_frames" 1
   require_metric_ge "$gpu_marker" "gpu_subchunks" 1
   require_metric_ge "$gpu_marker" "gpu_faces" 1
   require_metric_ge "$gpu_marker" "fast_proxy" 1
+  require_metric_eq "$gpu_marker" "compact_shadow_proxy" 0
   require_metric_ge "$gpu_marker" "proxy_shadow" 1
   require_metric_ge "$gpu_marker" "proxy_both" 1
 
@@ -218,16 +225,28 @@ validate_parity_markers() {
   require_metric_eq "$radius_marker" "proxy_shadow" "$(metric "collision" "$radius_marker")"
   require_metric_eq "$radius_marker" "proxy_both" "$(metric "collision" "$radius_marker")"
   require_metric_eq "$radius_marker" "proxy_shadow_only" 0
+  require_metric_eq "$radius_marker" "compact_shadow_proxy" 0
   require_metric_ge "$radius_marker" "fast_proxy" 1
 
-  validate_common_marker "$collision_only_marker" "default" "collision_only"
+  validate_common_marker "$collision_only_marker" "default" "collision_only" "full"
   require_metric_ge "$collision_only_marker" "gpu_frames" 1
   require_metric_ge "$collision_only_marker" "gpu_subchunks" 1
   require_metric_eq "$collision_only_marker" "cpu_proxy" "$(metric "collision" "$collision_only_marker")"
   require_metric_eq "$collision_only_marker" "proxy_shadow" 0
   require_metric_eq "$collision_only_marker" "proxy_both" 0
   require_metric_eq "$collision_only_marker" "proxy_shadow_only" 0
+  require_metric_eq "$collision_only_marker" "compact_shadow_proxy" 0
   require_metric_ge "$collision_only_marker" "fast_proxy" 1
+
+  validate_common_marker "$compact_shadow_marker" "default" "conservative" "compact"
+  require_metric_ge "$compact_shadow_marker" "gpu_frames" 1
+  require_metric_ge "$compact_shadow_marker" "gpu_subchunks" 1
+  require_metric_ge "$compact_shadow_marker" "gpu_faces" 1
+  require_metric_ge "$compact_shadow_marker" "proxy_shadow" 1
+  require_metric_ge "$compact_shadow_marker" "proxy_both" 1
+  require_metric_ge "$compact_shadow_marker" "proxy_shadow_only" 1
+  require_metric_ge "$compact_shadow_marker" "compact_shadow_proxy" 1
+  require_metric_ge "$compact_shadow_marker" "fast_proxy" 1
 
   validate_pose_pair \
     "$OUT_DIR/cpu-arraymesh-atlas-depth-parity.png.txt" \
@@ -245,16 +264,18 @@ validate_pose_pair() {
   gpu_marker="$2"
   pose="$3"
 
-  validate_common_marker "$cpu_marker" "$pose" "conservative"
-  validate_common_marker "$gpu_marker" "$pose" "conservative"
+  validate_common_marker "$cpu_marker" "$pose" "conservative" "full"
+  validate_common_marker "$gpu_marker" "$pose" "conservative" "full"
 
   require_metric_absent "$cpu_marker" "gpu_frames"
   require_metric_absent "$cpu_marker" "gpu_subchunks"
   require_metric_eq "$cpu_marker" "fast_proxy" 0
+  require_metric_eq "$cpu_marker" "compact_shadow_proxy" 0
   require_metric_ge "$gpu_marker" "gpu_frames" 1
   require_metric_ge "$gpu_marker" "gpu_subchunks" 1
   require_metric_ge "$gpu_marker" "gpu_faces" 1
   require_metric_ge "$gpu_marker" "fast_proxy" 1
+  require_metric_eq "$gpu_marker" "compact_shadow_proxy" 0
 
   cpu_luma="$(float_metric "avg_luma" "$cpu_marker")"
   gpu_luma="$(float_metric "avg_luma" "$gpu_marker")"
@@ -301,14 +322,15 @@ validate_pose_pair() {
 }
 
 if [ "$VALIDATE_ONLY" != "1" ]; then
-  run_case "cpu-arraymesh-parity" "0" "" "default" "conservative"
-  run_case "gpu-terrain-parity" "1" "" "default" "conservative"
-  run_case "gpu-terrain-radius1-parity" "1" "1" "default" "conservative"
-  run_case "gpu-terrain-collision-only-parity" "1" "" "default" "collision_only"
-  run_case "cpu-arraymesh-atlas-depth-parity" "0" "" "atlas_depth" "conservative"
-  run_case "gpu-terrain-atlas-depth-parity" "1" "" "atlas_depth" "conservative"
-  run_case "cpu-arraymesh-lighting-shadow-parity" "0" "" "lighting_shadow" "conservative"
-  run_case "gpu-terrain-lighting-shadow-parity" "1" "" "lighting_shadow" "conservative"
+  run_case "cpu-arraymesh-parity" "0" "" "default" "conservative" "full"
+  run_case "gpu-terrain-parity" "1" "" "default" "conservative" "full"
+  run_case "gpu-terrain-radius1-parity" "1" "1" "default" "conservative" "full"
+  run_case "gpu-terrain-collision-only-parity" "1" "" "default" "collision_only" "full"
+  run_case "gpu-terrain-compact-shadow-parity" "1" "" "default" "conservative" "compact"
+  run_case "cpu-arraymesh-atlas-depth-parity" "0" "" "atlas_depth" "conservative" "full"
+  run_case "gpu-terrain-atlas-depth-parity" "1" "" "atlas_depth" "conservative" "full"
+  run_case "cpu-arraymesh-lighting-shadow-parity" "0" "" "lighting_shadow" "conservative" "full"
+  run_case "gpu-terrain-lighting-shadow-parity" "1" "" "lighting_shadow" "conservative" "full"
 fi
 
 validate_parity_markers

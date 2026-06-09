@@ -125,6 +125,19 @@ impl PackedFaceBatch {
         CpuProxyMesh { vertices, normals }
     }
 
+    pub fn build_compact_cpu_proxy_mesh(&self) -> CpuProxyMesh {
+        let mut vertices = PackedVector3Array::new();
+
+        for point in self.cpu_proxy_positions() {
+            vertices.push(point);
+        }
+
+        CpuProxyMesh {
+            vertices,
+            normals: PackedVector3Array::new(),
+        }
+    }
+
     fn cpu_proxy_vertices(&self) -> Vec<(Vector3, Vector3)> {
         let mut vertices = Vec::new();
         for face in &self.faces {
@@ -132,6 +145,17 @@ impl PackedFaceBatch {
                 break;
             }
             append_cpu_proxy_face(*face, &mut vertices);
+        }
+        vertices
+    }
+
+    fn cpu_proxy_positions(&self) -> Vec<Vector3> {
+        let mut vertices = Vec::new();
+        for face in &self.faces {
+            if vertices.len() + 6 > MAX_CPU_PROXY_VERTICES {
+                break;
+            }
+            append_cpu_proxy_face_positions(*face, &mut vertices);
         }
         vertices
     }
@@ -160,6 +184,15 @@ fn append_cpu_proxy_face(face: PackedFace, vertices: &mut Vec<(Vector3, Vector3)
 
     for idx in [0usize, 2, 1, 0, 3, 2] {
         vertices.push((corners[idx], normal));
+    }
+}
+
+fn append_cpu_proxy_face_positions(face: PackedFace, vertices: &mut Vec<Vector3>) {
+    let base = Vector3::new(face.x() as f32, face.y() as f32, face.z() as f32);
+    let corners = cpu_proxy_face_corners(base, face.face());
+
+    for idx in [0usize, 2, 1, 0, 3, 2] {
+        vertices.push(corners[idx]);
     }
 }
 
@@ -1556,6 +1589,20 @@ mod tests {
             proxy[2],
             (Vector3::new(1.0, 3.0, 4.0), Vector3::new(0.0, 1.0, 0.0))
         );
+    }
+
+    #[test]
+    fn compact_cpu_proxy_positions_preserve_geometry() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS)],
+        };
+
+        let proxy = batch.cpu_proxy_positions();
+
+        assert_eq!(proxy.len(), 6);
+        assert_eq!(proxy[0], Vector3::new(1.0, 3.0, 3.0));
+        assert_eq!(proxy[1], Vector3::new(2.0, 3.0, 4.0));
+        assert_eq!(proxy[2], Vector3::new(1.0, 3.0, 4.0));
     }
 
     #[test]
