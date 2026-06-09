@@ -33,10 +33,20 @@ fi
 echo "==> Rust extension checks"
 (
   cd "$ROOT_DIR/client/rust_ext"
+  if [ "${RUMPELMC_USE_SCCACHE:-auto}" != "0" ] && command -v sccache >/dev/null 2>&1; then
+    export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"
+    export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+    echo "==> Rust cache: sccache enabled"
+  else
+    echo "==> Rust cache: sccache not enabled"
+  fi
   if [ "$MODE" = "full" ]; then
     cargo fmt -- --check
     cargo clippy -- -D warnings
   fi
   cargo check
   cargo test
+  if [ "$MODE" = "full" ] && command -v sccache >/dev/null 2>&1; then
+    sccache --show-stats || true
+  fi
 )

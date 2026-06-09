@@ -3,4 +3,9 @@
 /android/
 target/
 tmp/
-
+server/data/
+logs/
+server/server
+server/server.exe
+*.import
+*.uid
