@@ -46,6 +46,30 @@ impl INode for GameClient {
                             if let Some(mesher) = &mut self.mesher {
                                 if let Some(vertices) = mesher.mesh_chunk(&chunk.blocks) {
                                     godot_print!("Meshing complete! Generated {} vertices.", vertices.len());
+                                    
+                                    if vertices.len() > 0 {
+                                        // 1. Create Array for ArrayMesh
+                                        let mut arrays = Array::new();
+                                        arrays.resize(14, &Variant::nil()); // ArrayType::MAX = 14
+                                        arrays.set(0, &vertices.to_variant()); // ArrayType::VERTEX = 0
+                                        
+                                        // 2. Construct ArrayMesh
+                                        let mut array_mesh = godot::classes::ArrayMesh::new_gd();
+                                        array_mesh.add_surface_from_arrays(godot::classes::mesh::PrimitiveType::TRIANGLES, &arrays);
+                                        
+                                        // 3. Create MeshInstance3D and add to scene
+                                        let mut mesh_instance = godot::classes::MeshInstance3D::new_alloc();
+                                        mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
+                                        self.base_mut().add_child(&mesh_instance.upcast::<godot::classes::Node>());
+                                        
+                                        // 4. Create Camera3D so we can see it
+                                        let mut camera = godot::classes::Camera3D::new_alloc();
+                                        camera.set_position(Vector3::new(16.0, 80.0, 60.0));
+                                        camera.look_at(Vector3::new(16.0, 64.0, 16.0));
+                                        self.base_mut().add_child(&camera.upcast::<godot::classes::Node>());
+                                        
+                                        godot_print!("Chunk rendered and Camera added!");
+                                    }
                                 }
                             }
                         }
