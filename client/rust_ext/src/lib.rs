@@ -956,11 +956,10 @@ impl GameClient {
     }
 
     fn refresh_cpu_proxies_after_gpu_attach(&mut self) {
-        if !self.gpu_terrain_visible_render_active() {
-            return;
-        }
-
-        let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
+        let loaded_chunks = chunks_to_refresh_after_gpu_attach(
+            self.chunk_blocks.keys().copied(),
+            self.gpu_terrain_visible_render_active(),
+        );
         for (chunk_x, chunk_z) in loaded_chunks {
             self.enqueue_chunk_subchunks(chunk_x, chunk_z);
         }
@@ -1232,6 +1231,17 @@ fn chunk_needs_cpu_proxy_refresh(
 fn chunk_has_cpu_proxy_reason(coord: (i32, i32), center: (i32, i32), shadow_radius: i32) -> bool {
     chunk_within_radius(coord, center, COLLISION_CHUNK_DISTANCE)
         || (shadow_radius > 0 && chunk_within_radius(coord, center, shadow_radius))
+}
+
+fn chunks_to_refresh_after_gpu_attach(
+    loaded_chunks: impl IntoIterator<Item = (i32, i32)>,
+    gpu_visible_render_active: bool,
+) -> Vec<(i32, i32)> {
+    if !gpu_visible_render_active {
+        return Vec::new();
+    }
+
+    loaded_chunks.into_iter().collect()
 }
 
 fn gpu_terrain_stats_enabled() -> bool {
@@ -2072,6 +2082,20 @@ mod tests {
             (1, 0),
             5
         ));
+    }
+
+    #[test]
+    fn gpu_attach_refresh_requeues_all_loaded_chunks_only_when_visible() {
+        let loaded_chunks = vec![(-10, 7), (0, 0), (6, -4)];
+
+        assert_eq!(
+            chunks_to_refresh_after_gpu_attach(loaded_chunks.iter().copied(), false),
+            Vec::<(i32, i32)>::new()
+        );
+        assert_eq!(
+            chunks_to_refresh_after_gpu_attach(loaded_chunks.iter().copied(), true),
+            loaded_chunks
+        );
     }
 
     #[test]
