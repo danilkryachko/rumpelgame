@@ -11,6 +11,12 @@ const VISUAL_SMOKE_DEFAULT_DELAY_SEC = 6.0
 const VISUAL_SMOKE_SKY_COLOR = Color(0.34, 0.43, 0.54)
 const VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD = 0.08
 const VISUAL_SMOKE_MIN_TERRAIN_SAMPLES = 12
+const VISUAL_SMOKE_MIN_TERRAIN_REGION_SAMPLES = 8
+const VISUAL_SMOKE_MIN_TERRAIN_COLOR_BUCKETS = 4
+const VISUAL_SMOKE_MIN_TERRAIN_CHROMA_SAMPLES = 8
+const VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE = 0.06
+const VISUAL_SMOKE_COLOR_BUCKET_LEVELS = 6
+const VISUAL_SMOKE_CHROMA_THRESHOLD = 0.05
 
 var server_pid: int = -1
 var manage_server_lifecycle: bool = false
@@ -193,13 +199,33 @@ func capture_visual_smoke(screenshot_path: String):
 	var smoke_err = err
 	if smoke_err == OK and metrics["terrain_samples"] < VISUAL_SMOKE_MIN_TERRAIN_SAMPLES:
 		smoke_err = FAILED
-	var summary = "Visual smoke screenshot saved path=%s size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d samples=%d save_err=%d smoke_err=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	if smoke_err == OK and metrics["terrain_mid_samples"] < VISUAL_SMOKE_MIN_TERRAIN_REGION_SAMPLES:
+		smoke_err = FAILED
+	if smoke_err == OK and metrics["terrain_bottom_samples"] < VISUAL_SMOKE_MIN_TERRAIN_REGION_SAMPLES:
+		smoke_err = FAILED
+	if smoke_err == OK and metrics["terrain_color_buckets"] < VISUAL_SMOKE_MIN_TERRAIN_COLOR_BUCKETS:
+		smoke_err = FAILED
+	if smoke_err == OK and metrics["terrain_chroma_samples"] < VISUAL_SMOKE_MIN_TERRAIN_CHROMA_SAMPLES:
+		smoke_err = FAILED
+	if smoke_err == OK and metrics["terrain_luma_range"] < VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE:
+		smoke_err = FAILED
+	var summary = "Visual smoke screenshot saved path=%s size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		image.get_width(),
 		image.get_height(),
 		metrics["avg_luma"],
 		metrics["lit_samples"],
 		metrics["terrain_samples"],
+		metrics["terrain_top_samples"],
+		metrics["terrain_mid_samples"],
+		metrics["terrain_bottom_samples"],
+		metrics["terrain_left_samples"],
+		metrics["terrain_right_samples"],
+		metrics["terrain_color_buckets"],
+		metrics["terrain_chroma_samples"],
+		metrics["terrain_luma_min"],
+		metrics["terrain_luma_max"],
+		metrics["terrain_luma_range"],
 		metrics["samples"],
 		err,
 		smoke_err,
@@ -245,7 +271,19 @@ func image_visual_metrics(image: Image) -> Dictionary:
 	var samples = 0
 	var lit_samples = 0
 	var terrain_samples = 0
+	var terrain_top_samples = 0
+	var terrain_mid_samples = 0
+	var terrain_bottom_samples = 0
+	var terrain_left_samples = 0
+	var terrain_right_samples = 0
+	var terrain_chroma_samples = 0
+	var terrain_luma_min = 1.0
+	var terrain_luma_max = 0.0
+	var terrain_color_buckets = {}
 	var luma_sum = 0.0
+	var y_first_third = int(height / 3)
+	var y_second_third = int(height * 2 / 3)
+	var x_mid = int(width / 2)
 
 	for y in range(int(step_y / 2), height, step_y):
 		for x in range(int(step_x / 2), width, step_x):
@@ -257,16 +295,56 @@ func image_visual_metrics(image: Image) -> Dictionary:
 				lit_samples += 1
 			if color_distance(color, VISUAL_SMOKE_SKY_COLOR) > VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD:
 				terrain_samples += 1
+				if y < y_first_third:
+					terrain_top_samples += 1
+				elif y < y_second_third:
+					terrain_mid_samples += 1
+				else:
+					terrain_bottom_samples += 1
+
+				if x < x_mid:
+					terrain_left_samples += 1
+				else:
+					terrain_right_samples += 1
+
+				var chroma = max(color.r, max(color.g, color.b)) - min(color.r, min(color.g, color.b))
+				if chroma >= VISUAL_SMOKE_CHROMA_THRESHOLD:
+					terrain_chroma_samples += 1
+				terrain_luma_min = min(terrain_luma_min, luma)
+				terrain_luma_max = max(terrain_luma_max, luma)
+				terrain_color_buckets[visual_smoke_color_bucket(color)] = true
 
 	var avg_luma = 0.0
 	if samples > 0:
 		avg_luma = luma_sum / samples
+	if terrain_samples == 0:
+		terrain_luma_min = 0.0
 	return {
 		"avg_luma": avg_luma,
 		"lit_samples": lit_samples,
 		"terrain_samples": terrain_samples,
+		"terrain_top_samples": terrain_top_samples,
+		"terrain_mid_samples": terrain_mid_samples,
+		"terrain_bottom_samples": terrain_bottom_samples,
+		"terrain_left_samples": terrain_left_samples,
+		"terrain_right_samples": terrain_right_samples,
+		"terrain_color_buckets": terrain_color_buckets.size(),
+		"terrain_chroma_samples": terrain_chroma_samples,
+		"terrain_luma_min": terrain_luma_min,
+		"terrain_luma_max": terrain_luma_max,
+		"terrain_luma_range": terrain_luma_max - terrain_luma_min,
 		"samples": samples
 	}
+
+func visual_smoke_color_bucket(color: Color) -> String:
+	return "%d:%d:%d" % [
+		visual_smoke_color_bucket_component(color.r),
+		visual_smoke_color_bucket_component(color.g),
+		visual_smoke_color_bucket_component(color.b)
+	]
+
+func visual_smoke_color_bucket_component(value: float) -> int:
+	return min(max(int(value * VISUAL_SMOKE_COLOR_BUCKET_LEVELS), 0), VISUAL_SMOKE_COLOR_BUCKET_LEVELS - 1)
 
 func color_distance(a: Color, b: Color) -> float:
 	var dr = a.r - b.r

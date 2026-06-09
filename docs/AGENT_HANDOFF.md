@@ -31,8 +31,9 @@ Done:
 - Kept visible CPU fallback behavior unchanged: CPU-only rendering and failed GPU uploads still use the existing compute mesher with UVs/materials.
 - Added visual smoke capture hooks in `client/main.gd` through `RUMPELMC_VISUAL_SMOKE_PATH`, `RUMPELMC_VISUAL_SMOKE_DELAY_SEC`, and `RUMPELMC_VISUAL_SMOKE_HIDE_HUD`.
 - Strengthened visual smoke validation with `terrain_samples` and `smoke_err`; sky-only frames now fail even if the image is bright and GPU counters are nonzero.
+- Extended visual smoke markers with region, color-bucket, chroma, and terrain-luma-range metrics so parity can catch atlas/color/lighting/depth distribution regressions beyond a basic non-sky frame.
 - Added `scripts/gpu_terrain_visual_smoke.sh` as a CPU/GPU smoke wrapper; in the current Codex PTY environment direct Godot commands are the reliable gate because the wrapper can stall before project logs appear.
-- Added `scripts/gpu_terrain_parity_smoke.sh` as a CPU/GPU/radius=1 parity gate. It validates marker files for `smoke_err=0`, terrain samples, CPU fallback counters, GPU counters, fast proxy usage, radius=1 proxy/collision parity, and a conservative CPU/GPU luma/terrain-sample envelope.
+- Added `scripts/gpu_terrain_parity_smoke.sh` as a CPU/GPU/radius=1 parity gate. It validates marker files for `smoke_err=0`, terrain samples, region coverage, atlas/color diversity, terrain luma range, CPU fallback counters, GPU counters, fast proxy usage, radius=1 proxy/collision parity, and conservative CPU/GPU visual envelopes.
 - Added `RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1` for automated visual smokes so player input does not accidentally break/place blocks and mutate the world during capture.
 - Added GPU terrain log/perf visibility, including `gpu_frames`.
 - Kept ArrayMesh terrain fallback active.
@@ -120,7 +121,14 @@ Checks:
 - `sh -n scripts/handoff.sh` passed.
 - `./scripts/handoff.sh` ran successfully and printed the continuation snapshot.
 - Latest `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed after the parity smoke slice; `golangci-lint` is not installed locally and was skipped by the script.
-- Latest `./scripts/diff_guard.sh` exited 1 because the repository already has a broad dirty tree: 51 tracked files, 6882 tracked lines, Godot `.import/.uid` files, and sensitive paths.
+- `./scripts/diff_guard.sh` passed after the dirty-tree cleanup baseline was committed.
+- Latest direct parity captures passed after the extended visual metrics slice:
+  - CPU fallback: `parity/cpu-arraymesh-parity.png`, `terrain_samples=256`, `terrain_mid_samples=64`, `terrain_bottom_samples=192`, `terrain_left_samples=128`, `terrain_right_samples=128`, `terrain_color_buckets=8`, `terrain_chroma_samples=256`, `terrain_luma_range=0.3655`, `smoke_err=0`, `fast_proxy=0`, `collision=10`.
+  - GPU terrain: `parity/gpu-terrain-parity.png`, `terrain_samples=256`, `terrain_color_buckets=8`, `terrain_chroma_samples=256`, `terrain_luma_range=0.3532`, `smoke_err=0`, `gpu_frames=143`, `gpu_subchunks=81`, `gpu_faces=133218`, `fast_proxy=127`, `collision=10`.
+  - GPU radius=1: `parity/gpu-terrain-radius1-parity.png`, `terrain_samples=256`, `terrain_color_buckets=8`, `terrain_chroma_samples=256`, `terrain_luma_range=0.3532`, `smoke_err=0`, `gpu_frames=149`, `gpu_subchunks=82`, `gpu_faces=135266`, `cpu_proxy=10`, `collision=10`, `fast_proxy=20`.
+- Latest `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh` passed against the extended parity artifacts.
+- Latest `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full` passed after the extended visual metrics slice; `golangci-lint` is not installed locally and was skipped by the script.
+- Latest `./scripts/diff_guard.sh` passed on the small 3-file slice before commit.
 
 Useful log lines:
 
@@ -140,6 +148,9 @@ Useful log lines:
 - `Visual smoke screenshot saved ... parity/cpu-arraymesh-parity.png ... avg_luma=0.3517 ... terrain_samples=256 ... smoke_err=0 ... fast_proxy=0 collision=10 ...`
 - `Visual smoke screenshot saved ... parity/gpu-terrain-parity.png ... avg_luma=0.3442 ... terrain_samples=256 ... smoke_err=0 ... fast_proxy=62 ... gpu_frames=68 ...`
 - `Visual smoke screenshot saved ... parity/gpu-terrain-radius1-parity.png ... terrain_samples=256 ... smoke_err=0 ... cpu_proxy=10 fast_proxy=19 collision=10 ... gpu_frames=74 ...`
+- `Visual smoke screenshot saved ... parity/cpu-arraymesh-parity.png ... terrain_color_buckets=8 terrain_chroma_samples=256 terrain_luma_range=0.3655 ...`
+- `Visual smoke screenshot saved ... parity/gpu-terrain-parity.png ... terrain_color_buckets=8 terrain_chroma_samples=256 terrain_luma_range=0.3532 ... gpu_frames=143 ...`
+- `Visual smoke screenshot saved ... parity/gpu-terrain-radius1-parity.png ... terrain_color_buckets=8 terrain_chroma_samples=256 terrain_luma_range=0.3532 ... cpu_proxy=10 fast_proxy=20 ... gpu_frames=149 ...`
 
 Known limitations:
 
@@ -153,10 +164,10 @@ Known limitations:
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, CPU ArrayMesh nodes become `SHADOWS_ONLY` only after the GPU visible render path has rendered at least one compositor frame; this avoids double visible terrain while preserving fallback if GPU setup fails or a subchunk fails GPU upload.
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, CPU ArrayMesh nodes are still kept where needed for nearby collision and the conservative Godot shadow-map proxy. Distant CPU `MeshInstance3D` removal has started, but the retained proxy radius is intentionally conservative.
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, retained CPU proxy meshes can now be built from packed GPU terrain faces after the GPU visible path is confirmed. These proxy meshes intentionally omit UVs because they are used for collision and `SHADOWS_ONLY`, not visible terrain.
-- `scripts/gpu_terrain_parity_smoke.sh` can validate existing artifacts with `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1`. In this Codex PTY environment, launching Godot through shell wrappers can still stall before project logs appear, so direct Godot commands plus validate-only are the reliable local gate.
+- `scripts/gpu_terrain_parity_smoke.sh` can validate existing artifacts with `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1`. It now expects markers produced by the extended visual smoke metrics in `client/main.gd`. In this Codex PTY environment, launching Godot through shell wrappers can still stall before project logs appear, so direct Godot commands plus validate-only are the reliable local gate.
 - The custom RD compositor draw still does not natively participate in Godot shadow maps as a real shadow caster/receiver. Full shadow parity without ArrayMesh proxy needs a separate render integration plan.
 - Final ArrayMesh replacement for distant terrain is not finished.
-- The working tree contains many unrelated modified/untracked files; do not revert user or prior-agent changes.
+- Keep the working tree small and commit completed slices; `diff_guard` is expected to stay green after the dirty-tree cleanup baseline.
 
 Next steps:
 
