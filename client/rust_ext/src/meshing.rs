@@ -19,7 +19,19 @@ impl ComputeMesher {
         shader_source.set_language(ShaderLanguage::GLSL);
         shader_source.set_stage_source(ShaderStage::COMPUTE, shader_code);
 
-        let spirv = rd.shader_compile_spirv_from_source(&shader_source)?;
+        let spirv = match rd.shader_compile_spirv_from_source(&shader_source) {
+            Some(s) => {
+                let err_str = s.get_stage_compile_error(ShaderStage::COMPUTE);
+                if err_str.to_string() != "" {
+                    godot_print!("Spirv compiler message: {}", err_str);
+                }
+                s
+            },
+            None => {
+                godot_print!("shader_compile_spirv_from_source returned None");
+                return None;
+            }
+        };
         
         let shader_rid = rd.shader_create_from_spirv(&spirv);
         let pipeline = rd.compute_pipeline_create(shader_rid.clone());
