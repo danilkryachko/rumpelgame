@@ -74,6 +74,13 @@ prepare_godot_rust_ext_profile() {
   if [ "$build_release" = "1" ]; then
     (
       cd "$root_dir/client/rust_ext"
+      if [ "${RUMPELMC_USE_SCCACHE:-auto}" != "0" ] && command -v sccache >/dev/null 2>&1; then
+        export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"
+        export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+        echo "==> Rust cache: sccache enabled"
+      else
+        echo "==> Rust cache: sccache not enabled"
+      fi
       cargo build --release
     )
   fi
