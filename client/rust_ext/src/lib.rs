@@ -1187,7 +1187,6 @@ const GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE";
 const GPU_TERRAIN_SHADOW_PROXY_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE";
 const GPU_TERRAIN_SHADOW_PROXY_MESH_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH";
-const ATLAS_COLUMNS: f32 = 10.0;
 const FACE_LEFT: u32 = 0;
 const FACE_RIGHT: u32 = 1;
 const FACE_BOTTOM: u32 = 2;
@@ -1773,7 +1772,8 @@ fn texture_tile(block_id: u32, face_idx: u32) -> u32 {
 }
 
 fn atlas_uv(tile_uv: Vector2, tile_index: u32) -> Vector2 {
-    Vector2::new((tile_index as f32 + tile_uv.x) / ATLAS_COLUMNS, tile_uv.y)
+    let (u, v) = blocks::texture_atlas_uv((tile_uv.x, tile_uv.y), tile_index);
+    Vector2::new(u, v)
 }
 
 fn create_chunk_material() -> Gd<godot::classes::StandardMaterial3D> {

@@ -6,6 +6,7 @@ use std::time::Instant;
 
 const MAX_OUTPUT_VERTICES: usize = 100_000;
 const LOG_MESH_DISPATCH: bool = false;
+const ATLAS_LAYOUT_PLACEHOLDER: &str = "/* RUMPELMC_ATLAS_LAYOUT */";
 const BLOCK_SEMANTICS_PLACEHOLDER: &str = "/* RUMPELMC_BLOCK_SEMANTICS */";
 
 #[derive(Clone, Copy, Default)]
@@ -237,10 +238,15 @@ impl ComputeMesher {
 }
 
 fn compute_mesher_shader_code() -> String {
-    include_str!("../../shaders/mesher.glsl").replace(
-        BLOCK_SEMANTICS_PLACEHOLDER,
-        &blocks::compute_mesher_glsl_block_semantics(),
-    )
+    include_str!("../../shaders/mesher.glsl")
+        .replace(
+            ATLAS_LAYOUT_PLACEHOLDER,
+            &blocks::compute_mesher_glsl_atlas_layout(),
+        )
+        .replace(
+            BLOCK_SEMANTICS_PLACEHOLDER,
+            &blocks::compute_mesher_glsl_block_semantics(),
+        )
 }
 
 #[cfg(test)]
@@ -251,7 +257,9 @@ mod tests {
     fn compute_mesher_shader_embeds_block_semantics_from_rust_definitions() {
         let shader = compute_mesher_shader_code();
 
+        assert!(!shader.contains(ATLAS_LAYOUT_PLACEHOLDER));
         assert!(!shader.contains(BLOCK_SEMANTICS_PLACEHOLDER));
+        assert!(shader.contains(&blocks::compute_mesher_glsl_atlas_layout()));
         for snippet in [
             "uint texture_tile(uint block_id, uint face_idx)",
             "if (block_id == 3u) {",

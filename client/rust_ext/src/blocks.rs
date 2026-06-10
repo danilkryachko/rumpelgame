@@ -19,6 +19,8 @@ const TILE_LEAVES: u32 = 9;
 const FALLBACK_TEXTURE_TILE: u32 = TILE_STONE;
 
 pub const TEXTURE_TILE_SIZE_PX: u32 = 64;
+pub const TEXTURE_ATLAS_COLUMNS: u32 = 10;
+pub const TEXTURE_ATLAS_ROWS: u32 = 1;
 pub const MAX_TEXTURE_TILE: u32 = TILE_LEAVES;
 
 #[derive(Clone, Copy)]
@@ -132,6 +134,24 @@ pub fn tile_for_face(id: BlockId, face_idx: u32, face_top: u32, face_bottom: u32
     } else {
         block.textures.side
     }
+}
+
+pub fn texture_atlas_uv(tile_uv: (f32, f32), tile_index: u32) -> (f32, f32) {
+    let columns = TEXTURE_ATLAS_COLUMNS.max(1);
+    let rows = TEXTURE_ATLAS_ROWS.max(1);
+    let col = tile_index % columns;
+    let row = tile_index / columns;
+    (
+        (col as f32 + tile_uv.0) / columns as f32,
+        (row as f32 + tile_uv.1) / rows as f32,
+    )
+}
+
+pub(crate) fn compute_mesher_glsl_atlas_layout() -> String {
+    format!(
+        "const float ATLAS_COLUMNS = {}.0;\nconst float ATLAS_ROWS = {}.0;",
+        TEXTURE_ATLAS_COLUMNS, TEXTURE_ATLAS_ROWS
+    )
 }
 
 pub(crate) fn compute_mesher_glsl_block_semantics() -> String {

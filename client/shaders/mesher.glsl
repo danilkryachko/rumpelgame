@@ -6,7 +6,7 @@ const uint CHUNK_D = 32;
 const int PADDED_W = 34;
 const int PADDED_H = 34;
 const int PADDED_D = 34;
-const float ATLAS_COLUMNS = 10.0;
+/* RUMPELMC_ATLAS_LAYOUT */
 const uint MAX_VERTICES = 100000u;
 
 const uint FACE_LEFT = 0u;
@@ -56,7 +56,9 @@ void push_vertex(uint idx, vec3 pos, vec3 normal, vec2 uv) {
 }
 
 vec2 atlas_uv(vec2 tile_uv, uint tile_index) {
-    return vec2((float(tile_index) + tile_uv.x) / ATLAS_COLUMNS, tile_uv.y);
+    float col = mod(float(tile_index), ATLAS_COLUMNS);
+    float row = floor(float(tile_index) / ATLAS_COLUMNS);
+    return vec2((col + tile_uv.x) / ATLAS_COLUMNS, (row + tile_uv.y) / ATLAS_ROWS);
 }
 
 uint reserve_vertices(uint count) {
