@@ -314,6 +314,10 @@ Checks:
   - `terrain_mesh_build_plan()` now requires `gpu_visible_render_active` before returning `RemoveCpuNode`, even if a future caller incorrectly reports no CPU proxy reason before the first confirmed GPU terrain frame.
   - The existing mesh-build-plan unit test now locks that uploaded GPU terrain still falls back to `FullArrayMesh` before the GPU visible path is active.
   - Checks passed: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (37/37), `./scripts/check.sh fast`, `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full`, `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 sh ./scripts/gpu_terrain_parity_smoke.sh`, `git diff --check`, and `./scripts/diff_guard.sh`.
+- Latest GPU-backed CPU proxy activation guard slice passed:
+  - Added pure `terrain_cpu_proxy_mesh_active()` and routed both mesh-build planning and render-mode refresh through it. CPU nodes are treated as GPU-backed proxy meshes only when the GPU visible path is confirmed and the specific subchunk has a GPU slot.
+  - Added a unit test that locks all four active/inactive combinations, protecting fallback meshes from being switched to proxy render modes without an actual GPU subchunk.
+  - Checks passed: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (38/38), `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 sh ./scripts/gpu_terrain_parity_smoke.sh`, `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full`, `git diff --check`, and `./scripts/diff_guard.sh`.
 
 Useful log lines:
 
@@ -353,6 +357,7 @@ Known limitations:
 - GPU terrain is now directional-light aware, and retained ArrayMesh terrain is explicitly configured as a double-sided Godot shadow caster proxy.
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, CPU ArrayMesh nodes become `SHADOWS_ONLY` only after the GPU visible render path has rendered at least one compositor frame; this avoids double visible terrain while preserving fallback if GPU setup fails or a subchunk fails GPU upload.
 - Distant CPU terrain node removal is also gated by the confirmed GPU-visible path inside `terrain_mesh_build_plan()`, not only by the current caller's proxy decision.
+- CPU terrain nodes are considered GPU-backed proxies only when the confirmed GPU-visible path and the per-subchunk GPU slot are both present.
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, CPU ArrayMesh nodes are still kept where needed for nearby collision and the conservative Godot shadow-map proxy. Distant CPU `MeshInstance3D` removal has started, but the retained proxy radius is intentionally conservative.
 - With `RUMPELMC_GPU_TERRAIN_RENDER=1`, retained CPU proxy meshes can now be built from packed GPU terrain faces after the GPU visible path is confirmed. These proxy meshes intentionally omit UVs because they are used for collision and `SHADOWS_ONLY`, not visible terrain.
 - `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE=collision_only` is diagnostic only for now. It confirms how much CPU work is shadow-proxy-only. In this mode retained collision CPU proxies are invisible and do not cast shadows, but it must not become the default until GPU terrain has a dedicated shadow-compatible path or native Godot shadow-map participation.
