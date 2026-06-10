@@ -41,6 +41,7 @@ pub struct GameClient {
     queued_collision_refreshes: HashSet<SubchunkKey>,
     cpu_proxy_mesh_payloads: HashMap<SubchunkKey, TerrainCpuProxyMeshPayload>,
     terrain_collision_faces: HashMap<SubchunkKey, PackedVector3Array>,
+    subchunk_node_counts: HashMap<SubchunkKey, NodePerfCounts>,
     position_send_timer: f64,
     current_player_chunk: Option<(i32, i32)>,
     last_block_action: String,
@@ -71,6 +72,7 @@ impl INode for GameClient {
             queued_collision_refreshes: HashSet::new(),
             cpu_proxy_mesh_payloads: HashMap::new(),
             terrain_collision_faces: HashMap::new(),
+            subchunk_node_counts: HashMap::new(),
             position_send_timer: 0.0,
             current_player_chunk: None,
             last_block_action: "n/a".to_string(),
@@ -688,7 +690,15 @@ impl GameClient {
             self.cpu_proxy_mesh_payloads.remove(&key);
         }
         let node_counts_start = Instant::now();
-        let node_counts = self.current_node_perf_counts();
+        let subchunk_node_counts = NodePerfCounts::from_subchunk_state(
+            should_have_collision,
+            should_have_shadow_proxy,
+            render_mode.is_visible(),
+            render_mode.shadow_setting(),
+            collision_bodies,
+        );
+        self.replace_subchunk_node_perf_counts(key, subchunk_node_counts);
+        let node_counts = self.perf.node_counts;
         let node_counts_ms = node_counts_start.elapsed().as_secs_f64() * 1000.0;
         self.perf.record_mesh(MeshRecord {
             vertices: vertices.len(),
@@ -778,6 +788,7 @@ impl GameClient {
             .try_get_node_as::<godot::classes::MeshInstance3D>(&mesh_name)
         else {
             self.cpu_proxy_mesh_payloads.remove(&key);
+            self.remove_subchunk_node_perf_counts(key);
             return false;
         };
 
@@ -789,7 +800,8 @@ impl GameClient {
 
         self.cpu_proxy_mesh_payloads.insert(key, existing_payload);
         self.perf.cpu_proxy_refreshes_reused += 1;
-        self.refresh_node_perf_counts();
+        let node_counts = self.subchunk_node_perf_counts_for_mesh_instance(key, &mesh_instance);
+        self.replace_subchunk_node_perf_counts(key, node_counts);
         true
     }
 
@@ -1071,7 +1083,8 @@ impl GameClient {
         }
         self.perf.last_collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
         self.perf.max_collision_ms = self.perf.max_collision_ms.max(self.perf.last_collision_ms);
-        self.refresh_node_perf_counts();
+        let node_counts = self.subchunk_node_perf_counts_for_mesh_instance(key, &mesh_instance);
+        self.replace_subchunk_node_perf_counts(key, node_counts);
         CollisionRefreshResult::Rebuilt
     }
 
@@ -1131,6 +1144,7 @@ impl GameClient {
         self.cpu_proxy_mesh_payloads.remove(&key);
         self.terrain_collision_faces.remove(&key);
         self.queued_collision_refreshes.remove(&key);
+        self.remove_subchunk_node_perf_counts(key);
         let mesh_name = subchunk_mesh_name(key);
         let Some(mut mesh_node) = self
             .base()
@@ -1142,16 +1156,11 @@ impl GameClient {
         self.base_mut()
             .remove_child(&mesh_node.clone().upcast::<godot::classes::Node>());
         mesh_node.queue_free();
-        self.refresh_node_perf_counts();
     }
 
     fn refresh_node_perf_counts(&mut self) {
-        self.perf.node_counts = self.current_node_perf_counts();
-    }
-
-    fn current_node_perf_counts(&self) -> NodePerfCounts {
+        let mut subchunk_node_counts = HashMap::new();
         let mut counts = NodePerfCounts::default();
-        let gpu_visible = self.gpu_terrain_visible_render_active();
         for idx in 0..self.base().get_child_count() {
             let Some(child) = self.base().get_child(idx) else {
                 continue;
@@ -1159,19 +1168,43 @@ impl GameClient {
             let Some(key) = subchunk_key_from_mesh_name(&child.get_name().to_string()) else {
                 continue;
             };
-            counts.rendered_submeshes += 1;
-
-            let needs_collision = self.subchunk_needs_collision(key);
-            let needs_shadow = gpu_visible && self.subchunk_needs_shadow_proxy(key);
-            counts.record_cpu_proxy_reasons(needs_collision, needs_shadow);
-
             let Ok(mesh_instance) = child.try_cast::<godot::classes::MeshInstance3D>() else {
                 continue;
             };
-            counts.record_mesh_render_state(&mesh_instance);
-            counts.total_collision_bodies += count_static_body_children(&mesh_instance);
+            let subchunk_counts =
+                self.subchunk_node_perf_counts_for_mesh_instance(key, &mesh_instance);
+            counts.add(subchunk_counts);
+            subchunk_node_counts.insert(key, subchunk_counts);
         }
-        counts
+        self.subchunk_node_counts = subchunk_node_counts;
+        self.perf.node_counts = counts;
+    }
+
+    fn replace_subchunk_node_perf_counts(&mut self, key: SubchunkKey, counts: NodePerfCounts) {
+        if let Some(previous) = self.subchunk_node_counts.insert(key, counts) {
+            self.perf.node_counts.subtract(previous);
+        }
+        self.perf.node_counts.add(counts);
+    }
+
+    fn remove_subchunk_node_perf_counts(&mut self, key: SubchunkKey) {
+        if let Some(previous) = self.subchunk_node_counts.remove(&key) {
+            self.perf.node_counts.subtract(previous);
+        }
+    }
+
+    fn subchunk_node_perf_counts_for_mesh_instance(
+        &self,
+        key: SubchunkKey,
+        mesh_instance: &Gd<godot::classes::MeshInstance3D>,
+    ) -> NodePerfCounts {
+        NodePerfCounts::from_subchunk_state(
+            self.subchunk_needs_collision(key),
+            self.gpu_terrain_visible_render_active() && self.subchunk_needs_shadow_proxy(key),
+            mesh_instance.is_visible(),
+            mesh_instance.get_cast_shadows_setting(),
+            count_static_body_children(mesh_instance),
+        )
     }
 
     fn attach_gpu_terrain_compositor_to_player_camera(&mut self) {
@@ -1582,6 +1615,49 @@ struct NodePerfCounts {
 }
 
 impl NodePerfCounts {
+    fn from_subchunk_state(
+        needs_collision: bool,
+        needs_shadow: bool,
+        visible: bool,
+        shadow_setting: godot::classes::geometry_instance_3d::ShadowCastingSetting,
+        collision_bodies: i32,
+    ) -> Self {
+        let mut counts = Self {
+            rendered_submeshes: 1,
+            total_collision_bodies: collision_bodies,
+            ..Self::default()
+        };
+        counts.record_cpu_proxy_reasons(needs_collision, needs_shadow);
+        counts.record_mesh_render_state_values(visible, shadow_setting);
+        counts
+    }
+
+    fn add(&mut self, other: Self) {
+        self.rendered_submeshes += other.rendered_submeshes;
+        self.visible_submeshes += other.visible_submeshes;
+        self.shadow_off_submeshes += other.shadow_off_submeshes;
+        self.shadow_double_sided_submeshes += other.shadow_double_sided_submeshes;
+        self.shadow_only_submeshes += other.shadow_only_submeshes;
+        self.total_collision_bodies += other.total_collision_bodies;
+        self.cpu_proxy_collision += other.cpu_proxy_collision;
+        self.cpu_proxy_shadow += other.cpu_proxy_shadow;
+        self.cpu_proxy_both += other.cpu_proxy_both;
+        self.cpu_proxy_shadow_only += other.cpu_proxy_shadow_only;
+    }
+
+    fn subtract(&mut self, other: Self) {
+        self.rendered_submeshes -= other.rendered_submeshes;
+        self.visible_submeshes -= other.visible_submeshes;
+        self.shadow_off_submeshes -= other.shadow_off_submeshes;
+        self.shadow_double_sided_submeshes -= other.shadow_double_sided_submeshes;
+        self.shadow_only_submeshes -= other.shadow_only_submeshes;
+        self.total_collision_bodies -= other.total_collision_bodies;
+        self.cpu_proxy_collision -= other.cpu_proxy_collision;
+        self.cpu_proxy_shadow -= other.cpu_proxy_shadow;
+        self.cpu_proxy_both -= other.cpu_proxy_both;
+        self.cpu_proxy_shadow_only -= other.cpu_proxy_shadow_only;
+    }
+
     fn record_cpu_proxy_reasons(&mut self, needs_collision: bool, needs_shadow: bool) {
         if needs_collision {
             self.cpu_proxy_collision += 1;
@@ -1594,13 +1670,6 @@ impl NodePerfCounts {
         } else if needs_shadow {
             self.cpu_proxy_shadow_only += 1;
         }
-    }
-
-    fn record_mesh_render_state(&mut self, mesh_instance: &Gd<godot::classes::MeshInstance3D>) {
-        self.record_mesh_render_state_values(
-            mesh_instance.is_visible(),
-            mesh_instance.get_cast_shadows_setting(),
-        );
     }
 
     fn record_mesh_render_state_values(
@@ -3513,6 +3582,48 @@ mod tests {
         assert_eq!(counts.cpu_proxy_shadow, 2);
         assert_eq!(counts.cpu_proxy_both, 1);
         assert_eq!(counts.cpu_proxy_shadow_only, 1);
+    }
+
+    #[test]
+    fn node_perf_counts_adds_and_removes_subchunk_buckets() {
+        let visible = NodePerfCounts::from_subchunk_state(
+            true,
+            true,
+            true,
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::SHADOWS_ONLY,
+            1,
+        );
+        let hidden = NodePerfCounts::from_subchunk_state(
+            true,
+            false,
+            false,
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
+            0,
+        );
+
+        let mut total = NodePerfCounts::default();
+        total.add(visible);
+        total.add(hidden);
+
+        assert_eq!(total.rendered_submeshes, 2);
+        assert_eq!(total.visible_submeshes, 1);
+        assert_eq!(total.shadow_off_submeshes, 1);
+        assert_eq!(total.shadow_only_submeshes, 1);
+        assert_eq!(total.total_collision_bodies, 1);
+        assert_eq!(total.cpu_proxy_collision, 2);
+        assert_eq!(total.cpu_proxy_shadow, 1);
+        assert_eq!(total.cpu_proxy_both, 1);
+
+        total.subtract(visible);
+
+        assert_eq!(total.rendered_submeshes, 1);
+        assert_eq!(total.visible_submeshes, 0);
+        assert_eq!(total.shadow_off_submeshes, 1);
+        assert_eq!(total.shadow_only_submeshes, 0);
+        assert_eq!(total.total_collision_bodies, 0);
+        assert_eq!(total.cpu_proxy_collision, 1);
+        assert_eq!(total.cpu_proxy_shadow, 0);
+        assert_eq!(total.cpu_proxy_both, 0);
     }
 
     #[test]
