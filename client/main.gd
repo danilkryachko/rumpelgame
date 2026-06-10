@@ -8,7 +8,9 @@ const VISUAL_SMOKE_PATH_ENV = "RUMPELMC_VISUAL_SMOKE_PATH"
 const VISUAL_SMOKE_DELAY_ENV = "RUMPELMC_VISUAL_SMOKE_DELAY_SEC"
 const VISUAL_SMOKE_HIDE_HUD_ENV = "RUMPELMC_VISUAL_SMOKE_HIDE_HUD"
 const VISUAL_SMOKE_POSE_ENV = "RUMPELMC_VISUAL_SMOKE_POSE"
+const VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC"
 const VISUAL_SMOKE_DEFAULT_DELAY_SEC = 6.0
+const VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC = 2.0
 const VISUAL_SMOKE_SKY_COLOR = Color(0.34, 0.43, 0.54)
 const VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD = 0.08
 const VISUAL_SMOKE_MIN_TERRAIN_SAMPLES = 12
@@ -23,6 +25,10 @@ const VISUAL_SMOKE_DEFAULT_POSE = "default"
 var server_pid: int = -1
 var manage_server_lifecycle: bool = false
 var pending_dev_logs: Array[String] = []
+var visual_smoke_requested: bool = false
+var visual_smoke_frame_window_sec: float = VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC
+var visual_smoke_frame_times: Array[float] = []
+var visual_smoke_frame_ms: Array[float] = []
 
 func _ready():
 	configure_window_stretch()
@@ -61,6 +67,7 @@ func _ready():
 	run_visual_smoke_if_requested()
 
 func _process(_delta):
+	record_visual_smoke_frame(_delta)
 	sync_window_content_size()
 
 func configure_window_stretch():
@@ -179,6 +186,12 @@ func run_visual_smoke_if_requested():
 	if screenshot_path.is_empty():
 		return
 
+	visual_smoke_requested = true
+	visual_smoke_frame_window_sec = max(
+		env_float(VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC),
+		0.1
+	)
+
 	if env_flag_enabled(VISUAL_SMOKE_HIDE_HUD_ENV):
 		var hud = get_node_or_null("HUD")
 		if hud:
@@ -216,7 +229,8 @@ func capture_visual_smoke(screenshot_path: String):
 		smoke_err = FAILED
 	if smoke_err == OK and metrics["terrain_luma_range"] < VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE:
 		smoke_err = FAILED
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var frame_metrics = visual_smoke_frame_metrics()
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		image.get_width(),
@@ -237,6 +251,15 @@ func capture_visual_smoke(screenshot_path: String):
 		metrics["samples"],
 		err,
 		smoke_err,
+		frame_metrics["samples"],
+		frame_metrics["avg_ms"],
+		frame_metrics["p50_ms"],
+		frame_metrics["p95_ms"],
+		frame_metrics["p99_ms"],
+		frame_metrics["max_ms"],
+		frame_metrics["fps_avg"],
+		frame_metrics["fps_p05"],
+		frame_metrics["fps_min"],
 		visual_smoke_client_text("get_perf_text", "n/a"),
 		visual_smoke_chunk_text(),
 		visual_smoke_client_text("get_current_chunk_text", "n/a")
@@ -265,6 +288,65 @@ func visual_smoke_chunk_text() -> String:
 			client.get_chunk_collision_count()
 		]
 	return "n/a"
+
+func record_visual_smoke_frame(delta: float):
+	if not visual_smoke_requested:
+		return
+
+	var now_sec = Time.get_ticks_msec() / 1000.0
+	visual_smoke_frame_times.append(now_sec)
+	visual_smoke_frame_ms.append(delta * 1000.0)
+	var cutoff_sec = now_sec - visual_smoke_frame_window_sec
+	while not visual_smoke_frame_times.is_empty() and visual_smoke_frame_times[0] < cutoff_sec:
+		visual_smoke_frame_times.pop_front()
+		visual_smoke_frame_ms.pop_front()
+
+func visual_smoke_frame_metrics() -> Dictionary:
+	if visual_smoke_frame_ms.is_empty():
+		return {
+			"samples": 0,
+			"avg_ms": 0.0,
+			"p50_ms": 0.0,
+			"p95_ms": 0.0,
+			"p99_ms": 0.0,
+			"max_ms": 0.0,
+			"fps_avg": 0.0,
+			"fps_p05": 0.0,
+			"fps_min": 0.0
+		}
+
+	var sorted_ms = visual_smoke_frame_ms.duplicate()
+	sorted_ms.sort()
+	var total_ms = 0.0
+	for frame_ms in sorted_ms:
+		total_ms += frame_ms
+	var avg_ms = total_ms / sorted_ms.size()
+	var p50_ms = sorted_percentile(sorted_ms, 0.50)
+	var p95_ms = sorted_percentile(sorted_ms, 0.95)
+	var p99_ms = sorted_percentile(sorted_ms, 0.99)
+	var max_ms = sorted_ms[sorted_ms.size() - 1]
+	return {
+		"samples": sorted_ms.size(),
+		"avg_ms": avg_ms,
+		"p50_ms": p50_ms,
+		"p95_ms": p95_ms,
+		"p99_ms": p99_ms,
+		"max_ms": max_ms,
+		"fps_avg": fps_from_frame_ms(avg_ms),
+		"fps_p05": fps_from_frame_ms(p95_ms),
+		"fps_min": fps_from_frame_ms(max_ms)
+	}
+
+func sorted_percentile(sorted_values: Array, percentile: float) -> float:
+	if sorted_values.is_empty():
+		return 0.0
+	var idx = int(round((sorted_values.size() - 1) * clamp(percentile, 0.0, 1.0)))
+	return sorted_values[idx]
+
+func fps_from_frame_ms(frame_ms: float) -> float:
+	if frame_ms <= 0.0:
+		return 0.0
+	return 1000.0 / frame_ms
 
 func globalize_smoke_path(path: String) -> String:
 	if path.begins_with("res://") or path.begins_with("user://"):
