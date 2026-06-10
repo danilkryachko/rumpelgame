@@ -1736,7 +1736,7 @@ fn push_visible_face(faces: &mut Vec<PackedFace>, padded_blocks: &[u8], candidat
 }
 
 fn is_solid(block_id: u32) -> bool {
-    blocks::is_solid(block_id)
+    blocks::is_opaque_solid(block_id)
 }
 
 fn padded_block(blocks: &[u8], x: usize, y: usize, z: usize) -> u32 {
@@ -1842,6 +1842,16 @@ mod tests {
                     blocks::tile_for_face(block_id, face_idx, FACE_TOP, FACE_BOTTOM)
                 );
             }
+        }
+    }
+
+    #[test]
+    fn current_gpu_terrain_blocks_are_opaque_solids() {
+        assert!(!blocks::is_opaque_solid(blocks::AIR));
+        assert!(!blocks::is_opaque_solid(999));
+        for block_id in blocks::PLACEABLE_BLOCKS {
+            assert!(blocks::is_solid(block_id));
+            assert!(blocks::is_opaque_solid(block_id));
         }
     }
 

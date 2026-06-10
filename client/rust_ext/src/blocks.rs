@@ -35,6 +35,7 @@ pub struct BlockDefinition {
     pub id: BlockId,
     pub name: &'static str,
     pub solid: bool,
+    pub opaque: bool,
     pub placeable: bool,
     pub textures: BlockTextures,
 }
@@ -52,6 +53,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         id: AIR,
         name: "Air",
         solid: false,
+        opaque: false,
         placeable: false,
         textures: same_texture(FALLBACK_TEXTURE_TILE),
     },
@@ -59,6 +61,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         id: STONE,
         name: "Stone",
         solid: true,
+        opaque: true,
         placeable: true,
         textures: same_texture(TILE_STONE),
     },
@@ -66,6 +69,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         id: DIRT,
         name: "Dirt",
         solid: true,
+        opaque: true,
         placeable: true,
         textures: same_texture(TILE_SOIL),
     },
@@ -73,6 +77,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         id: GRASS,
         name: "Grass",
         solid: true,
+        opaque: true,
         placeable: true,
         textures: BlockTextures {
             top: TILE_GRASS_TOP,
@@ -84,6 +89,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         id: WOOD,
         name: "Wood",
         solid: true,
+        opaque: true,
         placeable: true,
         textures: BlockTextures {
             top: TILE_WOOD_TOP,
@@ -95,6 +101,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         id: LEAVES,
         name: "Leaves",
         solid: true,
+        opaque: true,
         placeable: true,
         textures: same_texture(TILE_LEAVES),
     },
@@ -118,6 +125,10 @@ pub fn is_placeable(id: BlockId) -> bool {
 
 pub fn is_solid(id: BlockId) -> bool {
     definition(id).is_some_and(|block| block.solid)
+}
+
+pub fn is_opaque_solid(id: BlockId) -> bool {
+    is_solid(id) && definition(id).is_some_and(|block| block.opaque)
 }
 
 pub fn tile_for_face(id: BlockId, face_idx: u32, face_top: u32, face_bottom: u32) -> u32 {
@@ -157,7 +168,11 @@ pub(crate) fn compute_mesher_glsl_atlas_layout() -> String {
 pub(crate) fn compute_mesher_glsl_block_semantics() -> String {
     let mut source = String::from("// Generated from client/rust_ext/src/blocks.rs.\n");
     source.push_str("uint texture_tile(uint block_id, uint face_idx) {\n");
-    for block in definitions().iter().copied().filter(|block| block.solid) {
+    for block in definitions()
+        .iter()
+        .copied()
+        .filter(|block| block.solid && block.opaque)
+    {
         if block.textures.top == block.textures.side && block.textures.side == block.textures.bottom
         {
             source.push_str(&format!(
@@ -184,7 +199,7 @@ pub(crate) fn compute_mesher_glsl_block_semantics() -> String {
     let solid_checks = definitions()
         .iter()
         .copied()
-        .filter(|block| block.solid)
+        .filter(|block| block.solid && block.opaque)
         .map(|block| format!("block_id == {}u", block.id))
         .collect::<Vec<_>>()
         .join("\n        || ");
