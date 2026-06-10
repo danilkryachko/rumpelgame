@@ -421,13 +421,17 @@ impl GameClient {
         }
 
         let build_start = Instant::now();
+        let padded_start = Instant::now();
         let Some(padded_blocks) = self.build_padded_subchunk_blocks(key) else {
             return;
         };
+        let padded_ms = padded_start.elapsed().as_secs_f64() * 1000.0;
         let should_upload_gpu = upload_enabled
             && should_upload_gpu_subchunk_for_queue_reason(reason, existing_gpu_slot);
         let needs_gpu_faces = gpu_terrain_stats_enabled() || upload_enabled;
+        let packed_faces_start = Instant::now();
         let packed_faces = needs_gpu_faces.then(|| gpu_terrain::build_packed_faces(&padded_blocks));
+        let packed_faces_ms = packed_faces_start.elapsed().as_secs_f64() * 1000.0;
         if gpu_terrain_stats_enabled()
             && let Some(packed_faces) = &packed_faces
         {
@@ -439,6 +443,7 @@ impl GameClient {
             );
         }
         let mut gpu_upload_state = TerrainGpuUploadState::for_request(upload_enabled);
+        let gpu_upload_start = Instant::now();
         if should_upload_gpu
             && let (Some(gpu_terrain), Some(packed_faces)) = (&mut self.gpu_terrain, &packed_faces)
         {
@@ -448,6 +453,7 @@ impl GameClient {
         } else if existing_gpu_slot {
             gpu_upload_state = TerrainGpuUploadState::Uploaded;
         }
+        let gpu_upload_ms = gpu_upload_start.elapsed().as_secs_f64() * 1000.0;
 
         let mesh_build_plan = terrain_mesh_build_plan(
             gpu_upload_state,
@@ -467,6 +473,7 @@ impl GameClient {
             should_have_collision,
             should_have_shadow_proxy,
         );
+        let cpu_mesh_start = Instant::now();
         let (vertices, normals, uvs, timing, reported_vertices): (
             PackedVector3Array,
             PackedVector3Array,
@@ -505,6 +512,7 @@ impl GameClient {
                 mesh_result.reported_vertex_count,
             )
         };
+        let cpu_mesh_ms = cpu_mesh_start.elapsed().as_secs_f64() * 1000.0;
 
         if vertices.is_empty() {
             self.remove_subchunk_mesh(key);
@@ -512,6 +520,7 @@ impl GameClient {
         }
         let mesh_ms = build_start.elapsed().as_secs_f64() * 1000.0;
 
+        let array_mesh_start = Instant::now();
         let mut arrays = Array::new();
         arrays.resize(13, &Variant::nil());
         arrays.set(0, &vertices.to_variant());
@@ -524,6 +533,7 @@ impl GameClient {
 
         let mut array_mesh = godot::classes::ArrayMesh::new_gd();
         array_mesh.add_surface_from_arrays(godot::classes::mesh::PrimitiveType::TRIANGLES, &arrays);
+        let array_mesh_ms = array_mesh_start.elapsed().as_secs_f64() * 1000.0;
 
         let mesh_name = subchunk_mesh_name(key);
         let chunk_position = Vector3::new(
@@ -583,7 +593,9 @@ impl GameClient {
         } else {
             self.cpu_proxy_mesh_payloads.remove(&key);
         }
+        let node_counts_start = Instant::now();
         let node_counts = self.current_node_perf_counts();
+        let node_counts_ms = node_counts_start.elapsed().as_secs_f64() * 1000.0;
         self.perf.record_mesh(MeshRecord {
             vertices: vertices.len(),
             normals: normals.len(),
@@ -593,6 +605,14 @@ impl GameClient {
             compact_collision_proxy_mesh: cpu_proxy_mesh_payload.compact_collision_proxy_mesh,
             mesh_ms,
             timing,
+            phase_timing: TerrainMeshPhaseTiming {
+                padded_ms,
+                packed_faces_ms,
+                gpu_upload_ms,
+                cpu_mesh_ms,
+                array_mesh_ms,
+                node_counts_ms,
+            },
             collision_ms,
             collision_bodies,
             node_counts,
@@ -1304,6 +1324,9 @@ struct PerfStats {
     last_sync_ms: f64,
     last_readback_ms: f64,
     last_parse_ms: f64,
+    last_mesh_phase: TerrainMeshPhaseTiming,
+    avg_mesh_phase: TerrainMeshPhaseTiming,
+    max_mesh_phase: TerrainMeshPhaseTiming,
     cpu_proxy_meshes_built: u64,
     compact_shadow_proxy_meshes_built: u64,
     compact_shadow_proxy_normals_saved: usize,
@@ -1321,9 +1344,40 @@ struct MeshRecord {
     compact_collision_proxy_mesh: bool,
     mesh_ms: f64,
     timing: meshing::MeshTiming,
+    phase_timing: TerrainMeshPhaseTiming,
     collision_ms: f64,
     collision_bodies: i32,
     node_counts: NodePerfCounts,
+}
+
+#[derive(Clone, Copy, Default)]
+struct TerrainMeshPhaseTiming {
+    padded_ms: f64,
+    packed_faces_ms: f64,
+    gpu_upload_ms: f64,
+    cpu_mesh_ms: f64,
+    array_mesh_ms: f64,
+    node_counts_ms: f64,
+}
+
+impl TerrainMeshPhaseTiming {
+    fn record_average(&mut self, record: Self, n: f64) {
+        self.padded_ms += (record.padded_ms - self.padded_ms) / n;
+        self.packed_faces_ms += (record.packed_faces_ms - self.packed_faces_ms) / n;
+        self.gpu_upload_ms += (record.gpu_upload_ms - self.gpu_upload_ms) / n;
+        self.cpu_mesh_ms += (record.cpu_mesh_ms - self.cpu_mesh_ms) / n;
+        self.array_mesh_ms += (record.array_mesh_ms - self.array_mesh_ms) / n;
+        self.node_counts_ms += (record.node_counts_ms - self.node_counts_ms) / n;
+    }
+
+    fn record_max(&mut self, record: Self) {
+        self.padded_ms = self.padded_ms.max(record.padded_ms);
+        self.packed_faces_ms = self.packed_faces_ms.max(record.packed_faces_ms);
+        self.gpu_upload_ms = self.gpu_upload_ms.max(record.gpu_upload_ms);
+        self.cpu_mesh_ms = self.cpu_mesh_ms.max(record.cpu_mesh_ms);
+        self.array_mesh_ms = self.array_mesh_ms.max(record.array_mesh_ms);
+        self.node_counts_ms = self.node_counts_ms.max(record.node_counts_ms);
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1481,6 +1535,9 @@ impl PerfStats {
         self.last_sync_ms = record.timing.sync_ms;
         self.last_readback_ms = record.timing.readback_ms;
         self.last_parse_ms = record.timing.parse_ms;
+        self.last_mesh_phase = record.phase_timing;
+        self.avg_mesh_phase.record_average(record.phase_timing, n);
+        self.max_mesh_phase.record_max(record.phase_timing);
     }
 }
 
@@ -2387,7 +2444,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} mesh {:.2}/{:.2}/{:.2}ms mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
             self.perf.mesh_queue_enqueues,
@@ -2439,6 +2496,24 @@ impl GameClient {
             self.perf.last_mesh_ms,
             self.perf.avg_mesh_ms,
             self.perf.max_mesh_ms,
+            self.perf.last_mesh_phase.padded_ms,
+            self.perf.last_mesh_phase.packed_faces_ms,
+            self.perf.last_mesh_phase.gpu_upload_ms,
+            self.perf.last_mesh_phase.cpu_mesh_ms,
+            self.perf.last_mesh_phase.array_mesh_ms,
+            self.perf.last_mesh_phase.node_counts_ms,
+            self.perf.avg_mesh_phase.padded_ms,
+            self.perf.avg_mesh_phase.packed_faces_ms,
+            self.perf.avg_mesh_phase.gpu_upload_ms,
+            self.perf.avg_mesh_phase.cpu_mesh_ms,
+            self.perf.avg_mesh_phase.array_mesh_ms,
+            self.perf.avg_mesh_phase.node_counts_ms,
+            self.perf.max_mesh_phase.padded_ms,
+            self.perf.max_mesh_phase.packed_faces_ms,
+            self.perf.max_mesh_phase.gpu_upload_ms,
+            self.perf.max_mesh_phase.cpu_mesh_ms,
+            self.perf.max_mesh_phase.array_mesh_ms,
+            self.perf.max_mesh_phase.node_counts_ms,
             self.perf.last_prepare_ms,
             self.perf.last_submit_ms,
             self.perf.last_sync_ms,
@@ -3235,6 +3310,62 @@ mod tests {
     }
 
     #[test]
+    fn perf_records_mesh_phase_timings() {
+        let mut perf = PerfStats::default();
+        let first = TerrainMeshPhaseTiming {
+            padded_ms: 2.0,
+            packed_faces_ms: 4.0,
+            gpu_upload_ms: 6.0,
+            cpu_mesh_ms: 8.0,
+            array_mesh_ms: 10.0,
+            node_counts_ms: 12.0,
+        };
+        let second = TerrainMeshPhaseTiming {
+            padded_ms: 4.0,
+            packed_faces_ms: 2.0,
+            gpu_upload_ms: 8.0,
+            cpu_mesh_ms: 6.0,
+            array_mesh_ms: 14.0,
+            node_counts_ms: 10.0,
+        };
+
+        perf.record_mesh(MeshRecord {
+            vertices: 1,
+            normals: 0,
+            reported_vertices: 1,
+            cpu_proxy_mesh: false,
+            compact_shadow_proxy_mesh: false,
+            compact_collision_proxy_mesh: false,
+            mesh_ms: 1.0,
+            timing: meshing::MeshTiming::default(),
+            phase_timing: first,
+            collision_ms: 0.0,
+            collision_bodies: 0,
+            node_counts: NodePerfCounts::default(),
+        });
+        perf.record_mesh(MeshRecord {
+            vertices: 1,
+            normals: 0,
+            reported_vertices: 1,
+            cpu_proxy_mesh: false,
+            compact_shadow_proxy_mesh: false,
+            compact_collision_proxy_mesh: false,
+            mesh_ms: 1.0,
+            timing: meshing::MeshTiming::default(),
+            phase_timing: second,
+            collision_ms: 0.0,
+            collision_bodies: 0,
+            node_counts: NodePerfCounts::default(),
+        });
+
+        assert_eq!(perf.last_mesh_phase.cpu_mesh_ms, 6.0);
+        assert_eq!(perf.avg_mesh_phase.padded_ms, 3.0);
+        assert_eq!(perf.avg_mesh_phase.array_mesh_ms, 12.0);
+        assert_eq!(perf.max_mesh_phase.gpu_upload_ms, 8.0);
+        assert_eq!(perf.max_mesh_phase.node_counts_ms, 12.0);
+    }
+
+    #[test]
     fn perf_records_compact_shadow_proxy_normal_savings() {
         let mut perf = PerfStats::default();
 
@@ -3247,6 +3378,7 @@ mod tests {
             compact_collision_proxy_mesh: false,
             mesh_ms: 1.0,
             timing: meshing::MeshTiming::default(),
+            phase_timing: TerrainMeshPhaseTiming::default(),
             collision_ms: 0.0,
             collision_bodies: 0,
             node_counts: NodePerfCounts::default(),
@@ -3265,6 +3397,7 @@ mod tests {
             compact_collision_proxy_mesh: false,
             mesh_ms: 1.0,
             timing: meshing::MeshTiming::default(),
+            phase_timing: TerrainMeshPhaseTiming::default(),
             collision_ms: 0.0,
             collision_bodies: 0,
             node_counts: NodePerfCounts::default(),
@@ -3283,6 +3416,7 @@ mod tests {
             compact_collision_proxy_mesh: true,
             mesh_ms: 1.0,
             timing: meshing::MeshTiming::default(),
+            phase_timing: TerrainMeshPhaseTiming::default(),
             collision_ms: 0.0,
             collision_bodies: 0,
             node_counts: NodePerfCounts::default(),
