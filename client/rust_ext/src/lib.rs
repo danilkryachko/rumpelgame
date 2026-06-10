@@ -260,6 +260,8 @@ impl GameClient {
     fn process_mesh_queue(&mut self) {
         let mut processed = 0;
         let mut drained = 0;
+        let mut geometry_drained = 0;
+        let mut proxy_refresh_drained = 0;
         let mut stale_drops = 0;
         let mut missing_chunk_drops = 0;
         while processed < MAX_MESH_JOBS_PER_FRAME && drained < MAX_MESH_QUEUE_DRAINS_PER_FRAME {
@@ -273,6 +275,10 @@ impl GameClient {
                 stale_drops += 1;
                 continue;
             };
+            match reason {
+                MeshQueueReason::GeometryChanged => geometry_drained += 1,
+                MeshQueueReason::ProxyRefresh => proxy_refresh_drained += 1,
+            }
 
             if !self.chunk_blocks.contains_key(&(key.chunk_x, key.chunk_z)) {
                 missing_chunk_drops += 1;
@@ -284,6 +290,8 @@ impl GameClient {
         self.perf.record_mesh_queue_frame(
             self.mesh_queue.len(),
             drained,
+            geometry_drained,
+            proxy_refresh_drained,
             stale_drops,
             missing_chunk_drops,
         );
@@ -343,7 +351,7 @@ impl GameClient {
             self.mesh_queue.push_back(key);
         }
         self.perf
-            .record_mesh_queue_enqueue(self.mesh_queue.len(), inserted);
+            .record_mesh_queue_enqueue(self.mesh_queue.len(), reason, inserted);
     }
 
     fn render_subchunk_mesh(&mut self, key: SubchunkKey, reason: MeshQueueReason) {
@@ -1180,11 +1188,19 @@ struct PerfStats {
     mesh_queue_depth: usize,
     max_mesh_queue_depth: usize,
     mesh_queue_enqueues: u64,
+    mesh_queue_geometry_enqueues: u64,
+    mesh_queue_proxy_refresh_enqueues: u64,
     mesh_queue_duplicate_enqueues: u64,
+    mesh_queue_geometry_duplicate_enqueues: u64,
+    mesh_queue_proxy_refresh_duplicate_enqueues: u64,
     mesh_queue_drained: u64,
+    mesh_queue_geometry_drained: u64,
+    mesh_queue_proxy_refresh_drained: u64,
     mesh_queue_stale_drops: u64,
     mesh_queue_missing_chunk_drops: u64,
     last_mesh_queue_drained: usize,
+    last_mesh_queue_geometry_drained: usize,
+    last_mesh_queue_proxy_refresh_drained: usize,
     last_mesh_queue_stale_drops: usize,
     last_mesh_queue_missing_chunk_drops: usize,
     mesh_jobs_completed: u64,
@@ -1290,13 +1306,25 @@ impl NodePerfCounts {
 }
 
 impl PerfStats {
-    fn record_mesh_queue_enqueue(&mut self, depth: usize, inserted: bool) {
+    fn record_mesh_queue_enqueue(&mut self, depth: usize, reason: MeshQueueReason, inserted: bool) {
         self.mesh_queue_depth = depth;
         self.max_mesh_queue_depth = self.max_mesh_queue_depth.max(depth);
         if inserted {
             self.mesh_queue_enqueues += 1;
+            match reason {
+                MeshQueueReason::GeometryChanged => self.mesh_queue_geometry_enqueues += 1,
+                MeshQueueReason::ProxyRefresh => self.mesh_queue_proxy_refresh_enqueues += 1,
+            }
         } else {
             self.mesh_queue_duplicate_enqueues += 1;
+            match reason {
+                MeshQueueReason::GeometryChanged => {
+                    self.mesh_queue_geometry_duplicate_enqueues += 1;
+                }
+                MeshQueueReason::ProxyRefresh => {
+                    self.mesh_queue_proxy_refresh_duplicate_enqueues += 1;
+                }
+            }
         }
     }
 
@@ -1304,15 +1332,21 @@ impl PerfStats {
         &mut self,
         depth: usize,
         drained: usize,
+        geometry_drained: usize,
+        proxy_refresh_drained: usize,
         stale_drops: usize,
         missing_chunk_drops: usize,
     ) {
         self.mesh_queue_depth = depth;
         self.max_mesh_queue_depth = self.max_mesh_queue_depth.max(depth);
         self.mesh_queue_drained += drained as u64;
+        self.mesh_queue_geometry_drained += geometry_drained as u64;
+        self.mesh_queue_proxy_refresh_drained += proxy_refresh_drained as u64;
         self.mesh_queue_stale_drops += stale_drops as u64;
         self.mesh_queue_missing_chunk_drops += missing_chunk_drops as u64;
         self.last_mesh_queue_drained = drained;
+        self.last_mesh_queue_geometry_drained = geometry_drained;
+        self.last_mesh_queue_proxy_refresh_drained = proxy_refresh_drained;
         self.last_mesh_queue_stale_drops = stale_drops;
         self.last_mesh_queue_missing_chunk_drops = missing_chunk_drops;
     }
@@ -2254,13 +2288,21 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} queue_max={} queue_enq={} queue_dup={} queue_drained={} queue_last_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
             self.perf.mesh_queue_enqueues,
+            self.perf.mesh_queue_geometry_enqueues,
+            self.perf.mesh_queue_proxy_refresh_enqueues,
             self.perf.mesh_queue_duplicate_enqueues,
+            self.perf.mesh_queue_geometry_duplicate_enqueues,
+            self.perf.mesh_queue_proxy_refresh_duplicate_enqueues,
             self.perf.mesh_queue_drained,
+            self.perf.mesh_queue_geometry_drained,
+            self.perf.mesh_queue_proxy_refresh_drained,
             self.perf.last_mesh_queue_drained,
+            self.perf.last_mesh_queue_geometry_drained,
+            self.perf.last_mesh_queue_proxy_refresh_drained,
             self.perf.mesh_queue_stale_drops,
             self.perf.last_mesh_queue_stale_drops,
             self.perf.mesh_queue_missing_chunk_drops,
@@ -3011,19 +3053,27 @@ mod tests {
     fn perf_records_mesh_queue_churn() {
         let mut perf = PerfStats::default();
 
-        perf.record_mesh_queue_enqueue(3, true);
-        perf.record_mesh_queue_enqueue(3, false);
-        perf.record_mesh_queue_frame(1, 2, 1, 1);
-        perf.record_mesh_queue_enqueue(5, true);
+        perf.record_mesh_queue_enqueue(3, MeshQueueReason::GeometryChanged, true);
+        perf.record_mesh_queue_enqueue(3, MeshQueueReason::ProxyRefresh, false);
+        perf.record_mesh_queue_frame(1, 2, 1, 1, 1, 1);
+        perf.record_mesh_queue_enqueue(5, MeshQueueReason::ProxyRefresh, true);
 
         assert_eq!(perf.mesh_queue_depth, 5);
         assert_eq!(perf.max_mesh_queue_depth, 5);
         assert_eq!(perf.mesh_queue_enqueues, 2);
+        assert_eq!(perf.mesh_queue_geometry_enqueues, 1);
+        assert_eq!(perf.mesh_queue_proxy_refresh_enqueues, 1);
         assert_eq!(perf.mesh_queue_duplicate_enqueues, 1);
+        assert_eq!(perf.mesh_queue_geometry_duplicate_enqueues, 0);
+        assert_eq!(perf.mesh_queue_proxy_refresh_duplicate_enqueues, 1);
         assert_eq!(perf.mesh_queue_drained, 2);
+        assert_eq!(perf.mesh_queue_geometry_drained, 1);
+        assert_eq!(perf.mesh_queue_proxy_refresh_drained, 1);
         assert_eq!(perf.mesh_queue_stale_drops, 1);
         assert_eq!(perf.mesh_queue_missing_chunk_drops, 1);
         assert_eq!(perf.last_mesh_queue_drained, 2);
+        assert_eq!(perf.last_mesh_queue_geometry_drained, 1);
+        assert_eq!(perf.last_mesh_queue_proxy_refresh_drained, 1);
         assert_eq!(perf.last_mesh_queue_stale_drops, 1);
         assert_eq!(perf.last_mesh_queue_missing_chunk_drops, 1);
     }
