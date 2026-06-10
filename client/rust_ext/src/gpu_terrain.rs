@@ -393,6 +393,49 @@ impl IndirectDrawCommand {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DrawCommandRemoval {
+    index: usize,
+    moved_key: Option<GpuSubchunkKey>,
+}
+
+fn insert_draw_key(
+    draw_keys: &mut Vec<GpuSubchunkKey>,
+    draw_indices: &mut HashMap<GpuSubchunkKey, usize>,
+    key: GpuSubchunkKey,
+    max_draws: usize,
+) -> Option<usize> {
+    if draw_keys.len() >= max_draws {
+        return None;
+    }
+
+    let draw_index = draw_keys.len();
+    draw_keys.push(key);
+    draw_indices.insert(key, draw_index);
+    Some(draw_index)
+}
+
+fn remove_draw_key(
+    draw_keys: &mut Vec<GpuSubchunkKey>,
+    draw_indices: &mut HashMap<GpuSubchunkKey, usize>,
+    key: GpuSubchunkKey,
+) -> Option<DrawCommandRemoval> {
+    let draw_index = draw_indices.remove(&key)?;
+    let last_key = draw_keys.pop()?;
+    let moved_key = if last_key == key {
+        None
+    } else {
+        draw_keys[draw_index] = last_key;
+        draw_indices.insert(last_key, draw_index);
+        Some(last_key)
+    };
+
+    Some(DrawCommandRemoval {
+        index: draw_index,
+        moved_key,
+    })
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GpuTerrainStats {
     pub subchunks: usize,
@@ -410,6 +453,10 @@ pub struct GpuTerrainStats {
     pub last_draw_rebuild_ms: f64,
     pub avg_draw_rebuild_ms: f64,
     pub max_draw_rebuild_ms: f64,
+    pub draw_patch_count: u64,
+    pub last_draw_patch_ms: f64,
+    pub avg_draw_patch_ms: f64,
+    pub max_draw_patch_ms: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -588,6 +635,8 @@ pub struct GpuTerrainBufferPool {
     indirect_buffer_rid: Rid,
     allocator: FaceRangeAllocator,
     slots: HashMap<GpuSubchunkKey, GpuTerrainSlot>,
+    draw_keys: Vec<GpuSubchunkKey>,
+    draw_indices: HashMap<GpuSubchunkKey, usize>,
     render_pipeline: Option<GpuTerrainRenderPipeline>,
     used_faces: usize,
     draw_count: usize,
@@ -603,6 +652,10 @@ pub struct GpuTerrainBufferPool {
     avg_draw_rebuild_ms: f64,
     max_draw_rebuild_ms: f64,
     last_draw_rebuild_ms: f64,
+    draw_patch_count: u64,
+    avg_draw_patch_ms: f64,
+    max_draw_patch_ms: f64,
+    last_draw_patch_ms: f64,
 }
 
 impl GpuTerrainBufferPool {
@@ -635,10 +688,12 @@ impl GpuTerrainBufferPool {
             indirect_buffer_rid,
             allocator: FaceRangeAllocator::new(MAX_GPU_TERRAIN_FACES),
             slots: HashMap::new(),
+            draw_keys: Vec::new(),
+            draw_indices: HashMap::new(),
             render_pipeline,
             used_faces: 0,
             draw_count: 0,
-            draw_dirty: true,
+            draw_dirty: false,
             debug_offscreen_rendered: false,
             compositor_frames: 0,
             compositor_logged: false,
@@ -650,6 +705,10 @@ impl GpuTerrainBufferPool {
             avg_draw_rebuild_ms: 0.0,
             max_draw_rebuild_ms: 0.0,
             last_draw_rebuild_ms: 0.0,
+            draw_patch_count: 0,
+            avg_draw_patch_ms: 0.0,
+            max_draw_patch_ms: 0.0,
+            last_draw_patch_ms: 0.0,
         })
     }
 
@@ -679,7 +738,7 @@ impl GpuTerrainBufferPool {
         };
         self.slots.insert(key, slot);
         self.used_faces += range.len;
-        self.draw_dirty = true;
+        self.insert_draw_command(key, slot);
         Some(slot)
     }
 
@@ -688,12 +747,12 @@ impl GpuTerrainBufferPool {
             return;
         };
 
+        self.remove_draw_command(key);
         self.used_faces = self.used_faces.saturating_sub(slot.face_count);
         self.allocator.free(FaceRange {
             start: slot.start_face,
             len: slot.face_count,
         });
-        self.draw_dirty = true;
     }
 
     pub fn has_subchunk(&self, key: GpuSubchunkKey) -> bool {
@@ -718,6 +777,10 @@ impl GpuTerrainBufferPool {
             last_draw_rebuild_ms: self.last_draw_rebuild_ms,
             avg_draw_rebuild_ms: self.avg_draw_rebuild_ms,
             max_draw_rebuild_ms: self.max_draw_rebuild_ms,
+            draw_patch_count: self.draw_patch_count,
+            last_draw_patch_ms: self.last_draw_patch_ms,
+            avg_draw_patch_ms: self.avg_draw_patch_ms,
+            max_draw_patch_ms: self.max_draw_patch_ms,
         }
     }
 
@@ -963,13 +1026,19 @@ impl GpuTerrainBufferPool {
         let draw_count = self.slots.len().min(MAX_INDIRECT_DRAWS);
         if draw_count == 0 {
             self.draw_count = 0;
+            self.draw_keys.clear();
+            self.draw_indices.clear();
             self.draw_dirty = false;
             self.record_draw_rebuild_ms(rebuild_start.elapsed().as_secs_f64() * 1000.0);
             return;
         }
 
         let mut indirect_bytes = Vec::with_capacity(draw_count * INDIRECT_DRAW_BYTES);
-        for slot in self.slots.values().take(draw_count) {
+        self.draw_keys.clear();
+        self.draw_indices.clear();
+        for (key, slot) in self.slots.iter().take(draw_count) {
+            self.draw_indices.insert(*key, self.draw_keys.len());
+            self.draw_keys.push(*key);
             IndirectDrawCommand::for_slot(*slot).append_bytes(&mut indirect_bytes);
         }
 
@@ -981,9 +1050,58 @@ impl GpuTerrainBufferPool {
             &indirect_pba,
         );
 
-        self.draw_count = draw_count;
+        self.draw_count = self.draw_keys.len();
         self.draw_dirty = false;
         self.record_draw_rebuild_ms(rebuild_start.elapsed().as_secs_f64() * 1000.0);
+    }
+
+    fn insert_draw_command(&mut self, key: GpuSubchunkKey, slot: GpuTerrainSlot) {
+        let Some(draw_index) = insert_draw_key(
+            &mut self.draw_keys,
+            &mut self.draw_indices,
+            key,
+            MAX_INDIRECT_DRAWS,
+        ) else {
+            self.draw_dirty = true;
+            return;
+        };
+
+        self.write_draw_command(draw_index, slot);
+        self.draw_count = self.draw_keys.len();
+    }
+
+    fn remove_draw_command(&mut self, key: GpuSubchunkKey) {
+        let Some(removal) = remove_draw_key(&mut self.draw_keys, &mut self.draw_indices, key)
+        else {
+            return;
+        };
+
+        if let Some(moved_key) = removal.moved_key {
+            let Some(slot) = self.slots.get(&moved_key).copied() else {
+                self.draw_dirty = true;
+                return;
+            };
+            self.write_draw_command(removal.index, slot);
+        }
+
+        self.draw_count = self.draw_keys.len();
+        if self.slots.len() >= MAX_INDIRECT_DRAWS {
+            self.draw_dirty = true;
+        }
+    }
+
+    fn write_draw_command(&mut self, draw_index: usize, slot: GpuTerrainSlot) {
+        let patch_start = Instant::now();
+        let mut indirect_bytes = Vec::with_capacity(INDIRECT_DRAW_BYTES);
+        IndirectDrawCommand::for_slot(slot).append_bytes(&mut indirect_bytes);
+        let indirect_pba = PackedByteArray::from(indirect_bytes.as_slice());
+        self.rd.buffer_update(
+            self.indirect_buffer_rid,
+            (draw_index * INDIRECT_DRAW_BYTES) as u32,
+            indirect_pba.len() as u32,
+            &indirect_pba,
+        );
+        self.record_draw_patch_ms(patch_start.elapsed().as_secs_f64() * 1000.0);
     }
 
     fn record_draw_rebuild_ms(&mut self, elapsed_ms: f64) {
@@ -992,6 +1110,14 @@ impl GpuTerrainBufferPool {
         let count = self.draw_rebuild_count as f64;
         self.avg_draw_rebuild_ms += (elapsed_ms - self.avg_draw_rebuild_ms) / count;
         self.max_draw_rebuild_ms = self.max_draw_rebuild_ms.max(elapsed_ms);
+    }
+
+    fn record_draw_patch_ms(&mut self, elapsed_ms: f64) {
+        self.draw_patch_count += 1;
+        self.last_draw_patch_ms = elapsed_ms;
+        let count = self.draw_patch_count as f64;
+        self.avg_draw_patch_ms += (elapsed_ms - self.avg_draw_patch_ms) / count;
+        self.max_draw_patch_ms = self.max_draw_patch_ms.max(elapsed_ms);
     }
 
     fn create_debug_render_pipeline(
@@ -1813,6 +1939,76 @@ mod tests {
                 largest_free_faces: 12,
             }
         );
+    }
+
+    #[test]
+    fn draw_keys_patch_insert_and_swap_remove_commands() {
+        let first = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let second = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let third = GpuSubchunkKey {
+            chunk_x: 2,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let mut draw_keys = Vec::new();
+        let mut draw_indices = HashMap::new();
+
+        assert_eq!(
+            insert_draw_key(&mut draw_keys, &mut draw_indices, first, 3),
+            Some(0)
+        );
+        assert_eq!(
+            insert_draw_key(&mut draw_keys, &mut draw_indices, second, 3),
+            Some(1)
+        );
+        assert_eq!(
+            insert_draw_key(&mut draw_keys, &mut draw_indices, third, 3),
+            Some(2)
+        );
+        assert_eq!(
+            insert_draw_key(
+                &mut draw_keys,
+                &mut draw_indices,
+                GpuSubchunkKey {
+                    chunk_x: 3,
+                    sub_y: 0,
+                    chunk_z: 0,
+                },
+                3,
+            ),
+            None
+        );
+
+        assert_eq!(
+            remove_draw_key(&mut draw_keys, &mut draw_indices, second),
+            Some(DrawCommandRemoval {
+                index: 1,
+                moved_key: Some(third),
+            })
+        );
+        assert_eq!(draw_keys, vec![first, third]);
+        assert_eq!(draw_indices.get(&first), Some(&0));
+        assert_eq!(draw_indices.get(&third), Some(&1));
+        assert!(!draw_indices.contains_key(&second));
+
+        assert_eq!(
+            remove_draw_key(&mut draw_keys, &mut draw_indices, third),
+            Some(DrawCommandRemoval {
+                index: 1,
+                moved_key: None,
+            })
+        );
+        assert_eq!(draw_keys, vec![first]);
+        assert_eq!(draw_indices.get(&first), Some(&0));
+        assert!(!draw_indices.contains_key(&third));
     }
 
     #[test]
