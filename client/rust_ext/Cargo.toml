@@ -14,3 +14,12 @@ crate-type = ["cdylib"]
 [build-dependencies]
 prost-build = "0.14.4"
 
+[profile.perf-smoke]
+inherits = "dev"
+debug = 0
+debug-assertions = false
+incremental = true
+opt-level = 3
+
+[profile.perf-smoke.package."*"]
+opt-level = 0
