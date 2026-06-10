@@ -34,6 +34,7 @@ pub struct GameClient {
     texture_debug_stand_visible: bool,
     chunk_material: Option<Gd<godot::classes::Material>>,
     chunk_blocks: HashMap<(i32, i32), Vec<u8>>,
+    chunk_non_empty_subchunks: HashMap<(i32, i32), u32>,
     mesh_queue: VecDeque<SubchunkKey>,
     queued_subchunks: HashMap<SubchunkKey, MeshQueueReason>,
     cpu_proxy_mesh_payloads: HashMap<SubchunkKey, TerrainCpuProxyMeshPayload>,
@@ -60,6 +61,7 @@ impl INode for GameClient {
             texture_debug_stand_visible: false,
             chunk_material: None,
             chunk_blocks: HashMap::new(),
+            chunk_non_empty_subchunks: HashMap::new(),
             mesh_queue: VecDeque::new(),
             queued_subchunks: HashMap::new(),
             cpu_proxy_mesh_payloads: HashMap::new(),
@@ -219,7 +221,10 @@ impl GameClient {
         self.last_chunk_event = format!("received {chunk_x},{chunk_z}");
         self.last_save_event = format!("chunk {chunk_x},{chunk_z} updated");
 
+        let non_empty_subchunks = compute_chunk_non_empty_subchunks(&chunk.blocks);
         self.chunk_blocks.insert((chunk_x, chunk_z), chunk.blocks);
+        self.chunk_non_empty_subchunks
+            .insert((chunk_x, chunk_z), non_empty_subchunks);
         self.perf.chunk_bytes_loaded = self.total_chunk_bytes_loaded();
         self.enqueue_chunk_subchunks(chunk_x, chunk_z);
 
@@ -760,24 +765,14 @@ impl GameClient {
     }
 
     fn subchunk_has_blocks(&self, chunk_x: i32, sub_y: i32, chunk_z: i32) -> bool {
+        if let Some(mask) = self.chunk_non_empty_subchunks.get(&(chunk_x, chunk_z)) {
+            return subchunk_mask_has_blocks(*mask, sub_y);
+        }
+
         let Some(blocks) = self.chunk_blocks.get(&(chunk_x, chunk_z)) else {
             return false;
         };
-        let y_start = sub_y as usize * SUBCHUNK_H;
-        let y_end = (y_start + SUBCHUNK_H).min(CHUNK_H);
-        for y in y_start..y_end {
-            for z in 0..CHUNK_D {
-                for x in 0..CHUNK_W {
-                    let idx = chunk_byte_index(x, y, z);
-                    if idx + BLOCK_BYTES <= blocks.len()
-                        && u16::from_le_bytes([blocks[idx], blocks[idx + 1]]) != 0
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        chunk_subchunk_has_blocks(blocks, sub_y)
     }
 
     fn subchunk_needs_collision(&self, key: SubchunkKey) -> bool {
@@ -908,6 +903,7 @@ impl GameClient {
         let mut rerender = HashSet::new();
         for coord in to_unload {
             self.chunk_blocks.remove(&coord);
+            self.chunk_non_empty_subchunks.remove(&coord);
             self.remove_chunk_meshes(coord.0, coord.1);
             self.last_chunk_event = format!("unloaded {},{}", coord.0, coord.1);
             self.emit_debug_log(&format!("Chunk unloaded {},{}", coord.0, coord.1));
@@ -1869,6 +1865,45 @@ fn copy_chunk_region(
             }
         }
     }
+}
+
+fn compute_chunk_non_empty_subchunks(blocks: &[u8]) -> u32 {
+    let mut mask = 0u32;
+    for sub_y in 0..SUBCHUNKS_PER_CHUNK {
+        if chunk_subchunk_has_blocks(blocks, sub_y) {
+            mask |= 1u32 << sub_y;
+        }
+    }
+    mask
+}
+
+fn subchunk_mask_has_blocks(mask: u32, sub_y: i32) -> bool {
+    if !(0..SUBCHUNKS_PER_CHUNK).contains(&sub_y) {
+        return false;
+    }
+    (mask & (1u32 << sub_y)) != 0
+}
+
+fn chunk_subchunk_has_blocks(blocks: &[u8], sub_y: i32) -> bool {
+    if !(0..SUBCHUNKS_PER_CHUNK).contains(&sub_y) {
+        return false;
+    }
+
+    let y_start = sub_y as usize * SUBCHUNK_H;
+    let y_end = (y_start + SUBCHUNK_H).min(CHUNK_H);
+    for y in y_start..y_end {
+        for z in 0..CHUNK_D {
+            for x in 0..CHUNK_W {
+                let idx = chunk_byte_index(x, y, z);
+                if idx + BLOCK_BYTES <= blocks.len()
+                    && u16::from_le_bytes([blocks[idx], blocks[idx + 1]]) != 0
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn chunk_byte_index(x: usize, y: usize, z: usize) -> usize {
@@ -2949,6 +2984,27 @@ mod tests {
         assert!(pop_next_mesh_queue_key(&mut queue, None).is_some_and(|key| key == far));
         assert!(pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_some_and(|key| key == tie_b));
         assert!(pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_none());
+    }
+
+    #[test]
+    fn chunk_non_empty_subchunk_mask_tracks_solid_subchunks() {
+        let mut blocks = vec![0u8; CHUNK_W * CHUNK_H * CHUNK_D * BLOCK_BYTES];
+        let lower_idx = chunk_byte_index(1, 7, 2);
+        let upper_idx = chunk_byte_index(3, SUBCHUNK_H * 4 + 5, 4);
+        blocks[lower_idx..lower_idx + BLOCK_BYTES].copy_from_slice(&1u16.to_le_bytes());
+        blocks[upper_idx..upper_idx + BLOCK_BYTES].copy_from_slice(&2u16.to_le_bytes());
+
+        let mask = compute_chunk_non_empty_subchunks(&blocks);
+
+        assert!(subchunk_mask_has_blocks(mask, 0));
+        assert!(subchunk_mask_has_blocks(mask, 4));
+        assert!(!subchunk_mask_has_blocks(mask, 1));
+        assert!(!subchunk_mask_has_blocks(mask, -1));
+        assert!(!subchunk_mask_has_blocks(mask, SUBCHUNKS_PER_CHUNK));
+        assert!(chunk_subchunk_has_blocks(&blocks, 0));
+        assert!(chunk_subchunk_has_blocks(&blocks, 4));
+        assert!(!chunk_subchunk_has_blocks(&blocks, 1));
+        assert_eq!(compute_chunk_non_empty_subchunks(&[]), 0);
     }
 
     #[test]
