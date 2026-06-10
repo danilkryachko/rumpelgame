@@ -10,6 +10,7 @@ GODOT_QUIT_AFTER_FRAMES="${GODOT_QUIT_AFTER_FRAMES:-8000}"
 SMOKE_DELAY_SEC="${SMOKE_DELAY_SEC:-5.0}"
 FRAME_SAMPLE_SEC="${RUMPELMC_MOVEMENT_STRESS_FRAME_SAMPLE_SEC:-5.0}"
 MOTION_STEP_SEC="${RUMPELMC_MOVEMENT_STRESS_STEP_SEC:-0.55}"
+MOTION_SETTLE_SEC="${RUMPELMC_MOVEMENT_STRESS_SETTLE_SEC:-4.0}"
 MIN_MOTION_CHUNKS="${RUMPELMC_MOVEMENT_STRESS_MIN_CHUNKS:-4}"
 
 mkdir -p "$OUT_DIR"
@@ -60,6 +61,7 @@ echo "==> GPU terrain movement stress"
     RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=compact \
     RUMPELMC_VISUAL_SMOKE_MOTION=chunk_walk \
     RUMPELMC_VISUAL_SMOKE_MOTION_STEP_SEC="$MOTION_STEP_SEC" \
+    RUMPELMC_VISUAL_SMOKE_MOTION_SETTLE_SEC="$MOTION_SETTLE_SEC" \
     RUMPELMC_VISUAL_SMOKE_PATH="$screenshot_path" \
     RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
     RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC="$FRAME_SAMPLE_SEC" \
@@ -78,6 +80,11 @@ require_metric_ge "$marker_path" "motion_steps" 4
 require_metric_ge "$marker_path" "motion_chunks" "$MIN_MOTION_CHUNKS"
 require_metric_ge "$marker_path" "frame_samples" 10
 require_metric_ge "$marker_path" "terrain_samples" 1
+require_metric_ge "$marker_path" "queue_max" 1
+require_metric_ge "$marker_path" "queue_enq" 1
+require_metric_ge "$marker_path" "queue_drained" 1
+require_metric_ge "$marker_path" "queue_stale" 0
+require_metric_ge "$marker_path" "queue_missing" 0
 require_metric_ge "$marker_path" "gpu_frames" 1
 require_metric_ge "$marker_path" "gpu_subchunks" 1
 require_metric_ge "$marker_path" "gpu_uploads" 1

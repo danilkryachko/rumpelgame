@@ -10,10 +10,12 @@ const VISUAL_SMOKE_HIDE_HUD_ENV = "RUMPELMC_VISUAL_SMOKE_HIDE_HUD"
 const VISUAL_SMOKE_POSE_ENV = "RUMPELMC_VISUAL_SMOKE_POSE"
 const VISUAL_SMOKE_MOTION_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION"
 const VISUAL_SMOKE_MOTION_STEP_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION_STEP_SEC"
+const VISUAL_SMOKE_MOTION_SETTLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION_SETTLE_SEC"
 const VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC"
 const VISUAL_SMOKE_DEFAULT_DELAY_SEC = 6.0
 const VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC = 2.0
 const VISUAL_SMOKE_DEFAULT_MOTION_STEP_SEC = 0.55
+const VISUAL_SMOKE_DEFAULT_MOTION_SETTLE_SEC = 0.0
 const VISUAL_SMOKE_SKY_COLOR = Color(0.34, 0.43, 0.54)
 const VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD = 0.08
 const VISUAL_SMOKE_MIN_TERRAIN_SAMPLES = 12
@@ -444,6 +446,10 @@ func run_visual_smoke_motion(motion_name: String):
 			apply_visual_smoke_look_at(player, camera, position, position + Vector3(24.0, -10.0, -28.0))
 		await get_tree().process_frame
 		await get_tree().create_timer(step_sec).timeout
+
+	var settle_sec = max(env_float(VISUAL_SMOKE_MOTION_SETTLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_MOTION_SETTLE_SEC), 0.0)
+	if settle_sec > 0.0:
+		await get_tree().create_timer(settle_sec).timeout
 
 func visual_smoke_chunk_key(position: Vector3) -> String:
 	return "%d,%d" % [
