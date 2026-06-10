@@ -1317,13 +1317,35 @@ fn chunk_needs_cpu_proxy_refresh(
     current: (i32, i32),
     shadow_radius: i32,
 ) -> bool {
-    previous.is_some_and(|prev| chunk_has_cpu_proxy_reason(coord, prev, shadow_radius))
-        || chunk_has_cpu_proxy_reason(coord, current, shadow_radius)
+    let current_role = chunk_cpu_proxy_role(coord, current, shadow_radius);
+    let Some(previous) = previous else {
+        return current_role != ChunkCpuProxyRole::None;
+    };
+
+    chunk_cpu_proxy_role(coord, previous, shadow_radius) != current_role
 }
 
-fn chunk_has_cpu_proxy_reason(coord: (i32, i32), center: (i32, i32), shadow_radius: i32) -> bool {
-    chunk_within_radius(coord, center, COLLISION_CHUNK_DISTANCE)
-        || (shadow_radius > 0 && chunk_within_radius(coord, center, shadow_radius))
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChunkCpuProxyRole {
+    None,
+    Collision,
+    Shadow,
+    CollisionAndShadow,
+}
+
+fn chunk_cpu_proxy_role(
+    coord: (i32, i32),
+    center: (i32, i32),
+    shadow_radius: i32,
+) -> ChunkCpuProxyRole {
+    let needs_collision = chunk_within_radius(coord, center, COLLISION_CHUNK_DISTANCE);
+    let needs_shadow = shadow_radius > 0 && chunk_within_radius(coord, center, shadow_radius);
+    match (needs_collision, needs_shadow) {
+        (false, false) => ChunkCpuProxyRole::None,
+        (true, false) => ChunkCpuProxyRole::Collision,
+        (false, true) => ChunkCpuProxyRole::Shadow,
+        (true, true) => ChunkCpuProxyRole::CollisionAndShadow,
+    }
 }
 
 fn chunks_to_refresh_after_gpu_attach(
@@ -2393,6 +2415,18 @@ mod tests {
 
         assert!(chunk_needs_cpu_proxy_refresh((4, 0), None, (0, 0), 5));
         assert!(!chunk_needs_cpu_proxy_refresh((4, 0), None, (0, 0), 0));
+        assert!(!chunk_needs_cpu_proxy_refresh(
+            (4, 0),
+            Some((0, 0)),
+            (1, 0),
+            5
+        ));
+        assert!(chunk_needs_cpu_proxy_refresh(
+            (2, 0),
+            Some((0, 0)),
+            (1, 0),
+            5
+        ));
         assert!(!chunk_needs_cpu_proxy_refresh(
             (8, 0),
             Some((0, 0)),
