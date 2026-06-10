@@ -2108,24 +2108,33 @@ fn copy_chunk_region(
     let width = source_region.x.end - source_region.x.start;
     let height = source_region.y.end - source_region.y.start;
     let depth = source_region.z.end - source_region.z.start;
+    let row_bytes = width * BLOCK_BYTES;
     for dy in 0..height {
-        for dx in 0..width {
-            for dz in 0..depth {
-                let sx = source_region.x.start + dx;
-                let sy = source_region.y.start + dy;
-                let sz = source_region.z.start + dz;
-                let px = padded_start.0 + dx;
-                let py = padded_start.1 + dy;
-                let pz = padded_start.2 + dz;
-
-                let src = chunk_byte_index(sx, sy, sz);
-                let dst = padded_byte_index(px, py, pz);
-                if src + BLOCK_BYTES <= source.len() && dst + BLOCK_BYTES <= padded.len() {
-                    padded[dst..dst + BLOCK_BYTES].copy_from_slice(&source[src..src + BLOCK_BYTES]);
-                }
+        for dz in 0..depth {
+            let sy = source_region.y.start + dy;
+            let sz = source_region.z.start + dz;
+            let py = padded_start.1 + dy;
+            let pz = padded_start.2 + dz;
+            let src = chunk_byte_index(source_region.x.start, sy, sz);
+            let dst = padded_byte_index(padded_start.0, py, pz);
+            let copy_bytes = bounded_block_copy_bytes(
+                row_bytes,
+                source.len().saturating_sub(src),
+                padded.len().saturating_sub(dst),
+            );
+            if copy_bytes > 0 {
+                padded[dst..dst + copy_bytes].copy_from_slice(&source[src..src + copy_bytes]);
             }
         }
     }
+}
+
+fn bounded_block_copy_bytes(
+    requested: usize,
+    source_remaining: usize,
+    target_remaining: usize,
+) -> usize {
+    requested.min(source_remaining).min(target_remaining) / BLOCK_BYTES * BLOCK_BYTES
 }
 
 fn compute_chunk_non_empty_subchunks(blocks: &[u8]) -> u32 {
@@ -3341,6 +3350,30 @@ mod tests {
         assert!(chunk_subchunk_has_blocks(&blocks, 4));
         assert!(!chunk_subchunk_has_blocks(&blocks, 1));
         assert_eq!(compute_chunk_non_empty_subchunks(&[]), 0);
+    }
+
+    #[test]
+    fn copy_chunk_region_copies_rows_without_partial_blocks() {
+        let mut source = vec![0u8; CHUNK_W * CHUNK_H * CHUNK_D * BLOCK_BYTES];
+        let mut padded = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        for (offset, block_id) in [11u16, 12, 13].into_iter().enumerate() {
+            let idx = chunk_byte_index(2 + offset, 7, 3);
+            source[idx..idx + BLOCK_BYTES].copy_from_slice(&block_id.to_le_bytes());
+        }
+
+        copy_chunk_region(
+            &source,
+            &mut padded,
+            ChunkRegion::new(2..5, 7..8, 3..4),
+            (4, 6, 5),
+        );
+
+        for (offset, expected) in [11u16, 12, 13].into_iter().enumerate() {
+            let idx = padded_byte_index(4 + offset, 6, 5);
+            assert_eq!(u16::from_le_bytes([padded[idx], padded[idx + 1]]), expected);
+        }
+        assert_eq!(bounded_block_copy_bytes(6, 5, 6), 4);
+        assert_eq!(bounded_block_copy_bytes(6, 6, 1), 0);
     }
 
     #[test]
