@@ -206,11 +206,23 @@ impl PackedFaceBatch {
     fn indexed_cpu_proxy_positions(&self) -> (Vec<Vector3>, Vec<i32>) {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
-        for face in &self.faces {
+        for face_idx in [
+            FACE_LEFT,
+            FACE_RIGHT,
+            FACE_BOTTOM,
+            FACE_TOP,
+            FACE_BACK,
+            FACE_FRONT,
+        ] {
             if vertices.len() + 4 > MAX_CPU_PROXY_VERTICES {
                 break;
             }
-            append_indexed_cpu_proxy_face_positions(*face, &mut vertices, &mut indices);
+            append_greedy_indexed_cpu_proxy_face_positions(
+                &self.faces,
+                face_idx,
+                &mut vertices,
+                &mut indices,
+            );
         }
         (vertices, indices)
     }
@@ -320,29 +332,39 @@ fn append_cpu_proxy_face_positions(face: PackedFace, vertices: &mut Vec<Vector3>
     }
 }
 
-fn append_indexed_cpu_proxy_face_positions(
-    face: PackedFace,
+fn append_greedy_indexed_cpu_proxy_face_positions(
+    faces: &[PackedFace],
+    face_idx: u32,
     vertices: &mut Vec<Vector3>,
     indices: &mut Vec<i32>,
 ) {
-    let base_index = vertices.len() as i32;
-    let base = Vector3::new(face.x() as f32, face.y() as f32, face.z() as f32);
-    let corners = cpu_proxy_face_corners(base, face.face());
-    vertices.extend_from_slice(&corners);
-    indices.extend_from_slice(&[
-        base_index,
-        base_index + 2,
-        base_index + 1,
-        base_index,
-        base_index + 3,
-        base_index + 2,
-    ]);
+    visit_greedy_face_rects(faces, face_idx, |face_idx, plane, u, v, width, height| {
+        if vertices.len() + 4 > MAX_CPU_PROXY_VERTICES {
+            return false;
+        }
+        append_indexed_rect_face_positions(face_idx, plane, u, v, width, height, vertices, indices);
+        true
+    });
 }
 
 fn append_greedy_collision_face_positions(
     faces: &[PackedFace],
     face_idx: u32,
     vertices: &mut Vec<Vector3>,
+) {
+    visit_greedy_face_rects(faces, face_idx, |face_idx, plane, u, v, width, height| {
+        if vertices.len() + 6 > MAX_CPU_PROXY_VERTICES {
+            return false;
+        }
+        append_collision_rect_face_positions(face_idx, plane, u, v, width, height, vertices);
+        true
+    });
+}
+
+fn visit_greedy_face_rects(
+    faces: &[PackedFace],
+    face_idx: u32,
+    mut visit: impl FnMut(u32, usize, usize, usize, usize, usize) -> bool,
 ) {
     const GRID: usize = CHUNK_W;
     const GRID_CELLS: usize = GRID * GRID;
@@ -387,12 +409,9 @@ fn append_greedy_collision_face_positions(
                         occupied[collision_grid_index(plane, u + du, v + dv)] = false;
                     }
                 }
-                if vertices.len() + 6 > MAX_CPU_PROXY_VERTICES {
+                if !visit(face_idx, plane, u, v, width, height) {
                     return;
                 }
-                append_collision_rect_face_positions(
-                    face_idx, plane, u, v, width, height, vertices,
-                );
                 u += width;
             }
         }
@@ -424,12 +443,48 @@ fn append_collision_rect_face_positions(
     height: usize,
     vertices: &mut Vec<Vector3>,
 ) {
+    let corners = rect_face_corners(face_idx, plane, u, v, width, height);
+    for idx in [0usize, 2, 1, 0, 3, 2] {
+        vertices.push(corners[idx]);
+    }
+}
+
+fn append_indexed_rect_face_positions(
+    face_idx: u32,
+    plane: usize,
+    u: usize,
+    v: usize,
+    width: usize,
+    height: usize,
+    vertices: &mut Vec<Vector3>,
+    indices: &mut Vec<i32>,
+) {
+    let base_index = vertices.len() as i32;
+    vertices.extend_from_slice(&rect_face_corners(face_idx, plane, u, v, width, height));
+    indices.extend_from_slice(&[
+        base_index,
+        base_index + 2,
+        base_index + 1,
+        base_index,
+        base_index + 3,
+        base_index + 2,
+    ]);
+}
+
+fn rect_face_corners(
+    face_idx: u32,
+    plane: usize,
+    u: usize,
+    v: usize,
+    width: usize,
+    height: usize,
+) -> [Vector3; 4] {
     let plane = plane as f32;
     let u0 = u as f32;
     let v0 = v as f32;
     let u1 = (u + width) as f32;
     let v1 = (v + height) as f32;
-    let corners = match face_idx {
+    match face_idx {
         FACE_LEFT => [
             Vector3::new(plane, v0, u1),
             Vector3::new(plane, v1, u1),
@@ -466,10 +521,6 @@ fn append_collision_rect_face_positions(
             Vector3::new(u1, v1, plane),
             Vector3::new(u0, v1, plane),
         ],
-    };
-
-    for idx in [0usize, 2, 1, 0, 3, 2] {
-        vertices.push(corners[idx]);
     }
 }
 
@@ -2327,6 +2378,49 @@ mod tests {
         assert_eq!(positions[1], Vector3::new(1.0, 3.0, 4.0));
         assert_eq!(positions[2], Vector3::new(2.0, 3.0, 4.0));
         assert_eq!(positions[3], Vector3::new(2.0, 3.0, 3.0));
+        assert_eq!(indices, vec![0, 2, 1, 0, 3, 2]);
+    }
+
+    #[test]
+    fn indexed_compact_cpu_proxy_positions_preserve_all_face_directions() {
+        for face_idx in [
+            FACE_LEFT,
+            FACE_RIGHT,
+            FACE_BOTTOM,
+            FACE_TOP,
+            FACE_BACK,
+            FACE_FRONT,
+        ] {
+            let batch = PackedFaceBatch {
+                faces: vec![PackedFace::new(1, 2, 3, face_idx, 7, blocks::GRASS)],
+            };
+            let (positions, indices) = batch.indexed_cpu_proxy_positions();
+            let expanded: Vec<Vector3> = indices
+                .iter()
+                .map(|index| positions[*index as usize])
+                .collect();
+
+            assert_eq!(positions.len(), 4);
+            assert_eq!(expanded, batch.collision_face_positions());
+        }
+    }
+
+    #[test]
+    fn indexed_compact_cpu_proxy_positions_merge_adjacent_coplanar_quads() {
+        let batch = PackedFaceBatch {
+            faces: vec![
+                PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS),
+                PackedFace::new(2, 2, 3, FACE_TOP, 7, blocks::GRASS),
+            ],
+        };
+
+        let (positions, indices) = batch.indexed_cpu_proxy_positions();
+
+        assert_eq!(positions.len(), 4);
+        assert_eq!(positions[0], Vector3::new(1.0, 3.0, 3.0));
+        assert_eq!(positions[1], Vector3::new(1.0, 3.0, 4.0));
+        assert_eq!(positions[2], Vector3::new(3.0, 3.0, 4.0));
+        assert_eq!(positions[3], Vector3::new(3.0, 3.0, 3.0));
         assert_eq!(indices, vec![0, 2, 1, 0, 3, 2]);
     }
 
