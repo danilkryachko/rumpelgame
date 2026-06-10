@@ -156,6 +156,10 @@ impl PackedFaceBatch {
         }
     }
 
+    pub fn build_collision_faces(&self) -> PackedVector3Array {
+        PackedVector3Array::from(self.collision_face_positions())
+    }
+
     pub fn build_cpu_array_mesh(&self) -> CpuArrayMesh {
         let mut vertices = Vec::with_capacity(self.cpu_array_mesh_vertex_capacity());
         let mut normals = Vec::with_capacity(vertices.capacity());
@@ -209,6 +213,24 @@ impl PackedFaceBatch {
             append_indexed_cpu_proxy_face_positions(*face, &mut vertices, &mut indices);
         }
         (vertices, indices)
+    }
+
+    fn collision_face_positions(&self) -> Vec<Vector3> {
+        let mut vertices = Vec::new();
+        for face_idx in [
+            FACE_LEFT,
+            FACE_RIGHT,
+            FACE_BOTTOM,
+            FACE_TOP,
+            FACE_BACK,
+            FACE_FRONT,
+        ] {
+            if vertices.len() + 6 > MAX_CPU_PROXY_VERTICES {
+                break;
+            }
+            append_greedy_collision_face_positions(&self.faces, face_idx, &mut vertices);
+        }
+        vertices
     }
 
     #[cfg(test)]
@@ -315,6 +337,140 @@ fn append_indexed_cpu_proxy_face_positions(
         base_index + 3,
         base_index + 2,
     ]);
+}
+
+fn append_greedy_collision_face_positions(
+    faces: &[PackedFace],
+    face_idx: u32,
+    vertices: &mut Vec<Vector3>,
+) {
+    const GRID: usize = CHUNK_W;
+    const GRID_CELLS: usize = GRID * GRID;
+    const PLANES: usize = GRID + 1;
+
+    let mut occupied = vec![false; PLANES * GRID_CELLS];
+    for face in faces {
+        if face.face() != face_idx {
+            continue;
+        }
+        let (plane, u, v) = collision_face_plane_uv(*face);
+        occupied[collision_grid_index(plane, u, v)] = true;
+    }
+
+    for plane in 0..PLANES {
+        for v in 0..GRID {
+            let mut u = 0;
+            while u < GRID {
+                let idx = collision_grid_index(plane, u, v);
+                if !occupied[idx] {
+                    u += 1;
+                    continue;
+                }
+
+                let mut width = 1;
+                while u + width < GRID && occupied[collision_grid_index(plane, u + width, v)] {
+                    width += 1;
+                }
+
+                let mut height = 1;
+                'height: while v + height < GRID {
+                    for du in 0..width {
+                        if !occupied[collision_grid_index(plane, u + du, v + height)] {
+                            break 'height;
+                        }
+                    }
+                    height += 1;
+                }
+
+                for dv in 0..height {
+                    for du in 0..width {
+                        occupied[collision_grid_index(plane, u + du, v + dv)] = false;
+                    }
+                }
+                if vertices.len() + 6 > MAX_CPU_PROXY_VERTICES {
+                    return;
+                }
+                append_collision_rect_face_positions(
+                    face_idx, plane, u, v, width, height, vertices,
+                );
+                u += width;
+            }
+        }
+    }
+}
+
+fn collision_face_plane_uv(face: PackedFace) -> (usize, usize, usize) {
+    match face.face() {
+        FACE_LEFT => (face.x() as usize, face.z() as usize, face.y() as usize),
+        FACE_RIGHT => (face.x() as usize + 1, face.z() as usize, face.y() as usize),
+        FACE_BOTTOM => (face.y() as usize, face.x() as usize, face.z() as usize),
+        FACE_TOP => (face.y() as usize + 1, face.x() as usize, face.z() as usize),
+        FACE_BACK => (face.z() as usize, face.x() as usize, face.y() as usize),
+        _ => (face.z() as usize + 1, face.x() as usize, face.y() as usize),
+    }
+}
+
+fn collision_grid_index(plane: usize, u: usize, v: usize) -> usize {
+    const GRID: usize = CHUNK_W;
+    plane * GRID * GRID + v * GRID + u
+}
+
+fn append_collision_rect_face_positions(
+    face_idx: u32,
+    plane: usize,
+    u: usize,
+    v: usize,
+    width: usize,
+    height: usize,
+    vertices: &mut Vec<Vector3>,
+) {
+    let plane = plane as f32;
+    let u0 = u as f32;
+    let v0 = v as f32;
+    let u1 = (u + width) as f32;
+    let v1 = (v + height) as f32;
+    let corners = match face_idx {
+        FACE_LEFT => [
+            Vector3::new(plane, v0, u1),
+            Vector3::new(plane, v1, u1),
+            Vector3::new(plane, v1, u0),
+            Vector3::new(plane, v0, u0),
+        ],
+        FACE_RIGHT => [
+            Vector3::new(plane, v0, u0),
+            Vector3::new(plane, v1, u0),
+            Vector3::new(plane, v1, u1),
+            Vector3::new(plane, v0, u1),
+        ],
+        FACE_BOTTOM => [
+            Vector3::new(u0, plane, v1),
+            Vector3::new(u0, plane, v0),
+            Vector3::new(u1, plane, v0),
+            Vector3::new(u1, plane, v1),
+        ],
+        FACE_TOP => [
+            Vector3::new(u0, plane, v0),
+            Vector3::new(u0, plane, v1),
+            Vector3::new(u1, plane, v1),
+            Vector3::new(u1, plane, v0),
+        ],
+        FACE_BACK => [
+            Vector3::new(u1, v0, plane),
+            Vector3::new(u0, v0, plane),
+            Vector3::new(u0, v1, plane),
+            Vector3::new(u1, v1, plane),
+        ],
+        _ => [
+            Vector3::new(u0, v0, plane),
+            Vector3::new(u1, v0, plane),
+            Vector3::new(u1, v1, plane),
+            Vector3::new(u0, v1, plane),
+        ],
+    };
+
+    for idx in [0usize, 2, 1, 0, 3, 2] {
+        vertices.push(corners[idx]);
+    }
 }
 
 fn cpu_array_mesh_face_uvs(face_idx: u32) -> [Vector2; 4] {
@@ -2172,6 +2328,47 @@ mod tests {
         assert_eq!(positions[2], Vector3::new(2.0, 3.0, 4.0));
         assert_eq!(positions[3], Vector3::new(2.0, 3.0, 3.0));
         assert_eq!(indices, vec![0, 2, 1, 0, 3, 2]);
+    }
+
+    #[test]
+    fn collision_faces_preserve_single_face_geometry() {
+        for face_idx in [
+            FACE_LEFT,
+            FACE_RIGHT,
+            FACE_BOTTOM,
+            FACE_TOP,
+            FACE_BACK,
+            FACE_FRONT,
+        ] {
+            let face = PackedFace::new(1, 2, 3, face_idx, 7, blocks::GRASS);
+            let batch = PackedFaceBatch { faces: vec![face] };
+            let mut expected = Vec::new();
+            append_cpu_proxy_face_positions(face, &mut expected);
+
+            let collision_faces = batch.collision_face_positions();
+
+            assert_eq!(collision_faces, expected);
+        }
+    }
+
+    #[test]
+    fn collision_faces_merge_adjacent_coplanar_quads() {
+        let batch = PackedFaceBatch {
+            faces: vec![
+                PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS),
+                PackedFace::new(2, 2, 3, FACE_TOP, 7, blocks::GRASS),
+            ],
+        };
+
+        let collision_faces = batch.collision_face_positions();
+
+        assert_eq!(collision_faces.len(), 6);
+        assert_eq!(collision_faces[0], Vector3::new(1.0, 3.0, 3.0));
+        assert_eq!(collision_faces[1], Vector3::new(3.0, 3.0, 4.0));
+        assert_eq!(collision_faces[2], Vector3::new(1.0, 3.0, 4.0));
+        assert_eq!(collision_faces[3], Vector3::new(1.0, 3.0, 3.0));
+        assert_eq!(collision_faces[4], Vector3::new(3.0, 3.0, 3.0));
+        assert_eq!(collision_faces[5], Vector3::new(3.0, 3.0, 4.0));
     }
 
     #[test]

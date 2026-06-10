@@ -642,6 +642,13 @@ impl GameClient {
             key.chunk_z as f32 * CHUNK_SIZE,
         );
         let collision_start = Instant::now();
+        let collision_faces = should_have_collision.then(|| {
+            if let Some(packed_faces) = &packed_faces {
+                packed_faces.build_collision_faces()
+            } else {
+                vertices.clone()
+            }
+        });
         let collision_bodies;
 
         if let Some(mut mesh_instance) = self
@@ -662,8 +669,8 @@ impl GameClient {
             }
 
             clear_mesh_collisions(&mut mesh_instance);
-            if should_have_collision {
-                create_mesh_trimesh_collision(&mut mesh_instance, &vertices);
+            if let Some(collision_faces) = collision_faces.as_ref() {
+                create_mesh_trimesh_collision(&mut mesh_instance, collision_faces);
             }
             collision_bodies = count_static_body_children(&mesh_instance);
         } else {
@@ -684,14 +691,20 @@ impl GameClient {
 
             let mesh_node = mesh_instance.clone().upcast::<godot::classes::Node>();
             self.base_mut().add_child(&mesh_node);
-            if should_have_collision {
-                create_mesh_trimesh_collision(&mut mesh_instance, &vertices);
+            if let Some(collision_faces) = collision_faces.as_ref() {
+                create_mesh_trimesh_collision(&mut mesh_instance, collision_faces);
             }
             collision_bodies = count_static_body_children(&mesh_instance);
         }
 
         let collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
-        if gpu_visible_render_active && indices.is_empty() {
+        if gpu_visible_render_active && let Some(collision_faces) = collision_faces {
+            if !collision_faces.is_empty() {
+                self.terrain_collision_faces.insert(key, collision_faces);
+            } else {
+                self.terrain_collision_faces.remove(&key);
+            }
+        } else if gpu_visible_render_active && indices.is_empty() {
             self.terrain_collision_faces.insert(key, vertices.clone());
         } else {
             self.terrain_collision_faces.remove(&key);
