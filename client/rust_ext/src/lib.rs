@@ -37,6 +37,8 @@ pub struct GameClient {
     chunk_non_empty_subchunks: HashMap<(i32, i32), u32>,
     mesh_queue: VecDeque<SubchunkKey>,
     queued_subchunks: HashMap<SubchunkKey, MeshQueueReason>,
+    collision_refresh_queue: VecDeque<SubchunkKey>,
+    queued_collision_refreshes: HashSet<SubchunkKey>,
     cpu_proxy_mesh_payloads: HashMap<SubchunkKey, TerrainCpuProxyMeshPayload>,
     position_send_timer: f64,
     current_player_chunk: Option<(i32, i32)>,
@@ -64,6 +66,8 @@ impl INode for GameClient {
             chunk_non_empty_subchunks: HashMap::new(),
             mesh_queue: VecDeque::new(),
             queued_subchunks: HashMap::new(),
+            collision_refresh_queue: VecDeque::new(),
+            queued_collision_refreshes: HashSet::new(),
             cpu_proxy_mesh_payloads: HashMap::new(),
             position_send_timer: 0.0,
             current_player_chunk: None,
@@ -168,6 +172,7 @@ impl INode for GameClient {
             }
         }
         self.process_mesh_queue();
+        self.process_collision_refresh_queue();
         self.sync_gpu_terrain_lighting();
         self.update_gpu_visible_transition();
         if gpu_terrain_render_enabled()
@@ -309,6 +314,52 @@ impl GameClient {
         );
     }
 
+    fn process_collision_refresh_queue(&mut self) {
+        let mut batch = CollisionRefreshBatch::default();
+        let mut drained = 0;
+        let mut stale_drops = 0;
+        let mut missing_chunk_drops = 0;
+        let mut rebuilt = 0;
+
+        while drained < MAX_COLLISION_REFRESH_DRAINS_PER_FRAME
+            && rebuilt < MAX_COLLISION_REFRESH_REBUILDS_PER_FRAME
+        {
+            let Some(key) = pop_next_mesh_queue_key(
+                &mut self.collision_refresh_queue,
+                self.current_player_chunk,
+            ) else {
+                break;
+            };
+            drained += 1;
+
+            if !self.queued_collision_refreshes.remove(&key) {
+                stale_drops += 1;
+                continue;
+            }
+
+            if !self.chunk_blocks.contains_key(&(key.chunk_x, key.chunk_z)) {
+                missing_chunk_drops += 1;
+                continue;
+            }
+
+            let result = self.refresh_subchunk_collision(key);
+            if result == CollisionRefreshResult::Rebuilt {
+                rebuilt += 1;
+            }
+            batch.record(result);
+        }
+
+        self.perf.record_collision_refresh_queue_frame(
+            self.collision_refresh_queue.len(),
+            drained,
+            stale_drops,
+            missing_chunk_drops,
+        );
+        if batch.checked > 0 {
+            self.perf.record_collision_refresh(batch);
+        }
+    }
+
     fn enqueue_chunk_subchunks(&mut self, chunk_x: i32, chunk_z: i32) {
         for sub_y in 0..SUBCHUNKS_PER_CHUNK {
             if self.subchunk_has_blocks(chunk_x, sub_y, chunk_z) {
@@ -381,6 +432,15 @@ impl GameClient {
         }
         self.perf
             .record_mesh_queue_enqueue(self.mesh_queue.len(), reason, inserted);
+    }
+
+    fn enqueue_collision_refresh_subchunk(&mut self, key: SubchunkKey) {
+        let inserted = self.queued_collision_refreshes.insert(key);
+        if inserted {
+            self.collision_refresh_queue.push_back(key);
+        }
+        self.perf
+            .record_collision_refresh_queue_enqueue(self.collision_refresh_queue.len(), inserted);
     }
 
     fn render_subchunk_mesh(&mut self, key: SubchunkKey, reason: MeshQueueReason) {
@@ -704,14 +764,7 @@ impl GameClient {
         configure_terrain_mesh_render_mode(&mut mesh_instance, true, should_have_shadow_proxy);
         let has_collision = count_static_body_children(&mesh_instance) > 0;
         if should_have_collision != has_collision {
-            let collision_start = Instant::now();
-            clear_mesh_collisions(&mut mesh_instance);
-            if should_have_collision {
-                mesh_instance.create_trimesh_collision();
-            }
-            self.perf.last_collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
-            self.perf.max_collision_ms =
-                self.perf.max_collision_ms.max(self.perf.last_collision_ms);
+            self.enqueue_collision_refresh_subchunk(key);
         }
 
         self.cpu_proxy_mesh_payloads.insert(key, existing_payload);
@@ -937,16 +990,21 @@ impl GameClient {
 
     fn enqueue_collision_refresh(&mut self, previous: Option<(i32, i32)>, current: (i32, i32)) {
         let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
-        let mut batch = CollisionRefreshBatch::default();
         for coord in loaded_chunks {
-            let was_near = previous
-                .is_some_and(|prev| chunk_within_radius(coord, prev, COLLISION_CHUNK_DISTANCE));
-            let is_near = chunk_within_radius(coord, current, COLLISION_CHUNK_DISTANCE);
-            if was_near || is_near {
-                batch.add(self.refresh_chunk_collisions(coord.0, coord.1));
+            if !chunk_needs_collision_refresh(coord, previous, current) {
+                continue;
+            }
+            for sub_y in 0..SUBCHUNKS_PER_CHUNK {
+                if !self.subchunk_has_blocks(coord.0, sub_y, coord.1) {
+                    continue;
+                }
+                self.enqueue_collision_refresh_subchunk(SubchunkKey {
+                    chunk_x: coord.0,
+                    sub_y,
+                    chunk_z: coord.1,
+                });
             }
         }
-        self.perf.record_collision_refresh(batch);
     }
 
     fn enqueue_cpu_proxy_refresh(&mut self, previous: Option<(i32, i32)>, current: (i32, i32)) {
@@ -965,23 +1023,6 @@ impl GameClient {
                 self.enqueue_proxy_refresh_subchunks(coord.0, coord.1);
             }
         }
-    }
-
-    fn refresh_chunk_collisions(&mut self, chunk_x: i32, chunk_z: i32) -> CollisionRefreshBatch {
-        let mut batch = CollisionRefreshBatch::default();
-        for sub_y in 0..SUBCHUNKS_PER_CHUNK {
-            let key = SubchunkKey {
-                chunk_x,
-                sub_y,
-                chunk_z,
-            };
-            if !self.subchunk_has_blocks(chunk_x, sub_y, chunk_z) {
-                batch.record(CollisionRefreshResult::SkippedEmpty);
-                continue;
-            }
-            batch.record(self.refresh_subchunk_collision(key));
-        }
-        batch
     }
 
     fn refresh_subchunk_collision(&mut self, key: SubchunkKey) -> CollisionRefreshResult {
@@ -1049,6 +1090,7 @@ impl GameClient {
                 chunk_z,
             };
             self.queued_subchunks.remove(&key);
+            self.queued_collision_refreshes.remove(&key);
             self.remove_subchunk_mesh(key);
         }
     }
@@ -1063,6 +1105,7 @@ impl GameClient {
 
     fn remove_cpu_subchunk_mesh_node(&mut self, key: SubchunkKey) {
         self.cpu_proxy_mesh_payloads.remove(&key);
+        self.queued_collision_refreshes.remove(&key);
         let mesh_name = subchunk_mesh_name(key);
         let Some(mut mesh_node) = self
             .base()
@@ -1320,7 +1363,6 @@ fn proxy_refresh_queue_action(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CollisionRefreshResult {
-    SkippedEmpty,
     MissingMesh,
     Unchanged,
     Rebuilt,
@@ -1339,19 +1381,10 @@ impl CollisionRefreshBatch {
     fn record(&mut self, result: CollisionRefreshResult) {
         self.checked += 1;
         match result {
-            CollisionRefreshResult::SkippedEmpty => self.skipped_empty += 1,
             CollisionRefreshResult::MissingMesh => self.missing_meshes += 1,
             CollisionRefreshResult::Unchanged => self.unchanged += 1,
             CollisionRefreshResult::Rebuilt => self.rebuilt += 1,
         }
-    }
-
-    fn add(&mut self, other: Self) {
-        self.checked += other.checked;
-        self.skipped_empty += other.skipped_empty;
-        self.missing_meshes += other.missing_meshes;
-        self.unchanged += other.unchanged;
-        self.rebuilt += other.rebuilt;
     }
 }
 
@@ -1424,11 +1457,21 @@ struct PerfStats {
     collision_refresh_missing_meshes: u64,
     collision_refresh_unchanged: u64,
     collision_refresh_rebuilt: u64,
+    collision_refresh_queue_depth: usize,
+    max_collision_refresh_queue_depth: usize,
+    collision_refresh_queue_enqueues: u64,
+    collision_refresh_queue_duplicate_enqueues: u64,
+    collision_refresh_queue_drained: u64,
+    collision_refresh_queue_stale_drops: u64,
+    collision_refresh_queue_missing_chunk_drops: u64,
     last_collision_refresh_checked: usize,
     last_collision_refresh_skipped_empty: usize,
     last_collision_refresh_missing_meshes: usize,
     last_collision_refresh_unchanged: usize,
     last_collision_refresh_rebuilt: usize,
+    last_collision_refresh_queue_drained: usize,
+    last_collision_refresh_queue_stale_drops: usize,
+    last_collision_refresh_queue_missing_chunk_drops: usize,
     last_vertices: usize,
     last_normals: usize,
     last_reported_vertices: usize,
@@ -1618,6 +1661,33 @@ impl PerfStats {
         self.last_collision_refresh_rebuilt = batch.rebuilt;
     }
 
+    fn record_collision_refresh_queue_enqueue(&mut self, depth: usize, inserted: bool) {
+        self.collision_refresh_queue_depth = depth;
+        self.max_collision_refresh_queue_depth = self.max_collision_refresh_queue_depth.max(depth);
+        if inserted {
+            self.collision_refresh_queue_enqueues += 1;
+        } else {
+            self.collision_refresh_queue_duplicate_enqueues += 1;
+        }
+    }
+
+    fn record_collision_refresh_queue_frame(
+        &mut self,
+        depth: usize,
+        drained: usize,
+        stale_drops: usize,
+        missing_chunk_drops: usize,
+    ) {
+        self.collision_refresh_queue_depth = depth;
+        self.max_collision_refresh_queue_depth = self.max_collision_refresh_queue_depth.max(depth);
+        self.collision_refresh_queue_drained += drained as u64;
+        self.collision_refresh_queue_stale_drops += stale_drops as u64;
+        self.collision_refresh_queue_missing_chunk_drops += missing_chunk_drops as u64;
+        self.last_collision_refresh_queue_drained = drained;
+        self.last_collision_refresh_queue_stale_drops = stale_drops;
+        self.last_collision_refresh_queue_missing_chunk_drops = missing_chunk_drops;
+    }
+
     fn record_mesh(&mut self, record: MeshRecord) {
         self.mesh_jobs_completed += 1;
         let n = self.mesh_jobs_completed as f64;
@@ -1700,6 +1770,8 @@ const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_DISTANCE: f32 = 160.0;
 const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE: i32 = 5;
 const MAX_MESH_JOBS_PER_FRAME: usize = 1;
 const MAX_MESH_QUEUE_DRAINS_PER_FRAME: usize = 32;
+const MAX_COLLISION_REFRESH_REBUILDS_PER_FRAME: usize = 1;
+const MAX_COLLISION_REFRESH_DRAINS_PER_FRAME: usize = 32;
 const GPU_TERRAIN_PROTOTYPE_STATS: bool = false;
 const GPU_TERRAIN_PROTOTYPE_UPLOAD: bool = false;
 const GPU_TERRAIN_PROTOTYPE_RENDER: bool = false;
@@ -1808,6 +1880,17 @@ fn chunk_needs_cpu_proxy_refresh(
     };
 
     chunk_cpu_proxy_role(coord, previous, shadow_radius) != current_role
+}
+
+fn chunk_needs_collision_refresh(
+    coord: (i32, i32),
+    previous: Option<(i32, i32)>,
+    current: (i32, i32),
+) -> bool {
+    let was_near =
+        previous.is_some_and(|prev| chunk_within_radius(coord, prev, COLLISION_CHUNK_DISTANCE));
+    let is_near = chunk_within_radius(coord, current, COLLISION_CHUNK_DISTANCE);
+    was_near || is_near
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2083,13 +2166,8 @@ impl GpuTerrainShadowProxyMeshMode {
         }
     }
 
-    fn compacts_shadow_only_mesh(
-        self,
-        cpu_proxy_mesh: bool,
-        needs_collision: bool,
-        needs_shadow_proxy: bool,
-    ) -> bool {
-        matches!(self, Self::Compact) && cpu_proxy_mesh && !needs_collision && needs_shadow_proxy
+    fn compacts_shadow_proxy_mesh(self, cpu_proxy_mesh: bool, needs_shadow_proxy: bool) -> bool {
+        matches!(self, Self::Compact) && cpu_proxy_mesh && needs_shadow_proxy
     }
 }
 
@@ -2105,7 +2183,9 @@ impl TerrainCpuProxyMeshPayload {
     }
 
     fn can_satisfy(self, desired: Self) -> bool {
-        self == desired || !self.uses_compact_mesh()
+        self == desired
+            || !self.uses_compact_mesh()
+            || (self.uses_compact_mesh() && desired.uses_compact_mesh())
     }
 }
 
@@ -2120,11 +2200,8 @@ fn terrain_cpu_proxy_mesh_payload(
     }
 
     TerrainCpuProxyMeshPayload {
-        compact_shadow_proxy_mesh: shadow_mesh_mode.compacts_shadow_only_mesh(
-            cpu_proxy_mesh,
-            needs_collision,
-            needs_shadow_proxy,
-        ),
+        compact_shadow_proxy_mesh: shadow_mesh_mode
+            .compacts_shadow_proxy_mesh(cpu_proxy_mesh, needs_shadow_proxy),
         compact_collision_proxy_mesh: needs_collision && !needs_shadow_proxy,
     }
 }
@@ -2594,7 +2671,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -2644,6 +2721,16 @@ impl GameClient {
             self.perf.last_collision_refresh_rebuilt,
             self.perf.last_collision_refresh_unchanged,
             self.perf.last_collision_refresh_missing_meshes,
+            self.perf.collision_refresh_queue_depth,
+            self.perf.max_collision_refresh_queue_depth,
+            self.perf.collision_refresh_queue_enqueues,
+            self.perf.collision_refresh_queue_duplicate_enqueues,
+            self.perf.collision_refresh_queue_drained,
+            self.perf.last_collision_refresh_queue_drained,
+            self.perf.collision_refresh_queue_stale_drops,
+            self.perf.last_collision_refresh_queue_stale_drops,
+            self.perf.collision_refresh_queue_missing_chunk_drops,
+            self.perf.last_collision_refresh_queue_missing_chunk_drops,
             self.perf.last_mesh_ms,
             self.perf.avg_mesh_ms,
             self.perf.max_mesh_ms,
@@ -2936,6 +3023,17 @@ mod tests {
     }
 
     #[test]
+    fn chunk_collision_refresh_tracks_old_or_new_player_radius() {
+        assert!(chunk_needs_collision_refresh((0, 0), None, (0, 0)));
+        assert!(chunk_needs_collision_refresh((1, 0), None, (0, 0)));
+        assert!(!chunk_needs_collision_refresh((2, 0), None, (0, 0)));
+
+        assert!(chunk_needs_collision_refresh((0, 0), Some((0, 0)), (3, 0)));
+        assert!(chunk_needs_collision_refresh((3, 0), Some((0, 0)), (3, 0)));
+        assert!(!chunk_needs_collision_refresh((6, 0), Some((0, 0)), (3, 0)));
+    }
+
+    #[test]
     fn subchunk_shadow_proxy_tracks_mode_radius_and_player_chunk() {
         let origin = SubchunkKey {
             chunk_x: 0,
@@ -3165,14 +3263,13 @@ mod tests {
     }
 
     #[test]
-    fn compact_shadow_proxy_mesh_only_applies_to_shadow_only_cpu_proxy() {
+    fn compact_shadow_proxy_mesh_applies_to_any_shadow_cpu_proxy() {
         let compact = GpuTerrainShadowProxyMeshMode::Compact;
 
-        assert!(compact.compacts_shadow_only_mesh(true, false, true));
-        assert!(!compact.compacts_shadow_only_mesh(true, true, true));
-        assert!(!compact.compacts_shadow_only_mesh(true, false, false));
-        assert!(!compact.compacts_shadow_only_mesh(false, false, true));
-        assert!(!GpuTerrainShadowProxyMeshMode::Full.compacts_shadow_only_mesh(true, false, true));
+        assert!(compact.compacts_shadow_proxy_mesh(true, true));
+        assert!(!compact.compacts_shadow_proxy_mesh(true, false));
+        assert!(!compact.compacts_shadow_proxy_mesh(false, true));
+        assert!(!GpuTerrainShadowProxyMeshMode::Full.compacts_shadow_proxy_mesh(true, true));
     }
 
     #[test]
@@ -3207,8 +3304,14 @@ mod tests {
             true,
             true,
         );
-        assert_eq!(collision_and_shadow, TerrainCpuProxyMeshPayload::default());
-        assert!(!collision_and_shadow.uses_compact_mesh());
+        assert_eq!(
+            collision_and_shadow,
+            TerrainCpuProxyMeshPayload {
+                compact_shadow_proxy_mesh: true,
+                compact_collision_proxy_mesh: false,
+            }
+        );
+        assert!(collision_and_shadow.uses_compact_mesh());
 
         let collision_only =
             terrain_cpu_proxy_mesh_payload(GpuTerrainShadowProxyMeshMode::Full, true, true, false);
@@ -3239,10 +3342,10 @@ mod tests {
         assert!(full.can_satisfy(collision_only));
         assert!(shadow_only.can_satisfy(shadow_only));
         assert!(!shadow_only.can_satisfy(full));
-        assert!(!shadow_only.can_satisfy(collision_only));
+        assert!(shadow_only.can_satisfy(collision_only));
         assert!(collision_only.can_satisfy(collision_only));
         assert!(!collision_only.can_satisfy(full));
-        assert!(!collision_only.can_satisfy(shadow_only));
+        assert!(collision_only.can_satisfy(shadow_only));
     }
 
     #[test]
@@ -3267,7 +3370,7 @@ mod tests {
         );
         assert_eq!(
             proxy_refresh_queue_action(true, true, true, Some(shadow_only), collision_only),
-            ProxyRefreshQueueAction::BuildMesh
+            ProxyRefreshQueueAction::ReuseCpuProxy
         );
         assert_eq!(
             proxy_refresh_queue_action(false, true, false, Some(full), full),
@@ -3523,34 +3626,47 @@ mod tests {
     #[test]
     fn perf_records_collision_refresh_churn() {
         let mut first = CollisionRefreshBatch::default();
-        first.record(CollisionRefreshResult::SkippedEmpty);
         first.record(CollisionRefreshResult::MissingMesh);
         first.record(CollisionRefreshResult::Unchanged);
 
         let mut second = CollisionRefreshBatch::default();
         second.record(CollisionRefreshResult::Rebuilt);
-        first.add(second);
 
-        assert_eq!(first.checked, 4);
-        assert_eq!(first.skipped_empty, 1);
+        assert_eq!(first.checked, 2);
+        assert_eq!(first.skipped_empty, 0);
         assert_eq!(first.missing_meshes, 1);
         assert_eq!(first.unchanged, 1);
-        assert_eq!(first.rebuilt, 1);
+        assert_eq!(first.rebuilt, 0);
 
         let mut perf = PerfStats::default();
         perf.record_collision_refresh(first);
         perf.record_collision_refresh(second);
 
-        assert_eq!(perf.collision_refresh_checked, 5);
-        assert_eq!(perf.collision_refresh_skipped_empty, 1);
+        assert_eq!(perf.collision_refresh_checked, 3);
+        assert_eq!(perf.collision_refresh_skipped_empty, 0);
         assert_eq!(perf.collision_refresh_missing_meshes, 1);
         assert_eq!(perf.collision_refresh_unchanged, 1);
-        assert_eq!(perf.collision_refresh_rebuilt, 2);
+        assert_eq!(perf.collision_refresh_rebuilt, 1);
         assert_eq!(perf.last_collision_refresh_checked, 1);
         assert_eq!(perf.last_collision_refresh_skipped_empty, 0);
         assert_eq!(perf.last_collision_refresh_missing_meshes, 0);
         assert_eq!(perf.last_collision_refresh_unchanged, 0);
         assert_eq!(perf.last_collision_refresh_rebuilt, 1);
+
+        perf.record_collision_refresh_queue_enqueue(2, true);
+        perf.record_collision_refresh_queue_enqueue(2, false);
+        perf.record_collision_refresh_queue_frame(1, 3, 1, 1);
+
+        assert_eq!(perf.collision_refresh_queue_depth, 1);
+        assert_eq!(perf.max_collision_refresh_queue_depth, 2);
+        assert_eq!(perf.collision_refresh_queue_enqueues, 1);
+        assert_eq!(perf.collision_refresh_queue_duplicate_enqueues, 1);
+        assert_eq!(perf.collision_refresh_queue_drained, 3);
+        assert_eq!(perf.collision_refresh_queue_stale_drops, 1);
+        assert_eq!(perf.collision_refresh_queue_missing_chunk_drops, 1);
+        assert_eq!(perf.last_collision_refresh_queue_drained, 3);
+        assert_eq!(perf.last_collision_refresh_queue_stale_drops, 1);
+        assert_eq!(perf.last_collision_refresh_queue_missing_chunk_drops, 1);
     }
 
     #[test]
