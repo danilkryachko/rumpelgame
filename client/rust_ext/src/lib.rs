@@ -36,6 +36,7 @@ pub struct GameClient {
     chunk_blocks: HashMap<(i32, i32), Vec<u8>>,
     mesh_queue: VecDeque<SubchunkKey>,
     queued_subchunks: HashMap<SubchunkKey, MeshQueueReason>,
+    cpu_proxy_mesh_payloads: HashMap<SubchunkKey, TerrainCpuProxyMeshPayload>,
     position_send_timer: f64,
     current_player_chunk: Option<(i32, i32)>,
     last_block_action: String,
@@ -61,6 +62,7 @@ impl INode for GameClient {
             chunk_blocks: HashMap::new(),
             mesh_queue: VecDeque::new(),
             queued_subchunks: HashMap::new(),
+            cpu_proxy_mesh_payloads: HashMap::new(),
             position_send_timer: 0.0,
             current_player_chunk: None,
             last_block_action: "n/a".to_string(),
@@ -347,6 +349,9 @@ impl GameClient {
                 .is_some_and(|gpu_terrain| gpu_terrain.has_subchunk(gpu_key));
         let needs_cpu_proxy = self.subchunk_needs_cpu_proxy(key);
         let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
+        let should_have_collision = self.subchunk_needs_collision(key);
+        let should_have_shadow_proxy =
+            gpu_visible_render_active && self.subchunk_needs_shadow_proxy(key);
         if reason == MeshQueueReason::ProxyRefresh
             && gpu_visible_render_active
             && existing_gpu_slot
@@ -354,6 +359,26 @@ impl GameClient {
         {
             self.remove_cpu_subchunk_mesh_node(key);
             return;
+        }
+        if reason == MeshQueueReason::ProxyRefresh
+            && gpu_visible_render_active
+            && existing_gpu_slot
+            && needs_cpu_proxy
+        {
+            let desired_payload = terrain_cpu_proxy_mesh_payload(
+                gpu_terrain_shadow_proxy_mesh_mode(),
+                true,
+                should_have_collision,
+                should_have_shadow_proxy,
+            );
+            if self.refresh_existing_cpu_proxy_mesh_node(
+                key,
+                desired_payload,
+                should_have_collision,
+                should_have_shadow_proxy,
+            ) {
+                return;
+            }
         }
 
         let build_start = Instant::now();
@@ -396,9 +421,6 @@ impl GameClient {
             return;
         }
 
-        let should_have_collision = self.subchunk_needs_collision(key);
-        let should_have_shadow_proxy =
-            gpu_visible_render_active && self.subchunk_needs_shadow_proxy(key);
         let cpu_proxy_mesh = mesh_build_plan == TerrainMeshBuildPlan::CpuProxyMesh;
         let cpu_proxy_mesh_payload = terrain_cpu_proxy_mesh_payload(
             gpu_terrain_shadow_proxy_mesh_mode(),
@@ -516,6 +538,12 @@ impl GameClient {
         }
 
         let collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
+        if cpu_proxy_mesh {
+            self.cpu_proxy_mesh_payloads
+                .insert(key, cpu_proxy_mesh_payload);
+        } else {
+            self.cpu_proxy_mesh_payloads.remove(&key);
+        }
         let node_counts = self.current_node_perf_counts();
         self.perf.record_mesh(MeshRecord {
             vertices: vertices.len(),
@@ -530,6 +558,48 @@ impl GameClient {
             collision_bodies,
             node_counts,
         });
+    }
+
+    fn refresh_existing_cpu_proxy_mesh_node(
+        &mut self,
+        key: SubchunkKey,
+        desired_payload: TerrainCpuProxyMeshPayload,
+        should_have_collision: bool,
+        should_have_shadow_proxy: bool,
+    ) -> bool {
+        let Some(existing_payload) = self.cpu_proxy_mesh_payloads.get(&key).copied() else {
+            return false;
+        };
+        if !existing_payload.can_satisfy(desired_payload) {
+            return false;
+        }
+
+        let mesh_name = subchunk_mesh_name(key);
+        let Some(mut mesh_instance) = self
+            .base()
+            .try_get_node_as::<godot::classes::MeshInstance3D>(&mesh_name)
+        else {
+            self.cpu_proxy_mesh_payloads.remove(&key);
+            return false;
+        };
+
+        configure_terrain_mesh_render_mode(&mut mesh_instance, true, should_have_shadow_proxy);
+        let has_collision = count_static_body_children(&mesh_instance) > 0;
+        if should_have_collision != has_collision {
+            let collision_start = Instant::now();
+            clear_mesh_collisions(&mut mesh_instance);
+            if should_have_collision {
+                mesh_instance.create_trimesh_collision();
+            }
+            self.perf.last_collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
+            self.perf.max_collision_ms =
+                self.perf.max_collision_ms.max(self.perf.last_collision_ms);
+        }
+
+        self.cpu_proxy_mesh_payloads.insert(key, existing_payload);
+        self.perf.cpu_proxy_refreshes_reused += 1;
+        self.refresh_node_perf_counts();
+        true
     }
 
     fn emit_debug_log(&mut self, message: &str) {
@@ -873,6 +943,7 @@ impl GameClient {
     }
 
     fn remove_cpu_subchunk_mesh_node(&mut self, key: SubchunkKey) {
+        self.cpu_proxy_mesh_payloads.remove(&key);
         let mesh_name = subchunk_mesh_name(key);
         let Some(mut mesh_node) = self
             .base()
@@ -1121,6 +1192,7 @@ struct PerfStats {
     compact_shadow_proxy_normals_saved: usize,
     compact_collision_proxy_meshes_built: u64,
     compact_collision_proxy_normals_saved: usize,
+    cpu_proxy_refreshes_reused: u64,
 }
 
 struct MeshRecord {
@@ -1685,6 +1757,10 @@ impl TerrainCpuProxyMeshPayload {
     fn uses_compact_mesh(self) -> bool {
         self.compact_shadow_proxy_mesh || self.compact_collision_proxy_mesh
     }
+
+    fn can_satisfy(self, desired: Self) -> bool {
+        self == desired || !self.uses_compact_mesh()
+    }
 }
 
 fn terrain_cpu_proxy_mesh_payload(
@@ -2119,7 +2195,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} queue_max={} queue_enq={} queue_dup={} queue_drained={} queue_last_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "queue={} queue_max={} queue_enq={} queue_dup={} queue_drained={} queue_last_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
             self.perf.mesh_queue_enqueues,
@@ -2148,6 +2224,7 @@ impl GameClient {
             self.perf.compact_collision_proxy_meshes_built,
             self.perf.compact_collision_proxy_normals_saved,
             self.perf.cpu_proxy_meshes_built,
+            self.perf.cpu_proxy_refreshes_reused,
             self.perf.node_counts.total_collision_bodies,
             self.perf.last_mesh_ms,
             self.perf.avg_mesh_ms,
@@ -2683,6 +2760,29 @@ mod tests {
             }
         );
         assert!(collision_only.uses_compact_mesh());
+    }
+
+    #[test]
+    fn cpu_proxy_mesh_payload_reuse_is_conservative() {
+        let full = TerrainCpuProxyMeshPayload::default();
+        let shadow_only = TerrainCpuProxyMeshPayload {
+            compact_shadow_proxy_mesh: true,
+            compact_collision_proxy_mesh: false,
+        };
+        let collision_only = TerrainCpuProxyMeshPayload {
+            compact_shadow_proxy_mesh: false,
+            compact_collision_proxy_mesh: true,
+        };
+
+        assert!(full.can_satisfy(full));
+        assert!(full.can_satisfy(shadow_only));
+        assert!(full.can_satisfy(collision_only));
+        assert!(shadow_only.can_satisfy(shadow_only));
+        assert!(!shadow_only.can_satisfy(full));
+        assert!(!shadow_only.can_satisfy(collision_only));
+        assert!(collision_only.can_satisfy(collision_only));
+        assert!(!collision_only.can_satisfy(full));
+        assert!(!collision_only.can_satisfy(shadow_only));
     }
 
     #[test]
