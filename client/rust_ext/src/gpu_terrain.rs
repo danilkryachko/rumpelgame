@@ -293,7 +293,13 @@ impl FaceRangeAllocator {
             return Some(FaceRange { start: 0, len: 0 });
         }
 
-        let idx = self.free_ranges.iter().position(|range| range.len >= len)?;
+        let idx = self
+            .free_ranges
+            .iter()
+            .enumerate()
+            .filter(|(_, range)| range.len >= len)
+            .min_by_key(|(_, range)| range.len)
+            .map(|(idx, _)| idx)?;
         let allocated = FaceRange {
             start: self.free_ranges[idx].start,
             len,
@@ -349,6 +355,20 @@ struct FaceAllocatorStats {
     free_ranges: usize,
     free_faces: usize,
     largest_free_faces: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UploadFailureKind {
+    Capacity,
+    Fragmentation,
+}
+
+fn upload_failure_kind(stats: FaceAllocatorStats, requested_faces: usize) -> UploadFailureKind {
+    if stats.free_faces >= requested_faces {
+        UploadFailureKind::Fragmentation
+    } else {
+        UploadFailureKind::Capacity
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -446,6 +466,9 @@ pub struct GpuTerrainStats {
     pub upload_count: u64,
     pub upload_bytes: usize,
     pub last_upload_bytes: usize,
+    pub upload_failures: u64,
+    pub upload_capacity_failures: u64,
+    pub upload_fragmentation_failures: u64,
     pub free_ranges: usize,
     pub free_faces: usize,
     pub largest_free_faces: usize,
@@ -648,6 +671,9 @@ pub struct GpuTerrainBufferPool {
     upload_count: u64,
     upload_bytes: usize,
     last_upload_bytes: usize,
+    upload_failures: u64,
+    upload_capacity_failures: u64,
+    upload_fragmentation_failures: u64,
     draw_rebuild_count: u64,
     avg_draw_rebuild_ms: f64,
     max_draw_rebuild_ms: f64,
@@ -701,6 +727,9 @@ impl GpuTerrainBufferPool {
             upload_count: 0,
             upload_bytes: 0,
             last_upload_bytes: 0,
+            upload_failures: 0,
+            upload_capacity_failures: 0,
+            upload_fragmentation_failures: 0,
             draw_rebuild_count: 0,
             avg_draw_rebuild_ms: 0.0,
             max_draw_rebuild_ms: 0.0,
@@ -722,7 +751,10 @@ impl GpuTerrainBufferPool {
             return None;
         }
 
-        let range = self.allocator.allocate(batch.face_count())?;
+        let Some(range) = self.allocator.allocate(batch.face_count()) else {
+            self.record_upload_failure(batch.face_count());
+            return None;
+        };
         let bytes = batch.to_bytes_for_subchunk(key);
         let pba = PackedByteArray::from(bytes.as_slice());
         let offset = (range.start * PACKED_FACE_BYTES) as u32;
@@ -770,6 +802,9 @@ impl GpuTerrainBufferPool {
             upload_count: self.upload_count,
             upload_bytes: self.upload_bytes,
             last_upload_bytes: self.last_upload_bytes,
+            upload_failures: self.upload_failures,
+            upload_capacity_failures: self.upload_capacity_failures,
+            upload_fragmentation_failures: self.upload_fragmentation_failures,
             free_ranges: allocator_stats.free_ranges,
             free_faces: allocator_stats.free_faces,
             largest_free_faces: allocator_stats.largest_free_faces,
@@ -1118,6 +1153,15 @@ impl GpuTerrainBufferPool {
         let count = self.draw_patch_count as f64;
         self.avg_draw_patch_ms += (elapsed_ms - self.avg_draw_patch_ms) / count;
         self.max_draw_patch_ms = self.max_draw_patch_ms.max(elapsed_ms);
+    }
+
+    fn record_upload_failure(&mut self, requested_faces: usize) {
+        self.upload_failures += 1;
+        let allocator_stats = self.allocator.stats();
+        match upload_failure_kind(allocator_stats, requested_faces) {
+            UploadFailureKind::Capacity => self.upload_capacity_failures += 1,
+            UploadFailureKind::Fragmentation => self.upload_fragmentation_failures += 1,
+        }
     }
 
     fn create_debug_render_pipeline(
@@ -1890,6 +1934,24 @@ mod tests {
     }
 
     #[test]
+    fn allocator_prefers_best_fit_free_range() {
+        let mut allocator = FaceRangeAllocator::new(21);
+        let first = allocator.allocate(4).unwrap();
+        let _gap = allocator.allocate(2).unwrap();
+        let second = allocator.allocate(6).unwrap();
+        let _gap2 = allocator.allocate(2).unwrap();
+        let third = allocator.allocate(3).unwrap();
+        let _tail = allocator.allocate(4).unwrap();
+
+        allocator.free(first);
+        allocator.free(second);
+        allocator.free(third);
+
+        assert_eq!(allocator.allocate(3), Some(FaceRange { start: 14, len: 3 }));
+        assert_eq!(allocator.allocate(4), Some(FaceRange { start: 0, len: 4 }));
+    }
+
+    #[test]
     fn allocator_merges_adjacent_ranges() {
         let mut allocator = FaceRangeAllocator::new(8);
         let first = allocator.allocate(2).unwrap();
@@ -2009,6 +2071,29 @@ mod tests {
         assert_eq!(draw_keys, vec![first]);
         assert_eq!(draw_indices.get(&first), Some(&0));
         assert!(!draw_indices.contains_key(&third));
+    }
+
+    #[test]
+    fn upload_failure_classification_separates_capacity_and_fragmentation() {
+        let fragmented = FaceAllocatorStats {
+            free_ranges: 2,
+            free_faces: 10,
+            largest_free_faces: 6,
+        };
+        assert_eq!(
+            upload_failure_kind(fragmented, 8),
+            UploadFailureKind::Fragmentation
+        );
+
+        let exhausted = FaceAllocatorStats {
+            free_ranges: 1,
+            free_faces: 6,
+            largest_free_faces: 6,
+        };
+        assert_eq!(
+            upload_failure_kind(exhausted, 8),
+            UploadFailureKind::Capacity
+        );
     }
 
     #[test]
