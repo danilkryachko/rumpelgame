@@ -230,7 +230,7 @@ func capture_visual_smoke(screenshot_path: String):
 	if smoke_err == OK and metrics["terrain_luma_range"] < VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE:
 		smoke_err = FAILED
 	var frame_metrics = visual_smoke_frame_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		image.get_width(),
@@ -260,6 +260,7 @@ func capture_visual_smoke(screenshot_path: String):
 		frame_metrics["fps_avg"],
 		frame_metrics["fps_p05"],
 		frame_metrics["fps_min"],
+		visual_smoke_client_flag("is_texture_debug_stand_visible"),
 		visual_smoke_client_text("get_perf_text", "n/a"),
 		visual_smoke_chunk_text(),
 		visual_smoke_client_text("get_current_chunk_text", "n/a")
@@ -278,6 +279,12 @@ func visual_smoke_client_text(method: String, fallback: String) -> String:
 	if client and client.has_method(method):
 		return str(client.call(method))
 	return fallback
+
+func visual_smoke_client_flag(method: String) -> int:
+	var client = get_node_or_null("GameClient")
+	if client and client.has_method(method) and bool(client.call(method)):
+		return 1
+	return 0
 
 func visual_smoke_chunk_text() -> String:
 	var client = get_node_or_null("GameClient")
@@ -375,6 +382,10 @@ func apply_visual_smoke_pose(pose_name: String):
 			apply_visual_smoke_look_at(player, camera, Vector3(16.0, 76.0, 24.0), Vector3(16.0, 62.0, 3.0))
 		"lighting_shadow":
 			apply_visual_smoke_look_at(player, camera, Vector3(7.0, 78.0, 25.0), Vector3(25.0, 61.0, 5.0))
+		"texture_stand":
+			var player_position = Vector3(16.0, 74.0, 24.0)
+			apply_visual_smoke_look_at(player, camera, player_position, player_position + Vector3(6.3, 0.5, -5.0))
+			show_visual_smoke_texture_stand()
 		_:
 			log_event("Unknown visual smoke pose: %s" % pose_name)
 
@@ -389,6 +400,15 @@ func apply_visual_smoke_look_at(player: Node3D, camera: Camera3D, position: Vect
 	player.rotation = Vector3.ZERO
 	camera.position = Vector3(0.0, 1.6, 0.0)
 	camera.look_at(target, Vector3.UP)
+
+func show_visual_smoke_texture_stand():
+	var client = get_node_or_null("GameClient")
+	if not client:
+		return
+	if not client.has_method("is_texture_debug_stand_visible") or not client.has_method("toggle_texture_debug_stand"):
+		return
+	if not bool(client.call("is_texture_debug_stand_visible")):
+		client.call("toggle_texture_debug_stand")
 
 func image_visual_metrics(image: Image) -> Dictionary:
 	var width = image.get_width()

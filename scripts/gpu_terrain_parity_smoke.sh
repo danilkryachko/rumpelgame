@@ -216,6 +216,8 @@ validate_parity_markers() {
   collision_only_marker="$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
   compact_shadow_marker="$OUT_DIR/gpu-terrain-compact-shadow-parity.png.txt"
   compact_lighting_shadow_marker="$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
+  texture_stand_cpu_marker="$OUT_DIR/cpu-arraymesh-texture-stand-parity.png.txt"
+  texture_stand_gpu_marker="$OUT_DIR/gpu-terrain-texture-stand-parity.png.txt"
 
   validate_common_marker "$cpu_marker" "default" "conservative" "full" "arraymesh"
   validate_common_marker "$gpu_marker" "default" "conservative" "compact" "godot_proxy"
@@ -329,6 +331,10 @@ validate_parity_markers() {
     "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" \
     "$compact_lighting_shadow_marker" \
     "lighting_shadow"
+
+  validate_pose_pair "$texture_stand_cpu_marker" "$texture_stand_gpu_marker" "texture_stand"
+  require_metric_eq "$texture_stand_cpu_marker" "texture_stand" 1
+  require_metric_eq "$texture_stand_gpu_marker" "texture_stand" 1
 }
 
 validate_pose_pair() {
@@ -472,6 +478,8 @@ if [ "$VALIDATE_ONLY" != "1" ]; then
   run_case "cpu-arraymesh-lighting-shadow-parity" "0" "" "lighting_shadow" "conservative" "full"
   run_case "gpu-terrain-lighting-shadow-parity" "1" "" "lighting_shadow" "conservative" "full"
   run_case "gpu-terrain-compact-lighting-shadow-parity" "1" "" "lighting_shadow" "conservative" "compact"
+  run_case "cpu-arraymesh-texture-stand-parity" "0" "" "texture_stand" "conservative" "full"
+  run_case "gpu-terrain-texture-stand-parity" "1" "" "texture_stand" "conservative" "full"
 fi
 
 validate_parity_markers
