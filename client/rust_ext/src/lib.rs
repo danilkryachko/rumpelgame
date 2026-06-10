@@ -40,6 +40,7 @@ pub struct GameClient {
     collision_refresh_queue: VecDeque<SubchunkKey>,
     queued_collision_refreshes: HashSet<SubchunkKey>,
     cpu_proxy_mesh_payloads: HashMap<SubchunkKey, TerrainCpuProxyMeshPayload>,
+    terrain_collision_faces: HashMap<SubchunkKey, PackedVector3Array>,
     position_send_timer: f64,
     current_player_chunk: Option<(i32, i32)>,
     last_block_action: String,
@@ -69,6 +70,7 @@ impl INode for GameClient {
             collision_refresh_queue: VecDeque::new(),
             queued_collision_refreshes: HashSet::new(),
             cpu_proxy_mesh_payloads: HashMap::new(),
+            terrain_collision_faces: HashMap::new(),
             position_send_timer: 0.0,
             current_player_chunk: None,
             last_block_action: "n/a".to_string(),
@@ -635,7 +637,7 @@ impl GameClient {
 
             clear_mesh_collisions(&mut mesh_instance);
             if should_have_collision {
-                mesh_instance.create_trimesh_collision();
+                create_mesh_trimesh_collision(&mut mesh_instance, &vertices);
             }
             collision_bodies = count_static_body_children(&mesh_instance);
         } else {
@@ -655,12 +657,17 @@ impl GameClient {
             let mesh_node = mesh_instance.clone().upcast::<godot::classes::Node>();
             self.base_mut().add_child(&mesh_node);
             if should_have_collision {
-                mesh_instance.create_trimesh_collision();
+                create_mesh_trimesh_collision(&mut mesh_instance, &vertices);
             }
             collision_bodies = count_static_body_children(&mesh_instance);
         }
 
         let collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
+        if gpu_visible_render_active {
+            self.terrain_collision_faces.insert(key, vertices.clone());
+        } else {
+            self.terrain_collision_faces.remove(&key);
+        }
         if cpu_proxy_mesh {
             self.cpu_proxy_mesh_payloads
                 .insert(key, cpu_proxy_mesh_payload);
@@ -1043,7 +1050,11 @@ impl GameClient {
         let collision_start = Instant::now();
         clear_mesh_collisions(&mut mesh_instance);
         if needs_collision {
-            mesh_instance.create_trimesh_collision();
+            if let Some(faces) = self.terrain_collision_faces.get(&key) {
+                create_mesh_trimesh_collision(&mut mesh_instance, faces);
+            } else {
+                mesh_instance.create_trimesh_collision();
+            }
         }
         self.perf.last_collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
         self.perf.max_collision_ms = self.perf.max_collision_ms.max(self.perf.last_collision_ms);
@@ -1105,6 +1116,7 @@ impl GameClient {
 
     fn remove_cpu_subchunk_mesh_node(&mut self, key: SubchunkKey) {
         self.cpu_proxy_mesh_payloads.remove(&key);
+        self.terrain_collision_faces.remove(&key);
         self.queued_collision_refreshes.remove(&key);
         let mesh_name = subchunk_mesh_name(key);
         let Some(mut mesh_node) = self
@@ -2558,6 +2570,21 @@ fn clear_mesh_collisions(mesh_instance: &mut Gd<godot::classes::MeshInstance3D>)
             child.queue_free();
         }
     }
+}
+
+fn create_mesh_trimesh_collision(
+    mesh_instance: &mut Gd<godot::classes::MeshInstance3D>,
+    faces: &PackedVector3Array,
+) {
+    let mut shape = godot::classes::ConcavePolygonShape3D::new_gd();
+    shape.set_faces(faces);
+
+    let mut collision_shape = godot::classes::CollisionShape3D::new_alloc();
+    collision_shape.set_shape(&shape.upcast::<godot::classes::Shape3D>());
+
+    let mut body = godot::classes::StaticBody3D::new_alloc();
+    body.add_child(&collision_shape.upcast::<godot::classes::Node>());
+    mesh_instance.add_child(&body.upcast::<godot::classes::Node>());
 }
 
 fn count_static_body_children(mesh_instance: &Gd<godot::classes::MeshInstance3D>) -> i32 {
