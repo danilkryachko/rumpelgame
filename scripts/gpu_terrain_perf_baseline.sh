@@ -22,6 +22,8 @@ fail() {
   exit 1
 }
 
+. "$ROOT_DIR/scripts/godot_rust_ext_profile.sh"
+
 frame_budget_ms() {
   if [ -n "$BUDGET_P95_MS" ]; then
     printf '%s\n' "$BUDGET_P95_MS"
@@ -181,6 +183,7 @@ enforce_budget() {
 }
 
 if [ "$CAPTURE" = "1" ]; then
+  prepare_godot_rust_ext_profile "$ROOT_DIR"
   run_case cpu-arraymesh-baseline 0
   run_case gpu-terrain-baseline 1
 fi

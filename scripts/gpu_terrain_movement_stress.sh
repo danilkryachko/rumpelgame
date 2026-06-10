@@ -20,6 +20,8 @@ fail() {
   exit 1
 }
 
+. "$ROOT_DIR/scripts/godot_rust_ext_profile.sh"
+
 metric() {
   key="$1"
   marker_path="$2"
@@ -51,6 +53,8 @@ require_metric_eq() {
 screenshot_path="$OUT_DIR/gpu-terrain-movement-stress.png"
 marker_path="$screenshot_path.txt"
 rm -f "$screenshot_path" "$marker_path"
+
+prepare_godot_rust_ext_profile "$ROOT_DIR"
 
 echo "==> GPU terrain movement stress"
 (

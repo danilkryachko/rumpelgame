@@ -28,6 +28,8 @@ fail() {
   exit 1
 }
 
+. "$ROOT_DIR/scripts/godot_rust_ext_profile.sh"
+
 metric() {
   key="$1"
   marker_path="$2"
@@ -274,6 +276,7 @@ print_row() {
 }
 
 if [ "$CAPTURE" = "1" ]; then
+  prepare_godot_rust_ext_profile "$ROOT_DIR"
   run_shadow_case full
   run_shadow_case compact
   run_shadow_disabled_case
