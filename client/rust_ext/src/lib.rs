@@ -313,19 +313,21 @@ impl GameClient {
                 packed_faces.byte_len()
             );
         }
-        let mut uploaded_to_gpu = !gpu_terrain_upload_enabled();
+        let mut gpu_upload_state = TerrainGpuUploadState::for_request(gpu_terrain_upload_enabled());
         if gpu_terrain_upload_enabled()
             && let (Some(gpu_terrain), Some(packed_faces)) = (&mut self.gpu_terrain, &packed_faces)
         {
-            uploaded_to_gpu = gpu_terrain
-                .upload_subchunk(gpu_subchunk_key(key), packed_faces)
-                .is_some();
+            gpu_upload_state = TerrainGpuUploadState::from_upload_result(
+                gpu_terrain
+                    .upload_subchunk(gpu_subchunk_key(key), packed_faces)
+                    .is_some(),
+            );
         }
 
         let needs_cpu_proxy = self.subchunk_needs_cpu_proxy(key);
         let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
         let mesh_build_plan = terrain_mesh_build_plan(
-            uploaded_to_gpu,
+            gpu_upload_state,
             gpu_visible_render_active,
             needs_cpu_proxy,
             packed_faces.is_some(),
@@ -949,12 +951,13 @@ impl GameClient {
             let Ok(mut mesh_instance) = child.try_cast::<godot::classes::MeshInstance3D>() else {
                 continue;
             };
-            let cpu_proxy_mesh = terrain_cpu_proxy_mesh_active(
-                gpu_visible_render_active,
+            let gpu_upload_state = TerrainGpuUploadState::from_existing_slot(
                 self.gpu_terrain
                     .as_ref()
                     .is_some_and(|gpu_terrain| gpu_terrain.has_subchunk(gpu_subchunk_key(key))),
             );
+            let cpu_proxy_mesh =
+                terrain_cpu_proxy_mesh_active(gpu_visible_render_active, gpu_upload_state);
             let needs_shadow_proxy = cpu_proxy_mesh && self.subchunk_needs_shadow_proxy(key);
             configure_terrain_mesh_render_mode(
                 &mut mesh_instance,
@@ -1295,14 +1298,51 @@ enum TerrainMeshBuildPlan {
     FullArrayMesh,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TerrainGpuUploadState {
+    NotRequested,
+    Uploaded,
+    Failed,
+}
+
+impl TerrainGpuUploadState {
+    fn for_request(upload_enabled: bool) -> Self {
+        if upload_enabled {
+            Self::Failed
+        } else {
+            Self::NotRequested
+        }
+    }
+
+    fn from_upload_result(uploaded: bool) -> Self {
+        if uploaded {
+            Self::Uploaded
+        } else {
+            Self::Failed
+        }
+    }
+
+    fn from_existing_slot(has_slot: bool) -> Self {
+        if has_slot {
+            Self::Uploaded
+        } else {
+            Self::Failed
+        }
+    }
+
+    fn has_confirmed_slot(self) -> bool {
+        matches!(self, Self::Uploaded)
+    }
+}
+
 fn terrain_mesh_build_plan(
-    uploaded_to_gpu: bool,
+    gpu_upload_state: TerrainGpuUploadState,
     gpu_visible_render_active: bool,
     needs_cpu_proxy: bool,
     has_packed_faces: bool,
 ) -> TerrainMeshBuildPlan {
     let cpu_proxy_mesh_active =
-        terrain_cpu_proxy_mesh_active(gpu_visible_render_active, uploaded_to_gpu);
+        terrain_cpu_proxy_mesh_active(gpu_visible_render_active, gpu_upload_state);
     if cpu_proxy_mesh_active && !needs_cpu_proxy {
         return TerrainMeshBuildPlan::RemoveCpuNode;
     }
@@ -1313,8 +1353,11 @@ fn terrain_mesh_build_plan(
     TerrainMeshBuildPlan::FullArrayMesh
 }
 
-fn terrain_cpu_proxy_mesh_active(gpu_visible_render_active: bool, has_gpu_subchunk: bool) -> bool {
-    gpu_visible_render_active && has_gpu_subchunk
+fn terrain_cpu_proxy_mesh_active(
+    gpu_visible_render_active: bool,
+    gpu_upload_state: TerrainGpuUploadState,
+) -> bool {
+    gpu_visible_render_active && gpu_upload_state.has_confirmed_slot()
 }
 
 fn gpu_terrain_stats_enabled() -> bool {
@@ -2318,42 +2361,89 @@ mod tests {
 
     #[test]
     fn terrain_cpu_proxy_mesh_requires_visible_gpu_slot() {
-        assert!(!terrain_cpu_proxy_mesh_active(false, false));
-        assert!(!terrain_cpu_proxy_mesh_active(false, true));
-        assert!(!terrain_cpu_proxy_mesh_active(true, false));
-        assert!(terrain_cpu_proxy_mesh_active(true, true));
+        assert!(!terrain_cpu_proxy_mesh_active(
+            false,
+            TerrainGpuUploadState::Failed
+        ));
+        assert!(!terrain_cpu_proxy_mesh_active(
+            false,
+            TerrainGpuUploadState::Uploaded
+        ));
+        assert!(!terrain_cpu_proxy_mesh_active(
+            true,
+            TerrainGpuUploadState::Failed
+        ));
+        assert!(!terrain_cpu_proxy_mesh_active(
+            true,
+            TerrainGpuUploadState::NotRequested
+        ));
+        assert!(terrain_cpu_proxy_mesh_active(
+            true,
+            TerrainGpuUploadState::Uploaded
+        ));
     }
 
     #[test]
     fn terrain_mesh_build_plan_preserves_gpu_proxy_and_fallback_paths() {
         assert_eq!(
-            terrain_mesh_build_plan(true, true, false, true),
+            terrain_mesh_build_plan(TerrainGpuUploadState::Uploaded, true, false, true),
             TerrainMeshBuildPlan::RemoveCpuNode
         );
         assert_eq!(
-            terrain_mesh_build_plan(true, true, true, true),
+            terrain_mesh_build_plan(TerrainGpuUploadState::Uploaded, true, true, true),
             TerrainMeshBuildPlan::CpuProxyMesh
         );
         assert_eq!(
-            terrain_mesh_build_plan(true, true, true, false),
+            terrain_mesh_build_plan(TerrainGpuUploadState::Uploaded, true, true, false),
             TerrainMeshBuildPlan::FullArrayMesh
         );
         assert_eq!(
-            terrain_mesh_build_plan(true, false, true, true),
+            terrain_mesh_build_plan(TerrainGpuUploadState::Uploaded, false, true, true),
             TerrainMeshBuildPlan::FullArrayMesh
         );
         assert_eq!(
-            terrain_mesh_build_plan(true, false, false, true),
+            terrain_mesh_build_plan(TerrainGpuUploadState::Uploaded, false, false, true),
             TerrainMeshBuildPlan::FullArrayMesh
         );
         assert_eq!(
-            terrain_mesh_build_plan(false, true, true, true),
+            terrain_mesh_build_plan(TerrainGpuUploadState::Failed, true, true, true),
             TerrainMeshBuildPlan::FullArrayMesh
         );
         assert_eq!(
-            terrain_mesh_build_plan(false, true, false, true),
+            terrain_mesh_build_plan(TerrainGpuUploadState::NotRequested, true, false, true),
             TerrainMeshBuildPlan::FullArrayMesh
         );
+    }
+
+    #[test]
+    fn terrain_gpu_upload_state_separates_request_and_result() {
+        assert_eq!(
+            TerrainGpuUploadState::for_request(false),
+            TerrainGpuUploadState::NotRequested
+        );
+        assert_eq!(
+            TerrainGpuUploadState::for_request(true),
+            TerrainGpuUploadState::Failed
+        );
+        assert_eq!(
+            TerrainGpuUploadState::from_upload_result(true),
+            TerrainGpuUploadState::Uploaded
+        );
+        assert_eq!(
+            TerrainGpuUploadState::from_upload_result(false),
+            TerrainGpuUploadState::Failed
+        );
+        assert_eq!(
+            TerrainGpuUploadState::from_existing_slot(true),
+            TerrainGpuUploadState::Uploaded
+        );
+        assert_eq!(
+            TerrainGpuUploadState::from_existing_slot(false),
+            TerrainGpuUploadState::Failed
+        );
+        assert!(TerrainGpuUploadState::Uploaded.has_confirmed_slot());
+        assert!(!TerrainGpuUploadState::Failed.has_confirmed_slot());
+        assert!(!TerrainGpuUploadState::NotRequested.has_confirmed_slot());
     }
 
     #[test]
