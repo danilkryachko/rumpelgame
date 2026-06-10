@@ -8,9 +8,12 @@ const VISUAL_SMOKE_PATH_ENV = "RUMPELMC_VISUAL_SMOKE_PATH"
 const VISUAL_SMOKE_DELAY_ENV = "RUMPELMC_VISUAL_SMOKE_DELAY_SEC"
 const VISUAL_SMOKE_HIDE_HUD_ENV = "RUMPELMC_VISUAL_SMOKE_HIDE_HUD"
 const VISUAL_SMOKE_POSE_ENV = "RUMPELMC_VISUAL_SMOKE_POSE"
+const VISUAL_SMOKE_MOTION_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION"
+const VISUAL_SMOKE_MOTION_STEP_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION_STEP_SEC"
 const VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC"
 const VISUAL_SMOKE_DEFAULT_DELAY_SEC = 6.0
 const VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC = 2.0
+const VISUAL_SMOKE_DEFAULT_MOTION_STEP_SEC = 0.55
 const VISUAL_SMOKE_SKY_COLOR = Color(0.34, 0.43, 0.54)
 const VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD = 0.08
 const VISUAL_SMOKE_MIN_TERRAIN_SAMPLES = 12
@@ -21,6 +24,7 @@ const VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE = 0.06
 const VISUAL_SMOKE_COLOR_BUCKET_LEVELS = 6
 const VISUAL_SMOKE_CHROMA_THRESHOLD = 0.05
 const VISUAL_SMOKE_DEFAULT_POSE = "default"
+const VISUAL_SMOKE_CHUNK_SIZE = 32.0
 
 var server_pid: int = -1
 var manage_server_lifecycle: bool = false
@@ -29,6 +33,9 @@ var visual_smoke_requested: bool = false
 var visual_smoke_frame_window_sec: float = VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC
 var visual_smoke_frame_times: Array[float] = []
 var visual_smoke_frame_ms: Array[float] = []
+var visual_smoke_motion_name: String = "none"
+var visual_smoke_motion_steps: int = 0
+var visual_smoke_motion_chunks = {}
 
 func _ready():
 	configure_window_stretch()
@@ -207,6 +214,8 @@ func run_visual_smoke_if_requested():
 
 func capture_visual_smoke(screenshot_path: String):
 	var pose_name = normalized_visual_smoke_pose()
+	visual_smoke_motion_name = normalized_visual_smoke_motion()
+	await run_visual_smoke_motion(visual_smoke_motion_name)
 	apply_visual_smoke_pose(pose_name)
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
@@ -230,9 +239,12 @@ func capture_visual_smoke(screenshot_path: String):
 	if smoke_err == OK and metrics["terrain_luma_range"] < VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE:
 		smoke_err = FAILED
 	var frame_metrics = visual_smoke_frame_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
+		visual_smoke_motion_name,
+		visual_smoke_motion_steps,
+		visual_smoke_motion_chunks.size(),
 		image.get_width(),
 		image.get_height(),
 		metrics["avg_luma"],
@@ -366,6 +378,12 @@ func normalized_visual_smoke_pose() -> String:
 		return VISUAL_SMOKE_DEFAULT_POSE
 	return pose
 
+func normalized_visual_smoke_motion() -> String:
+	var motion = OS.get_environment(VISUAL_SMOKE_MOTION_ENV).strip_edges().to_lower()
+	if motion.is_empty():
+		return "none"
+	return motion
+
 func apply_visual_smoke_pose(pose_name: String):
 	var player = get_tree().root.find_child("Player", true, false) as Node3D
 	if not player:
@@ -400,6 +418,38 @@ func apply_visual_smoke_look_at(player: Node3D, camera: Camera3D, position: Vect
 	player.rotation = Vector3.ZERO
 	camera.position = Vector3(0.0, 1.6, 0.0)
 	camera.look_at(target, Vector3.UP)
+
+func run_visual_smoke_motion(motion_name: String):
+	visual_smoke_motion_steps = 0
+	visual_smoke_motion_chunks.clear()
+	if motion_name != "chunk_walk":
+		return
+
+	var player = get_tree().root.find_child("Player", true, false) as Node3D
+	if not player:
+		return
+
+	var camera = visual_smoke_player_camera(player)
+	var step_sec = max(env_float(VISUAL_SMOKE_MOTION_STEP_SEC_ENV, VISUAL_SMOKE_DEFAULT_MOTION_STEP_SEC), 0.05)
+	for position in [
+		Vector3(16.0, 74.0, 16.0),
+		Vector3(48.0, 74.0, 16.0),
+		Vector3(80.0, 74.0, 48.0),
+		Vector3(112.0, 74.0, 80.0)
+	]:
+		player.global_position = position
+		visual_smoke_motion_steps += 1
+		visual_smoke_motion_chunks[visual_smoke_chunk_key(position)] = true
+		if camera:
+			apply_visual_smoke_look_at(player, camera, position, position + Vector3(24.0, -10.0, -28.0))
+		await get_tree().process_frame
+		await get_tree().create_timer(step_sec).timeout
+
+func visual_smoke_chunk_key(position: Vector3) -> String:
+	return "%d,%d" % [
+		floori(position.x / VISUAL_SMOKE_CHUNK_SIZE),
+		floori(position.z / VISUAL_SMOKE_CHUNK_SIZE)
+	]
 
 func show_visual_smoke_texture_stand():
 	var client = get_node_or_null("GameClient")
