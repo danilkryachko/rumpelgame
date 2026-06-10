@@ -605,6 +605,7 @@ impl GameClient {
             vertices: vertices.len(),
             normals: normals.len(),
             reported_vertices,
+            reason,
             cpu_proxy_mesh,
             compact_shadow_proxy_mesh: cpu_proxy_mesh_payload.compact_shadow_proxy_mesh,
             compact_collision_proxy_mesh: cpu_proxy_mesh_payload.compact_collision_proxy_mesh,
@@ -1255,6 +1256,13 @@ impl MeshQueueReason {
             Self::ProxyRefresh
         }
     }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ProxyRefresh => "proxy_refresh",
+            Self::GeometryChanged => "geometry",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1374,6 +1382,14 @@ struct PerfStats {
     last_mesh_ms: f64,
     avg_mesh_ms: f64,
     max_mesh_ms: f64,
+    max_mesh_reason: Option<MeshQueueReason>,
+    max_mesh_cpu_proxy_mesh: bool,
+    max_mesh_compact_shadow_proxy_mesh: bool,
+    max_mesh_compact_collision_proxy_mesh: bool,
+    max_mesh_collision_bodies: i32,
+    max_mesh_vertices: usize,
+    max_mesh_reported_vertices: usize,
+    max_mesh_job_phase: TerrainMeshPhaseTiming,
     last_collision_ms: f64,
     avg_collision_ms: f64,
     max_collision_ms: f64,
@@ -1415,6 +1431,7 @@ struct MeshRecord {
     vertices: usize,
     normals: usize,
     reported_vertices: usize,
+    reason: MeshQueueReason,
     cpu_proxy_mesh: bool,
     compact_shadow_proxy_mesh: bool,
     compact_collision_proxy_mesh: bool,
@@ -1580,7 +1597,17 @@ impl PerfStats {
         let n = self.mesh_jobs_completed as f64;
         self.last_mesh_ms = record.mesh_ms;
         self.avg_mesh_ms += (record.mesh_ms - self.avg_mesh_ms) / n;
-        self.max_mesh_ms = self.max_mesh_ms.max(record.mesh_ms);
+        if record.mesh_ms >= self.max_mesh_ms {
+            self.max_mesh_ms = record.mesh_ms;
+            self.max_mesh_reason = Some(record.reason);
+            self.max_mesh_cpu_proxy_mesh = record.cpu_proxy_mesh;
+            self.max_mesh_compact_shadow_proxy_mesh = record.compact_shadow_proxy_mesh;
+            self.max_mesh_compact_collision_proxy_mesh = record.compact_collision_proxy_mesh;
+            self.max_mesh_collision_bodies = record.collision_bodies;
+            self.max_mesh_vertices = record.vertices;
+            self.max_mesh_reported_vertices = record.reported_vertices;
+            self.max_mesh_job_phase = record.phase_timing;
+        }
         self.last_collision_ms = record.collision_ms;
         self.avg_collision_ms += (record.collision_ms - self.avg_collision_ms) / n;
         self.max_collision_ms = self.max_collision_ms.max(record.collision_ms);
@@ -2537,7 +2564,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} mesh {:.2}/{:.2}/{:.2}ms mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -2590,6 +2617,21 @@ impl GameClient {
             self.perf.last_mesh_ms,
             self.perf.avg_mesh_ms,
             self.perf.max_mesh_ms,
+            self.perf
+                .max_mesh_reason
+                .map_or("none", MeshQueueReason::as_str),
+            self.perf.max_mesh_cpu_proxy_mesh as u8,
+            self.perf.max_mesh_compact_shadow_proxy_mesh as u8,
+            self.perf.max_mesh_compact_collision_proxy_mesh as u8,
+            self.perf.max_mesh_collision_bodies,
+            self.perf.max_mesh_vertices,
+            self.perf.max_mesh_reported_vertices,
+            self.perf.max_mesh_job_phase.padded_ms,
+            self.perf.max_mesh_job_phase.packed_faces_ms,
+            self.perf.max_mesh_job_phase.gpu_upload_ms,
+            self.perf.max_mesh_job_phase.cpu_mesh_ms,
+            self.perf.max_mesh_job_phase.array_mesh_ms,
+            self.perf.max_mesh_job_phase.node_counts_ms,
             self.perf.last_mesh_phase.padded_ms,
             self.perf.last_mesh_phase.packed_faces_ms,
             self.perf.last_mesh_phase.gpu_upload_ms,
@@ -3496,6 +3538,7 @@ mod tests {
             vertices: 1,
             normals: 0,
             reported_vertices: 1,
+            reason: MeshQueueReason::GeometryChanged,
             cpu_proxy_mesh: false,
             compact_shadow_proxy_mesh: false,
             compact_collision_proxy_mesh: false,
@@ -3510,6 +3553,7 @@ mod tests {
             vertices: 1,
             normals: 0,
             reported_vertices: 1,
+            reason: MeshQueueReason::ProxyRefresh,
             cpu_proxy_mesh: false,
             compact_shadow_proxy_mesh: false,
             compact_collision_proxy_mesh: false,
@@ -3526,6 +3570,9 @@ mod tests {
         assert_eq!(perf.avg_mesh_phase.array_mesh_ms, 12.0);
         assert_eq!(perf.max_mesh_phase.gpu_upload_ms, 8.0);
         assert_eq!(perf.max_mesh_phase.node_counts_ms, 12.0);
+        assert_eq!(perf.max_mesh_reason, Some(MeshQueueReason::ProxyRefresh));
+        assert_eq!(perf.max_mesh_job_phase.cpu_mesh_ms, 6.0);
+        assert_eq!(perf.max_mesh_vertices, 1);
     }
 
     #[test]
@@ -3536,6 +3583,7 @@ mod tests {
             vertices: 24,
             normals: 0,
             reported_vertices: 24,
+            reason: MeshQueueReason::GeometryChanged,
             cpu_proxy_mesh: true,
             compact_shadow_proxy_mesh: true,
             compact_collision_proxy_mesh: false,
@@ -3555,6 +3603,7 @@ mod tests {
             vertices: 12,
             normals: 12,
             reported_vertices: 12,
+            reason: MeshQueueReason::GeometryChanged,
             cpu_proxy_mesh: true,
             compact_shadow_proxy_mesh: false,
             compact_collision_proxy_mesh: false,
@@ -3574,6 +3623,7 @@ mod tests {
             vertices: 18,
             normals: 0,
             reported_vertices: 18,
+            reason: MeshQueueReason::GeometryChanged,
             cpu_proxy_mesh: true,
             compact_shadow_proxy_mesh: false,
             compact_collision_proxy_mesh: true,
