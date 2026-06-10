@@ -258,7 +258,9 @@ impl GameClient {
         let mut stale_drops = 0;
         let mut missing_chunk_drops = 0;
         while processed < MAX_MESH_JOBS_PER_FRAME && drained < MAX_MESH_QUEUE_DRAINS_PER_FRAME {
-            let Some(key) = self.mesh_queue.pop_front() else {
+            let Some(key) =
+                pop_next_mesh_queue_key(&mut self.mesh_queue, self.current_player_chunk)
+            else {
                 break;
             };
             drained += 1;
@@ -1153,6 +1155,28 @@ fn should_upload_gpu_subchunk_for_queue_reason(
     existing_gpu_slot: bool,
 ) -> bool {
     matches!(reason, MeshQueueReason::GeometryChanged) || !existing_gpu_slot
+}
+
+fn pop_next_mesh_queue_key(
+    queue: &mut VecDeque<SubchunkKey>,
+    current_player_chunk: Option<(i32, i32)>,
+) -> Option<SubchunkKey> {
+    let Some(center) = current_player_chunk else {
+        return queue.pop_front();
+    };
+
+    let best_idx = queue
+        .iter()
+        .enumerate()
+        .min_by_key(|(idx, key)| (subchunk_chunk_distance_sq(**key, center), *idx))
+        .map(|(idx, _)| idx)?;
+    queue.remove(best_idx)
+}
+
+fn subchunk_chunk_distance_sq(key: SubchunkKey, center: (i32, i32)) -> i64 {
+    let dx = i64::from(key.chunk_x - center.0);
+    let dz = i64::from(key.chunk_z - center.1);
+    dx * dx + dz * dz
 }
 
 #[derive(Default)]
@@ -2888,6 +2912,43 @@ mod tests {
             MeshQueueReason::ProxyRefresh,
             true
         ));
+    }
+
+    #[test]
+    fn mesh_queue_pop_prioritizes_player_chunk_with_fifo_ties() {
+        let far = SubchunkKey {
+            chunk_x: 5,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let tie_a = SubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let tie_b = SubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 1,
+        };
+        let current = SubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let mut queue = VecDeque::new();
+        queue.push_back(far);
+        queue.push_back(tie_a);
+        queue.push_back(tie_b);
+        queue.push_back(current);
+
+        assert!(
+            pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_some_and(|key| key == current)
+        );
+        assert!(pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_some_and(|key| key == tie_a));
+        assert!(pop_next_mesh_queue_key(&mut queue, None).is_some_and(|key| key == far));
+        assert!(pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_some_and(|key| key == tie_b));
+        assert!(pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_none());
     }
 
     #[test]
