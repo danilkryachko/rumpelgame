@@ -221,6 +221,11 @@ impl GameClient {
         self.last_chunk_event = format!("received {chunk_x},{chunk_z}");
         self.last_save_event = format!("chunk {chunk_x},{chunk_z} updated");
 
+        let previous_non_empty_subchunks = self
+            .chunk_non_empty_subchunks
+            .get(&(chunk_x, chunk_z))
+            .copied()
+            .unwrap_or(0);
         let non_empty_subchunks = compute_chunk_non_empty_subchunks(&chunk.blocks);
         self.chunk_blocks.insert((chunk_x, chunk_z), chunk.blocks);
         self.chunk_non_empty_subchunks
@@ -228,9 +233,11 @@ impl GameClient {
         self.perf.chunk_bytes_loaded = self.total_chunk_bytes_loaded();
         self.enqueue_chunk_subchunks(chunk_x, chunk_z);
 
+        let neighbor_refresh_mask =
+            neighbor_geometry_refresh_mask(previous_non_empty_subchunks, non_empty_subchunks);
         for (x, z) in chunk_neighbors(chunk_x, chunk_z) {
             if self.chunk_blocks.contains_key(&(x, z)) {
-                self.enqueue_chunk_subchunks(x, z);
+                self.enqueue_chunk_subchunks_for_mask(x, z, neighbor_refresh_mask);
             }
         }
 
@@ -314,6 +321,23 @@ impl GameClient {
                     sub_y,
                     chunk_z,
                 });
+            }
+        }
+    }
+
+    fn enqueue_chunk_subchunks_for_mask(&mut self, chunk_x: i32, chunk_z: i32, mask: u32) {
+        for sub_y in 0..SUBCHUNKS_PER_CHUNK {
+            if subchunk_mask_has_blocks(mask, sub_y)
+                && self.subchunk_has_blocks(chunk_x, sub_y, chunk_z)
+            {
+                self.enqueue_subchunk(
+                    SubchunkKey {
+                        chunk_x,
+                        sub_y,
+                        chunk_z,
+                    },
+                    MeshQueueReason::GeometryChanged,
+                );
             }
         }
     }
@@ -1981,6 +2005,11 @@ fn compute_chunk_non_empty_subchunks(blocks: &[u8]) -> u32 {
     mask
 }
 
+fn neighbor_geometry_refresh_mask(previous_mask: u32, current_mask: u32) -> u32 {
+    let valid_mask = (1u32 << SUBCHUNKS_PER_CHUNK) - 1;
+    (previous_mask | current_mask) & valid_mask
+}
+
 fn subchunk_mask_has_blocks(mask: u32, sub_y: i32) -> bool {
     if !(0..SUBCHUNKS_PER_CHUNK).contains(&sub_y) {
         return false;
@@ -3127,6 +3156,20 @@ mod tests {
         assert!(chunk_subchunk_has_blocks(&blocks, 4));
         assert!(!chunk_subchunk_has_blocks(&blocks, 1));
         assert_eq!(compute_chunk_non_empty_subchunks(&[]), 0);
+    }
+
+    #[test]
+    fn neighbor_geometry_refresh_mask_tracks_added_and_removed_subchunks() {
+        let lower = 1u32 << 0;
+        let upper = 1u32 << 7;
+        let out_of_range = 1u32 << SUBCHUNKS_PER_CHUNK;
+
+        assert_eq!(
+            neighbor_geometry_refresh_mask(0, lower | upper),
+            lower | upper
+        );
+        assert_eq!(neighbor_geometry_refresh_mask(lower, upper), lower | upper);
+        assert_eq!(neighbor_geometry_refresh_mask(out_of_range, lower), lower);
     }
 
     #[test]
