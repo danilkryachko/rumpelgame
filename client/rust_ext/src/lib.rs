@@ -291,6 +291,11 @@ impl GameClient {
                 missing_chunk_drops += 1;
                 continue;
             }
+            if reason == MeshQueueReason::ProxyRefresh
+                && self.handle_proxy_refresh_without_mesh_job(key)
+            {
+                continue;
+            }
             self.render_subchunk_mesh(key, reason);
             processed += 1;
         }
@@ -617,6 +622,50 @@ impl GameClient {
             collision_bodies,
             node_counts,
         });
+    }
+
+    fn handle_proxy_refresh_without_mesh_job(&mut self, key: SubchunkKey) -> bool {
+        let upload_enabled = gpu_terrain_upload_enabled();
+        let existing_gpu_slot = upload_enabled
+            && self
+                .gpu_terrain
+                .as_ref()
+                .is_some_and(|gpu_terrain| gpu_terrain.has_subchunk(gpu_subchunk_key(key)));
+        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
+        let should_have_collision = self.subchunk_needs_collision(key);
+        let should_have_shadow_proxy =
+            gpu_visible_render_active && self.subchunk_needs_shadow_proxy(key);
+        let needs_cpu_proxy = subchunk_needs_cpu_proxy(
+            gpu_visible_render_active,
+            should_have_collision,
+            !should_have_collision && should_have_shadow_proxy,
+        );
+        let desired_payload = terrain_cpu_proxy_mesh_payload(
+            gpu_terrain_shadow_proxy_mesh_mode(),
+            true,
+            should_have_collision,
+            should_have_shadow_proxy,
+        );
+
+        match proxy_refresh_queue_action(
+            gpu_visible_render_active,
+            existing_gpu_slot,
+            needs_cpu_proxy,
+            self.cpu_proxy_mesh_payloads.get(&key).copied(),
+            desired_payload,
+        ) {
+            ProxyRefreshQueueAction::BuildMesh => false,
+            ProxyRefreshQueueAction::RemoveCpuNode => {
+                self.remove_cpu_subchunk_mesh_node(key);
+                true
+            }
+            ProxyRefreshQueueAction::ReuseCpuProxy => self.refresh_existing_cpu_proxy_mesh_node(
+                key,
+                desired_payload,
+                should_have_collision,
+                should_have_shadow_proxy,
+            ),
+        }
     }
 
     fn refresh_existing_cpu_proxy_mesh_node(
@@ -1206,6 +1255,33 @@ impl MeshQueueReason {
             Self::ProxyRefresh
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProxyRefreshQueueAction {
+    BuildMesh,
+    RemoveCpuNode,
+    ReuseCpuProxy,
+}
+
+fn proxy_refresh_queue_action(
+    gpu_visible_render_active: bool,
+    existing_gpu_slot: bool,
+    needs_cpu_proxy: bool,
+    existing_payload: Option<TerrainCpuProxyMeshPayload>,
+    desired_payload: TerrainCpuProxyMeshPayload,
+) -> ProxyRefreshQueueAction {
+    if !gpu_visible_render_active || !existing_gpu_slot {
+        return ProxyRefreshQueueAction::BuildMesh;
+    }
+    if !needs_cpu_proxy {
+        return ProxyRefreshQueueAction::RemoveCpuNode;
+    }
+    if existing_payload.is_some_and(|payload| payload.can_satisfy(desired_payload)) {
+        return ProxyRefreshQueueAction::ReuseCpuProxy;
+    }
+
+    ProxyRefreshQueueAction::BuildMesh
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3068,6 +3144,40 @@ mod tests {
         assert!(collision_only.can_satisfy(collision_only));
         assert!(!collision_only.can_satisfy(full));
         assert!(!collision_only.can_satisfy(shadow_only));
+    }
+
+    #[test]
+    fn proxy_refresh_queue_action_skips_only_confirmed_gpu_refresh_work() {
+        let full = TerrainCpuProxyMeshPayload::default();
+        let shadow_only = TerrainCpuProxyMeshPayload {
+            compact_shadow_proxy_mesh: true,
+            compact_collision_proxy_mesh: false,
+        };
+        let collision_only = TerrainCpuProxyMeshPayload {
+            compact_shadow_proxy_mesh: false,
+            compact_collision_proxy_mesh: true,
+        };
+
+        assert_eq!(
+            proxy_refresh_queue_action(true, true, false, None, full),
+            ProxyRefreshQueueAction::RemoveCpuNode
+        );
+        assert_eq!(
+            proxy_refresh_queue_action(true, true, true, Some(full), shadow_only),
+            ProxyRefreshQueueAction::ReuseCpuProxy
+        );
+        assert_eq!(
+            proxy_refresh_queue_action(true, true, true, Some(shadow_only), collision_only),
+            ProxyRefreshQueueAction::BuildMesh
+        );
+        assert_eq!(
+            proxy_refresh_queue_action(false, true, false, Some(full), full),
+            ProxyRefreshQueueAction::BuildMesh
+        );
+        assert_eq!(
+            proxy_refresh_queue_action(true, false, false, Some(full), full),
+            ProxyRefreshQueueAction::BuildMesh
+        );
     }
 
     #[test]
