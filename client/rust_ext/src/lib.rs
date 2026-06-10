@@ -543,26 +543,34 @@ impl GameClient {
             should_have_shadow_proxy,
         );
         let cpu_mesh_start = Instant::now();
-        let (vertices, normals, uvs, timing, reported_vertices): (
+        let (vertices, normals, uvs, indices, timing, reported_vertices): (
             PackedVector3Array,
             PackedVector3Array,
             PackedVector2Array,
+            PackedInt32Array,
             meshing::MeshTiming,
             usize,
         ) = if cpu_proxy_mesh {
             let packed_faces = packed_faces
                 .as_ref()
                 .expect("packed faces are built for uploaded GPU terrain");
-            let proxy_mesh = if cpu_proxy_mesh_payload.uses_compact_mesh() {
+            let proxy_mesh = if cpu_proxy_mesh_payload.uses_indexed_shadow_mesh() {
+                packed_faces.build_indexed_compact_cpu_proxy_mesh()
+            } else if cpu_proxy_mesh_payload.uses_compact_mesh() {
                 packed_faces.build_compact_cpu_proxy_mesh()
             } else {
                 packed_faces.build_cpu_proxy_mesh()
             };
-            let reported_vertices = proxy_mesh.vertices.len();
+            let reported_vertices = if proxy_mesh.indices.is_empty() {
+                proxy_mesh.vertices.len()
+            } else {
+                proxy_mesh.indices.len()
+            };
             (
                 proxy_mesh.vertices,
                 proxy_mesh.normals,
                 PackedVector2Array::new(),
+                proxy_mesh.indices,
                 meshing::MeshTiming::default(),
                 reported_vertices,
             )
@@ -572,6 +580,7 @@ impl GameClient {
                 mesh.vertices,
                 mesh.normals,
                 mesh.uvs,
+                PackedInt32Array::new(),
                 meshing::MeshTiming::default(),
                 mesh.reported_vertex_count,
             )
@@ -586,6 +595,7 @@ impl GameClient {
                 mesh_result.vertices,
                 mesh_result.normals,
                 mesh_result.uvs,
+                PackedInt32Array::new(),
                 mesh_result.timing,
                 mesh_result.reported_vertex_count,
             )
@@ -611,6 +621,9 @@ impl GameClient {
             }
             if !uvs.is_empty() {
                 arrays.set(4, &uvs.to_variant());
+            }
+            if !indices.is_empty() {
+                arrays.set(12, &indices.to_variant());
             }
 
             let mut array_mesh = godot::classes::ArrayMesh::new_gd();
@@ -678,7 +691,7 @@ impl GameClient {
         }
 
         let collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
-        if gpu_visible_render_active {
+        if gpu_visible_render_active && indices.is_empty() {
             self.terrain_collision_faces.insert(key, vertices.clone());
         } else {
             self.terrain_collision_faces.remove(&key);
@@ -1072,6 +1085,18 @@ impl GameClient {
             return CollisionRefreshResult::Unchanged;
         }
 
+        if needs_collision
+            && self
+                .cpu_proxy_mesh_payloads
+                .get(&key)
+                .copied()
+                .is_some_and(TerrainCpuProxyMeshPayload::uses_indexed_shadow_mesh)
+            && !self.terrain_collision_faces.contains_key(&key)
+        {
+            self.enqueue_subchunk(key, MeshQueueReason::ProxyRefresh);
+            return CollisionRefreshResult::SkippedEmpty;
+        }
+
         let collision_start = Instant::now();
         clear_mesh_collisions(&mut mesh_instance);
         if needs_collision {
@@ -1422,6 +1447,7 @@ fn proxy_refresh_queue_action(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CollisionRefreshResult {
     MissingMesh,
+    SkippedEmpty,
     Unchanged,
     Rebuilt,
 }
@@ -1440,6 +1466,7 @@ impl CollisionRefreshBatch {
         self.checked += 1;
         match result {
             CollisionRefreshResult::MissingMesh => self.missing_meshes += 1,
+            CollisionRefreshResult::SkippedEmpty => self.skipped_empty += 1,
             CollisionRefreshResult::Unchanged => self.unchanged += 1,
             CollisionRefreshResult::Rebuilt => self.rebuilt += 1,
         }
@@ -2269,6 +2296,7 @@ impl GpuTerrainShadowProxyMeshMode {
 struct TerrainCpuProxyMeshPayload {
     compact_shadow_proxy_mesh: bool,
     compact_collision_proxy_mesh: bool,
+    indexed_shadow_proxy_mesh: bool,
 }
 
 impl TerrainCpuProxyMeshPayload {
@@ -2276,12 +2304,18 @@ impl TerrainCpuProxyMeshPayload {
         self.compact_shadow_proxy_mesh || self.compact_collision_proxy_mesh
     }
 
+    fn uses_indexed_shadow_mesh(self) -> bool {
+        self.indexed_shadow_proxy_mesh
+    }
+
     fn can_satisfy(self, desired: Self) -> bool {
         self == desired
             || !self.uses_compact_mesh()
-            // Collision-only compact proxies are meshless, so only a compact shadow surface can
-            // satisfy another compact role without rebuilding.
-            || (self.compact_shadow_proxy_mesh && desired.uses_compact_mesh())
+            // Collision-only compact proxies are meshless, and indexed shadow-only proxies do
+            // not carry triangle-list faces for collision refreshes.
+            || (self.compact_shadow_proxy_mesh
+                && !self.indexed_shadow_proxy_mesh
+                && desired.uses_compact_mesh())
     }
 }
 
@@ -2295,10 +2329,12 @@ fn terrain_cpu_proxy_mesh_payload(
         return TerrainCpuProxyMeshPayload::default();
     }
 
+    let compact_shadow_proxy_mesh =
+        shadow_mesh_mode.compacts_shadow_proxy_mesh(cpu_proxy_mesh, needs_shadow_proxy);
     TerrainCpuProxyMeshPayload {
-        compact_shadow_proxy_mesh: shadow_mesh_mode
-            .compacts_shadow_proxy_mesh(cpu_proxy_mesh, needs_shadow_proxy),
+        compact_shadow_proxy_mesh,
         compact_collision_proxy_mesh: needs_collision && !needs_shadow_proxy,
+        indexed_shadow_proxy_mesh: compact_shadow_proxy_mesh && !needs_collision,
     }
 }
 
@@ -3420,9 +3456,11 @@ mod tests {
             TerrainCpuProxyMeshPayload {
                 compact_shadow_proxy_mesh: true,
                 compact_collision_proxy_mesh: false,
+                indexed_shadow_proxy_mesh: true,
             }
         );
         assert!(shadow_only.uses_compact_mesh());
+        assert!(shadow_only.uses_indexed_shadow_mesh());
 
         let collision_and_shadow = terrain_cpu_proxy_mesh_payload(
             GpuTerrainShadowProxyMeshMode::Compact,
@@ -3435,9 +3473,11 @@ mod tests {
             TerrainCpuProxyMeshPayload {
                 compact_shadow_proxy_mesh: true,
                 compact_collision_proxy_mesh: false,
+                indexed_shadow_proxy_mesh: false,
             }
         );
         assert!(collision_and_shadow.uses_compact_mesh());
+        assert!(!collision_and_shadow.uses_indexed_shadow_mesh());
 
         let collision_only =
             terrain_cpu_proxy_mesh_payload(GpuTerrainShadowProxyMeshMode::Full, true, true, false);
@@ -3446,9 +3486,11 @@ mod tests {
             TerrainCpuProxyMeshPayload {
                 compact_shadow_proxy_mesh: false,
                 compact_collision_proxy_mesh: true,
+                indexed_shadow_proxy_mesh: false,
             }
         );
         assert!(collision_only.uses_compact_mesh());
+        assert!(!collision_only.uses_indexed_shadow_mesh());
     }
 
     #[test]
@@ -3457,18 +3499,29 @@ mod tests {
         let shadow_only = TerrainCpuProxyMeshPayload {
             compact_shadow_proxy_mesh: true,
             compact_collision_proxy_mesh: false,
+            indexed_shadow_proxy_mesh: true,
+        };
+        let collision_and_shadow = TerrainCpuProxyMeshPayload {
+            compact_shadow_proxy_mesh: true,
+            compact_collision_proxy_mesh: false,
+            indexed_shadow_proxy_mesh: false,
         };
         let collision_only = TerrainCpuProxyMeshPayload {
             compact_shadow_proxy_mesh: false,
             compact_collision_proxy_mesh: true,
+            indexed_shadow_proxy_mesh: false,
         };
 
         assert!(full.can_satisfy(full));
         assert!(full.can_satisfy(shadow_only));
+        assert!(full.can_satisfy(collision_and_shadow));
         assert!(full.can_satisfy(collision_only));
         assert!(shadow_only.can_satisfy(shadow_only));
         assert!(!shadow_only.can_satisfy(full));
-        assert!(shadow_only.can_satisfy(collision_only));
+        assert!(!shadow_only.can_satisfy(collision_and_shadow));
+        assert!(!shadow_only.can_satisfy(collision_only));
+        assert!(collision_and_shadow.can_satisfy(shadow_only));
+        assert!(collision_and_shadow.can_satisfy(collision_only));
         assert!(collision_only.can_satisfy(collision_only));
         assert!(!collision_only.can_satisfy(full));
         assert!(!collision_only.can_satisfy(shadow_only));
@@ -3480,10 +3533,12 @@ mod tests {
         let shadow_only = TerrainCpuProxyMeshPayload {
             compact_shadow_proxy_mesh: true,
             compact_collision_proxy_mesh: false,
+            indexed_shadow_proxy_mesh: true,
         };
         let collision_only = TerrainCpuProxyMeshPayload {
             compact_shadow_proxy_mesh: false,
             compact_collision_proxy_mesh: true,
+            indexed_shadow_proxy_mesh: false,
         };
 
         assert_eq!(
@@ -3496,7 +3551,7 @@ mod tests {
         );
         assert_eq!(
             proxy_refresh_queue_action(true, true, true, Some(shadow_only), collision_only),
-            ProxyRefreshQueueAction::ReuseCpuProxy
+            ProxyRefreshQueueAction::BuildMesh
         );
         assert_eq!(
             proxy_refresh_queue_action(true, true, true, Some(collision_only), shadow_only),
@@ -3802,13 +3857,14 @@ mod tests {
     fn perf_records_collision_refresh_churn() {
         let mut first = CollisionRefreshBatch::default();
         first.record(CollisionRefreshResult::MissingMesh);
+        first.record(CollisionRefreshResult::SkippedEmpty);
         first.record(CollisionRefreshResult::Unchanged);
 
         let mut second = CollisionRefreshBatch::default();
         second.record(CollisionRefreshResult::Rebuilt);
 
-        assert_eq!(first.checked, 2);
-        assert_eq!(first.skipped_empty, 0);
+        assert_eq!(first.checked, 3);
+        assert_eq!(first.skipped_empty, 1);
         assert_eq!(first.missing_meshes, 1);
         assert_eq!(first.unchanged, 1);
         assert_eq!(first.rebuilt, 0);
@@ -3817,8 +3873,8 @@ mod tests {
         perf.record_collision_refresh(first);
         perf.record_collision_refresh(second);
 
-        assert_eq!(perf.collision_refresh_checked, 3);
-        assert_eq!(perf.collision_refresh_skipped_empty, 0);
+        assert_eq!(perf.collision_refresh_checked, 4);
+        assert_eq!(perf.collision_refresh_skipped_empty, 1);
         assert_eq!(perf.collision_refresh_missing_meshes, 1);
         assert_eq!(perf.collision_refresh_unchanged, 1);
         assert_eq!(perf.collision_refresh_rebuilt, 1);

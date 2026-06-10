@@ -98,6 +98,7 @@ pub struct PackedFaceBatch {
 pub struct CpuProxyMesh {
     pub vertices: PackedVector3Array,
     pub normals: PackedVector3Array,
+    pub indices: PackedInt32Array,
 }
 
 pub struct CpuArrayMesh {
@@ -134,6 +135,7 @@ impl PackedFaceBatch {
         CpuProxyMesh {
             vertices: PackedVector3Array::from(vertices),
             normals: PackedVector3Array::from(normals),
+            indices: PackedInt32Array::new(),
         }
     }
 
@@ -141,6 +143,16 @@ impl PackedFaceBatch {
         CpuProxyMesh {
             vertices: PackedVector3Array::from(self.cpu_proxy_positions()),
             normals: PackedVector3Array::new(),
+            indices: PackedInt32Array::new(),
+        }
+    }
+
+    pub fn build_indexed_compact_cpu_proxy_mesh(&self) -> CpuProxyMesh {
+        let (positions, indices) = self.indexed_cpu_proxy_positions();
+        CpuProxyMesh {
+            vertices: PackedVector3Array::from(positions),
+            normals: PackedVector3Array::new(),
+            indices: PackedInt32Array::from(indices),
         }
     }
 
@@ -185,6 +197,18 @@ impl PackedFaceBatch {
             append_cpu_proxy_face_positions(*face, &mut vertices);
         }
         vertices
+    }
+
+    fn indexed_cpu_proxy_positions(&self) -> (Vec<Vector3>, Vec<i32>) {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        for face in &self.faces {
+            if vertices.len() + 4 > MAX_CPU_PROXY_VERTICES {
+                break;
+            }
+            append_indexed_cpu_proxy_face_positions(*face, &mut vertices, &mut indices);
+        }
+        (vertices, indices)
     }
 
     #[cfg(test)]
@@ -272,6 +296,25 @@ fn append_cpu_proxy_face_positions(face: PackedFace, vertices: &mut Vec<Vector3>
     for idx in [0usize, 2, 1, 0, 3, 2] {
         vertices.push(corners[idx]);
     }
+}
+
+fn append_indexed_cpu_proxy_face_positions(
+    face: PackedFace,
+    vertices: &mut Vec<Vector3>,
+    indices: &mut Vec<i32>,
+) {
+    let base_index = vertices.len() as i32;
+    let base = Vector3::new(face.x() as f32, face.y() as f32, face.z() as f32);
+    let corners = cpu_proxy_face_corners(base, face.face());
+    vertices.extend_from_slice(&corners);
+    indices.extend_from_slice(&[
+        base_index,
+        base_index + 2,
+        base_index + 1,
+        base_index,
+        base_index + 3,
+        base_index + 2,
+    ]);
 }
 
 fn cpu_array_mesh_face_uvs(face_idx: u32) -> [Vector2; 4] {
@@ -2111,6 +2154,24 @@ mod tests {
         assert_eq!(proxy[0], Vector3::new(1.0, 3.0, 3.0));
         assert_eq!(proxy[1], Vector3::new(2.0, 3.0, 4.0));
         assert_eq!(proxy[2], Vector3::new(1.0, 3.0, 4.0));
+    }
+
+    #[test]
+    fn indexed_compact_cpu_proxy_positions_use_quad_vertices_and_indices() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS)],
+        };
+
+        let compact_positions = batch.cpu_proxy_positions();
+        let (positions, indices) = batch.indexed_cpu_proxy_positions();
+
+        assert_eq!(compact_positions.len(), 6);
+        assert_eq!(positions.len(), 4);
+        assert_eq!(positions[0], Vector3::new(1.0, 3.0, 3.0));
+        assert_eq!(positions[1], Vector3::new(1.0, 3.0, 4.0));
+        assert_eq!(positions[2], Vector3::new(2.0, 3.0, 4.0));
+        assert_eq!(positions[3], Vector3::new(2.0, 3.0, 3.0));
+        assert_eq!(indices, vec![0, 2, 1, 0, 3, 2]);
     }
 
     #[test]
