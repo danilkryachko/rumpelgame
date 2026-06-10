@@ -1,3 +1,4 @@
+use crate::blocks;
 use godot::classes::rendering_device::{ShaderLanguage, ShaderStage};
 use godot::classes::{RdShaderSource, RenderingDevice, RenderingServer};
 use godot::prelude::*;
@@ -5,6 +6,7 @@ use std::time::Instant;
 
 const MAX_OUTPUT_VERTICES: usize = 100_000;
 const LOG_MESH_DISPATCH: bool = false;
+const BLOCK_SEMANTICS_PLACEHOLDER: &str = "/* RUMPELMC_BLOCK_SEMANTICS */";
 
 #[derive(Clone, Copy, Default)]
 pub struct MeshTiming {
@@ -40,11 +42,11 @@ impl ComputeMesher {
             }
         };
 
-        let shader_code = include_str!("../../shaders/mesher.glsl");
+        let shader_code = compute_mesher_shader_code();
 
         let mut shader_source = RdShaderSource::new_gd();
         shader_source.set_language(ShaderLanguage::GLSL);
-        shader_source.set_stage_source(ShaderStage::COMPUTE, shader_code);
+        shader_source.set_stage_source(ShaderStage::COMPUTE, shader_code.as_str());
 
         let spirv = match rd.shader_compile_spirv_from_source(&shader_source) {
             Some(s) => {
@@ -230,6 +232,38 @@ impl ComputeMesher {
             })
         } else {
             None
+        }
+    }
+}
+
+fn compute_mesher_shader_code() -> String {
+    include_str!("../../shaders/mesher.glsl").replace(
+        BLOCK_SEMANTICS_PLACEHOLDER,
+        &blocks::compute_mesher_glsl_block_semantics(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compute_mesher_shader_embeds_block_semantics_from_rust_definitions() {
+        let shader = compute_mesher_shader_code();
+
+        assert!(!shader.contains(BLOCK_SEMANTICS_PLACEHOLDER));
+        for snippet in [
+            "uint texture_tile(uint block_id, uint face_idx)",
+            "if (block_id == 3u) {",
+            "if (face_idx == FACE_TOP) return 0u;",
+            "if (face_idx == FACE_BOTTOM) return 2u;",
+            "bool is_solid(uint block_id)",
+            "block_id == 5u",
+        ] {
+            assert!(shader.contains(snippet));
+        }
+        for stale_constant in ["const uint BLOCK_GRASS", "const uint TILE_GRASS_TOP"] {
+            assert!(!shader.contains(stale_constant));
         }
     }
 }

@@ -9,12 +9,6 @@ const int PADDED_D = 34;
 const float ATLAS_COLUMNS = 10.0;
 const uint MAX_VERTICES = 100000u;
 
-const uint BLOCK_STONE = 1u;
-const uint BLOCK_DIRT = 2u;
-const uint BLOCK_GRASS = 3u;
-const uint BLOCK_WOOD = 4u;
-const uint BLOCK_LEAVES = 5u;
-
 const uint FACE_LEFT = 0u;
 const uint FACE_RIGHT = 1u;
 const uint FACE_BOTTOM = 2u;
@@ -22,13 +16,7 @@ const uint FACE_TOP = 3u;
 const uint FACE_BACK = 4u;
 const uint FACE_FRONT = 5u;
 
-const uint TILE_GRASS_TOP = 0u;
-const uint TILE_GRASS_SIDE = 1u;
-const uint TILE_SOIL = 2u;
-const uint TILE_STONE = 3u;
-const uint TILE_WOOD_SIDE = 5u;
-const uint TILE_WOOD_TOP = 8u;
-const uint TILE_LEAVES = 9u;
+/* RUMPELMC_BLOCK_SEMANTICS */
 
 // Blocks array: 1 block per uint (we unpack it from Go's 16-bit array in Rust or just use 32-bit directly)
 layout(set = 0, binding = 0, std430) restrict readonly buffer VoxelBuffer {
@@ -65,29 +53,6 @@ void push_vertex(uint idx, vec3 pos, vec3 normal, vec2 uv) {
     out_buf.vertices[base + 5u] = normal.z;
     out_buf.vertices[base + 6u] = uv.x;
     out_buf.vertices[base + 7u] = uv.y;
-}
-
-uint texture_tile(uint block_id, uint face_idx) {
-    if (block_id == BLOCK_STONE) return TILE_STONE;
-    if (block_id == BLOCK_DIRT) return TILE_SOIL;
-    if (block_id == BLOCK_LEAVES) return TILE_LEAVES;
-    if (block_id == BLOCK_WOOD) {
-        return (face_idx == FACE_TOP || face_idx == FACE_BOTTOM) ? TILE_WOOD_TOP : TILE_WOOD_SIDE;
-    }
-    if (block_id == BLOCK_GRASS) {
-        if (face_idx == FACE_TOP) return TILE_GRASS_TOP;
-        if (face_idx == FACE_BOTTOM) return TILE_SOIL;
-        return TILE_GRASS_SIDE;
-    }
-    return TILE_STONE;
-}
-
-bool is_solid(uint block_id) {
-    return block_id == BLOCK_STONE
-        || block_id == BLOCK_DIRT
-        || block_id == BLOCK_GRASS
-        || block_id == BLOCK_WOOD
-        || block_id == BLOCK_LEAVES;
 }
 
 vec2 atlas_uv(vec2 tile_uv, uint tile_index) {

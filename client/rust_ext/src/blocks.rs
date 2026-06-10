@@ -16,6 +16,7 @@ const TILE_STONE: u32 = 3;
 const TILE_WOOD_SIDE: u32 = 5;
 const TILE_WOOD_TOP: u32 = 8;
 const TILE_LEAVES: u32 = 9;
+const FALLBACK_TEXTURE_TILE: u32 = TILE_STONE;
 
 pub const TEXTURE_TILE_SIZE_PX: u32 = 64;
 pub const MAX_TEXTURE_TILE: u32 = TILE_LEAVES;
@@ -44,62 +45,65 @@ const fn same_texture(tile: u32) -> BlockTextures {
     }
 }
 
+const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
+    BlockDefinition {
+        id: AIR,
+        name: "Air",
+        solid: false,
+        placeable: false,
+        textures: same_texture(FALLBACK_TEXTURE_TILE),
+    },
+    BlockDefinition {
+        id: STONE,
+        name: "Stone",
+        solid: true,
+        placeable: true,
+        textures: same_texture(TILE_STONE),
+    },
+    BlockDefinition {
+        id: DIRT,
+        name: "Dirt",
+        solid: true,
+        placeable: true,
+        textures: same_texture(TILE_SOIL),
+    },
+    BlockDefinition {
+        id: GRASS,
+        name: "Grass",
+        solid: true,
+        placeable: true,
+        textures: BlockTextures {
+            top: TILE_GRASS_TOP,
+            side: TILE_GRASS_SIDE,
+            bottom: TILE_SOIL,
+        },
+    },
+    BlockDefinition {
+        id: WOOD,
+        name: "Wood",
+        solid: true,
+        placeable: true,
+        textures: BlockTextures {
+            top: TILE_WOOD_TOP,
+            side: TILE_WOOD_SIDE,
+            bottom: TILE_WOOD_TOP,
+        },
+    },
+    BlockDefinition {
+        id: LEAVES,
+        name: "Leaves",
+        solid: true,
+        placeable: true,
+        textures: same_texture(TILE_LEAVES),
+    },
+];
+
+pub(crate) fn definitions() -> &'static [BlockDefinition] {
+    &BLOCK_DEFINITIONS
+}
+
 pub fn definition(id: BlockId) -> Option<BlockDefinition> {
-    let block = match id {
-        AIR => BlockDefinition {
-            id: AIR,
-            name: "Air",
-            solid: false,
-            placeable: false,
-            textures: same_texture(TILE_STONE),
-        },
-        STONE => BlockDefinition {
-            id: STONE,
-            name: "Stone",
-            solid: true,
-            placeable: true,
-            textures: same_texture(TILE_STONE),
-        },
-        DIRT => BlockDefinition {
-            id: DIRT,
-            name: "Dirt",
-            solid: true,
-            placeable: true,
-            textures: same_texture(TILE_SOIL),
-        },
-        GRASS => BlockDefinition {
-            id: GRASS,
-            name: "Grass",
-            solid: true,
-            placeable: true,
-            textures: BlockTextures {
-                top: TILE_GRASS_TOP,
-                side: TILE_GRASS_SIDE,
-                bottom: TILE_SOIL,
-            },
-        },
-        WOOD => BlockDefinition {
-            id: WOOD,
-            name: "Wood",
-            solid: true,
-            placeable: true,
-            textures: BlockTextures {
-                top: TILE_WOOD_TOP,
-                side: TILE_WOOD_SIDE,
-                bottom: TILE_WOOD_TOP,
-            },
-        },
-        LEAVES => BlockDefinition {
-            id: LEAVES,
-            name: "Leaves",
-            solid: true,
-            placeable: true,
-            textures: same_texture(TILE_LEAVES),
-        },
-        _ => return None,
-    };
-    debug_assert_eq!(block.id, id);
-    Some(block)
+    definitions().iter().copied().find(|block| block.id == id)
 }
 
 pub fn name(id: BlockId) -> &'static str {
@@ -110,12 +114,16 @@ pub fn is_placeable(id: BlockId) -> bool {
     definition(id).is_some_and(|block| block.placeable)
 }
 
+pub fn is_solid(id: BlockId) -> bool {
+    definition(id).is_some_and(|block| block.solid)
+}
+
 pub fn tile_for_face(id: BlockId, face_idx: u32, face_top: u32, face_bottom: u32) -> u32 {
     let Some(block) = definition(id) else {
-        return TILE_STONE;
+        return FALLBACK_TEXTURE_TILE;
     };
     if !block.solid {
-        return TILE_STONE;
+        return FALLBACK_TEXTURE_TILE;
     }
     if face_idx == face_top {
         block.textures.top
@@ -124,4 +132,49 @@ pub fn tile_for_face(id: BlockId, face_idx: u32, face_top: u32, face_bottom: u32
     } else {
         block.textures.side
     }
+}
+
+pub(crate) fn compute_mesher_glsl_block_semantics() -> String {
+    let mut source = String::from("// Generated from client/rust_ext/src/blocks.rs.\n");
+    source.push_str("uint texture_tile(uint block_id, uint face_idx) {\n");
+    for block in definitions().iter().copied().filter(|block| block.solid) {
+        if block.textures.top == block.textures.side && block.textures.side == block.textures.bottom
+        {
+            source.push_str(&format!(
+                "    if (block_id == {}u) return {}u;\n",
+                block.id, block.textures.side
+            ));
+        } else {
+            source.push_str(&format!("    if (block_id == {}u) {{\n", block.id));
+            source.push_str(&format!(
+                "        if (face_idx == FACE_TOP) return {}u;\n",
+                block.textures.top
+            ));
+            source.push_str(&format!(
+                "        if (face_idx == FACE_BOTTOM) return {}u;\n",
+                block.textures.bottom
+            ));
+            source.push_str(&format!("        return {}u;\n", block.textures.side));
+            source.push_str("    }\n");
+        }
+    }
+    source.push_str(&format!("    return {}u;\n", FALLBACK_TEXTURE_TILE));
+    source.push_str("}\n\n");
+    source.push_str("bool is_solid(uint block_id) {\n");
+    let solid_checks = definitions()
+        .iter()
+        .copied()
+        .filter(|block| block.solid)
+        .map(|block| format!("block_id == {}u", block.id))
+        .collect::<Vec<_>>()
+        .join("\n        || ");
+    if solid_checks.is_empty() {
+        source.push_str("    return false;\n");
+    } else {
+        source.push_str("    return ");
+        source.push_str(&solid_checks);
+        source.push_str(";\n");
+    }
+    source.push_str("}\n");
+    source
 }

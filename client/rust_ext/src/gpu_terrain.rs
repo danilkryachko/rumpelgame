@@ -1736,7 +1736,7 @@ fn push_visible_face(faces: &mut Vec<PackedFace>, padded_blocks: &[u8], candidat
 }
 
 fn is_solid(block_id: u32) -> bool {
-    blocks::definition(block_id).is_some_and(|block| block.solid)
+    blocks::is_solid(block_id)
 }
 
 fn padded_block(blocks: &[u8], x: usize, y: usize, z: usize) -> u32 {
@@ -1816,17 +1816,33 @@ mod tests {
     }
 
     #[test]
-    fn grass_uses_top_tile_for_top_face() {
-        let face = PackedFace::new(
-            0,
-            0,
-            0,
-            FACE_TOP,
-            blocks::tile_for_face(blocks::GRASS, FACE_TOP, FACE_TOP, FACE_BOTTOM),
-            blocks::GRASS,
-        );
+    fn packed_faces_use_block_definition_tiles() {
+        for block_id in [blocks::GRASS, blocks::WOOD] {
+            let mut blocks_data = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+            write_block(&mut blocks_data, 1, 1, 1, block_id as u16);
 
-        assert_eq!(face.tile(), 0);
+            let batch = build_packed_faces(&blocks_data);
+
+            assert_eq!(batch.face_count(), 6);
+            for face_idx in [
+                FACE_LEFT,
+                FACE_RIGHT,
+                FACE_BOTTOM,
+                FACE_TOP,
+                FACE_BACK,
+                FACE_FRONT,
+            ] {
+                let face = batch
+                    .faces()
+                    .iter()
+                    .find(|face| face.face() == face_idx)
+                    .expect("face emitted for isolated solid block");
+                assert_eq!(
+                    face.tile(),
+                    blocks::tile_for_face(block_id, face_idx, FACE_TOP, FACE_BOTTOM)
+                );
+            }
+        }
     }
 
     #[test]
