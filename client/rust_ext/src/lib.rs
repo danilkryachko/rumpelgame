@@ -35,7 +35,7 @@ pub struct GameClient {
     chunk_material: Option<Gd<godot::classes::Material>>,
     chunk_blocks: HashMap<(i32, i32), Vec<u8>>,
     mesh_queue: VecDeque<SubchunkKey>,
-    queued_subchunks: HashSet<SubchunkKey>,
+    queued_subchunks: HashMap<SubchunkKey, MeshQueueReason>,
     position_send_timer: f64,
     current_player_chunk: Option<(i32, i32)>,
     last_block_action: String,
@@ -60,7 +60,7 @@ impl INode for GameClient {
             chunk_material: None,
             chunk_blocks: HashMap::new(),
             mesh_queue: VecDeque::new(),
-            queued_subchunks: HashSet::new(),
+            queued_subchunks: HashMap::new(),
             position_send_timer: 0.0,
             current_player_chunk: None,
             last_block_action: "n/a".to_string(),
@@ -244,8 +244,8 @@ impl GameClient {
             };
             self.queued_subchunks.remove(&spawn_lower);
             self.queued_subchunks.remove(&spawn_upper);
-            self.render_subchunk_mesh(spawn_lower);
-            self.render_subchunk_mesh(spawn_upper);
+            self.render_subchunk_mesh(spawn_lower, MeshQueueReason::GeometryChanged);
+            self.render_subchunk_mesh(spawn_upper, MeshQueueReason::GeometryChanged);
             self.spawn_player();
         }
     }
@@ -260,16 +260,16 @@ impl GameClient {
                 break;
             };
             drained += 1;
-            if !self.queued_subchunks.remove(&key) {
+            let Some(reason) = self.queued_subchunks.remove(&key) else {
                 stale_drops += 1;
                 continue;
-            }
+            };
 
             if !self.chunk_blocks.contains_key(&(key.chunk_x, key.chunk_z)) {
                 missing_chunk_drops += 1;
                 continue;
             }
-            self.render_subchunk_mesh(key);
+            self.render_subchunk_mesh(key, reason);
             processed += 1;
         }
         self.perf.record_mesh_queue_frame(
@@ -283,11 +283,14 @@ impl GameClient {
     fn enqueue_chunk_subchunks(&mut self, chunk_x: i32, chunk_z: i32) {
         for sub_y in 0..SUBCHUNKS_PER_CHUNK {
             if self.subchunk_has_blocks(chunk_x, sub_y, chunk_z) {
-                self.enqueue_subchunk(SubchunkKey {
-                    chunk_x,
-                    sub_y,
-                    chunk_z,
-                });
+                self.enqueue_subchunk(
+                    SubchunkKey {
+                        chunk_x,
+                        sub_y,
+                        chunk_z,
+                    },
+                    MeshQueueReason::GeometryChanged,
+                );
             } else {
                 self.remove_subchunk_mesh(SubchunkKey {
                     chunk_x,
@@ -298,8 +301,35 @@ impl GameClient {
         }
     }
 
-    fn enqueue_subchunk(&mut self, key: SubchunkKey) {
-        let inserted = self.queued_subchunks.insert(key);
+    fn enqueue_proxy_refresh_subchunks(&mut self, chunk_x: i32, chunk_z: i32) {
+        for sub_y in 0..SUBCHUNKS_PER_CHUNK {
+            if self.subchunk_has_blocks(chunk_x, sub_y, chunk_z) {
+                self.enqueue_subchunk(
+                    SubchunkKey {
+                        chunk_x,
+                        sub_y,
+                        chunk_z,
+                    },
+                    MeshQueueReason::ProxyRefresh,
+                );
+            } else {
+                self.remove_subchunk_mesh(SubchunkKey {
+                    chunk_x,
+                    sub_y,
+                    chunk_z,
+                });
+            }
+        }
+    }
+
+    fn enqueue_subchunk(&mut self, key: SubchunkKey, reason: MeshQueueReason) {
+        let inserted = if let Some(queued_reason) = self.queued_subchunks.get_mut(&key) {
+            *queued_reason = queued_reason.merged_with(reason);
+            false
+        } else {
+            self.queued_subchunks.insert(key, reason);
+            true
+        };
         if inserted {
             self.mesh_queue.push_back(key);
         }
@@ -307,12 +337,32 @@ impl GameClient {
             .record_mesh_queue_enqueue(self.mesh_queue.len(), inserted);
     }
 
-    fn render_subchunk_mesh(&mut self, key: SubchunkKey) {
+    fn render_subchunk_mesh(&mut self, key: SubchunkKey, reason: MeshQueueReason) {
+        let upload_enabled = gpu_terrain_upload_enabled();
+        let gpu_key = gpu_subchunk_key(key);
+        let existing_gpu_slot = upload_enabled
+            && self
+                .gpu_terrain
+                .as_ref()
+                .is_some_and(|gpu_terrain| gpu_terrain.has_subchunk(gpu_key));
+        let needs_cpu_proxy = self.subchunk_needs_cpu_proxy(key);
+        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
+        if reason == MeshQueueReason::ProxyRefresh
+            && gpu_visible_render_active
+            && existing_gpu_slot
+            && !needs_cpu_proxy
+        {
+            self.remove_cpu_subchunk_mesh_node(key);
+            return;
+        }
+
         let build_start = Instant::now();
         let Some(padded_blocks) = self.build_padded_subchunk_blocks(key) else {
             return;
         };
-        let needs_gpu_faces = gpu_terrain_stats_enabled() || gpu_terrain_upload_enabled();
+        let should_upload_gpu = upload_enabled
+            && should_upload_gpu_subchunk_for_queue_reason(reason, existing_gpu_slot);
+        let needs_gpu_faces = gpu_terrain_stats_enabled() || upload_enabled;
         let packed_faces = needs_gpu_faces.then(|| gpu_terrain::build_packed_faces(&padded_blocks));
         if gpu_terrain_stats_enabled()
             && let Some(packed_faces) = &packed_faces
@@ -324,19 +374,17 @@ impl GameClient {
                 packed_faces.byte_len()
             );
         }
-        let mut gpu_upload_state = TerrainGpuUploadState::for_request(gpu_terrain_upload_enabled());
-        if gpu_terrain_upload_enabled()
+        let mut gpu_upload_state = TerrainGpuUploadState::for_request(upload_enabled);
+        if should_upload_gpu
             && let (Some(gpu_terrain), Some(packed_faces)) = (&mut self.gpu_terrain, &packed_faces)
         {
             gpu_upload_state = TerrainGpuUploadState::from_upload_result(
-                gpu_terrain
-                    .upload_subchunk(gpu_subchunk_key(key), packed_faces)
-                    .is_some(),
+                gpu_terrain.upload_subchunk(gpu_key, packed_faces).is_some(),
             );
+        } else if existing_gpu_slot {
+            gpu_upload_state = TerrainGpuUploadState::Uploaded;
         }
 
-        let needs_cpu_proxy = self.subchunk_needs_cpu_proxy(key);
-        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
         let mesh_build_plan = terrain_mesh_build_plan(
             gpu_upload_state,
             gpu_visible_render_active,
@@ -734,7 +782,7 @@ impl GameClient {
         let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
         for coord in loaded_chunks {
             if chunk_needs_cpu_proxy_refresh(coord, previous, current, shadow_radius) {
-                self.enqueue_chunk_subchunks(coord.0, coord.1);
+                self.enqueue_proxy_refresh_subchunks(coord.0, coord.1);
             }
         }
     }
@@ -1011,6 +1059,29 @@ struct SubchunkKey {
     chunk_x: i32,
     sub_y: i32,
     chunk_z: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MeshQueueReason {
+    ProxyRefresh,
+    GeometryChanged,
+}
+
+impl MeshQueueReason {
+    fn merged_with(self, other: Self) -> Self {
+        if self == Self::GeometryChanged || other == Self::GeometryChanged {
+            Self::GeometryChanged
+        } else {
+            Self::ProxyRefresh
+        }
+    }
+}
+
+fn should_upload_gpu_subchunk_for_queue_reason(
+    reason: MeshQueueReason,
+    existing_gpu_slot: bool,
+) -> bool {
+    matches!(reason, MeshQueueReason::GeometryChanged) || !existing_gpu_slot
 }
 
 #[derive(Default)]
@@ -2681,6 +2752,42 @@ mod tests {
         assert_eq!(counts.cpu_proxy_shadow, 2);
         assert_eq!(counts.cpu_proxy_both, 1);
         assert_eq!(counts.cpu_proxy_shadow_only, 1);
+    }
+
+    #[test]
+    fn mesh_queue_reason_merges_geometry_changes_over_proxy_refreshes() {
+        assert_eq!(
+            MeshQueueReason::ProxyRefresh.merged_with(MeshQueueReason::ProxyRefresh),
+            MeshQueueReason::ProxyRefresh
+        );
+        assert_eq!(
+            MeshQueueReason::ProxyRefresh.merged_with(MeshQueueReason::GeometryChanged),
+            MeshQueueReason::GeometryChanged
+        );
+        assert_eq!(
+            MeshQueueReason::GeometryChanged.merged_with(MeshQueueReason::ProxyRefresh),
+            MeshQueueReason::GeometryChanged
+        );
+    }
+
+    #[test]
+    fn gpu_upload_policy_skips_existing_proxy_refresh_slots_only() {
+        assert!(should_upload_gpu_subchunk_for_queue_reason(
+            MeshQueueReason::GeometryChanged,
+            true
+        ));
+        assert!(should_upload_gpu_subchunk_for_queue_reason(
+            MeshQueueReason::GeometryChanged,
+            false
+        ));
+        assert!(should_upload_gpu_subchunk_for_queue_reason(
+            MeshQueueReason::ProxyRefresh,
+            false
+        ));
+        assert!(!should_upload_gpu_subchunk_for_queue_reason(
+            MeshQueueReason::ProxyRefresh,
+            true
+        ));
     }
 
     #[test]
