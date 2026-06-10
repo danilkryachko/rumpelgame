@@ -502,6 +502,15 @@ impl GameClient {
                 meshing::MeshTiming::default(),
                 reported_vertices,
             )
+        } else if let Some(packed_faces) = &packed_faces {
+            let mesh = packed_faces.build_cpu_array_mesh();
+            (
+                mesh.vertices,
+                mesh.normals,
+                mesh.uvs,
+                meshing::MeshTiming::default(),
+                mesh.reported_vertex_count,
+            )
         } else {
             let Some(mesher) = &mut self.mesher else {
                 return;
@@ -1209,12 +1218,29 @@ impl GameClient {
     }
 
     fn refresh_cpu_proxies_after_gpu_attach(&mut self) {
+        let gpu_visible_render_active = self.gpu_terrain_visible_render_active();
+        let Some(refresh_reason) = mesh_queue_reason_after_gpu_attach(gpu_visible_render_active)
+        else {
+            return;
+        };
         let loaded_chunks = chunks_to_refresh_after_gpu_attach(
             self.chunk_blocks.keys().copied(),
-            self.gpu_terrain_visible_render_active(),
+            gpu_visible_render_active,
         );
         for (chunk_x, chunk_z) in loaded_chunks {
-            self.enqueue_chunk_subchunks(chunk_x, chunk_z);
+            self.enqueue_chunk_subchunks_for_reason(chunk_x, chunk_z, refresh_reason);
+        }
+    }
+
+    fn enqueue_chunk_subchunks_for_reason(
+        &mut self,
+        chunk_x: i32,
+        chunk_z: i32,
+        reason: MeshQueueReason,
+    ) {
+        match reason {
+            MeshQueueReason::GeometryChanged => self.enqueue_chunk_subchunks(chunk_x, chunk_z),
+            MeshQueueReason::ProxyRefresh => self.enqueue_proxy_refresh_subchunks(chunk_x, chunk_z),
         }
     }
 
@@ -1816,6 +1842,10 @@ fn chunks_to_refresh_after_gpu_attach(
     }
 
     loaded_chunks.into_iter().collect()
+}
+
+fn mesh_queue_reason_after_gpu_attach(gpu_visible_render_active: bool) -> Option<MeshQueueReason> {
+    gpu_visible_render_active.then_some(MeshQueueReason::ProxyRefresh)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3015,6 +3045,15 @@ mod tests {
         assert_eq!(
             chunks_to_refresh_after_gpu_attach(loaded_chunks.iter().copied(), true),
             loaded_chunks
+        );
+    }
+
+    #[test]
+    fn gpu_attach_refresh_uses_proxy_refresh_jobs_after_visible_confirmation() {
+        assert_eq!(mesh_queue_reason_after_gpu_attach(false), None);
+        assert_eq!(
+            mesh_queue_reason_after_gpu_attach(true),
+            Some(MeshQueueReason::ProxyRefresh)
         );
     }
 

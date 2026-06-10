@@ -32,6 +32,7 @@ const TERRAIN_PUSH_CONSTANT_BYTES: usize = CLIP_FROM_WORLD_PUSH_CONSTANT_BYTES
     + TERRAIN_ATLAS_PUSH_CONSTANT_BYTES;
 const MAX_GPU_TERRAIN_FACES: usize = 4_194_304;
 const MAX_INDIRECT_DRAWS: usize = 8192;
+const MAX_CPU_ARRAY_MESH_VERTICES: usize = 100_000;
 const MAX_CPU_PROXY_VERTICES: usize = 100_000;
 const DEBUG_OFFSCREEN_SIZE: u32 = 256;
 const DEFAULT_TERRAIN_AMBIENT: f32 = 0.55;
@@ -84,7 +85,6 @@ impl PackedFace {
         (self.pos_face_tile >> 12) & 0x3f
     }
 
-    #[cfg(test)]
     fn tile(self) -> u32 {
         (self.pos_face_tile >> 21) & 0x7ff
     }
@@ -98,6 +98,13 @@ pub struct PackedFaceBatch {
 pub struct CpuProxyMesh {
     pub vertices: PackedVector3Array,
     pub normals: PackedVector3Array,
+}
+
+pub struct CpuArrayMesh {
+    pub vertices: PackedVector3Array,
+    pub normals: PackedVector3Array,
+    pub uvs: PackedVector2Array,
+    pub reported_vertex_count: usize,
 }
 
 impl PackedFaceBatch {
@@ -115,27 +122,46 @@ impl PackedFaceBatch {
     }
 
     pub fn build_cpu_proxy_mesh(&self) -> CpuProxyMesh {
-        let mut vertices = PackedVector3Array::new();
-        let mut normals = PackedVector3Array::new();
+        let proxy_vertices = self.cpu_proxy_vertices();
+        let mut vertices = Vec::with_capacity(proxy_vertices.len());
+        let mut normals = Vec::with_capacity(proxy_vertices.len());
 
-        for (point, normal) in self.cpu_proxy_vertices() {
+        for (point, normal) in proxy_vertices {
             vertices.push(point);
             normals.push(normal);
         }
 
-        CpuProxyMesh { vertices, normals }
+        CpuProxyMesh {
+            vertices: PackedVector3Array::from(vertices),
+            normals: PackedVector3Array::from(normals),
+        }
     }
 
     pub fn build_compact_cpu_proxy_mesh(&self) -> CpuProxyMesh {
-        let mut vertices = PackedVector3Array::new();
+        CpuProxyMesh {
+            vertices: PackedVector3Array::from(self.cpu_proxy_positions()),
+            normals: PackedVector3Array::new(),
+        }
+    }
 
-        for point in self.cpu_proxy_positions() {
-            vertices.push(point);
+    pub fn build_cpu_array_mesh(&self) -> CpuArrayMesh {
+        let mut vertices = Vec::with_capacity(self.cpu_array_mesh_vertex_capacity());
+        let mut normals = Vec::with_capacity(vertices.capacity());
+        let mut uvs = Vec::with_capacity(vertices.capacity());
+
+        for face in &self.faces {
+            if vertices.len() + 6 > MAX_CPU_ARRAY_MESH_VERTICES {
+                break;
+            }
+            append_cpu_array_mesh_face_to_arrays(*face, &mut vertices, &mut normals, &mut uvs);
         }
 
-        CpuProxyMesh {
-            vertices,
-            normals: PackedVector3Array::new(),
+        let reported_vertex_count = vertices.len();
+        CpuArrayMesh {
+            vertices: PackedVector3Array::from(vertices),
+            normals: PackedVector3Array::from(normals),
+            uvs: PackedVector2Array::from(uvs),
+            reported_vertex_count,
         }
     }
 
@@ -161,6 +187,25 @@ impl PackedFaceBatch {
         vertices
     }
 
+    #[cfg(test)]
+    fn cpu_array_mesh_vertices(&self) -> Vec<(Vector3, Vector3, Vector2)> {
+        let mut vertices = Vec::with_capacity(self.cpu_array_mesh_vertex_capacity());
+        for face in &self.faces {
+            if vertices.len() + 6 > MAX_CPU_ARRAY_MESH_VERTICES {
+                break;
+            }
+            append_cpu_array_mesh_face(*face, &mut vertices);
+        }
+        vertices
+    }
+
+    fn cpu_array_mesh_vertex_capacity(&self) -> usize {
+        self.faces
+            .len()
+            .saturating_mul(6)
+            .min(MAX_CPU_ARRAY_MESH_VERTICES)
+    }
+
     fn to_bytes_for_subchunk(&self, key: GpuSubchunkKey) -> Vec<u8> {
         let chunk_x_bits = pack_signed_i16(key.chunk_x) << 16;
         let chunk_z_bits = pack_signed_i16(key.chunk_z) << 16;
@@ -175,6 +220,38 @@ impl PackedFaceBatch {
             bytes.extend_from_slice(&sub_y_bits.to_le_bytes());
         }
         bytes
+    }
+}
+
+#[cfg(test)]
+fn append_cpu_array_mesh_face(face: PackedFace, vertices: &mut Vec<(Vector3, Vector3, Vector2)>) {
+    let base = Vector3::new(face.x() as f32, face.y() as f32, face.z() as f32);
+    let normal = cpu_proxy_face_normal(face.face());
+    let corners = cpu_proxy_face_corners(base, face.face());
+    let uvs = cpu_array_mesh_face_uvs(face.face());
+    let tile = face.tile();
+
+    for idx in [0usize, 2, 1, 0, 3, 2] {
+        vertices.push((corners[idx], normal, atlas_uv(uvs[idx], tile)));
+    }
+}
+
+fn append_cpu_array_mesh_face_to_arrays(
+    face: PackedFace,
+    vertices: &mut Vec<Vector3>,
+    normals: &mut Vec<Vector3>,
+    out_uvs: &mut Vec<Vector2>,
+) {
+    let base = Vector3::new(face.x() as f32, face.y() as f32, face.z() as f32);
+    let normal = cpu_proxy_face_normal(face.face());
+    let corners = cpu_proxy_face_corners(base, face.face());
+    let uvs = cpu_array_mesh_face_uvs(face.face());
+    let tile = face.tile();
+
+    for idx in [0usize, 2, 1, 0, 3, 2] {
+        vertices.push(corners[idx]);
+        normals.push(normal);
+        out_uvs.push(atlas_uv(uvs[idx], tile));
     }
 }
 
@@ -195,6 +272,40 @@ fn append_cpu_proxy_face_positions(face: PackedFace, vertices: &mut Vec<Vector3>
     for idx in [0usize, 2, 1, 0, 3, 2] {
         vertices.push(corners[idx]);
     }
+}
+
+fn cpu_array_mesh_face_uvs(face_idx: u32) -> [Vector2; 4] {
+    match face_idx {
+        FACE_LEFT | FACE_RIGHT => [
+            Vector2::new(0.0, 1.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1.0, 0.0),
+            Vector2::new(1.0, 1.0),
+        ],
+        FACE_BACK => [
+            Vector2::new(1.0, 1.0),
+            Vector2::new(0.0, 1.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1.0, 0.0),
+        ],
+        FACE_FRONT => [
+            Vector2::new(0.0, 1.0),
+            Vector2::new(1.0, 1.0),
+            Vector2::new(1.0, 0.0),
+            Vector2::new(0.0, 0.0),
+        ],
+        _ => [
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 1.0),
+            Vector2::new(1.0, 1.0),
+            Vector2::new(1.0, 0.0),
+        ],
+    }
+}
+
+fn atlas_uv(tile_uv: Vector2, tile_index: u32) -> Vector2 {
+    let (u, v) = blocks::texture_atlas_uv((tile_uv.x, tile_uv.y), tile_index);
+    Vector2::new(u, v)
 }
 
 fn cpu_proxy_face_normal(face_idx: u32) -> Vector3 {
@@ -2000,6 +2111,87 @@ mod tests {
         assert_eq!(proxy[0], Vector3::new(1.0, 3.0, 3.0));
         assert_eq!(proxy[1], Vector3::new(2.0, 3.0, 4.0));
         assert_eq!(proxy[2], Vector3::new(1.0, 3.0, 4.0));
+    }
+
+    #[test]
+    fn cpu_array_mesh_uses_packed_face_geometry_normals_and_uvs() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS)],
+        };
+
+        let mesh = batch.cpu_array_mesh_vertices();
+
+        assert_eq!(mesh.len(), 6);
+        assert_eq!(
+            mesh[0],
+            (
+                Vector3::new(1.0, 3.0, 3.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector2::new(0.7, 0.0)
+            )
+        );
+        assert_eq!(
+            mesh[1],
+            (
+                Vector3::new(2.0, 3.0, 4.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector2::new(0.8, 1.0)
+            )
+        );
+        assert_eq!(
+            mesh[2],
+            (
+                Vector3::new(1.0, 3.0, 4.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector2::new(0.7, 1.0)
+            )
+        );
+    }
+
+    #[test]
+    fn cpu_array_mesh_keeps_grass_face_tiles_in_atlas_uvs() {
+        let mut blocks_data = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        write_block(&mut blocks_data, 1, 1, 1, blocks::GRASS as u16);
+
+        let batch = build_packed_faces(&blocks_data);
+        let top_face = batch
+            .faces()
+            .iter()
+            .find(|face| face.face() == FACE_TOP)
+            .expect("grass top face");
+        let side_face = batch
+            .faces()
+            .iter()
+            .find(|face| face.face() == FACE_LEFT)
+            .expect("grass side face");
+        let bottom_face = batch
+            .faces()
+            .iter()
+            .find(|face| face.face() == FACE_BOTTOM)
+            .expect("grass bottom face");
+
+        let mut top_vertices = Vec::new();
+        append_cpu_array_mesh_face(*top_face, &mut top_vertices);
+        let mut side_vertices = Vec::new();
+        append_cpu_array_mesh_face(*side_face, &mut side_vertices);
+        let mut bottom_vertices = Vec::new();
+        append_cpu_array_mesh_face(*bottom_face, &mut bottom_vertices);
+
+        assert_eq!(top_vertices[0].2, Vector2::new(0.0, 0.0));
+        assert_eq!(side_vertices[0].2, Vector2::new(0.1, 1.0));
+        assert_eq!(bottom_vertices[0].2, Vector2::new(0.2, 0.0));
+    }
+
+    #[test]
+    fn cpu_array_mesh_respects_vertex_cap_by_whole_faces() {
+        let face_count = MAX_CPU_ARRAY_MESH_VERTICES / 6 + 4;
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS); face_count],
+        };
+
+        let mesh = batch.cpu_array_mesh_vertices();
+
+        assert_eq!(mesh.len(), MAX_CPU_ARRAY_MESH_VERTICES / 6 * 6);
     }
 
     #[test]
