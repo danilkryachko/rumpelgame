@@ -201,7 +201,7 @@ run_shadow_case() {
       RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
       RUMPELMC_VISUAL_SMOKE_HIDE_HUD=1 \
       RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1 \
-      "$GODOT_BIN" --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
+      "$GODOT_BIN" --disable-vsync --max-fps 0 --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
   )
 
   validate_shadow_marker "$marker_path" "$shadow_mesh"
@@ -233,7 +233,7 @@ run_collision_case() {
       RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
       RUMPELMC_VISUAL_SMOKE_HIDE_HUD=1 \
       RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1 \
-      "$GODOT_BIN" --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
+      "$GODOT_BIN" --disable-vsync --max-fps 0 --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
   )
 
   validate_collision_marker "$marker_path"
@@ -258,7 +258,7 @@ run_shadow_disabled_case() {
       RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
       RUMPELMC_VISUAL_SMOKE_HIDE_HUD=1 \
       RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1 \
-      "$GODOT_BIN" --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
+      "$GODOT_BIN" --disable-vsync --max-fps 0 --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
   )
 
   validate_shadow_disabled_marker "$marker_path"
