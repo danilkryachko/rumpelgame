@@ -1693,6 +1693,14 @@ fn gpu_subchunk_key(key: SubchunkKey) -> gpu_terrain::GpuSubchunkKey {
     }
 }
 
+fn rust_ext_build_profile() -> &'static str {
+    if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    }
+}
+
 fn chunk_neighbors(x: i32, z: i32) -> [(i32, i32); 4] {
     [(x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)]
 }
@@ -2529,7 +2537,8 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} mesh {:.2}/{:.2}/{:.2}ms mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} mesh {:.2}/{:.2}/{:.2}ms mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
             self.perf.mesh_queue_enqueues,
@@ -3350,6 +3359,17 @@ mod tests {
         assert!(chunk_subchunk_has_blocks(&blocks, 4));
         assert!(!chunk_subchunk_has_blocks(&blocks, 1));
         assert_eq!(compute_chunk_non_empty_subchunks(&[]), 0);
+    }
+
+    #[test]
+    fn rust_ext_build_profile_tracks_debug_assertions() {
+        let expected = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
+
+        assert_eq!(rust_ext_build_profile(), expected);
     }
 
     #[test]

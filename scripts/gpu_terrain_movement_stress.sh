@@ -80,6 +80,7 @@ grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke su
 grep -q 'motion="chunk_walk"' "$marker_path" || fail "unexpected motion in $marker_path"
 grep -q 'current_chunk="3,2"' "$marker_path" || fail "movement did not finish in chunk 3,2"
 grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
+require_godot_rust_ext_marker_profile "$marker_path"
 require_metric_ge "$marker_path" "motion_steps" 4
 require_metric_ge "$marker_path" "motion_chunks" "$MIN_MOTION_CHUNKS"
 require_metric_ge "$marker_path" "frame_samples" 10

@@ -77,6 +77,9 @@ require_marker() {
   grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke summary in $marker_path"
   grep -q "pose=\"$SMOKE_POSE\"" "$marker_path" || fail "unexpected pose in $marker_path"
   grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
+  if [ "$CAPTURE" = "1" ]; then
+    require_godot_rust_ext_marker_profile "$marker_path"
+  fi
   samples="$(metric frame_samples "$marker_path")"
   test -n "$samples" || fail "missing frame_samples in $marker_path"
   if [ "$samples" -lt 10 ]; then

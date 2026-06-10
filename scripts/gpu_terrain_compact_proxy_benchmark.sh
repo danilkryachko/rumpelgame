@@ -98,6 +98,9 @@ validate_shadow_marker() {
   grep -q "shadow_mesh=$expected_shadow_mesh" "$marker_path" || fail "unexpected shadow mesh in $marker_path"
   grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"
   grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
+  if [ "$CAPTURE" = "1" ]; then
+    require_godot_rust_ext_marker_profile "$marker_path"
+  fi
   require_metric_ge "$marker_path" "terrain_samples" 1
   require_metric_ge "$marker_path" "gpu_frames" 1
   require_metric_ge "$marker_path" "gpu_subchunks" 1
@@ -123,6 +126,9 @@ validate_collision_marker() {
   grep -q "shadow_mesh=full" "$marker_path" || fail "unexpected shadow mesh in $marker_path"
   grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"
   grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
+  if [ "$CAPTURE" = "1" ]; then
+    require_godot_rust_ext_marker_profile "$marker_path"
+  fi
   require_metric_ge "$marker_path" "terrain_samples" 1
   require_metric_ge "$marker_path" "gpu_frames" 1
   require_metric_ge "$marker_path" "gpu_subchunks" 1
@@ -154,6 +160,9 @@ validate_shadow_disabled_marker() {
   grep -q "shadow_mesh=full" "$marker_path" || fail "unexpected shadow mesh in $marker_path"
   grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"
   grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
+  if [ "$CAPTURE" = "1" ]; then
+    require_godot_rust_ext_marker_profile "$marker_path"
+  fi
   require_metric_ge "$marker_path" "terrain_samples" 1
   require_metric_ge "$marker_path" "gpu_frames" 1
   require_metric_ge "$marker_path" "gpu_subchunks" 1

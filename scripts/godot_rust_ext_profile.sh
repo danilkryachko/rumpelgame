@@ -16,9 +16,31 @@ restore_godot_rust_ext_profile() {
   fi
 }
 
+godot_rust_ext_expected_profile() {
+  profile="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}"
+  case "$profile" in
+    debug|release)
+      printf '%s\n' "$profile"
+      ;;
+    *)
+      echo "godot_rust_ext_profile: unsupported RUMPELMC_GODOT_RUST_EXT_PROFILE=$profile" >&2
+      exit 2
+      ;;
+  esac
+}
+
+require_godot_rust_ext_marker_profile() {
+  marker_path="$1"
+  expected_profile="$(godot_rust_ext_expected_profile)"
+  grep -q "rust_ext_profile=$expected_profile" "$marker_path" || {
+    echo "godot_rust_ext_profile: expected rust_ext_profile=$expected_profile in $marker_path" >&2
+    exit 1
+  }
+}
+
 prepare_godot_rust_ext_profile() {
   root_dir="$1"
-  profile="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}"
+  profile="$(godot_rust_ext_expected_profile)"
 
   case "$profile" in
     debug)
@@ -26,10 +48,6 @@ prepare_godot_rust_ext_profile() {
       return 0
       ;;
     release) ;;
-    *)
-      echo "godot_rust_ext_profile: unsupported RUMPELMC_GODOT_RUST_EXT_PROFILE=$profile" >&2
-      exit 2
-      ;;
   esac
 
   case "$(uname -s)" in
