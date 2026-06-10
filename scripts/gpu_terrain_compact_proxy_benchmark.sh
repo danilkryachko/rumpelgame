@@ -15,9 +15,11 @@ GODOT_QUIT_AFTER_FRAMES="${GODOT_QUIT_AFTER_FRAMES:-8000}"
 SMOKE_DELAY_SEC="${SMOKE_DELAY_SEC:-3.0}"
 SMOKE_POSE="${SMOKE_POSE:-lighting_shadow}"
 COLLISION_SMOKE_POSE="${RUMPELMC_COMPACT_PROXY_BENCH_COLLISION_POSE:-default}"
+SHADOW_DISABLED_SMOKE_POSE="${RUMPELMC_COMPACT_PROXY_BENCH_SHADOW_DISABLED_POSE:-default}"
 FULL_MARKER="${RUMPELMC_COMPACT_PROXY_BENCH_FULL_MARKER:-}"
 COMPACT_MARKER="${RUMPELMC_COMPACT_PROXY_BENCH_COMPACT_MARKER:-}"
 COLLISION_MARKER="${RUMPELMC_COMPACT_PROXY_BENCH_COLLISION_MARKER:-}"
+SHADOW_DISABLED_MARKER="${RUMPELMC_COMPACT_PROXY_BENCH_SHADOW_DISABLED_MARKER:-}"
 
 mkdir -p "$OUT_DIR"
 
@@ -137,6 +139,37 @@ validate_collision_marker() {
     "$(metric "compact_collision_proxy" "$marker_path")"
 }
 
+validate_shadow_disabled_marker() {
+  marker_path="$1"
+  screenshot_path="${marker_path%.txt}"
+
+  test -s "$screenshot_path" || fail "missing screenshot $screenshot_path"
+  test -s "$marker_path" || fail "missing marker $marker_path"
+  grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke summary in $marker_path"
+  grep -q "pose=\"$SHADOW_DISABLED_SMOKE_POSE\"" "$marker_path" || fail "unexpected pose in $marker_path"
+  grep -q "shadow_path=scene_shadows_disabled" "$marker_path" || fail "unexpected shadow path in $marker_path"
+  grep -q "shadow_mode=conservative" "$marker_path" || fail "unexpected shadow mode in $marker_path"
+  grep -q "shadow_mesh=full" "$marker_path" || fail "unexpected shadow mesh in $marker_path"
+  grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"
+  grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
+  require_metric_ge "$marker_path" "terrain_samples" 1
+  require_metric_ge "$marker_path" "gpu_frames" 1
+  require_metric_ge "$marker_path" "gpu_subchunks" 1
+  require_metric_ge "$marker_path" "gpu_faces" 1
+  require_metric_ge "$marker_path" "proxy_coll" 1
+  require_metric_eq "$marker_path" "proxy_shadow" 0
+  require_metric_eq "$marker_path" "proxy_both" 0
+  require_metric_eq "$marker_path" "proxy_shadow_only" 0
+  require_metric_eq "$marker_path" "compact_shadow_proxy" 0
+  require_metric_eq "$marker_path" "compact_shadow_normals_saved" 0
+  require_metric_ge "$marker_path" "fast_proxy" 1
+  require_metric_eq "$marker_path" "compact_collision_proxy" "$(metric "fast_proxy" "$marker_path")"
+  require_metric_ge \
+    "$marker_path" \
+    "compact_collision_normals_saved" \
+    "$(metric "compact_collision_proxy" "$marker_path")"
+}
+
 run_shadow_case() {
   shadow_mesh="$1"
   screenshot_path="$OUT_DIR/gpu-terrain-$shadow_mesh.png"
@@ -195,6 +228,31 @@ run_collision_case() {
   validate_collision_marker "$marker_path"
 }
 
+run_shadow_disabled_case() {
+  screenshot_path="$OUT_DIR/gpu-terrain-shadow-disabled.png"
+  marker_path="$screenshot_path.txt"
+
+  rm -f "$screenshot_path" "$marker_path"
+
+  echo "==> GPU terrain compact proxy benchmark: shadow_radius=0"
+  (
+    cd "$ROOT_DIR"
+    "$TIMEOUT_BIN" "$GODOT_TIMEOUT_SEC" /usr/bin/env \
+      RUMPELMC_GPU_TERRAIN_RENDER=1 \
+      RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE=0 \
+      RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE=conservative \
+      RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=full \
+      RUMPELMC_VISUAL_SMOKE_POSE="$SHADOW_DISABLED_SMOKE_POSE" \
+      RUMPELMC_VISUAL_SMOKE_PATH="$screenshot_path" \
+      RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
+      RUMPELMC_VISUAL_SMOKE_HIDE_HUD=1 \
+      RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1 \
+      "$GODOT_BIN" --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
+  )
+
+  validate_shadow_disabled_marker "$marker_path"
+}
+
 print_row() {
   label="$1"
   marker_path="$2"
@@ -218,9 +276,11 @@ print_row() {
 if [ "$CAPTURE" = "1" ]; then
   run_shadow_case full
   run_shadow_case compact
+  run_shadow_disabled_case
   run_collision_case
   full_marker="$OUT_DIR/gpu-terrain-full.png.txt"
   compact_marker="$OUT_DIR/gpu-terrain-compact.png.txt"
+  shadow_disabled_marker="$OUT_DIR/gpu-terrain-shadow-disabled.png.txt"
   collision_marker="$OUT_DIR/gpu-terrain-collision-only.png.txt"
 else
   if [ -z "$FULL_MARKER" ]; then
@@ -232,11 +292,16 @@ else
   if [ -z "$COLLISION_MARKER" ]; then
     COLLISION_MARKER="$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
   fi
+  if [ -z "$SHADOW_DISABLED_MARKER" ]; then
+    SHADOW_DISABLED_MARKER="$OUT_DIR/gpu-terrain-shadow-disabled-parity.png.txt"
+  fi
   full_marker="$FULL_MARKER"
   compact_marker="$COMPACT_MARKER"
+  shadow_disabled_marker="$SHADOW_DISABLED_MARKER"
   collision_marker="$COLLISION_MARKER"
   validate_shadow_marker "$full_marker" full
   validate_shadow_marker "$compact_marker" compact
+  validate_shadow_disabled_marker "$shadow_disabled_marker"
   validate_collision_marker "$collision_marker"
   require_metric_eq "$full_marker" "compact_shadow_proxy" 0
   require_metric_eq "$full_marker" "compact_shadow_normals_saved" 0
@@ -248,6 +313,7 @@ echo
 echo "Compact proxy benchmark summary:"
 print_row full "$full_marker"
 print_row compact "$compact_marker"
+print_row shadow_disabled "$shadow_disabled_marker"
 print_row collision_only "$collision_marker"
 
 full_normals="$(normal_total "$full_marker")"
@@ -262,17 +328,24 @@ if [ -n "$full_normals" ] && [ -n "$compact_normals" ] && [ "$full_normals" -gt 
   '
 fi
 
-collision_normals="$(normal_total "$collision_marker")"
-collision_normals_saved="$(metric "compact_collision_normals_saved" "$collision_marker")"
-if [ -n "$collision_normals" ] && [ -n "$collision_normals_saved" ]; then
-  awk -v normals="$collision_normals" -v saved="$collision_normals_saved" '
+print_collision_payload_reduction() {
+  label="$1"
+  marker_path="$2"
+  collision_normals="$(normal_total "$marker_path")"
+  collision_normals_saved="$(metric "compact_collision_normals_saved" "$marker_path")"
+  if [ -n "$collision_normals" ] && [ -n "$collision_normals_saved" ]; then
+    awk -v label="$label" -v normals="$collision_normals" -v saved="$collision_normals_saved" '
     BEGIN {
       baseline = normals + saved
       pct = 0.0
       if (baseline > 0) {
         pct = saved * 100.0 / baseline
       }
-      printf("collision_normal_payload_saved=%d collision_normal_payload_reduction=%.1f%%\n", saved, pct)
+      printf("%s_collision_normal_payload_saved=%d %s_collision_normal_payload_reduction=%.1f%%\n", label, saved, label, pct)
     }
   '
-fi
+  fi
+}
+
+print_collision_payload_reduction shadow_disabled "$shadow_disabled_marker"
+print_collision_payload_reduction collision_only "$collision_marker"
