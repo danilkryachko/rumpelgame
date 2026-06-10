@@ -596,19 +596,28 @@ impl GameClient {
         }
         let mesh_ms = build_start.elapsed().as_secs_f64() * 1000.0;
 
+        let render_mode =
+            TerrainMeshRenderMode::from_proxy_state(cpu_proxy_mesh, should_have_shadow_proxy);
+        let build_render_surface = render_mode.needs_render_surface();
         let array_mesh_start = Instant::now();
-        let mut arrays = Array::new();
-        arrays.resize(13, &Variant::nil());
-        arrays.set(0, &vertices.to_variant());
-        if !normals.is_empty() {
-            arrays.set(1, &normals.to_variant());
-        }
-        if !uvs.is_empty() {
-            arrays.set(4, &uvs.to_variant());
-        }
+        let array_mesh: Option<Gd<godot::classes::Mesh>> = if build_render_surface {
+            let mut arrays = Array::new();
+            arrays.resize(13, &Variant::nil());
+            arrays.set(0, &vertices.to_variant());
+            if !normals.is_empty() {
+                arrays.set(1, &normals.to_variant());
+            }
+            if !uvs.is_empty() {
+                arrays.set(4, &uvs.to_variant());
+            }
 
-        let mut array_mesh = godot::classes::ArrayMesh::new_gd();
-        array_mesh.add_surface_from_arrays(godot::classes::mesh::PrimitiveType::TRIANGLES, &arrays);
+            let mut array_mesh = godot::classes::ArrayMesh::new_gd();
+            array_mesh
+                .add_surface_from_arrays(godot::classes::mesh::PrimitiveType::TRIANGLES, &arrays);
+            Some(array_mesh.upcast::<godot::classes::Mesh>())
+        } else {
+            None
+        };
         let array_mesh_ms = array_mesh_start.elapsed().as_secs_f64() * 1000.0;
 
         let mesh_name = subchunk_mesh_name(key);
@@ -624,7 +633,7 @@ impl GameClient {
             .base()
             .try_get_node_as::<godot::classes::MeshInstance3D>(&mesh_name)
         {
-            mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
+            set_mesh_instance_surface(&mut mesh_instance, array_mesh.as_ref());
             mesh_instance.set_position(chunk_position);
             configure_terrain_mesh_render_mode(
                 &mut mesh_instance,
@@ -632,8 +641,10 @@ impl GameClient {
                 should_have_shadow_proxy,
             );
 
-            let material = self.get_chunk_material();
-            mesh_instance.set_material_override(&material);
+            if build_render_surface {
+                let material = self.get_chunk_material();
+                mesh_instance.set_material_override(&material);
+            }
 
             clear_mesh_collisions(&mut mesh_instance);
             if should_have_collision {
@@ -644,15 +655,17 @@ impl GameClient {
             let mut mesh_instance = godot::classes::MeshInstance3D::new_alloc();
             mesh_instance.set_name(&StringName::from(&mesh_name));
             mesh_instance.set_position(chunk_position);
-            mesh_instance.set_mesh(&array_mesh.upcast::<godot::classes::Mesh>());
+            set_mesh_instance_surface(&mut mesh_instance, array_mesh.as_ref());
             configure_terrain_mesh_render_mode(
                 &mut mesh_instance,
                 cpu_proxy_mesh,
                 should_have_shadow_proxy,
             );
 
-            let material = self.get_chunk_material();
-            mesh_instance.set_material_override(&material);
+            if build_render_surface {
+                let material = self.get_chunk_material();
+                mesh_instance.set_material_override(&material);
+            }
 
             let mesh_node = mesh_instance.clone().upcast::<godot::classes::Node>();
             self.base_mut().add_child(&mesh_node);
@@ -2197,7 +2210,9 @@ impl TerrainCpuProxyMeshPayload {
     fn can_satisfy(self, desired: Self) -> bool {
         self == desired
             || !self.uses_compact_mesh()
-            || (self.uses_compact_mesh() && desired.uses_compact_mesh())
+            // Collision-only compact proxies are meshless, so only a compact shadow surface can
+            // satisfy another compact role without rebuilding.
+            || (self.compact_shadow_proxy_mesh && desired.uses_compact_mesh())
     }
 }
 
@@ -2533,6 +2548,10 @@ impl TerrainMeshRenderMode {
         !matches!(self, Self::CollisionOnly)
     }
 
+    fn needs_render_surface(self) -> bool {
+        !matches!(self, Self::CollisionOnly)
+    }
+
     fn shadow_setting(self) -> godot::classes::geometry_instance_3d::ShadowCastingSetting {
         match self {
             Self::VisibleDoubleSided => {
@@ -2554,6 +2573,17 @@ fn configure_terrain_mesh_render_mode(
     let mode = TerrainMeshRenderMode::from_proxy_state(cpu_proxy_mesh, needs_shadow_proxy);
     mesh_instance.set_visible(mode.is_visible());
     mesh_instance.set_cast_shadows_setting(mode.shadow_setting());
+}
+
+fn set_mesh_instance_surface(
+    mesh_instance: &mut Gd<godot::classes::MeshInstance3D>,
+    mesh: Option<&Gd<godot::classes::Mesh>>,
+) {
+    if let Some(mesh) = mesh {
+        mesh_instance.set_mesh(mesh);
+    } else {
+        mesh_instance.set_mesh(Gd::<godot::classes::Mesh>::null_arg());
+    }
 }
 
 fn clear_mesh_collisions(mesh_instance: &mut Gd<godot::classes::MeshInstance3D>) {
@@ -3372,7 +3402,7 @@ mod tests {
         assert!(shadow_only.can_satisfy(collision_only));
         assert!(collision_only.can_satisfy(collision_only));
         assert!(!collision_only.can_satisfy(full));
-        assert!(collision_only.can_satisfy(shadow_only));
+        assert!(!collision_only.can_satisfy(shadow_only));
     }
 
     #[test]
@@ -3400,6 +3430,10 @@ mod tests {
             ProxyRefreshQueueAction::ReuseCpuProxy
         );
         assert_eq!(
+            proxy_refresh_queue_action(true, true, true, Some(collision_only), shadow_only),
+            ProxyRefreshQueueAction::BuildMesh
+        );
+        assert_eq!(
             proxy_refresh_queue_action(false, true, false, Some(full), full),
             ProxyRefreshQueueAction::BuildMesh
         );
@@ -3414,6 +3448,7 @@ mod tests {
         let fallback = TerrainMeshRenderMode::from_proxy_state(false, false);
         assert_eq!(fallback, TerrainMeshRenderMode::VisibleDoubleSided);
         assert!(fallback.is_visible());
+        assert!(fallback.needs_render_surface());
         assert_eq!(
             fallback.shadow_setting(),
             godot::classes::geometry_instance_3d::ShadowCastingSetting::DOUBLE_SIDED
@@ -3426,6 +3461,7 @@ mod tests {
         let shadow_proxy = TerrainMeshRenderMode::from_proxy_state(true, true);
         assert_eq!(shadow_proxy, TerrainMeshRenderMode::ShadowsOnly);
         assert!(shadow_proxy.is_visible());
+        assert!(shadow_proxy.needs_render_surface());
         assert_eq!(
             shadow_proxy.shadow_setting(),
             godot::classes::geometry_instance_3d::ShadowCastingSetting::SHADOWS_ONLY
@@ -3434,6 +3470,7 @@ mod tests {
         let collision_only = TerrainMeshRenderMode::from_proxy_state(true, false);
         assert_eq!(collision_only, TerrainMeshRenderMode::CollisionOnly);
         assert!(!collision_only.is_visible());
+        assert!(!collision_only.needs_render_surface());
         assert_eq!(
             collision_only.shadow_setting(),
             godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF
