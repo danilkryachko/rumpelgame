@@ -85,6 +85,7 @@ require_metric_ge "$marker_path" "queue_enq" 1
 require_metric_ge "$marker_path" "queue_drained" 1
 require_metric_ge "$marker_path" "queue_stale" 0
 require_metric_ge "$marker_path" "queue_missing" 0
+require_metric_ge "$marker_path" "proxy_refresh_reuse" 0
 require_metric_ge "$marker_path" "gpu_frames" 1
 require_metric_ge "$marker_path" "gpu_subchunks" 1
 require_metric_ge "$marker_path" "gpu_uploads" 1
