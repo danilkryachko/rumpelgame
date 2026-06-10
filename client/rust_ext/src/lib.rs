@@ -867,11 +867,16 @@ impl GameClient {
     fn refresh_chunk_collisions(&mut self, chunk_x: i32, chunk_z: i32) -> CollisionRefreshBatch {
         let mut batch = CollisionRefreshBatch::default();
         for sub_y in 0..SUBCHUNKS_PER_CHUNK {
-            batch.record(self.refresh_subchunk_collision(SubchunkKey {
+            let key = SubchunkKey {
                 chunk_x,
                 sub_y,
                 chunk_z,
-            }));
+            };
+            if !self.subchunk_has_blocks(chunk_x, sub_y, chunk_z) {
+                batch.record(CollisionRefreshResult::SkippedEmpty);
+                continue;
+            }
+            batch.record(self.refresh_subchunk_collision(key));
         }
         batch
     }
@@ -1161,6 +1166,7 @@ impl MeshQueueReason {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CollisionRefreshResult {
+    SkippedEmpty,
     MissingMesh,
     Unchanged,
     Rebuilt,
@@ -1169,6 +1175,7 @@ enum CollisionRefreshResult {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct CollisionRefreshBatch {
     checked: usize,
+    skipped_empty: usize,
     missing_meshes: usize,
     unchanged: usize,
     rebuilt: usize,
@@ -1178,6 +1185,7 @@ impl CollisionRefreshBatch {
     fn record(&mut self, result: CollisionRefreshResult) {
         self.checked += 1;
         match result {
+            CollisionRefreshResult::SkippedEmpty => self.skipped_empty += 1,
             CollisionRefreshResult::MissingMesh => self.missing_meshes += 1,
             CollisionRefreshResult::Unchanged => self.unchanged += 1,
             CollisionRefreshResult::Rebuilt => self.rebuilt += 1,
@@ -1186,6 +1194,7 @@ impl CollisionRefreshBatch {
 
     fn add(&mut self, other: Self) {
         self.checked += other.checked;
+        self.skipped_empty += other.skipped_empty;
         self.missing_meshes += other.missing_meshes;
         self.unchanged += other.unchanged;
         self.rebuilt += other.rebuilt;
@@ -1249,10 +1258,12 @@ struct PerfStats {
     avg_collision_ms: f64,
     max_collision_ms: f64,
     collision_refresh_checked: u64,
+    collision_refresh_skipped_empty: u64,
     collision_refresh_missing_meshes: u64,
     collision_refresh_unchanged: u64,
     collision_refresh_rebuilt: u64,
     last_collision_refresh_checked: usize,
+    last_collision_refresh_skipped_empty: usize,
     last_collision_refresh_missing_meshes: usize,
     last_collision_refresh_unchanged: usize,
     last_collision_refresh_rebuilt: usize,
@@ -1399,10 +1410,12 @@ impl PerfStats {
 
     fn record_collision_refresh(&mut self, batch: CollisionRefreshBatch) {
         self.collision_refresh_checked += batch.checked as u64;
+        self.collision_refresh_skipped_empty += batch.skipped_empty as u64;
         self.collision_refresh_missing_meshes += batch.missing_meshes as u64;
         self.collision_refresh_unchanged += batch.unchanged as u64;
         self.collision_refresh_rebuilt += batch.rebuilt as u64;
         self.last_collision_refresh_checked = batch.checked;
+        self.last_collision_refresh_skipped_empty = batch.skipped_empty;
         self.last_collision_refresh_missing_meshes = batch.missing_meshes;
         self.last_collision_refresh_unchanged = batch.unchanged;
         self.last_collision_refresh_rebuilt = batch.rebuilt;
@@ -2345,7 +2358,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} mesh {:.2}/{:.2}/{:.2}ms gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
             self.perf.mesh_queue_enqueues,
@@ -2385,10 +2398,12 @@ impl GameClient {
             self.perf.cpu_proxy_refreshes_reused,
             self.perf.node_counts.total_collision_bodies,
             self.perf.collision_refresh_checked,
+            self.perf.collision_refresh_skipped_empty,
             self.perf.collision_refresh_rebuilt,
             self.perf.collision_refresh_unchanged,
             self.perf.collision_refresh_missing_meshes,
             self.perf.last_collision_refresh_checked,
+            self.perf.last_collision_refresh_skipped_empty,
             self.perf.last_collision_refresh_rebuilt,
             self.perf.last_collision_refresh_unchanged,
             self.perf.last_collision_refresh_missing_meshes,
@@ -3146,6 +3161,7 @@ mod tests {
     #[test]
     fn perf_records_collision_refresh_churn() {
         let mut first = CollisionRefreshBatch::default();
+        first.record(CollisionRefreshResult::SkippedEmpty);
         first.record(CollisionRefreshResult::MissingMesh);
         first.record(CollisionRefreshResult::Unchanged);
 
@@ -3153,7 +3169,8 @@ mod tests {
         second.record(CollisionRefreshResult::Rebuilt);
         first.add(second);
 
-        assert_eq!(first.checked, 3);
+        assert_eq!(first.checked, 4);
+        assert_eq!(first.skipped_empty, 1);
         assert_eq!(first.missing_meshes, 1);
         assert_eq!(first.unchanged, 1);
         assert_eq!(first.rebuilt, 1);
@@ -3162,11 +3179,13 @@ mod tests {
         perf.record_collision_refresh(first);
         perf.record_collision_refresh(second);
 
-        assert_eq!(perf.collision_refresh_checked, 4);
+        assert_eq!(perf.collision_refresh_checked, 5);
+        assert_eq!(perf.collision_refresh_skipped_empty, 1);
         assert_eq!(perf.collision_refresh_missing_meshes, 1);
         assert_eq!(perf.collision_refresh_unchanged, 1);
         assert_eq!(perf.collision_refresh_rebuilt, 2);
         assert_eq!(perf.last_collision_refresh_checked, 1);
+        assert_eq!(perf.last_collision_refresh_skipped_empty, 0);
         assert_eq!(perf.last_collision_refresh_missing_meshes, 0);
         assert_eq!(perf.last_collision_refresh_unchanged, 0);
         assert_eq!(perf.last_collision_refresh_rebuilt, 1);
