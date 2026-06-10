@@ -371,16 +371,6 @@ fn upload_failure_kind(stats: FaceAllocatorStats, requested_faces: usize) -> Upl
     }
 }
 
-#[derive(Clone, Copy)]
-struct FaceCandidate {
-    x: usize,
-    y: usize,
-    z: usize,
-    block_id: u32,
-    face: u32,
-    neighbor: (usize, usize, usize),
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct GpuTerrainSlot {
     pub start_face: usize,
@@ -1624,86 +1614,93 @@ fn sanitize_non_negative(value: f32, fallback: f32) -> f32 {
 }
 
 pub fn build_packed_faces(padded_blocks: &[u8]) -> PackedFaceBatch {
-    let mut faces = Vec::new();
+    let block_lookup = PackedBlockLookup::from_definitions();
+    let mut faces = Vec::with_capacity(4096);
 
     for y in 0..SUBCHUNK_H {
         for z in 0..CHUNK_D {
             for x in 0..CHUNK_W {
                 let block_id = padded_block(padded_blocks, x + 1, y + 1, z + 1);
-                if !is_solid(block_id) {
+                let Some(block_info) = block_lookup.info(block_id) else {
                     continue;
-                }
+                };
 
                 push_visible_face(
                     &mut faces,
-                    padded_blocks,
+                    &block_lookup,
+                    block_info,
                     FaceCandidate {
                         x,
                         y,
                         z,
                         block_id,
                         face: FACE_LEFT,
-                        neighbor: (x, y + 1, z + 1),
+                        neighbor_block_id: padded_block(padded_blocks, x, y + 1, z + 1),
                     },
                 );
                 push_visible_face(
                     &mut faces,
-                    padded_blocks,
+                    &block_lookup,
+                    block_info,
                     FaceCandidate {
                         x,
                         y,
                         z,
                         block_id,
                         face: FACE_RIGHT,
-                        neighbor: (x + 2, y + 1, z + 1),
+                        neighbor_block_id: padded_block(padded_blocks, x + 2, y + 1, z + 1),
                     },
                 );
                 push_visible_face(
                     &mut faces,
-                    padded_blocks,
+                    &block_lookup,
+                    block_info,
                     FaceCandidate {
                         x,
                         y,
                         z,
                         block_id,
                         face: FACE_BOTTOM,
-                        neighbor: (x + 1, y, z + 1),
+                        neighbor_block_id: padded_block(padded_blocks, x + 1, y, z + 1),
                     },
                 );
                 push_visible_face(
                     &mut faces,
-                    padded_blocks,
+                    &block_lookup,
+                    block_info,
                     FaceCandidate {
                         x,
                         y,
                         z,
                         block_id,
                         face: FACE_TOP,
-                        neighbor: (x + 1, y + 2, z + 1),
+                        neighbor_block_id: padded_block(padded_blocks, x + 1, y + 2, z + 1),
                     },
                 );
                 push_visible_face(
                     &mut faces,
-                    padded_blocks,
+                    &block_lookup,
+                    block_info,
                     FaceCandidate {
                         x,
                         y,
                         z,
                         block_id,
                         face: FACE_BACK,
-                        neighbor: (x + 1, y + 1, z),
+                        neighbor_block_id: padded_block(padded_blocks, x + 1, y + 1, z),
                     },
                 );
                 push_visible_face(
                     &mut faces,
-                    padded_blocks,
+                    &block_lookup,
+                    block_info,
                     FaceCandidate {
                         x,
                         y,
                         z,
                         block_id,
                         face: FACE_FRONT,
-                        neighbor: (x + 1, y + 1, z + 2),
+                        neighbor_block_id: padded_block(padded_blocks, x + 1, y + 1, z + 2),
                     },
                 );
             }
@@ -1713,30 +1710,91 @@ pub fn build_packed_faces(padded_blocks: &[u8]) -> PackedFaceBatch {
     PackedFaceBatch { faces }
 }
 
-fn push_visible_face(faces: &mut Vec<PackedFace>, padded_blocks: &[u8], candidate: FaceCandidate) {
-    let neighbor = candidate.neighbor;
-    if is_solid(padded_block(
-        padded_blocks,
-        neighbor.0,
-        neighbor.1,
-        neighbor.2,
-    )) {
+#[derive(Clone, Copy)]
+struct FaceCandidate {
+    x: usize,
+    y: usize,
+    z: usize,
+    block_id: u32,
+    face: u32,
+    neighbor_block_id: u32,
+}
+
+fn push_visible_face(
+    faces: &mut Vec<PackedFace>,
+    block_lookup: &PackedBlockLookup,
+    block_info: PackedBlockInfo,
+    candidate: FaceCandidate,
+) {
+    if block_lookup.is_solid(candidate.neighbor_block_id) {
         return;
     }
 
-    let tile = blocks::tile_for_face(candidate.block_id, candidate.face, FACE_TOP, FACE_BOTTOM);
     faces.push(PackedFace::new(
         candidate.x as u32,
         candidate.y as u32,
         candidate.z as u32,
         candidate.face,
-        tile,
+        block_info.tile_for_face(candidate.face),
         candidate.block_id,
     ));
 }
 
-fn is_solid(block_id: u32) -> bool {
-    blocks::is_opaque_solid(block_id)
+#[derive(Clone, Copy, Debug)]
+struct PackedBlockInfo {
+    top_tile: u32,
+    side_tile: u32,
+    bottom_tile: u32,
+}
+
+impl PackedBlockInfo {
+    fn tile_for_face(self, face: u32) -> u32 {
+        if face == FACE_TOP {
+            self.top_tile
+        } else if face == FACE_BOTTOM {
+            self.bottom_tile
+        } else {
+            self.side_tile
+        }
+    }
+}
+
+struct PackedBlockLookup {
+    blocks: Vec<Option<PackedBlockInfo>>,
+}
+
+impl PackedBlockLookup {
+    fn from_definitions() -> Self {
+        let max_id = blocks::definitions()
+            .iter()
+            .map(|block| block.id as usize)
+            .max()
+            .unwrap_or(0);
+        let mut blocks_by_id = vec![None; max_id + 1];
+        for block in blocks::definitions()
+            .iter()
+            .copied()
+            .filter(|block| blocks::is_opaque_solid(block.id))
+        {
+            blocks_by_id[block.id as usize] = Some(PackedBlockInfo {
+                top_tile: block.textures.top,
+                side_tile: block.textures.side,
+                bottom_tile: block.textures.bottom,
+            });
+        }
+
+        Self {
+            blocks: blocks_by_id,
+        }
+    }
+
+    fn info(&self, block_id: u32) -> Option<PackedBlockInfo> {
+        self.blocks.get(block_id as usize).copied().flatten()
+    }
+
+    fn is_solid(&self, block_id: u32) -> bool {
+        self.info(block_id).is_some()
+    }
 }
 
 fn padded_block(blocks: &[u8], x: usize, y: usize, z: usize) -> u32 {
