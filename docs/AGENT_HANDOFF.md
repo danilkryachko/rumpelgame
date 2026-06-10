@@ -318,6 +318,9 @@ Checks:
   - Added pure `terrain_cpu_proxy_mesh_active()` and routed both mesh-build planning and render-mode refresh through it. CPU nodes are treated as GPU-backed proxy meshes only when the GPU visible path is confirmed and the specific subchunk has a GPU slot.
   - Added a unit test that locks all four active/inactive combinations, protecting fallback meshes from being switched to proxy render modes without an actual GPU subchunk.
   - Checks passed: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo check --manifest-path client/rust_ext/Cargo.toml`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (38/38), `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 sh ./scripts/gpu_terrain_parity_smoke.sh`, `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full`, `git diff --check`, and `./scripts/diff_guard.sh`.
+- Latest GPU upload-failure fallback guard slice passed:
+  - Extended the mesh-build-plan unit test so an active GPU-visible path still returns `FullArrayMesh` when the specific subchunk has no GPU slot, even if there is no CPU proxy reason. This protects fallback rendering for per-subchunk upload failures.
+  - Checks passed: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (38/38), `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 sh ./scripts/gpu_terrain_parity_smoke.sh`, `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full`, `git diff --check`, and `./scripts/diff_guard.sh`.
 
 Useful log lines:
 

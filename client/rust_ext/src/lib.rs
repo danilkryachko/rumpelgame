@@ -2333,6 +2333,10 @@ mod tests {
             terrain_mesh_build_plan(false, true, true, true),
             TerrainMeshBuildPlan::FullArrayMesh
         );
+        assert_eq!(
+            terrain_mesh_build_plan(false, true, false, true),
+            TerrainMeshBuildPlan::FullArrayMesh
+        );
     }
 
     #[test]
