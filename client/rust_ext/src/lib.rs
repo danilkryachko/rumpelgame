@@ -1300,7 +1300,7 @@ fn terrain_mesh_build_plan(
     needs_cpu_proxy: bool,
     has_packed_faces: bool,
 ) -> TerrainMeshBuildPlan {
-    if uploaded_to_gpu && !needs_cpu_proxy {
+    if uploaded_to_gpu && gpu_visible_render_active && !needs_cpu_proxy {
         return TerrainMeshBuildPlan::RemoveCpuNode;
     }
     if uploaded_to_gpu && gpu_visible_render_active && has_packed_faces {
@@ -2308,6 +2308,10 @@ mod tests {
         );
         assert_eq!(
             terrain_mesh_build_plan(true, false, true, true),
+            TerrainMeshBuildPlan::FullArrayMesh
+        );
+        assert_eq!(
+            terrain_mesh_build_plan(true, false, false, true),
             TerrainMeshBuildPlan::FullArrayMesh
         );
         assert_eq!(
