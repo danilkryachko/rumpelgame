@@ -12,6 +12,7 @@ use godot::classes::{
 };
 use godot::prelude::*;
 use std::collections::HashMap;
+use std::time::Instant;
 
 const BLOCK_ATLAS_PATH: &str = "res://assets/textures/blocks/block_texture_atlas.png";
 const CHUNK_W: usize = 32;
@@ -327,6 +328,27 @@ impl FaceRangeAllocator {
         }
         self.free_ranges = merged;
     }
+
+    fn stats(&self) -> FaceAllocatorStats {
+        let mut free_faces = 0usize;
+        let mut largest_free_faces = 0usize;
+        for range in &self.free_ranges {
+            free_faces += range.len;
+            largest_free_faces = largest_free_faces.max(range.len);
+        }
+        FaceAllocatorStats {
+            free_ranges: self.free_ranges.len(),
+            free_faces,
+            largest_free_faces,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct FaceAllocatorStats {
+    free_ranges: usize,
+    free_faces: usize,
+    largest_free_faces: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -378,6 +400,16 @@ pub struct GpuTerrainStats {
     pub bytes: usize,
     pub draw_count: usize,
     pub compositor_frames: u64,
+    pub upload_count: u64,
+    pub upload_bytes: usize,
+    pub last_upload_bytes: usize,
+    pub free_ranges: usize,
+    pub free_faces: usize,
+    pub largest_free_faces: usize,
+    pub draw_rebuild_count: u64,
+    pub last_draw_rebuild_ms: f64,
+    pub avg_draw_rebuild_ms: f64,
+    pub max_draw_rebuild_ms: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -564,6 +596,13 @@ pub struct GpuTerrainBufferPool {
     compositor_frames: u64,
     compositor_logged: bool,
     lighting: GpuTerrainLighting,
+    upload_count: u64,
+    upload_bytes: usize,
+    last_upload_bytes: usize,
+    draw_rebuild_count: u64,
+    avg_draw_rebuild_ms: f64,
+    max_draw_rebuild_ms: f64,
+    last_draw_rebuild_ms: f64,
 }
 
 impl GpuTerrainBufferPool {
@@ -604,6 +643,13 @@ impl GpuTerrainBufferPool {
             compositor_frames: 0,
             compositor_logged: false,
             lighting: GpuTerrainLighting::default(),
+            upload_count: 0,
+            upload_bytes: 0,
+            last_upload_bytes: 0,
+            draw_rebuild_count: 0,
+            avg_draw_rebuild_ms: 0.0,
+            max_draw_rebuild_ms: 0.0,
+            last_draw_rebuild_ms: 0.0,
         })
     }
 
@@ -623,6 +669,9 @@ impl GpuTerrainBufferPool {
         let offset = (range.start * PACKED_FACE_BYTES) as u32;
         self.rd
             .buffer_update(self.faces_buffer_rid, offset, pba.len() as u32, &pba);
+        self.upload_count += 1;
+        self.upload_bytes += pba.len();
+        self.last_upload_bytes = pba.len();
 
         let slot = GpuTerrainSlot {
             start_face: range.start,
@@ -652,12 +701,23 @@ impl GpuTerrainBufferPool {
     }
 
     pub fn stats(&self) -> GpuTerrainStats {
+        let allocator_stats = self.allocator.stats();
         GpuTerrainStats {
             subchunks: self.slots.len(),
             faces: self.used_faces,
             bytes: self.used_faces * PACKED_FACE_BYTES,
             draw_count: self.draw_count,
             compositor_frames: self.compositor_frames,
+            upload_count: self.upload_count,
+            upload_bytes: self.upload_bytes,
+            last_upload_bytes: self.last_upload_bytes,
+            free_ranges: allocator_stats.free_ranges,
+            free_faces: allocator_stats.free_faces,
+            largest_free_faces: allocator_stats.largest_free_faces,
+            draw_rebuild_count: self.draw_rebuild_count,
+            last_draw_rebuild_ms: self.last_draw_rebuild_ms,
+            avg_draw_rebuild_ms: self.avg_draw_rebuild_ms,
+            max_draw_rebuild_ms: self.max_draw_rebuild_ms,
         }
     }
 
@@ -898,11 +958,13 @@ impl GpuTerrainBufferPool {
         if !self.draw_dirty {
             return;
         }
+        let rebuild_start = Instant::now();
 
         let draw_count = self.slots.len().min(MAX_INDIRECT_DRAWS);
         if draw_count == 0 {
             self.draw_count = 0;
             self.draw_dirty = false;
+            self.record_draw_rebuild_ms(rebuild_start.elapsed().as_secs_f64() * 1000.0);
             return;
         }
 
@@ -921,6 +983,15 @@ impl GpuTerrainBufferPool {
 
         self.draw_count = draw_count;
         self.draw_dirty = false;
+        self.record_draw_rebuild_ms(rebuild_start.elapsed().as_secs_f64() * 1000.0);
+    }
+
+    fn record_draw_rebuild_ms(&mut self, elapsed_ms: f64) {
+        self.draw_rebuild_count += 1;
+        self.last_draw_rebuild_ms = elapsed_ms;
+        let count = self.draw_rebuild_count as f64;
+        self.avg_draw_rebuild_ms += (elapsed_ms - self.avg_draw_rebuild_ms) / count;
+        self.max_draw_rebuild_ms = self.max_draw_rebuild_ms.max(elapsed_ms);
     }
 
     fn create_debug_render_pipeline(
@@ -1704,6 +1775,44 @@ mod tests {
         allocator.free(third);
 
         assert_eq!(allocator.allocate(8), Some(FaceRange { start: 0, len: 8 }));
+    }
+
+    #[test]
+    fn allocator_stats_report_fragmentation_budget_inputs() {
+        let mut allocator = FaceRangeAllocator::new(12);
+        let first = allocator.allocate(3).unwrap();
+        let second = allocator.allocate(4).unwrap();
+        let third = allocator.allocate(2).unwrap();
+        allocator.free(second);
+
+        assert_eq!(
+            allocator.stats(),
+            FaceAllocatorStats {
+                free_ranges: 2,
+                free_faces: 7,
+                largest_free_faces: 4,
+            }
+        );
+
+        allocator.free(first);
+        assert_eq!(
+            allocator.stats(),
+            FaceAllocatorStats {
+                free_ranges: 2,
+                free_faces: 10,
+                largest_free_faces: 7,
+            }
+        );
+
+        allocator.free(third);
+        assert_eq!(
+            allocator.stats(),
+            FaceAllocatorStats {
+                free_ranges: 1,
+                free_faces: 12,
+                largest_free_faces: 12,
+            }
+        );
     }
 
     #[test]

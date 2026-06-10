@@ -1909,12 +1909,22 @@ impl GameClient {
             .map(|pool| {
                 let stats = pool.stats();
                 format!(
-                    " gpu_subchunks={} gpu_draws={} gpu_faces={} gpu_frames={} gpu_mem={:.1}MB",
+                    " gpu_subchunks={} gpu_draws={} gpu_faces={} gpu_frames={} gpu_mem={:.1}MB gpu_uploads={} gpu_upload_mb={:.2} gpu_last_upload_kb={:.1} gpu_free_ranges={} gpu_free_faces={} gpu_largest_free={} gpu_draw_rebuilds={} gpu_draw_rebuild_ms={:.3}/{:.3}/{:.3}",
                     stats.subchunks,
                     stats.draw_count,
                     stats.faces,
                     stats.compositor_frames,
-                    stats.bytes as f64 / (1024.0 * 1024.0)
+                    stats.bytes as f64 / (1024.0 * 1024.0),
+                    stats.upload_count,
+                    stats.upload_bytes as f64 / (1024.0 * 1024.0),
+                    stats.last_upload_bytes as f64 / 1024.0,
+                    stats.free_ranges,
+                    stats.free_faces,
+                    stats.largest_free_faces,
+                    stats.draw_rebuild_count,
+                    stats.last_draw_rebuild_ms,
+                    stats.avg_draw_rebuild_ms,
+                    stats.max_draw_rebuild_ms
                 )
             })
             .unwrap_or_default();

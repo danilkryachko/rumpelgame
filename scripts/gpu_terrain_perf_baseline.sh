@@ -114,7 +114,7 @@ run_case() {
 print_row() {
   label="$1"
   marker_path="$2"
-  printf '%-12s frame_avg_ms=%s frame_p50_ms=%s frame_p95_ms=%s frame_p99_ms=%s frame_max_ms=%s fps_avg=%s fps_p05=%s fps_min=%s mesh_avg_ms=%s mesh_max_ms=%s coll_avg_ms=%s cpu_proxy=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s gpu_mem_mb=%s terrain_samples=%s\n' \
+  printf '%-12s frame_avg_ms=%s frame_p50_ms=%s frame_p95_ms=%s frame_p99_ms=%s frame_max_ms=%s fps_avg=%s fps_p05=%s fps_min=%s mesh_avg_ms=%s mesh_max_ms=%s coll_avg_ms=%s cpu_proxy=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s gpu_mem_mb=%s gpu_uploads=%s gpu_free_ranges=%s gpu_largest_free=%s gpu_draw_rebuilds=%s gpu_draw_rebuild_ms=%s terrain_samples=%s\n' \
     "$label" \
     "$(float_metric frame_avg_ms "$marker_path")" \
     "$(float_metric frame_p50_ms "$marker_path")" \
@@ -132,6 +132,11 @@ print_row() {
     "$(metric gpu_draws "$marker_path")" \
     "$(metric gpu_faces "$marker_path")" \
     "$(perf_float gpu_mem "$marker_path")" \
+    "$(metric gpu_uploads "$marker_path")" \
+    "$(metric gpu_free_ranges "$marker_path")" \
+    "$(metric gpu_largest_free "$marker_path")" \
+    "$(metric gpu_draw_rebuilds "$marker_path")" \
+    "$(perf_float gpu_draw_rebuild_ms "$marker_path")" \
     "$(metric terrain_samples "$marker_path")"
 }
 
