@@ -17,6 +17,7 @@ MOTION_STEP_SEC="${RUMPELMC_MOVEMENT_STRESS_STEP_SEC:-0.55}"
 MOTION_SETTLE_SEC="${RUMPELMC_MOVEMENT_STRESS_SETTLE_SEC:-4.0}"
 MIN_MOTION_CHUNKS="${RUMPELMC_MOVEMENT_STRESS_MIN_CHUNKS:-4}"
 TARGET_FPS="${RUMPELMC_MOVEMENT_STRESS_TARGET_FPS:-150}"
+BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE:-enforce}"
 
 mkdir -p "$OUT_DIR"
 
@@ -112,6 +113,20 @@ write_summary() {
   cat "$summary_path"
 }
 
+enforce_terrain_queue_budget() {
+  budget_ms="$(frame_budget_ms)"
+  terrain_queue_max="$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)"
+  test -n "$terrain_queue_max" || fail "missing terrain_queue_work_ms in $marker_path"
+  awk -v terrain_queue_max="$terrain_queue_max" -v budget="$budget_ms" '
+    BEGIN {
+      if (terrain_queue_max > budget) {
+        printf("gpu_terrain_movement_stress: terrain_queue_max_ms %.3f exceeds %.3f\n", terrain_queue_max, budget) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
 require_metric_ge() {
   marker_path="$1"
   key="$2"
@@ -185,6 +200,15 @@ require_metric_eq "$marker_path" "gpu_upload_fail_fragmented" 0
 test -n "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)" || fail "missing terrain_queue_work_ms in $marker_path"
 
 write_summary
+case "$BUDGET_MODE" in
+  report|"") ;;
+  enforce)
+    enforce_terrain_queue_budget
+    ;;
+  *)
+    fail "unsupported RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE=$BUDGET_MODE"
+    ;;
+esac
 
 cat "$marker_path"
 
