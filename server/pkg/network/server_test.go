@@ -29,3 +29,27 @@ func TestConfiguredChunksPerUpdateIgnoresInvalidEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestConfiguredViewDistanceDefault(t *testing.T) {
+	t.Setenv(viewDistanceEnv, "")
+
+	if got := configuredViewDistance(); got != defaultViewDistance {
+		t.Fatalf("configuredViewDistance() = %d, want %d", got, defaultViewDistance)
+	}
+}
+
+func TestConfiguredViewDistanceIgnoresInvalid(t *testing.T) {
+	t.Setenv(viewDistanceEnv, "nope")
+
+	if got := configuredViewDistance(); got != defaultViewDistance {
+		t.Fatalf("configuredViewDistance() = %d, want %d", got, defaultViewDistance)
+	}
+}
+
+func TestConfiguredViewDistanceClampsStressRadius(t *testing.T) {
+	t.Setenv(viewDistanceEnv, "99")
+
+	if got := configuredViewDistance(); got != maxViewDistance {
+		t.Fatalf("configuredViewDistance() = %d, want %d", got, maxViewDistance)
+	}
+}

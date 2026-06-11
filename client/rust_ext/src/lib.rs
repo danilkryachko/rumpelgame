@@ -1213,7 +1213,7 @@ impl GameClient {
             .chunk_blocks
             .keys()
             .copied()
-            .filter(|coord| !chunk_within_radius(*coord, center, CLIENT_KEEP_CHUNK_DISTANCE))
+            .filter(|coord| !chunk_within_radius(*coord, center, client_keep_chunk_distance()))
             .collect();
         if to_unload.is_empty() {
             return;
@@ -2164,6 +2164,7 @@ const PADDED_D: usize = 34;
 const BLOCK_BYTES: usize = 2;
 const PADDED_BLOCK_BYTES: usize = PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES;
 const CLIENT_KEEP_CHUNK_DISTANCE: i32 = 10;
+const MAX_CLIENT_KEEP_CHUNK_DISTANCE: i32 = 16;
 const COLLISION_CHUNK_DISTANCE: i32 = 1;
 const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_DISTANCE: f32 = 160.0;
 const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE: i32 = 5;
@@ -2180,6 +2181,7 @@ const GPU_TERRAIN_UPLOAD_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD";
 const GPU_TERRAIN_RENDER_ENV: &str = "RUMPELMC_GPU_TERRAIN_RENDER";
 const CPU_ARRAY_MESH_PACKED_FACES_ENV: &str = "RUMPELMC_CPU_ARRAY_MESH_PACKED_FACES";
 const CPU_ARRAY_MESH_PACKED_FACES_DEFAULT_ENABLED: bool = true;
+const CLIENT_KEEP_CHUNK_DISTANCE_ENV: &str = "RUMPELMC_CLIENT_KEEP_CHUNK_DISTANCE";
 const GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE";
 const GPU_TERRAIN_SHADOW_PROXY_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE";
@@ -2236,6 +2238,18 @@ fn chunk_within_radius(a: (i32, i32), b: (i32, i32), radius: i32) -> bool {
     let dz = i64::from(a.1 - b.1);
     let radius = i64::from(radius);
     dx * dx + dz * dz <= radius * radius
+}
+
+fn client_keep_chunk_distance() -> i32 {
+    static KEEP_DISTANCE: OnceLock<i32> = OnceLock::new();
+    *KEEP_DISTANCE.get_or_init(|| {
+        std::env::var(CLIENT_KEEP_CHUNK_DISTANCE_ENV)
+            .ok()
+            .and_then(|value| value.trim().parse::<i32>().ok())
+            .filter(|radius| *radius > 0)
+            .map(|radius| radius.clamp(1, MAX_CLIENT_KEEP_CHUNK_DISTANCE))
+            .unwrap_or(CLIENT_KEEP_CHUNK_DISTANCE)
+    })
 }
 
 fn subchunk_needs_collision(key: SubchunkKey, current_player_chunk: Option<(i32, i32)>) -> bool {
@@ -2461,8 +2475,9 @@ fn terrain_shadow_proxy_chunk_distance(
     override_radius: Option<i32>,
     scene_shadow_distance: Option<f32>,
 ) -> i32 {
+    let keep_distance = client_keep_chunk_distance();
     if let Some(radius) = override_radius {
-        return radius.clamp(0, CLIENT_KEEP_CHUNK_DISTANCE);
+        return radius.clamp(0, keep_distance);
     }
 
     let Some(shadow_distance) = scene_shadow_distance else {
@@ -2479,7 +2494,7 @@ fn terrain_shadow_proxy_chunk_distance(
 }
 
 fn shadow_distance_to_chunk_radius(shadow_distance: f32) -> i32 {
-    ((shadow_distance / CHUNK_SIZE).ceil() as i32 + 1).clamp(0, CLIENT_KEEP_CHUNK_DISTANCE)
+    ((shadow_distance / CHUNK_SIZE).ceil() as i32 + 1).clamp(0, client_keep_chunk_distance())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

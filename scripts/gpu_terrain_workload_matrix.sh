@@ -10,9 +10,18 @@ esac
 
 TARGET_FPS="${RUMPELMC_WORKLOAD_MATRIX_TARGET_FPS:-150}"
 MAX_RESIDENT_SETTLE_SEC="${RUMPELMC_WORKLOAD_MATRIX_MAX_RESIDENT_SETTLE_SEC:-30.0}"
+EXTENDED_SETTLE_SEC="${RUMPELMC_WORKLOAD_MATRIX_EXTENDED_SETTLE_SEC:-45.0}"
 SERVER_CHUNKS_PER_UPDATE="${RUMPELMC_WORKLOAD_MATRIX_SERVER_CHUNKS_PER_UPDATE:-64}"
 REPEAT_COUNT="${RUMPELMC_WORKLOAD_MATRIX_REPEAT_COUNT:-1}"
 SMOKE_DELAY_SEC="${RUMPELMC_WORKLOAD_MATRIX_SMOKE_DELAY_SEC:-5.0}"
+CASE_SET="${RUMPELMC_WORKLOAD_MATRIX_CASE_SET:-standard}"
+if [ "$CASE_SET" = "heavy" ]; then
+  SERVER_VIEW_DISTANCE="${RUMPELMC_WORKLOAD_MATRIX_SERVER_VIEW_DISTANCE:-12}"
+  CLIENT_KEEP_CHUNK_DISTANCE="${RUMPELMC_WORKLOAD_MATRIX_CLIENT_KEEP_CHUNK_DISTANCE:-$SERVER_VIEW_DISTANCE}"
+else
+  SERVER_VIEW_DISTANCE="${RUMPELMC_WORKLOAD_MATRIX_SERVER_VIEW_DISTANCE:-}"
+  CLIENT_KEEP_CHUNK_DISTANCE="${RUMPELMC_WORKLOAD_MATRIX_CLIENT_KEEP_CHUNK_DISTANCE:-}"
+fi
 
 mkdir -p "$OUT_DIR"
 
@@ -67,6 +76,13 @@ default_float() {
   fi
 }
 
+matrix_labels() {
+  printf 'short\nlong\nlong-filled\nmax-resident\n'
+  if [ "$CASE_SET" = "heavy" ]; then
+    printf 'extended\nextended-filled\n'
+  fi
+}
+
 run_case() {
   label="$1"
   motion="$2"
@@ -85,7 +101,9 @@ run_case() {
     RUMPELMC_MOVEMENT_STRESS_STEP_SEC="$step_sec" \
     RUMPELMC_MOVEMENT_STRESS_SETTLE_SEC="$settle_sec" \
     RUMPELMC_MOVEMENT_STRESS_TARGET_FPS="$TARGET_FPS" \
+    RUMPELMC_SERVER_VIEW_DISTANCE="$SERVER_VIEW_DISTANCE" \
     RUMPELMC_SERVER_CHUNKS_PER_UPDATE="$SERVER_CHUNKS_PER_UPDATE" \
+    RUMPELMC_CLIENT_KEEP_CHUNK_DISTANCE="$CLIENT_KEEP_CHUNK_DISTANCE" \
     SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
     "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$case_dir" > "$case_dir/run.log" 2>&1
 }
@@ -200,6 +218,12 @@ case "$REPEAT_COUNT" in
     fail "RUMPELMC_WORKLOAD_MATRIX_REPEAT_COUNT must be a positive integer"
     ;;
 esac
+case "$CASE_SET" in
+  standard|heavy) ;;
+  *)
+    fail "RUMPELMC_WORKLOAD_MATRIX_CASE_SET must be standard or heavy"
+    ;;
+esac
 if [ "$REPEAT_COUNT" -le 0 ]; then
   fail "RUMPELMC_WORKLOAD_MATRIX_REPEAT_COUNT must be greater than 0"
 fi
@@ -214,8 +238,8 @@ if [ "$REPEAT_COUNT" -gt 1 ]; then
 
   repeat_summary_path="$OUT_DIR/workload-repeat-summary.txt"
   {
-    printf 'GPU terrain workload repeat summary repeats=%s target_fps=%s server_chunks_per_update=%s\n' "$REPEAT_COUNT" "$TARGET_FPS" "$SERVER_CHUNKS_PER_UPDATE"
-    for label in short long long-filled max-resident; do
+    printf 'GPU terrain workload repeat summary repeats=%s target_fps=%s server_view_distance=%s client_keep_distance=%s server_chunks_per_update=%s case_set=%s\n' "$REPEAT_COUNT" "$TARGET_FPS" "${SERVER_VIEW_DISTANCE:-default}" "${CLIENT_KEEP_CHUNK_DISTANCE:-default}" "$SERVER_CHUNKS_PER_UPDATE" "$CASE_SET"
+    for label in $(matrix_labels); do
       repeat_metric_line "$label" gpu_compositor_submit_max_ms "$OUT_DIR"/run-*/workload-matrix-summary.txt
       repeat_metric_line "$label" terrain_queue_max_ms "$OUT_DIR"/run-*/workload-matrix-summary.txt
       repeat_metric_line "$label" process_wall_p95_ms "$OUT_DIR"/run-*/workload-matrix-summary.txt
@@ -230,14 +254,22 @@ run_case short chunk_walk 3,2 4 0.55 4.0
 run_case long chunk_walk_long 7,5 8 0.55 4.0
 run_case long-filled chunk_walk_long 7,5 8 0.55 12.0
 run_case max-resident chunk_walk_long 7,5 8 0.55 "$MAX_RESIDENT_SETTLE_SEC"
+if [ "$CASE_SET" = "heavy" ]; then
+  run_case extended chunk_walk_extended 11,8 12 0.55 8.0
+  run_case extended-filled chunk_walk_extended 11,8 12 0.55 "$EXTENDED_SETTLE_SEC"
+fi
 
 summary_path="$OUT_DIR/workload-matrix-summary.txt"
 {
-  printf 'GPU terrain workload matrix target_fps=%s server_chunks_per_update=%s\n' "$TARGET_FPS" "$SERVER_CHUNKS_PER_UPDATE"
+  printf 'GPU terrain workload matrix target_fps=%s server_view_distance=%s client_keep_distance=%s server_chunks_per_update=%s case_set=%s\n' "$TARGET_FPS" "${SERVER_VIEW_DISTANCE:-default}" "${CLIENT_KEEP_CHUNK_DISTANCE:-default}" "$SERVER_CHUNKS_PER_UPDATE" "$CASE_SET"
   summary_line short "$OUT_DIR/short/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/short/movement-stress-summary.txt" "$OUT_DIR/short/run.log"
   summary_line long "$OUT_DIR/long/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/long/movement-stress-summary.txt" "$OUT_DIR/long/run.log"
   summary_line long-filled "$OUT_DIR/long-filled/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/long-filled/movement-stress-summary.txt" "$OUT_DIR/long-filled/run.log"
   summary_line max-resident "$OUT_DIR/max-resident/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/max-resident/movement-stress-summary.txt" "$OUT_DIR/max-resident/run.log"
+  if [ "$CASE_SET" = "heavy" ]; then
+    summary_line extended "$OUT_DIR/extended/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/extended/movement-stress-summary.txt" "$OUT_DIR/extended/run.log"
+    summary_line extended-filled "$OUT_DIR/extended-filled/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/extended-filled/movement-stress-summary.txt" "$OUT_DIR/extended-filled/run.log"
+  fi
 } | tee "$summary_path"
 
 echo "GPU terrain workload matrix artifacts: $OUT_DIR"

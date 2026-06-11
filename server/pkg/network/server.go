@@ -15,14 +15,16 @@ import (
 )
 
 const maxPacketSize = 16 * 1024 * 1024
-const viewDistance int32 = 10
-const chunkForgetDistance int32 = viewDistance + 1
+const defaultViewDistance int32 = 10
+const maxViewDistance int32 = 16
 const defaultChunksPerUpdate = 6
+const viewDistanceEnv = "RUMPELMC_SERVER_VIEW_DISTANCE"
 const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
 
 type Server struct {
 	address         string
 	world           *world.World
+	viewDistance    int32
 	chunksPerUpdate int
 }
 
@@ -30,6 +32,7 @@ func NewServer(address string, gameWorld *world.World) *Server {
 	return &Server{
 		address:         address,
 		world:           gameWorld,
+		viewDistance:    configuredViewDistance(),
 		chunksPerUpdate: configuredChunksPerUpdate(),
 	}
 }
@@ -63,7 +66,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		log.Printf("Failed to send initial chunks: %v", err)
 		return
 	}
-	log.Printf("Started progressive chunk stream radius=%d batch=%d to %s", viewDistance, s.chunksPerUpdate, conn.RemoteAddr())
+	log.Printf("Started progressive chunk stream radius=%d batch=%d to %s", s.viewDistance, s.chunksPerUpdate, conn.RemoteAddr())
 
 	// Чтение пакетов в цикле
 	for {
@@ -76,7 +79,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		switch p := clientPacket.Payload.(type) {
 		case *api.Packet_Position:
 			center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
-			forgetFarSentChunks(sentChunks, center.X, center.Z, chunkForgetDistance)
+			forgetFarSentChunks(sentChunks, center.X, center.Z, s.viewDistance+1)
 			if err := s.sendChunksAround(conn, center.X, center.Z, sentChunks); err != nil {
 				log.Printf("Failed to send chunks around %d,%d: %v", center.X, center.Z, err)
 				return
@@ -123,7 +126,7 @@ func forgetFarSentChunks(sentChunks map[world.ChunkCoord]bool, centerX, centerZ,
 }
 
 func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChunks map[world.ChunkCoord]bool) error {
-	chunks, err := s.world.ChunksAround(centerX, centerZ, viewDistance, sentChunks, s.chunksPerUpdate)
+	chunks, err := s.world.ChunksAround(centerX, centerZ, s.viewDistance, sentChunks, s.chunksPerUpdate)
 	if err != nil {
 		return err
 	}
@@ -133,6 +136,23 @@ func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChu
 		}
 	}
 	return nil
+}
+
+func configuredViewDistance() int32 {
+	value := os.Getenv(viewDistanceEnv)
+	if value == "" {
+		return defaultViewDistance
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		log.Printf("Ignoring invalid %s=%q; using %d", viewDistanceEnv, value, defaultViewDistance)
+		return defaultViewDistance
+	}
+	if parsed > int(maxViewDistance) {
+		log.Printf("Clamping %s=%d to %d", viewDistanceEnv, parsed, maxViewDistance)
+		return maxViewDistance
+	}
+	return int32(parsed)
 }
 
 func configuredChunksPerUpdate() int {
