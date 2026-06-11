@@ -6,6 +6,8 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
+	"strconv"
 
 	"google.golang.org/protobuf/proto"
 	"rumpelmc/server/pkg/api"
@@ -15,17 +17,20 @@ import (
 const maxPacketSize = 16 * 1024 * 1024
 const viewDistance int32 = 10
 const chunkForgetDistance int32 = viewDistance + 1
-const chunksPerUpdate = 6
+const defaultChunksPerUpdate = 6
+const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
 
 type Server struct {
-	address string
-	world   *world.World
+	address         string
+	world           *world.World
+	chunksPerUpdate int
 }
 
 func NewServer(address string, gameWorld *world.World) *Server {
 	return &Server{
-		address: address,
-		world:   gameWorld,
+		address:         address,
+		world:           gameWorld,
+		chunksPerUpdate: configuredChunksPerUpdate(),
 	}
 }
 
@@ -58,7 +63,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		log.Printf("Failed to send initial chunks: %v", err)
 		return
 	}
-	log.Printf("Started progressive chunk stream radius=%d batch=%d to %s", viewDistance, chunksPerUpdate, conn.RemoteAddr())
+	log.Printf("Started progressive chunk stream radius=%d batch=%d to %s", viewDistance, s.chunksPerUpdate, conn.RemoteAddr())
 
 	// Чтение пакетов в цикле
 	for {
@@ -118,7 +123,7 @@ func forgetFarSentChunks(sentChunks map[world.ChunkCoord]bool, centerX, centerZ,
 }
 
 func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChunks map[world.ChunkCoord]bool) error {
-	chunks, err := s.world.ChunksAround(centerX, centerZ, viewDistance, sentChunks, chunksPerUpdate)
+	chunks, err := s.world.ChunksAround(centerX, centerZ, viewDistance, sentChunks, s.chunksPerUpdate)
 	if err != nil {
 		return err
 	}
@@ -128,6 +133,19 @@ func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChu
 		}
 	}
 	return nil
+}
+
+func configuredChunksPerUpdate() int {
+	value := os.Getenv(chunksPerUpdateEnv)
+	if value == "" {
+		return defaultChunksPerUpdate
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		log.Printf("Ignoring invalid %s=%q; using %d", chunksPerUpdateEnv, value, defaultChunksPerUpdate)
+		return defaultChunksPerUpdate
+	}
+	return parsed
 }
 
 func (s *Server) sendChunk(conn net.Conn, chunk world.ChunkSnapshot) error {
