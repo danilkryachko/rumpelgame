@@ -22,7 +22,7 @@
 - Read `docs/HANDOFF.md` and `docs/AGENT_HANDOFF.md` before resuming work from another chat or after a long interruption.
 - Read `docs/ARCHITECTURE.md` before design changes.
 - Read `docs/AGENT_MEMORY.md` before architectural, storage, networking, world generation, chunk serialization, persistence, or Rust extension changes.
-- Read `docs/GPU_ROADMAP.md` and `docs/GPU_PROFILING.md` before GPU terrain, renderer, profiling, or performance-optimization work.
+- Read `docs/GPU_ROADMAP.md`, `docs/GPU_PROFILING.md`, and `docs/GPU_TRENDS.md` before GPU terrain, renderer, profiling, or performance-optimization work.
 - Read `docs/STORAGE.md` before storage or persistence changes.
 - Read `docs/PROTOCOL.md` before client/server protocol or packet schema changes.
 - Read `docs/CODE_REVIEW.md` before review passes or sensitive changes.
