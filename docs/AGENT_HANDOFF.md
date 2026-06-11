@@ -8,6 +8,9 @@ Date: 2026-06-11
 
 Fresh 2026-06-11 status:
 
+- Long-running GPU backlog is now local/sequential, not delegated to worker chats. `docs/GPU_ROADMAP.md` defines 120 small GPU iterations across stabilization, stress gates, workload scaling, memory/residency, upload, dirty updates, draw submission, bindings, shader hot path, and larger GPU directions. `docs/GPU_PROFILING.md` defines trusted local metrics and macOS/Windows profiler workflows.
+- Completed checkpoints: `2635006` enables GPU terrain back-face culling; `c5dad7f` adds the GPU roadmap/profiling docs. Next sequential step is to add the unified report script from the roadmap measurement phase, then continue with visual/stress gates.
+
 - Current weak-spot slice enables GPU terrain back-face culling by default in `client/rust_ext/src/gpu_terrain.rs`. The rasterization state now uses `PolygonCullMode::BACK` with `PolygonFrontFace::CLOCKWISE`; `RUMPELMC_GPU_TERRAIN_CULL_MODE=disabled|none|off` is a rollback control and `front` is available for diagnostics. This reduces hidden/back-face GPU raster work without reducing draw distance, lighting, shadows, texture quality, or visible quality.
 - Fresh correctness artifact: `logs/gpu_terrain_cull_back_smoke/movement-stress-summary.txt` passed radius-16 extended movement with `gpu_upload_fail=0`, `gpu_draws=1582`, `gpu_effective_draws=1582`, `gpu_faces=2244`, `terrain_queue_max_ms=3.152`, `gpu_compositor_submit_max_ms=0.210`, and `smoke_err=0`.
 - Fresh fill-stress artifacts: `logs/gpu_terrain_fill_stress_cull_back/fill-stress-summary.txt` and control `logs/gpu_terrain_fill_stress_cull_disabled_control/fill-stress-summary.txt`. In the current macOS session both cull-back and cull-disabled repeat=4 runs report `fps_p05=60.0`, so this run is display/driver-limited and is not a clean fps comparison against the earlier repeat=4 `fps_p05=144.0` result. Error scans were clean and `gpu_upload_fail=0`.
