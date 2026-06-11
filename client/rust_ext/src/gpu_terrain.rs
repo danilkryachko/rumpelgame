@@ -924,6 +924,9 @@ pub struct GpuTerrainStats {
     pub upload_count: u64,
     pub upload_bytes: usize,
     pub last_upload_bytes: usize,
+    pub last_upload_ms: f64,
+    pub avg_upload_ms: f64,
+    pub max_upload_ms: f64,
     pub upload_failures: u64,
     pub upload_capacity_failures: u64,
     pub upload_fragmentation_failures: u64,
@@ -1159,6 +1162,9 @@ pub struct GpuTerrainBufferPool {
     upload_count: u64,
     upload_bytes: usize,
     last_upload_bytes: usize,
+    last_upload_ms: f64,
+    avg_upload_ms: f64,
+    max_upload_ms: f64,
     upload_failures: u64,
     upload_capacity_failures: u64,
     upload_fragmentation_failures: u64,
@@ -1226,6 +1232,9 @@ impl GpuTerrainBufferPool {
             upload_count: 0,
             upload_bytes: 0,
             last_upload_bytes: 0,
+            last_upload_ms: 0.0,
+            avg_upload_ms: 0.0,
+            max_upload_ms: 0.0,
             upload_failures: 0,
             upload_capacity_failures: 0,
             upload_fragmentation_failures: 0,
@@ -1261,6 +1270,7 @@ impl GpuTerrainBufferPool {
             return None;
         }
 
+        let upload_start = Instant::now();
         let Some(range) = self.allocator.allocate(batch.face_count()) else {
             self.record_upload_failure(batch.face_count());
             return None;
@@ -1273,6 +1283,7 @@ impl GpuTerrainBufferPool {
         self.upload_count += 1;
         self.upload_bytes += pba.len();
         self.last_upload_bytes = pba.len();
+        self.record_upload_timing(upload_start.elapsed().as_secs_f64() * 1000.0);
 
         let slot = GpuTerrainSlot {
             start_face: range.start,
@@ -1282,6 +1293,13 @@ impl GpuTerrainBufferPool {
         self.used_faces += range.len;
         self.insert_draw_command(key, slot);
         Some(slot)
+    }
+
+    fn record_upload_timing(&mut self, upload_ms: f64) {
+        self.last_upload_ms = upload_ms;
+        let n = self.upload_count as f64;
+        self.avg_upload_ms += (upload_ms - self.avg_upload_ms) / n;
+        self.max_upload_ms = self.max_upload_ms.max(upload_ms);
     }
 
     pub fn remove_subchunk(&mut self, key: GpuSubchunkKey) {
@@ -1316,6 +1334,9 @@ impl GpuTerrainBufferPool {
             upload_count: self.upload_count,
             upload_bytes: self.upload_bytes,
             last_upload_bytes: self.last_upload_bytes,
+            last_upload_ms: self.last_upload_ms,
+            avg_upload_ms: self.avg_upload_ms,
+            max_upload_ms: self.max_upload_ms,
             upload_failures: self.upload_failures,
             upload_capacity_failures: self.upload_capacity_failures,
             upload_fragmentation_failures: self.upload_fragmentation_failures,

@@ -18,6 +18,7 @@ Fresh 2026-06-11 status:
 - Fill-stress report-only failure lines now include `run_status` and `marker_present`, making capture/window failures diagnosable directly from `fill-stress-summary.txt`.
 - GPU residency telemetry now derives `gpu_fragmented_free_faces` and `gpu_fragmentation_pct` from allocator free ranges. This is report-only; allocator behavior is unchanged. `scripts/gpu_terrain_report.sh` includes both fields in aggregate signals when artifacts contain them.
 - `scripts/gpu_terrain_report.sh` now includes a Metric Origins section for max workload/cost fields, so future agents can jump from an aggregate spike to the exact source summary or marker file.
+- GPU upload telemetry now reports `gpu_upload_ms=last/avg/max` for successful `upload_subchunk` calls. Upload queue depth/latency was not added because the current code does not have a separate upload queue; adding one would be a broader behavior change.
 - `docs/GPU_TRENDS.md` now records durable GPU optimization checkpoints and caveats. Update it after meaningful successful stress/profiling runs instead of burying all trend history in this handoff file.
 - `scripts/handoff.sh` now includes GPU roadmap/profiling/trends in Read First and prints existing GPU trends/report snippets when available.
 

@@ -3113,7 +3113,7 @@ impl GameClient {
                 let stats = pool.stats();
                 let rasterization = gpu_terrain::terrain_rasterization_labels();
                 format!(
-                    " gpu_subchunks={} gpu_draws={} gpu_effective_draws={} gpu_draw_repeat={} gpu_cull={} gpu_front_face={} gpu_faces={} gpu_frames={} gpu_mem={:.1}MB gpu_uploads={} gpu_upload_fail={} gpu_upload_fail_capacity={} gpu_upload_fail_fragmented={} gpu_upload_mb={:.2} gpu_last_upload_kb={:.1} gpu_free_ranges={} gpu_free_faces={} gpu_largest_free={} gpu_fragmented_free_faces={} gpu_fragmentation_pct={:.1} gpu_draw_rebuilds={} gpu_draw_rebuild_ms={:.3}/{:.3}/{:.3} gpu_draw_patches={} gpu_draw_patch_ms={:.3}/{:.3}/{:.3} gpu_compositor_submit={} gpu_compositor_submit_ms={:.3}/{:.3}/{:.3} gpu_compositor_submit_parts={:.3}/{:.3}/{:.3}/{:.3} gpu_compositor_submit_max_parts={:.3}/{:.3}/{:.3}/{:.3} gpu_compositor_gpu_samples={} gpu_compositor_gpu_ms={:.3}/{:.3}/{:.3} gpu_compositor_gpu_us={:.1}/{:.1}/{:.1}",
+                    " gpu_subchunks={} gpu_draws={} gpu_effective_draws={} gpu_draw_repeat={} gpu_cull={} gpu_front_face={} gpu_faces={} gpu_frames={} gpu_mem={:.1}MB gpu_uploads={} gpu_upload_fail={} gpu_upload_fail_capacity={} gpu_upload_fail_fragmented={} gpu_upload_mb={:.2} gpu_last_upload_kb={:.1} gpu_upload_ms={:.3}/{:.3}/{:.3} gpu_free_ranges={} gpu_free_faces={} gpu_largest_free={} gpu_fragmented_free_faces={} gpu_fragmentation_pct={:.1} gpu_draw_rebuilds={} gpu_draw_rebuild_ms={:.3}/{:.3}/{:.3} gpu_draw_patches={} gpu_draw_patch_ms={:.3}/{:.3}/{:.3} gpu_compositor_submit={} gpu_compositor_submit_ms={:.3}/{:.3}/{:.3} gpu_compositor_submit_parts={:.3}/{:.3}/{:.3}/{:.3} gpu_compositor_submit_max_parts={:.3}/{:.3}/{:.3}/{:.3} gpu_compositor_gpu_samples={} gpu_compositor_gpu_ms={:.3}/{:.3}/{:.3} gpu_compositor_gpu_us={:.1}/{:.1}/{:.1}",
                     stats.subchunks,
                     stats.draw_count,
                     stats.compositor_effective_draw_count,
@@ -3129,6 +3129,9 @@ impl GameClient {
                     stats.upload_fragmentation_failures,
                     stats.upload_bytes as f64 / (1024.0 * 1024.0),
                     stats.last_upload_bytes as f64 / 1024.0,
+                    stats.last_upload_ms,
+                    stats.avg_upload_ms,
+                    stats.max_upload_ms,
                     stats.free_ranges,
                     stats.free_faces,
                     stats.largest_free_faces,
