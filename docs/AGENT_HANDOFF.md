@@ -8,6 +8,9 @@ Date: 2026-06-11
 
 Fresh 2026-06-11 status:
 
+- Latest weak-spot cleanup adds `scripts/fix_godot_userdata_case.sh`, a safe local maintenance helper for the repeated macOS Godot userdata warning where `project.godot` uses `config/name="rumpelgame"` but the local app userdata directory existed as `RUMPELGAME`.
+- The helper renames through a temporary path when both names resolve to the same directory on a case-insensitive filesystem. If both variants are real different directories, it refuses to merge or delete user data automatically.
+- `scripts/gpu_terrain_pacing_matrix.sh` now normalizes relative output directories to repo-root absolute paths before launching Godot, so screenshot markers are not accidentally written under `client/`.
 - Current pacing investigation slice adds `RUMPELMC_VISUAL_SMOKE_MAX_FPS` and `scripts/gpu_terrain_pacing_matrix.sh`.
 - Fresh pacing matrix artifacts: `logs/gpu_terrain_pacing_matrix/gpu-maxfps-30.png.txt`, `gpu-maxfps-0.png.txt`, `gpu-maxfps-150.png.txt`, `gpu-maxfps-240.png.txt`, and `pacing-matrix-summary.txt`.
 - Fresh pacing matrix result: `engine_max_fps=30` produces `fps_avg=30.0`, proving the Godot FPS cap works downward. `engine_max_fps=0`, `150`, and `240` all produce `fps_avg=60.0`, `vsync_mode=0`, and `screen_refresh_hz=60.000`, proving the current automated visual FPS metric is capped by display/driver pacing above the 60 Hz screen refresh.
