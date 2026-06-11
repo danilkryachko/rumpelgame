@@ -15,6 +15,9 @@ echo
 echo "- AGENTS.md"
 echo "- docs/HANDOFF.md"
 echo "- docs/AGENT_HANDOFF.md"
+echo "- docs/GPU_ROADMAP.md"
+echo "- docs/GPU_PROFILING.md"
+echo "- docs/GPU_TRENDS.md"
 echo
 
 if [ -f docs/AGENT_HANDOFF.md ]; then
@@ -43,6 +46,20 @@ else
   echo "## Git"
   echo
   echo "Not inside a git work tree."
+  echo
+fi
+
+if [ -f docs/GPU_TRENDS.md ]; then
+  echo "## GPU Trends"
+  echo
+  sed -n '1,120p' docs/GPU_TRENDS.md
+  echo
+fi
+
+if [ -f logs/gpu-terrain-report.txt ]; then
+  echo "## GPU Terrain Report"
+  echo
+  sed -n '1,120p' logs/gpu-terrain-report.txt
   echo
 fi
 
