@@ -99,6 +99,9 @@ summary_line() {
   gpu_draw_repeat="$(metric gpu_draw_repeat "$marker_path")"
   gpu_faces="$(metric gpu_faces "$marker_path")"
   gpu_upload_fail="$(metric gpu_upload_fail "$marker_path")"
+  smoke_err="$(metric smoke_err "$marker_path")"
+  terrain_samples="$(metric terrain_samples "$marker_path")"
+  terrain_color_buckets="$(metric terrain_color_buckets "$marker_path")"
   queue_max="$(default_float "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)")"
   process_wall_p95="$(default_float "$(float_metric process_wall_p95_ms "$marker_path")")"
   compositor_submit_max="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 3)")"
@@ -116,6 +119,9 @@ summary_line() {
     -v gpu_effective_draws="${gpu_effective_draws:-0}" \
     -v gpu_faces="${gpu_faces:-0}" \
     -v gpu_upload_fail="${gpu_upload_fail:-0}" \
+    -v smoke_err="${smoke_err:-1}" \
+    -v terrain_samples="${terrain_samples:-0}" \
+    -v terrain_color_buckets="${terrain_color_buckets:-0}" \
     -v queue_max="$queue_max" \
     -v process_wall_p95="$process_wall_p95" \
     -v compositor_submit_max="$compositor_submit_max" \
@@ -126,7 +132,7 @@ summary_line() {
     -v frame_p95="$frame_p95" \
     -v fps_p05="$fps_p05" '
       BEGIN {
-        printf("repeat=%s gpu_draw_repeat=%d gpu_draws=%d gpu_effective_draws=%d gpu_faces=%d gpu_upload_fail=%d terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", repeat, gpu_draw_repeat, gpu_draws, gpu_effective_draws, gpu_faces, gpu_upload_fail, queue_max, process_wall_p95, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, frame_p95, fps_p05)
+        printf("repeat=%s status=pass gpu_draw_repeat=%d gpu_draws=%d gpu_effective_draws=%d gpu_faces=%d gpu_upload_fail=%d smoke_err=%d terrain_samples=%d terrain_color_buckets=%d terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", repeat, gpu_draw_repeat, gpu_draws, gpu_effective_draws, gpu_faces, gpu_upload_fail, smoke_err, terrain_samples, terrain_color_buckets, queue_max, process_wall_p95, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, frame_p95, fps_p05)
       }
     '
 }
