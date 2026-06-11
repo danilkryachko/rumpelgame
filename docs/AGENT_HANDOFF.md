@@ -8,6 +8,11 @@ Date: 2026-06-11
 
 Fresh 2026-06-11 status:
 
+- Current pacing investigation slice adds `RUMPELMC_VISUAL_SMOKE_MAX_FPS` and `scripts/gpu_terrain_pacing_matrix.sh`.
+- Fresh pacing matrix artifacts: `logs/gpu_terrain_pacing_matrix/gpu-maxfps-30.png.txt`, `gpu-maxfps-0.png.txt`, `gpu-maxfps-150.png.txt`, `gpu-maxfps-240.png.txt`, and `pacing-matrix-summary.txt`.
+- Fresh pacing matrix result: `engine_max_fps=30` produces `fps_avg=30.0`, proving the Godot FPS cap works downward. `engine_max_fps=0`, `150`, and `240` all produce `fps_avg=60.0`, `vsync_mode=0`, and `screen_refresh_hz=60.000`, proving the current automated visual FPS metric is capped by display/driver pacing above the 60 Hz screen refresh.
+- Godot 4.6.2 command-line help says `--disable-vsync` does not override driver-level V-Sync enforcement. This matches the matrix result and explains why `Engine.max_fps` above refresh is not enough on the current macOS/Metal run.
+
 - Stabilization commit created on `main`: `58ebe46` (`Stabilize GPU terrain perf baseline`). It captured the previous broad GPU terrain/perf slice before starting the next profiler slice.
 - Current post-commit dirty slice is intentionally small: `client/main.gd`, `scripts/gpu_terrain_perf_baseline.sh`, and `docs/AGENT_HANDOFF.md`.
 - The new slice adds visual-smoke end-to-end profiler marker fields: `process_wall_samples`, `process_wall_avg_ms`, `process_wall_p95_ms`, `process_wall_max_ms`, `post_draw_wait_ms`, `image_read_ms`, `image_save_ms`, and `image_metrics_ms`. The perf baseline summary now prints these fields.

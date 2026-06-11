@@ -13,6 +13,7 @@ const VISUAL_SMOKE_MOTION_STEP_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION_STEP_SEC"
 const VISUAL_SMOKE_MOTION_SETTLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION_SETTLE_SEC"
 const VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC"
 const VISUAL_SMOKE_FORCE_UNCAPPED_ENV = "RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED"
+const VISUAL_SMOKE_MAX_FPS_ENV = "RUMPELMC_VISUAL_SMOKE_MAX_FPS"
 const VISUAL_SMOKE_DEFAULT_DELAY_SEC = 6.0
 const VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC = 2.0
 const VISUAL_SMOKE_DEFAULT_MOTION_STEP_SEC = 0.55
@@ -204,8 +205,7 @@ func run_visual_smoke_if_requested():
 		env_float(VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC),
 		0.1
 	)
-	if env_flag_enabled(VISUAL_SMOKE_FORCE_UNCAPPED_ENV):
-		force_uncapped_visual_smoke()
+	configure_visual_smoke_frame_pacing()
 
 	if env_flag_enabled(VISUAL_SMOKE_HIDE_HUD_ENV):
 		var hud = get_node_or_null("HUD")
@@ -407,10 +407,17 @@ func empty_timing_metrics() -> Dictionary:
 		"max_ms": 0.0
 	}
 
-func force_uncapped_visual_smoke():
-	Engine.max_fps = 0
+func configure_visual_smoke_frame_pacing():
+	var max_fps_value = OS.get_environment(VISUAL_SMOKE_MAX_FPS_ENV).strip_edges()
+	if not env_flag_enabled(VISUAL_SMOKE_FORCE_UNCAPPED_ENV) and max_fps_value.is_empty():
+		return
+
+	var requested_max_fps = 0
+	if max_fps_value.is_valid_int():
+		requested_max_fps = max(int(max_fps_value), 0)
+	Engine.max_fps = requested_max_fps
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
-	log_event("Visual smoke forced uncapped: max_fps=0 vsync=disabled")
+	log_event("Visual smoke frame pacing configured: max_fps=%d vsync=disabled" % requested_max_fps)
 
 func visual_smoke_runtime_metrics() -> Dictionary:
 	var screen = DisplayServer.window_get_current_screen()
