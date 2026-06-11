@@ -3,6 +3,10 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 OUT_DIR="${1:-"$ROOT_DIR/logs/gpu_terrain_perf_baseline"}"
+case "$OUT_DIR" in
+  /*) ;;
+  *) OUT_DIR="$ROOT_DIR/$OUT_DIR" ;;
+esac
 GODOT_BIN="${GODOT_BIN:-/opt/homebrew/bin/godot}"
 TIMEOUT_BIN="${TIMEOUT_BIN:-/opt/homebrew/bin/timeout}"
 GODOT_TIMEOUT_SEC="${GODOT_TIMEOUT_SEC:-120}"
@@ -216,7 +220,12 @@ terrain_work_line() {
         if (over > 0.0) {
           status = "fail"
         }
-        printf("%s_terrain_work refresh_independent=1 avg_ms=%.3f max_ms=%.3f capacity_avg_fps=%.1f budget_status=%s budget_ms=%.3f over_ms=%.3f mesh_avg_ms=%.3f coll_avg_ms=%.3f draw_rebuild_avg_ms=%.3f draw_patch_avg_ms=%.3f screen_refresh_hz=%.3f\n", label, avg, max, fps, status, budget, over, mesh_avg, coll_avg, draw_rebuild_avg, draw_patch_avg, refresh_hz)
+        max_status = "pass"
+        max_over = max - budget
+        if (max_over > 0.0) {
+          max_status = "fail"
+        }
+        printf("%s_terrain_work refresh_independent=1 avg_ms=%.3f max_pessimistic_ms=%.3f capacity_avg_fps=%.1f budget_status=%s max_pessimistic_budget_status=%s budget_ms=%.3f over_ms=%.3f max_pessimistic_over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f draw_rebuild_avg_ms=%.3f draw_rebuild_max_ms=%.3f draw_patch_avg_ms=%.3f draw_patch_max_ms=%.3f screen_refresh_hz=%.3f\n", label, avg, max, fps, status, max_status, budget, over, max_over, mesh_avg, mesh_max, coll_avg, coll_max, draw_rebuild_avg, draw_rebuild_max, draw_patch_avg, draw_patch_max, refresh_hz)
       }
     '
 }

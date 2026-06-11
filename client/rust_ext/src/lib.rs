@@ -175,8 +175,13 @@ impl INode for GameClient {
                 self.update_chunk(chunk);
             }
         }
-        self.process_mesh_queue();
-        self.process_collision_refresh_queue();
+        let collision_rebuilds = self.process_collision_refresh_queue();
+        if should_process_mesh_queue_after_collision_refresh(collision_rebuilds) {
+            self.process_mesh_queue();
+        } else {
+            self.perf
+                .record_mesh_queue_frame(self.mesh_queue.len(), 0, 0, 0, 0, 0);
+        }
         self.sync_gpu_terrain_lighting();
         self.update_gpu_visible_transition();
         if gpu_terrain_render_enabled()
@@ -333,7 +338,7 @@ impl GameClient {
         );
     }
 
-    fn process_collision_refresh_queue(&mut self) {
+    fn process_collision_refresh_queue(&mut self) -> usize {
         let mut batch = CollisionRefreshBatch::default();
         let mut drained = 0;
         let mut stale_drops = 0;
@@ -377,6 +382,7 @@ impl GameClient {
         if batch.checked > 0 {
             self.perf.record_collision_refresh(batch);
         }
+        rebuilt
     }
 
     fn enqueue_chunk_subchunks(&mut self, chunk_x: i32, chunk_z: i32) {
@@ -1552,6 +1558,10 @@ fn pop_next_mesh_queue_key(
         .min_by_key(|(idx, key)| (subchunk_chunk_distance_sq(**key, center), *idx))
         .map(|(idx, _)| idx)?;
     queue.remove(best_idx)
+}
+
+fn should_process_mesh_queue_after_collision_refresh(collision_rebuilds: usize) -> bool {
+    collision_rebuilds == 0
 }
 
 fn subchunk_chunk_distance_sq(key: SubchunkKey, center: (i32, i32)) -> i64 {
@@ -3936,6 +3946,13 @@ mod tests {
         assert!(pop_next_mesh_queue_key(&mut queue, None).is_some_and(|key| key == far));
         assert!(pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_some_and(|key| key == tie_b));
         assert!(pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_none());
+    }
+
+    #[test]
+    fn mesh_queue_waits_when_collision_refresh_rebuilt_this_frame() {
+        assert!(should_process_mesh_queue_after_collision_refresh(0));
+        assert!(!should_process_mesh_queue_after_collision_refresh(1));
+        assert!(!should_process_mesh_queue_after_collision_refresh(2));
     }
 
     #[test]
