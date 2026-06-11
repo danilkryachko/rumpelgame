@@ -3,6 +3,10 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 OUT_DIR="${1:-"$ROOT_DIR/logs/gpu_terrain_visual_smoke/movement_stress"}"
+case "$OUT_DIR" in
+  /*) ;;
+  *) OUT_DIR="$ROOT_DIR/$OUT_DIR" ;;
+esac
 GODOT_BIN="${GODOT_BIN:-/opt/homebrew/bin/godot}"
 TIMEOUT_BIN="${TIMEOUT_BIN:-/opt/homebrew/bin/timeout}"
 GODOT_TIMEOUT_SEC="${GODOT_TIMEOUT_SEC:-120}"
@@ -12,6 +16,7 @@ FRAME_SAMPLE_SEC="${RUMPELMC_MOVEMENT_STRESS_FRAME_SAMPLE_SEC:-5.0}"
 MOTION_STEP_SEC="${RUMPELMC_MOVEMENT_STRESS_STEP_SEC:-0.55}"
 MOTION_SETTLE_SEC="${RUMPELMC_MOVEMENT_STRESS_SETTLE_SEC:-4.0}"
 MIN_MOTION_CHUNKS="${RUMPELMC_MOVEMENT_STRESS_MIN_CHUNKS:-4}"
+TARGET_FPS="${RUMPELMC_MOVEMENT_STRESS_TARGET_FPS:-150}"
 
 mkdir -p "$OUT_DIR"
 
@@ -26,6 +31,85 @@ metric() {
   key="$1"
   marker_path="$2"
   sed -n "s/.*$key=\([0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
+float_metric() {
+  key="$1"
+  marker_path="$2"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
+perf_triplet_value() {
+  key="$1"
+  marker_path="$2"
+  index="$3"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\).*/\1 \2 \3/p" "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+mesh_triplet_value() {
+  marker_path="$1"
+  index="$2"
+  sed -n 's/.* mesh \([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)ms .*/\1 \2 \3/p' "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+collision_triplet_value() {
+  marker_path="$1"
+  index="$2"
+  sed -n 's/.* coll \([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)ms .*/\1 \2 \3/p' "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+frame_budget_ms() {
+  awk -v fps="$TARGET_FPS" '
+    BEGIN {
+      if (fps <= 0.0) {
+        fps = 150.0
+      }
+      printf("%.3f\n", 1000.0 / fps)
+    }
+  '
+}
+
+write_summary() {
+  summary_path="$OUT_DIR/movement-stress-summary.txt"
+  budget_ms="$(frame_budget_ms)"
+  terrain_queue_avg="$(perf_triplet_value terrain_queue_work_ms "$marker_path" 2)"
+  terrain_queue_max="$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)"
+  mesh_avg="$(mesh_triplet_value "$marker_path" 2)"
+  mesh_max="$(mesh_triplet_value "$marker_path" 3)"
+  coll_avg="$(collision_triplet_value "$marker_path" 2)"
+  coll_max="$(collision_triplet_value "$marker_path" 3)"
+  frame_p95="$(float_metric frame_p95_ms "$marker_path")"
+  fps_p05="$(float_metric fps_p05 "$marker_path")"
+  test -n "$terrain_queue_avg" || fail "missing terrain_queue_work_ms in $marker_path"
+  test -n "$mesh_avg" || fail "missing mesh triplet in $marker_path"
+  test -n "$coll_avg" || fail "missing coll triplet in $marker_path"
+  awk \
+    -v budget="$budget_ms" \
+    -v terrain_queue_avg="$terrain_queue_avg" \
+    -v terrain_queue_max="$terrain_queue_max" \
+    -v mesh_avg="$mesh_avg" \
+    -v mesh_max="$mesh_max" \
+    -v coll_avg="$coll_avg" \
+    -v coll_max="$coll_max" \
+    -v frame_p95="$frame_p95" \
+    -v fps_p05="$fps_p05" '
+      BEGIN {
+        status = "pass"
+        over = terrain_queue_max - budget
+        if (over > 0.0) {
+          status = "fail"
+        }
+        printf("GPU terrain movement stress summary target_fps=%.0f budget_ms=%.3f\n", 1000.0 / budget, budget)
+        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f budget_status=%s over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, status, over, mesh_avg, mesh_max, coll_avg, coll_max, frame_p95, fps_p05)
+      }
+    ' > "$summary_path"
+  cat "$summary_path"
 }
 
 require_metric_ge() {
@@ -98,6 +182,9 @@ require_metric_ge "$marker_path" "gpu_uploads" 1
 require_metric_eq "$marker_path" "gpu_upload_fail" 0
 require_metric_eq "$marker_path" "gpu_upload_fail_capacity" 0
 require_metric_eq "$marker_path" "gpu_upload_fail_fragmented" 0
+test -n "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)" || fail "missing terrain_queue_work_ms in $marker_path"
+
+write_summary
 
 cat "$marker_path"
 
