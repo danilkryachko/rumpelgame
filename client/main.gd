@@ -223,12 +223,24 @@ func run_visual_smoke_if_requested():
 func capture_visual_smoke(screenshot_path: String):
 	var pose_name = normalized_visual_smoke_pose()
 	visual_smoke_motion_name = normalized_visual_smoke_motion()
+	log_event("Visual smoke capture started path=%s pose=\"%s\" motion=\"%s\"" % [
+		globalize_smoke_path(screenshot_path),
+		pose_name,
+		visual_smoke_motion_name
+	])
 	await run_visual_smoke_motion(visual_smoke_motion_name)
+	log_event("Visual smoke motion complete motion=\"%s\" motion_steps=%d motion_chunks=%d current_chunk=\"%s\"" % [
+		visual_smoke_motion_name,
+		visual_smoke_motion_steps,
+		visual_smoke_motion_chunks.size(),
+		visual_smoke_client_text("get_current_chunk_text", "n/a")
+	])
 	apply_visual_smoke_pose(pose_name)
 	var post_draw_wait_start_usec = Time.get_ticks_usec()
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var post_draw_wait_ms = float(Time.get_ticks_usec() - post_draw_wait_start_usec) / 1000.0
+	log_event("Visual smoke post draw complete post_draw_wait_ms=%.3f" % post_draw_wait_ms)
 
 	var image_read_start_usec = Time.get_ticks_usec()
 	var image = get_viewport().get_texture().get_image()
@@ -238,6 +250,12 @@ func capture_visual_smoke(screenshot_path: String):
 	var image_save_start_usec = Time.get_ticks_usec()
 	var err = image.save_png(output_path)
 	var image_save_ms = float(Time.get_ticks_usec() - image_save_start_usec) / 1000.0
+	log_event("Visual smoke image saved path=%s save_err=%d image_read_ms=%.3f image_save_ms=%.3f" % [
+		output_path,
+		err,
+		image_read_ms,
+		image_save_ms
+	])
 	var image_metrics_start_usec = Time.get_ticks_usec()
 	var metrics = image_visual_metrics(image)
 	var image_metrics_ms = float(Time.get_ticks_usec() - image_metrics_start_usec) / 1000.0
