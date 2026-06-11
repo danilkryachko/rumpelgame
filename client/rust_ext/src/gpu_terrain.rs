@@ -809,6 +809,20 @@ struct FaceAllocatorStats {
     largest_free_faces: usize,
 }
 
+impl FaceAllocatorStats {
+    fn fragmented_free_faces(&self) -> usize {
+        self.free_faces.saturating_sub(self.largest_free_faces)
+    }
+
+    fn fragmentation_pct(&self) -> f64 {
+        if self.free_faces == 0 {
+            0.0
+        } else {
+            self.fragmented_free_faces() as f64 * 100.0 / self.free_faces as f64
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UploadFailureKind {
     Capacity,
@@ -916,6 +930,8 @@ pub struct GpuTerrainStats {
     pub free_ranges: usize,
     pub free_faces: usize,
     pub largest_free_faces: usize,
+    pub fragmented_free_faces: usize,
+    pub fragmentation_pct: f64,
     pub draw_rebuild_count: u64,
     pub last_draw_rebuild_ms: f64,
     pub avg_draw_rebuild_ms: f64,
@@ -1306,6 +1322,8 @@ impl GpuTerrainBufferPool {
             free_ranges: allocator_stats.free_ranges,
             free_faces: allocator_stats.free_faces,
             largest_free_faces: allocator_stats.largest_free_faces,
+            fragmented_free_faces: allocator_stats.fragmented_free_faces(),
+            fragmentation_pct: allocator_stats.fragmentation_pct(),
             draw_rebuild_count: self.draw_rebuild_count,
             last_draw_rebuild_ms: self.last_draw_rebuild_ms,
             avg_draw_rebuild_ms: self.avg_draw_rebuild_ms,
@@ -3287,6 +3305,8 @@ mod tests {
                 largest_free_faces: 4,
             }
         );
+        assert_eq!(allocator.stats().fragmented_free_faces(), 3);
+        assert!((allocator.stats().fragmentation_pct() - 42.857).abs() < 0.001);
 
         allocator.free(first);
         assert_eq!(
@@ -3297,6 +3317,8 @@ mod tests {
                 largest_free_faces: 7,
             }
         );
+        assert_eq!(allocator.stats().fragmented_free_faces(), 3);
+        assert_eq!(allocator.stats().fragmentation_pct(), 30.0);
 
         allocator.free(third);
         assert_eq!(
@@ -3307,6 +3329,8 @@ mod tests {
                 largest_free_faces: 12,
             }
         );
+        assert_eq!(allocator.stats().fragmented_free_faces(), 0);
+        assert_eq!(allocator.stats().fragmentation_pct(), 0.0);
     }
 
     #[test]
