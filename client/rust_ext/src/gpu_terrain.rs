@@ -2092,10 +2092,24 @@ struct TerrainRasterizationConfig {
     front_face: PolygonFrontFace,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TerrainRasterizationLabels {
+    pub cull_mode: &'static str,
+    pub front_face: &'static str,
+}
+
 fn terrain_rasterization_config(cull_mode: PolygonCullMode) -> TerrainRasterizationConfig {
     TerrainRasterizationConfig {
         cull_mode,
         front_face: PolygonFrontFace::CLOCKWISE,
+    }
+}
+
+pub fn terrain_rasterization_labels() -> TerrainRasterizationLabels {
+    let config = terrain_rasterization_config(gpu_terrain_cull_mode());
+    TerrainRasterizationLabels {
+        cull_mode: polygon_cull_mode_label(config.cull_mode),
+        front_face: polygon_front_face_label(config.front_face),
     }
 }
 
@@ -2268,6 +2282,23 @@ fn gpu_terrain_cull_mode_from_env(value: Option<String>) -> PolygonCullMode {
         Some(value) if value == "front" => PolygonCullMode::FRONT,
         Some(value) if value == "back" || value.is_empty() => PolygonCullMode::BACK,
         _ => PolygonCullMode::BACK,
+    }
+}
+
+fn polygon_cull_mode_label(cull_mode: PolygonCullMode) -> &'static str {
+    match cull_mode {
+        PolygonCullMode::DISABLED => "disabled",
+        PolygonCullMode::FRONT => "front",
+        PolygonCullMode::BACK => "back",
+        _ => "unknown",
+    }
+}
+
+fn polygon_front_face_label(front_face: PolygonFrontFace) -> &'static str {
+    match front_face {
+        PolygonFrontFace::CLOCKWISE => "clockwise",
+        PolygonFrontFace::COUNTER_CLOCKWISE => "counter_clockwise",
+        _ => "unknown",
     }
 }
 
@@ -2609,6 +2640,24 @@ mod tests {
 
         assert_eq!(config.cull_mode, PolygonCullMode::BACK);
         assert_eq!(config.front_face, PolygonFrontFace::CLOCKWISE);
+    }
+
+    #[test]
+    fn terrain_rasterization_labels_are_stable_for_markers() {
+        assert_eq!(polygon_cull_mode_label(PolygonCullMode::BACK), "back");
+        assert_eq!(polygon_cull_mode_label(PolygonCullMode::FRONT), "front");
+        assert_eq!(
+            polygon_cull_mode_label(PolygonCullMode::DISABLED),
+            "disabled"
+        );
+        assert_eq!(
+            polygon_front_face_label(PolygonFrontFace::CLOCKWISE),
+            "clockwise"
+        );
+        assert_eq!(
+            polygon_front_face_label(PolygonFrontFace::COUNTER_CLOCKWISE),
+            "counter_clockwise"
+        );
     }
 
     #[test]

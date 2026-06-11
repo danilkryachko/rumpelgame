@@ -73,6 +73,12 @@ metric_sum() {
     '
 }
 
+rasterization_states() {
+  summary_files | xargs grep -h 'gpu_cull=' 2>/dev/null \
+    | sed -n 's/.*gpu_cull=\([^ ]*\).*gpu_front_face=\([^ ]*\).*/gpu_cull=\1 gpu_front_face=\2/p' \
+    | sort -u
+}
+
 print_optional_file() {
   label="$1"
   path="$2"
@@ -112,6 +118,14 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `gpu_compositor_gpu_max_us`: `%s`\n' "$(metric_max gpu_compositor_gpu_max_us)"
   printf -- '- max `frame_p95_ms`: `%s`\n' "$(metric_max frame_p95_ms)"
   printf -- '- max `fps_p05`: `%s`\n' "$(metric_max fps_p05)"
+
+  printf '\n## Rasterization States\n\n'
+  states="$(rasterization_states || true)"
+  if [ -n "$states" ]; then
+    printf '%s\n' "$states" | sed 's/^/- `/' | sed 's/$/`/'
+  else
+    printf 'No `gpu_cull` marker fields found in existing artifacts.\n'
+  fi
 
   print_optional_file "Selected Movement Stress Summary" "$(latest_file movement-stress-summary.txt)"
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
