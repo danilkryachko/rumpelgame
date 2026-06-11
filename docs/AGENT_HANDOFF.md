@@ -8,8 +8,13 @@ Date: 2026-06-11
 
 Fresh 2026-06-11 status:
 
-- Current dirty worktree is intentionally narrow: `client/rust_ext/src/gpu_terrain.rs`, `client/rust_ext/src/lib.rs`, `client/shaders/gpu_terrain_render.glsl`, `client/main.gd`, `scripts/gpu_terrain_perf_baseline.sh`, and `scripts/gpu_terrain_movement_stress.sh`.
-- The active uncommitted slice adds greedy packed-face merging, face extents in the GPU terrain shader, direct/cached collision-face accounting, and collision timing perf records.
+- Stabilization commit created on `main`: `58ebe46` (`Stabilize GPU terrain perf baseline`). It captured the previous broad GPU terrain/perf slice before starting the next profiler slice.
+- Current post-commit dirty slice is intentionally small: `client/main.gd`, `scripts/gpu_terrain_perf_baseline.sh`, and `docs/AGENT_HANDOFF.md`.
+- The new slice adds visual-smoke end-to-end profiler marker fields: `process_wall_samples`, `process_wall_avg_ms`, `process_wall_p95_ms`, `process_wall_max_ms`, `post_draw_wait_ms`, `image_read_ms`, `image_save_ms`, and `image_metrics_ms`. The perf baseline summary now prints these fields.
+- Fresh release e2e profile artifacts: `logs/gpu_terrain_e2e_profile/cpu-arraymesh-baseline.png.txt` and `logs/gpu_terrain_e2e_profile/gpu-terrain-baseline.png.txt`. Current GPU marker: `fps_avg=60.0`, `process_wall_avg_ms=0.030`, `process_wall_p95_ms=0.044`, `post_draw_wait_ms=31.802`, `screen_refresh_hz=60.000`, `gpu_terrain_work avg_ms=0.976`, `capacity_avg_fps=1024.6`. This points at frame/display pacing rather than GDScript `_process` or terrain update work.
+
+- The committed `58ebe46` slice covered `client/rust_ext/src/gpu_terrain.rs`, `client/rust_ext/src/lib.rs`, `client/shaders/gpu_terrain_render.glsl`, `client/main.gd`, `scripts/gpu_terrain_perf_baseline.sh`, and `scripts/gpu_terrain_movement_stress.sh`.
+- The committed GPU terrain slice adds greedy packed-face merging, face extents in the GPU terrain shader, direct/cached collision-face accounting, and collision timing perf records.
 - A review pass found and fixed a CPU ArrayMesh fallback cap bug: merged faces can expand into many unit quads for UV parity, so CPU fallback must enforce `MAX_CPU_ARRAY_MESH_VERTICES` against expanded vertices, not packed face count. Guard test added.
 - Fresh checks passed: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full`, `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh`, `./scripts/gpu_terrain_compact_proxy_benchmark.sh`, `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, and `cargo test --manifest-path client/rust_ext/Cargo.toml` with 76/76 tests.
 - Fresh release perf baseline passed after building the release Rust GDExtension with `RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1`. Artifacts: `logs/gpu_terrain_perf_baseline/cpu-arraymesh-baseline.png.txt` and `logs/gpu_terrain_perf_baseline/gpu-terrain-baseline.png.txt`.
@@ -20,7 +25,7 @@ Fresh 2026-06-11 status:
 - Fresh forced-uncapped release baseline artifacts: `logs/gpu_terrain_fps_cap/cpu-arraymesh-baseline.png.txt` and `logs/gpu_terrain_fps_cap/gpu-terrain-baseline.png.txt`. Both reported `engine_max_fps=0`, `vsync_mode=0`, `screen_refresh_hz=60.000`, and exactly ~60 FPS (`frame_p95_ms=16.667`). This confirms the current visual smoke FPS metric is display/frame-pacing limited on this run, not a reliable proof of terrain renderer capacity above monitor refresh.
 - In the forced-uncapped GPU marker the terrain work itself is light: `mesh_avg_ms=0.82`, `mesh_max_ms=1.26`, `coll_avg_ms=0.16`, `gpu_upload_fail=0`, `gpu_subchunks=132`, `gpu_draws=132`, `gpu_faces=338`.
 - `scripts/gpu_terrain_perf_baseline.sh` now writes `logs/gpu_terrain_fps_cap/perf-baseline-summary.txt` with refresh-independent `*_terrain_work` lines. Current derived results: CPU terrain work `avg_ms=9.930`, `capacity_avg_fps=100.7`, `budget_status=fail`; GPU terrain work `avg_ms=0.986`, `capacity_avg_fps=1014.2`, `budget_status=pass` for a 150 FPS budget (`6.667ms`). Treat this as a terrain update/work proxy, not a full end-to-end FPS claim.
-- `./scripts/diff_guard.sh` still warns because the active slice is broad for sensitive Rust files: 1005 tracked lines at the time of this snapshot. Do not treat this as a failed build; treat it as a review/commit-size warning.
+- Current post-commit profiler slice passes `./scripts/diff_guard.sh`; the previous 1005-line warning was resolved by committing the broad GPU terrain slice as `58ebe46`.
 
 Goal:
 

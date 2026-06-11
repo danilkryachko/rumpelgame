@@ -36,6 +36,7 @@ var visual_smoke_requested: bool = false
 var visual_smoke_frame_window_sec: float = VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC
 var visual_smoke_frame_times: Array[float] = []
 var visual_smoke_frame_ms: Array[float] = []
+var visual_smoke_process_wall_ms: Array[float] = []
 var visual_smoke_motion_name: String = "none"
 var visual_smoke_motion_steps: int = 0
 var visual_smoke_motion_chunks = {}
@@ -76,9 +77,11 @@ func _ready():
 
 	run_visual_smoke_if_requested()
 
-func _process(_delta):
-	record_visual_smoke_frame(_delta)
+func _process(delta):
+	var process_start_usec = Time.get_ticks_usec()
+	record_visual_smoke_frame(delta)
 	sync_window_content_size()
+	record_visual_smoke_process_wall(float(Time.get_ticks_usec() - process_start_usec) / 1000.0)
 
 func configure_window_stretch():
 	var window = get_window()
@@ -222,14 +225,22 @@ func capture_visual_smoke(screenshot_path: String):
 	visual_smoke_motion_name = normalized_visual_smoke_motion()
 	await run_visual_smoke_motion(visual_smoke_motion_name)
 	apply_visual_smoke_pose(pose_name)
+	var post_draw_wait_start_usec = Time.get_ticks_usec()
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
+	var post_draw_wait_ms = float(Time.get_ticks_usec() - post_draw_wait_start_usec) / 1000.0
 
+	var image_read_start_usec = Time.get_ticks_usec()
 	var image = get_viewport().get_texture().get_image()
+	var image_read_ms = float(Time.get_ticks_usec() - image_read_start_usec) / 1000.0
 	var output_path = globalize_smoke_path(screenshot_path)
 	DirAccess.make_dir_recursive_absolute(output_path.get_base_dir())
+	var image_save_start_usec = Time.get_ticks_usec()
 	var err = image.save_png(output_path)
+	var image_save_ms = float(Time.get_ticks_usec() - image_save_start_usec) / 1000.0
+	var image_metrics_start_usec = Time.get_ticks_usec()
 	var metrics = image_visual_metrics(image)
+	var image_metrics_ms = float(Time.get_ticks_usec() - image_metrics_start_usec) / 1000.0
 	var smoke_err = err
 	if smoke_err == OK and metrics["terrain_samples"] < VISUAL_SMOKE_MIN_TERRAIN_SAMPLES:
 		smoke_err = FAILED
@@ -244,8 +255,9 @@ func capture_visual_smoke(screenshot_path: String):
 	if smoke_err == OK and metrics["terrain_luma_range"] < VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE:
 		smoke_err = FAILED
 	var frame_metrics = visual_smoke_frame_metrics()
+	var process_metrics = visual_smoke_process_wall_metrics()
 	var runtime_metrics = visual_smoke_runtime_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		visual_smoke_motion_name,
@@ -278,6 +290,14 @@ func capture_visual_smoke(screenshot_path: String):
 		frame_metrics["fps_avg"],
 		frame_metrics["fps_p05"],
 		frame_metrics["fps_min"],
+		process_metrics["samples"],
+		process_metrics["avg_ms"],
+		process_metrics["p95_ms"],
+		process_metrics["max_ms"],
+		post_draw_wait_ms,
+		image_read_ms,
+		image_save_ms,
+		image_metrics_ms,
 		runtime_metrics["engine_max_fps"],
 		runtime_metrics["vsync_mode"],
 		runtime_metrics["screen_refresh_hz"],
@@ -328,22 +348,37 @@ func record_visual_smoke_frame(delta: float):
 	while not visual_smoke_frame_times.is_empty() and visual_smoke_frame_times[0] < cutoff_sec:
 		visual_smoke_frame_times.pop_front()
 		visual_smoke_frame_ms.pop_front()
+		if not visual_smoke_process_wall_ms.is_empty():
+			visual_smoke_process_wall_ms.pop_front()
+
+func record_visual_smoke_process_wall(wall_ms: float):
+	if not visual_smoke_requested:
+		return
+
+	visual_smoke_process_wall_ms.append(wall_ms)
 
 func visual_smoke_frame_metrics() -> Dictionary:
 	if visual_smoke_frame_ms.is_empty():
-		return {
-			"samples": 0,
-			"avg_ms": 0.0,
-			"p50_ms": 0.0,
-			"p95_ms": 0.0,
-			"p99_ms": 0.0,
-			"max_ms": 0.0,
-			"fps_avg": 0.0,
-			"fps_p05": 0.0,
-			"fps_min": 0.0
-		}
+		var empty_metrics = empty_timing_metrics()
+		empty_metrics["fps_avg"] = 0.0
+		empty_metrics["fps_p05"] = 0.0
+		empty_metrics["fps_min"] = 0.0
+		return empty_metrics
 
-	var sorted_ms = visual_smoke_frame_ms.duplicate()
+	var metrics = timing_metrics(visual_smoke_frame_ms)
+	metrics["fps_avg"] = fps_from_frame_ms(metrics["avg_ms"])
+	metrics["fps_p05"] = fps_from_frame_ms(metrics["p95_ms"])
+	metrics["fps_min"] = fps_from_frame_ms(metrics["max_ms"])
+	return metrics
+
+func visual_smoke_process_wall_metrics() -> Dictionary:
+	return timing_metrics(visual_smoke_process_wall_ms)
+
+func timing_metrics(values: Array[float]) -> Dictionary:
+	if values.is_empty():
+		return empty_timing_metrics()
+
+	var sorted_ms = values.duplicate()
 	sorted_ms.sort()
 	var total_ms = 0.0
 	for frame_ms in sorted_ms:
@@ -359,10 +394,17 @@ func visual_smoke_frame_metrics() -> Dictionary:
 		"p50_ms": p50_ms,
 		"p95_ms": p95_ms,
 		"p99_ms": p99_ms,
-		"max_ms": max_ms,
-		"fps_avg": fps_from_frame_ms(avg_ms),
-		"fps_p05": fps_from_frame_ms(p95_ms),
-		"fps_min": fps_from_frame_ms(max_ms)
+		"max_ms": max_ms
+	}
+
+func empty_timing_metrics() -> Dictionary:
+	return {
+		"samples": 0,
+		"avg_ms": 0.0,
+		"p50_ms": 0.0,
+		"p95_ms": 0.0,
+		"p99_ms": 0.0,
+		"max_ms": 0.0
 	}
 
 func force_uncapped_visual_smoke():
