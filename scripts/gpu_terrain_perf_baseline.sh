@@ -20,6 +20,7 @@ BUDGET_MODE="${RUMPELMC_PERF_BASELINE_BUDGET_MODE:-report}"
 TERRAIN_QUEUE_BUDGET_MODE="${RUMPELMC_PERF_BASELINE_TERRAIN_QUEUE_BUDGET_MODE:-enforce}"
 PROCESS_WALL_BUDGET_MODE="${RUMPELMC_PERF_BASELINE_PROCESS_WALL_BUDGET_MODE:-enforce}"
 GPU_COMPOSITOR_BUDGET_MODE="${RUMPELMC_PERF_BASELINE_GPU_COMPOSITOR_BUDGET_MODE:-enforce}"
+GPU_TIMESTAMP_BUDGET_MODE="${RUMPELMC_PERF_BASELINE_GPU_TIMESTAMP_BUDGET_MODE:-report}"
 BUDGET_P95_MS="${RUMPELMC_PERF_BASELINE_FRAME_P95_BUDGET_MS:-}"
 
 mkdir -p "$OUT_DIR"
@@ -154,7 +155,7 @@ run_case() {
 print_row() {
   label="$1"
   marker_path="$2"
-  printf '%-12s frame_avg_ms=%s frame_p50_ms=%s frame_p95_ms=%s frame_p99_ms=%s frame_max_ms=%s fps_avg=%s fps_p05=%s fps_min=%s process_wall_avg_ms=%s process_wall_p95_ms=%s process_wall_max_ms=%s post_draw_wait_ms=%s image_read_ms=%s image_save_ms=%s image_metrics_ms=%s engine_max_fps=%s vsync_mode=%s screen_refresh_hz=%s terrain_queue_avg_ms=%s terrain_queue_max_ms=%s terrain_queue_max_mesh_ms=%s terrain_queue_max_coll_ms=%s mesh_avg_ms=%s mesh_max_ms=%s coll_avg_ms=%s cpu_proxy=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s gpu_mem_mb=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_free_ranges=%s gpu_largest_free=%s gpu_draw_rebuilds=%s gpu_draw_rebuild_ms=%s gpu_draw_patches=%s gpu_draw_patch_ms=%s gpu_compositor_submit=%s gpu_compositor_submit_ms=%s terrain_samples=%s\n' \
+  printf '%-12s frame_avg_ms=%s frame_p50_ms=%s frame_p95_ms=%s frame_p99_ms=%s frame_max_ms=%s fps_avg=%s fps_p05=%s fps_min=%s process_wall_avg_ms=%s process_wall_p95_ms=%s process_wall_max_ms=%s post_draw_wait_ms=%s image_read_ms=%s image_save_ms=%s image_metrics_ms=%s engine_max_fps=%s vsync_mode=%s screen_refresh_hz=%s terrain_queue_avg_ms=%s terrain_queue_max_ms=%s terrain_queue_max_mesh_ms=%s terrain_queue_max_coll_ms=%s mesh_avg_ms=%s mesh_max_ms=%s coll_avg_ms=%s cpu_proxy=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s gpu_mem_mb=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_free_ranges=%s gpu_largest_free=%s gpu_draw_rebuilds=%s gpu_draw_rebuild_ms=%s gpu_draw_patches=%s gpu_draw_patch_ms=%s gpu_compositor_submit=%s gpu_compositor_submit_ms=%s gpu_compositor_gpu_samples=%s gpu_compositor_gpu_ms=%s gpu_compositor_gpu_us=%s terrain_samples=%s\n' \
     "$label" \
     "$(float_metric frame_avg_ms "$marker_path")" \
     "$(float_metric frame_p50_ms "$marker_path")" \
@@ -198,6 +199,9 @@ print_row() {
     "$(perf_float gpu_draw_patch_ms "$marker_path")" \
     "$(metric gpu_compositor_submit "$marker_path")" \
     "$(perf_float gpu_compositor_submit_ms "$marker_path")" \
+    "$(metric gpu_compositor_gpu_samples "$marker_path")" \
+    "$(perf_float gpu_compositor_gpu_ms "$marker_path")" \
+    "$(perf_float gpu_compositor_gpu_us "$marker_path")" \
     "$(metric terrain_samples "$marker_path")"
 }
 
@@ -215,6 +219,11 @@ terrain_work_line() {
   draw_patch_max="$(default_float "$(perf_triplet_value gpu_draw_patch_ms "$marker_path" 3)")"
   compositor_submit_avg="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 2)")"
   compositor_submit_max="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 3)")"
+  compositor_gpu_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 2)")"
+  compositor_gpu_max="$(default_float "$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 3)")"
+  compositor_gpu_us_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 2)")"
+  compositor_gpu_us_max="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 3)")"
+  compositor_gpu_samples="$(metric gpu_compositor_gpu_samples "$marker_path")"
   queue_avg="$(default_float "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 2)")"
   queue_max="$(default_float "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)")"
   queue_max_mesh="$(default_float "$(perf_pair_value terrain_queue_work_max_parts "$marker_path" 1)")"
@@ -232,6 +241,11 @@ terrain_work_line() {
     -v draw_patch_max="$draw_patch_max" \
     -v compositor_submit_avg="$compositor_submit_avg" \
     -v compositor_submit_max="$compositor_submit_max" \
+    -v compositor_gpu_avg="$compositor_gpu_avg" \
+    -v compositor_gpu_max="$compositor_gpu_max" \
+    -v compositor_gpu_us_avg="$compositor_gpu_us_avg" \
+    -v compositor_gpu_us_max="$compositor_gpu_us_max" \
+    -v compositor_gpu_samples="${compositor_gpu_samples:-0}" \
     -v queue_avg="$queue_avg" \
     -v queue_max="$queue_max" \
     -v queue_max_mesh="$queue_max_mesh" \
@@ -239,8 +253,8 @@ terrain_work_line() {
     -v refresh_hz="$refresh_hz" \
     -v budget="$budget_ms" '
       BEGIN {
-        avg = mesh_avg + coll_avg + draw_rebuild_avg + draw_patch_avg + compositor_submit_avg
-        max = mesh_max + coll_max + draw_rebuild_max + draw_patch_max + compositor_submit_max
+        avg = mesh_avg + coll_avg + draw_rebuild_avg + draw_patch_avg + compositor_submit_avg + compositor_gpu_avg
+        max = mesh_max + coll_max + draw_rebuild_max + draw_patch_max + compositor_submit_max + compositor_gpu_max
         queue_status = "pass"
         queue_over = queue_max - budget
         if (queue_over > 0.0) {
@@ -260,7 +274,7 @@ terrain_work_line() {
         if (max_over > 0.0) {
           max_status = "fail"
         }
-        printf("%s_terrain_work refresh_independent=1 avg_ms=%.3f max_pessimistic_ms=%.3f capacity_avg_fps=%.1f budget_status=%s max_pessimistic_budget_status=%s terrain_queue_avg_ms=%.3f terrain_queue_max_ms=%.3f terrain_queue_max_mesh_ms=%.3f terrain_queue_max_coll_ms=%.3f terrain_queue_budget_status=%s terrain_queue_over_ms=%.3f budget_ms=%.3f over_ms=%.3f max_pessimistic_over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f draw_rebuild_avg_ms=%.3f draw_rebuild_max_ms=%.3f draw_patch_avg_ms=%.3f draw_patch_max_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f screen_refresh_hz=%.3f\n", label, avg, max, fps, status, max_status, queue_avg, queue_max, queue_max_mesh, queue_max_coll, queue_status, queue_over, budget, over, max_over, mesh_avg, mesh_max, coll_avg, coll_max, draw_rebuild_avg, draw_rebuild_max, draw_patch_avg, draw_patch_max, compositor_submit_avg, compositor_submit_max, refresh_hz)
+        printf("%s_terrain_work refresh_independent=1 avg_ms=%.3f max_pessimistic_ms=%.3f capacity_avg_fps=%.1f budget_status=%s max_pessimistic_budget_status=%s terrain_queue_avg_ms=%.3f terrain_queue_max_ms=%.3f terrain_queue_max_mesh_ms=%.3f terrain_queue_max_coll_ms=%.3f terrain_queue_budget_status=%s terrain_queue_over_ms=%.3f budget_ms=%.3f over_ms=%.3f max_pessimistic_over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f draw_rebuild_avg_ms=%.3f draw_rebuild_max_ms=%.3f draw_patch_avg_ms=%.3f draw_patch_max_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f screen_refresh_hz=%.3f\n", label, avg, max, fps, status, max_status, queue_avg, queue_max, queue_max_mesh, queue_max_coll, queue_status, queue_over, budget, over, max_over, mesh_avg, mesh_max, coll_avg, coll_max, draw_rebuild_avg, draw_rebuild_max, draw_patch_avg, draw_patch_max, compositor_submit_avg, compositor_submit_max, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, refresh_hz)
       }
     '
 }
@@ -350,6 +364,24 @@ enforce_gpu_compositor_budget() {
   '
 }
 
+enforce_gpu_timestamp_budget() {
+  marker_path="$1"
+  budget_ms="$2"
+  max_ms="$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 3)"
+  if [ -z "$max_ms" ] && [ "$CAPTURE" = "0" ]; then
+    return
+  fi
+  test -n "$max_ms" || fail "missing gpu_compositor_gpu_ms in $marker_path"
+  awk -v max_ms="$max_ms" -v budget="$budget_ms" '
+    BEGIN {
+      if (max_ms > budget) {
+        printf("gpu_terrain_perf_baseline: gpu compositor timestamp max %.3f exceeds %.3f\n", max_ms, budget) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
 if [ "$CAPTURE" = "1" ]; then
   prepare_godot_rust_ext_profile "$ROOT_DIR"
   run_case cpu-arraymesh-baseline 0
@@ -413,6 +445,15 @@ case "$GPU_COMPOSITOR_BUDGET_MODE" in
     ;;
   *)
     fail "unsupported RUMPELMC_PERF_BASELINE_GPU_COMPOSITOR_BUDGET_MODE=$GPU_COMPOSITOR_BUDGET_MODE"
+    ;;
+esac
+case "$GPU_TIMESTAMP_BUDGET_MODE" in
+  report|"") ;;
+  enforce)
+    enforce_gpu_timestamp_budget "$gpu_marker" "$budget_ms"
+    ;;
+  *)
+    fail "unsupported RUMPELMC_PERF_BASELINE_GPU_TIMESTAMP_BUDGET_MODE=$GPU_TIMESTAMP_BUDGET_MODE"
     ;;
 esac
 

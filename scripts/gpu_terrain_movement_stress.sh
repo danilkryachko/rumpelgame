@@ -20,6 +20,7 @@ TARGET_FPS="${RUMPELMC_MOVEMENT_STRESS_TARGET_FPS:-150}"
 BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE:-enforce}"
 PROCESS_WALL_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE:-enforce}"
 GPU_COMPOSITOR_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_GPU_COMPOSITOR_BUDGET_MODE:-enforce}"
+GPU_TIMESTAMP_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_GPU_TIMESTAMP_BUDGET_MODE:-report}"
 
 mkdir -p "$OUT_DIR"
 
@@ -109,6 +110,11 @@ write_summary() {
   coll_max="$(collision_triplet_value "$marker_path" 3)"
   compositor_submit_avg="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 2)")"
   compositor_submit_max="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 3)")"
+  compositor_gpu_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 2)")"
+  compositor_gpu_max="$(default_float "$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 3)")"
+  compositor_gpu_us_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 2)")"
+  compositor_gpu_us_max="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 3)")"
+  compositor_gpu_samples="$(metric gpu_compositor_gpu_samples "$marker_path")"
   frame_p95="$(float_metric frame_p95_ms "$marker_path")"
   fps_p05="$(float_metric fps_p05 "$marker_path")"
   process_wall_p95="$(float_metric process_wall_p95_ms "$marker_path")"
@@ -128,6 +134,11 @@ write_summary() {
     -v coll_max="$coll_max" \
     -v compositor_submit_avg="$compositor_submit_avg" \
     -v compositor_submit_max="$compositor_submit_max" \
+    -v compositor_gpu_avg="$compositor_gpu_avg" \
+    -v compositor_gpu_max="$compositor_gpu_max" \
+    -v compositor_gpu_us_avg="$compositor_gpu_us_avg" \
+    -v compositor_gpu_us_max="$compositor_gpu_us_max" \
+    -v compositor_gpu_samples="${compositor_gpu_samples:-0}" \
     -v frame_p95="$frame_p95" \
     -v fps_p05="$fps_p05" \
     -v process_wall_p95="$process_wall_p95" '
@@ -138,7 +149,7 @@ write_summary() {
           status = "fail"
         }
         printf("GPU terrain movement stress summary target_fps=%.0f budget_ms=%.3f\n", 1000.0 / budget, budget)
-        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, mesh_avg, mesh_max, coll_avg, coll_max, compositor_submit_avg, compositor_submit_max, process_wall_p95, frame_p95, fps_p05)
+        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, mesh_avg, mesh_max, coll_avg, coll_max, compositor_submit_avg, compositor_submit_max, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
       }
     ' > "$summary_path"
   cat "$summary_path"
@@ -180,6 +191,20 @@ enforce_gpu_compositor_budget() {
     BEGIN {
       if (max_ms > budget) {
         printf("gpu_terrain_movement_stress: gpu_compositor_submit_max_ms %.3f exceeds %.3f\n", max_ms, budget) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
+enforce_gpu_timestamp_budget() {
+  budget_ms="$(frame_budget_ms)"
+  max_ms="$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 3)"
+  test -n "$max_ms" || fail "missing gpu_compositor_gpu_ms in $marker_path"
+  awk -v max_ms="$max_ms" -v budget="$budget_ms" '
+    BEGIN {
+      if (max_ms > budget) {
+        printf("gpu_terrain_movement_stress: gpu_compositor_gpu_max_ms %.3f exceeds %.3f\n", max_ms, budget) > "/dev/stderr"
         exit 1
       }
     }
@@ -284,6 +309,15 @@ case "$GPU_COMPOSITOR_BUDGET_MODE" in
     ;;
   *)
     fail "unsupported RUMPELMC_MOVEMENT_STRESS_GPU_COMPOSITOR_BUDGET_MODE=$GPU_COMPOSITOR_BUDGET_MODE"
+    ;;
+esac
+case "$GPU_TIMESTAMP_BUDGET_MODE" in
+  report|"") ;;
+  enforce)
+    enforce_gpu_timestamp_budget
+    ;;
+  *)
+    fail "unsupported RUMPELMC_MOVEMENT_STRESS_GPU_TIMESTAMP_BUDGET_MODE=$GPU_TIMESTAMP_BUDGET_MODE"
     ;;
 esac
 

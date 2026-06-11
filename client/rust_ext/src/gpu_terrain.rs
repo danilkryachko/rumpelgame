@@ -37,6 +37,8 @@ const MAX_CPU_PROXY_VERTICES: usize = 100_000;
 const DEBUG_OFFSCREEN_SIZE: u32 = 256;
 const DEFAULT_TERRAIN_AMBIENT: f32 = 0.55;
 const DEFAULT_TERRAIN_LIGHT_ENERGY: f32 = 0.45;
+const GPU_TERRAIN_TIMESTAMP_BEGIN: &str = "rumpel_gpu_terrain_begin";
+const GPU_TERRAIN_TIMESTAMP_END: &str = "rumpel_gpu_terrain_end";
 
 pub const FACE_LEFT: u32 = 0;
 pub const FACE_RIGHT: u32 = 1;
@@ -920,6 +922,10 @@ pub struct GpuTerrainStats {
     pub last_compositor_submit_ms: f64,
     pub avg_compositor_submit_ms: f64,
     pub max_compositor_submit_ms: f64,
+    pub compositor_gpu_sample_count: u64,
+    pub last_compositor_gpu_ms: f64,
+    pub avg_compositor_gpu_ms: f64,
+    pub max_compositor_gpu_ms: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1136,6 +1142,11 @@ pub struct GpuTerrainBufferPool {
     avg_compositor_submit_ms: f64,
     max_compositor_submit_ms: f64,
     last_compositor_submit_ms: f64,
+    compositor_gpu_sample_count: u64,
+    avg_compositor_gpu_ms: f64,
+    max_compositor_gpu_ms: f64,
+    last_compositor_gpu_ms: f64,
+    last_compositor_gpu_timestamp_frame: Option<u64>,
 }
 
 impl GpuTerrainBufferPool {
@@ -1196,6 +1207,11 @@ impl GpuTerrainBufferPool {
             avg_compositor_submit_ms: 0.0,
             max_compositor_submit_ms: 0.0,
             last_compositor_submit_ms: 0.0,
+            compositor_gpu_sample_count: 0,
+            avg_compositor_gpu_ms: 0.0,
+            max_compositor_gpu_ms: 0.0,
+            last_compositor_gpu_ms: 0.0,
+            last_compositor_gpu_timestamp_frame: None,
         })
     }
 
@@ -1278,6 +1294,10 @@ impl GpuTerrainBufferPool {
             last_compositor_submit_ms: self.last_compositor_submit_ms,
             avg_compositor_submit_ms: self.avg_compositor_submit_ms,
             max_compositor_submit_ms: self.max_compositor_submit_ms,
+            compositor_gpu_sample_count: self.compositor_gpu_sample_count,
+            last_compositor_gpu_ms: self.last_compositor_gpu_ms,
+            avg_compositor_gpu_ms: self.avg_compositor_gpu_ms,
+            max_compositor_gpu_ms: self.max_compositor_gpu_ms,
         }
     }
 
@@ -1352,6 +1372,7 @@ impl GpuTerrainBufferPool {
     }
 
     pub fn render_compositor(&mut self, _callback_type: i32, render_data: Gd<RenderData>) {
+        self.record_captured_compositor_gpu_timestamps();
         if self.render_pipeline.is_none() || self.slots.is_empty() {
             return;
         }
@@ -1396,6 +1417,7 @@ impl GpuTerrainBufferPool {
         let push_constants =
             clip_from_world_push_constants(&render_data, self.lighting, atlas_layout);
 
+        self.rd.capture_timestamp(GPU_TERRAIN_TIMESTAMP_BEGIN);
         let draw_list = self.rd.draw_list_begin(framebuffer_rid);
         if draw_list < 0 {
             return;
@@ -1418,6 +1440,7 @@ impl GpuTerrainBufferPool {
             .stride(INDIRECT_DRAW_BYTES as u32)
             .done();
         self.rd.draw_list_end();
+        self.rd.capture_timestamp(GPU_TERRAIN_TIMESTAMP_END);
 
         self.compositor_frames += 1;
         self.record_compositor_submit_ms(submit_start.elapsed().as_secs_f64() * 1000.0);
@@ -1627,6 +1650,35 @@ impl GpuTerrainBufferPool {
         self.max_compositor_submit_ms = self.max_compositor_submit_ms.max(elapsed_ms);
     }
 
+    fn record_captured_compositor_gpu_timestamps(&mut self) {
+        let frame = self.rd.get_captured_timestamps_frame();
+        if self.last_compositor_gpu_timestamp_frame == Some(frame) {
+            return;
+        }
+
+        let count = self.rd.get_captured_timestamps_count();
+        let mut timestamps = Vec::new();
+        for index in 0..count {
+            let name = self.rd.get_captured_timestamp_name(index).to_string();
+            if name == GPU_TERRAIN_TIMESTAMP_BEGIN || name == GPU_TERRAIN_TIMESTAMP_END {
+                timestamps.push((name, self.rd.get_captured_timestamp_gpu_time(index)));
+            }
+        }
+
+        let Some(elapsed_ms) = compositor_gpu_timestamp_delta_ms(
+            timestamps.iter().map(|(name, time)| (name.as_str(), *time)),
+        ) else {
+            return;
+        };
+
+        self.last_compositor_gpu_timestamp_frame = Some(frame);
+        self.compositor_gpu_sample_count += 1;
+        self.last_compositor_gpu_ms = elapsed_ms;
+        let count = self.compositor_gpu_sample_count as f64;
+        self.avg_compositor_gpu_ms += (elapsed_ms - self.avg_compositor_gpu_ms) / count;
+        self.max_compositor_gpu_ms = self.max_compositor_gpu_ms.max(elapsed_ms);
+    }
+
     fn record_upload_failure(&mut self, requested_faces: usize) {
         self.upload_failures += 1;
         let allocator_stats = self.allocator.stats();
@@ -1760,6 +1812,30 @@ impl Drop for GpuTerrainBufferPool {
         self.rd.free_rid(self.faces_buffer_rid);
         self.rd.free_rid(self.indirect_buffer_rid);
     }
+}
+
+fn compositor_gpu_timestamp_delta_ms<I, S>(timestamps: I) -> Option<f64>
+where
+    I: IntoIterator<Item = (S, u64)>,
+    S: AsRef<str>,
+{
+    let mut begin_time = None;
+    let mut elapsed_ms = None;
+    for (name, gpu_time_us) in timestamps {
+        match name.as_ref() {
+            GPU_TERRAIN_TIMESTAMP_BEGIN => begin_time = Some(gpu_time_us),
+            GPU_TERRAIN_TIMESTAMP_END => {
+                let Some(begin_time_us) = begin_time.take() else {
+                    continue;
+                };
+                if gpu_time_us >= begin_time_us {
+                    elapsed_ms = Some((gpu_time_us - begin_time_us) as f64 / 1000.0);
+                }
+            }
+            _ => {}
+        }
+    }
+    elapsed_ms
 }
 
 fn split_render_shader_source() -> Option<(&'static str, &'static str)> {
@@ -3025,6 +3101,30 @@ mod tests {
                 largest_free_faces: 12,
             }
         );
+    }
+
+    #[test]
+    fn compositor_gpu_timestamp_delta_tracks_latest_valid_pair() {
+        let timestamps = [
+            ("other", 10_000),
+            (GPU_TERRAIN_TIMESTAMP_BEGIN, 20_000),
+            (GPU_TERRAIN_TIMESTAMP_END, 21_250),
+            (GPU_TERRAIN_TIMESTAMP_BEGIN, 30_000),
+            (GPU_TERRAIN_TIMESTAMP_END, 32_500),
+        ];
+
+        assert_eq!(compositor_gpu_timestamp_delta_ms(timestamps), Some(2.5));
+    }
+
+    #[test]
+    fn compositor_gpu_timestamp_delta_ignores_unpaired_or_reversed_markers() {
+        let timestamps = [
+            (GPU_TERRAIN_TIMESTAMP_END, 10_000),
+            (GPU_TERRAIN_TIMESTAMP_BEGIN, 30_000),
+            (GPU_TERRAIN_TIMESTAMP_END, 20_000),
+        ];
+
+        assert_eq!(compositor_gpu_timestamp_delta_ms(timestamps), None);
     }
 
     #[test]
