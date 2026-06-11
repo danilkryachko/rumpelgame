@@ -18,6 +18,7 @@ CAPTURE="${RUMPELMC_PERF_BASELINE_CAPTURE:-1}"
 TARGET_FPS="${RUMPELMC_PERF_BASELINE_TARGET_FPS:-150}"
 BUDGET_MODE="${RUMPELMC_PERF_BASELINE_BUDGET_MODE:-report}"
 TERRAIN_QUEUE_BUDGET_MODE="${RUMPELMC_PERF_BASELINE_TERRAIN_QUEUE_BUDGET_MODE:-enforce}"
+PROCESS_WALL_BUDGET_MODE="${RUMPELMC_PERF_BASELINE_PROCESS_WALL_BUDGET_MODE:-enforce}"
 BUDGET_P95_MS="${RUMPELMC_PERF_BASELINE_FRAME_P95_BUDGET_MS:-}"
 
 mkdir -p "$OUT_DIR"
@@ -308,6 +309,22 @@ enforce_terrain_queue_budget() {
   '
 }
 
+enforce_process_wall_budget() {
+  label="$1"
+  marker_path="$2"
+  budget_ms="$3"
+  p95_ms="$(float_metric process_wall_p95_ms "$marker_path")"
+  test -n "$p95_ms" || fail "missing process_wall_p95_ms in $marker_path"
+  awk -v label="$label" -v p95="$p95_ms" -v budget="$budget_ms" '
+    BEGIN {
+      if (p95 > budget) {
+        printf("gpu_terrain_perf_baseline: %s process_wall_p95_ms %.3f exceeds %.3f\n", label, p95, budget) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
 if [ "$CAPTURE" = "1" ]; then
   prepare_godot_rust_ext_profile "$ROOT_DIR"
   run_case cpu-arraymesh-baseline 0
@@ -352,6 +369,16 @@ case "$TERRAIN_QUEUE_BUDGET_MODE" in
     ;;
   *)
     fail "unsupported RUMPELMC_PERF_BASELINE_TERRAIN_QUEUE_BUDGET_MODE=$TERRAIN_QUEUE_BUDGET_MODE"
+    ;;
+esac
+case "$PROCESS_WALL_BUDGET_MODE" in
+  report|"") ;;
+  enforce)
+    enforce_process_wall_budget cpu "$cpu_marker" "$budget_ms"
+    enforce_process_wall_budget gpu "$gpu_marker" "$budget_ms"
+    ;;
+  *)
+    fail "unsupported RUMPELMC_PERF_BASELINE_PROCESS_WALL_BUDGET_MODE=$PROCESS_WALL_BUDGET_MODE"
     ;;
 esac
 

@@ -18,6 +18,7 @@ MOTION_SETTLE_SEC="${RUMPELMC_MOVEMENT_STRESS_SETTLE_SEC:-4.0}"
 MIN_MOTION_CHUNKS="${RUMPELMC_MOVEMENT_STRESS_MIN_CHUNKS:-4}"
 TARGET_FPS="${RUMPELMC_MOVEMENT_STRESS_TARGET_FPS:-150}"
 BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE:-enforce}"
+PROCESS_WALL_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE:-enforce}"
 
 mkdir -p "$OUT_DIR"
 
@@ -107,9 +108,11 @@ write_summary() {
   coll_max="$(collision_triplet_value "$marker_path" 3)"
   frame_p95="$(float_metric frame_p95_ms "$marker_path")"
   fps_p05="$(float_metric fps_p05 "$marker_path")"
+  process_wall_p95="$(float_metric process_wall_p95_ms "$marker_path")"
   test -n "$terrain_queue_avg" || fail "missing terrain_queue_work_ms in $marker_path"
   test -n "$mesh_avg" || fail "missing mesh triplet in $marker_path"
   test -n "$coll_avg" || fail "missing coll triplet in $marker_path"
+  test -n "$process_wall_p95" || fail "missing process_wall_p95_ms in $marker_path"
   awk \
     -v budget="$budget_ms" \
     -v terrain_queue_avg="$terrain_queue_avg" \
@@ -121,7 +124,8 @@ write_summary() {
     -v coll_avg="$coll_avg" \
     -v coll_max="$coll_max" \
     -v frame_p95="$frame_p95" \
-    -v fps_p05="$fps_p05" '
+    -v fps_p05="$fps_p05" \
+    -v process_wall_p95="$process_wall_p95" '
       BEGIN {
         status = "pass"
         over = terrain_queue_max - budget
@@ -129,7 +133,7 @@ write_summary() {
           status = "fail"
         }
         printf("GPU terrain movement stress summary target_fps=%.0f budget_ms=%.3f\n", 1000.0 / budget, budget)
-        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, mesh_avg, mesh_max, coll_avg, coll_max, frame_p95, fps_p05)
+        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, mesh_avg, mesh_max, coll_avg, coll_max, process_wall_p95, frame_p95, fps_p05)
       }
     ' > "$summary_path"
   cat "$summary_path"
@@ -143,6 +147,20 @@ enforce_terrain_queue_budget() {
     BEGIN {
       if (terrain_queue_max > budget) {
         printf("gpu_terrain_movement_stress: terrain_queue_max_ms %.3f exceeds %.3f\n", terrain_queue_max, budget) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
+enforce_process_wall_budget() {
+  budget_ms="$(frame_budget_ms)"
+  p95_ms="$(float_metric process_wall_p95_ms "$marker_path")"
+  test -n "$p95_ms" || fail "missing process_wall_p95_ms in $marker_path"
+  awk -v p95="$p95_ms" -v budget="$budget_ms" '
+    BEGIN {
+      if (p95 > budget) {
+        printf("gpu_terrain_movement_stress: process_wall_p95_ms %.3f exceeds %.3f\n", p95, budget) > "/dev/stderr"
         exit 1
       }
     }
@@ -229,6 +247,15 @@ case "$BUDGET_MODE" in
     ;;
   *)
     fail "unsupported RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE=$BUDGET_MODE"
+    ;;
+esac
+case "$PROCESS_WALL_BUDGET_MODE" in
+  report|"") ;;
+  enforce)
+    enforce_process_wall_budget
+    ;;
+  *)
+    fail "unsupported RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE=$PROCESS_WALL_BUDGET_MODE"
     ;;
 esac
 

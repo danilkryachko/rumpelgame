@@ -8,6 +8,9 @@ Date: 2026-06-11
 
 Fresh 2026-06-11 status:
 
+- Latest process-wall gate slice adds refresh-independent `_process` wall-time gates to terrain perf scripts. `scripts/gpu_terrain_perf_baseline.sh` now defaults `RUMPELMC_PERF_BASELINE_PROCESS_WALL_BUDGET_MODE=enforce`; `scripts/gpu_terrain_movement_stress.sh` now defaults `RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE=enforce` and prints `process_wall_p95_ms` in `movement-stress-summary.txt`.
+- Fresh process-wall movement artifact: `logs/terrain_queue_max_parts/movement-stress-summary.txt`. Release GPU movement stress passes both real queue and process-wall gates: `terrain_queue_avg_ms=0.874`, `terrain_queue_max_ms=1.977`, `max_mesh_ms=1.977`, `max_coll_ms=0.000`, `process_wall_p95_ms=0.042`, `budget_status=pass`, `gpu_upload_fail=0`. Visual `frame_p95_ms` remains `16.667` because the current macOS/Metal visual smoke is display/driver paced at 60 Hz.
+
 - Latest real queue breakdown slice adds `terrain_queue_work_max_parts=mesh/collision` to Rust perf text and both terrain perf summaries. This records the mesh and collision portions from the same frame that produced `terrain_queue_work_ms` max, so future optimization targets the real peak instead of the independent `mesh_max + coll_max` pessimistic sum.
 - Fresh queue breakdown artifact: `logs/terrain_queue_max_parts/movement-stress-summary.txt`. GPU movement stress passes the 150 FPS real queue budget: `terrain_queue_avg_ms=0.981`, `terrain_queue_max_ms=2.111`, `max_mesh_ms=2.111`, `max_coll_ms=0.000`, `budget_status=pass`, while independent maxima were `mesh_max_ms=4.490` and `coll_max_ms=3.540` in different frames. The fresh marker has `terrain_queue_work_max_parts=2.111/0.000`, `gpu_upload_fail=0`, and no run-log error matches.
 
