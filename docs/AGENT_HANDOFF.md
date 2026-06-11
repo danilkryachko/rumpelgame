@@ -4,7 +4,23 @@ This file is the current continuation state for Codex threads. Update it after n
 
 ## Latest Snapshot
 
-Date: 2026-06-10
+Date: 2026-06-11
+
+Fresh 2026-06-11 status:
+
+- Current dirty worktree is intentionally narrow: `client/rust_ext/src/gpu_terrain.rs`, `client/rust_ext/src/lib.rs`, `client/shaders/gpu_terrain_render.glsl`, `client/main.gd`, `scripts/gpu_terrain_perf_baseline.sh`, and `scripts/gpu_terrain_movement_stress.sh`.
+- The active uncommitted slice adds greedy packed-face merging, face extents in the GPU terrain shader, direct/cached collision-face accounting, and collision timing perf records.
+- A review pass found and fixed a CPU ArrayMesh fallback cap bug: merged faces can expand into many unit quads for UV parity, so CPU fallback must enforce `MAX_CPU_ARRAY_MESH_VERTICES` against expanded vertices, not packed face count. Guard test added.
+- Fresh checks passed: `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full`, `RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY=1 ./scripts/gpu_terrain_parity_smoke.sh`, `./scripts/gpu_terrain_compact_proxy_benchmark.sh`, `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, and `cargo test --manifest-path client/rust_ext/Cargo.toml` with 76/76 tests.
+- Fresh release perf baseline passed after building the release Rust GDExtension with `RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1`. Artifacts: `logs/gpu_terrain_perf_baseline/cpu-arraymesh-baseline.png.txt` and `logs/gpu_terrain_perf_baseline/gpu-terrain-baseline.png.txt`.
+- Fresh release movement stress passed. Artifact: `logs/gpu_terrain_visual_smoke/movement_stress/gpu-terrain-movement-stress.png.txt`.
+- Fresh perf numbers: CPU fallback `frame_p95_ms=12.500`, `fps_p05=80.0`; GPU terrain `frame_p95_ms=8.333`, `fps_p05=120.0`; movement stress GPU `frame_p95_ms=8.333`, `fps_p05=120.0`, `current_chunk="3,2"`, `gpu_upload_fail=0`.
+- The 150 FPS target is still not proven. The latest GPU release captures are exactly 120 FPS, which may be a renderer/display cap rather than pure workload limit; the next step should verify or bypass that cap before chasing smaller CPU/GPU optimizations.
+- FPS cap investigation added visual-smoke runtime fields to marker logs: `engine_max_fps`, `vsync_mode`, and `screen_refresh_hz`. `RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED=1` now forces `Engine.max_fps=0` and `DisplayServer.VSYNC_DISABLED` from `client/main.gd`; the perf baseline and movement stress scripts pass that flag through.
+- Fresh forced-uncapped release baseline artifacts: `logs/gpu_terrain_fps_cap/cpu-arraymesh-baseline.png.txt` and `logs/gpu_terrain_fps_cap/gpu-terrain-baseline.png.txt`. Both reported `engine_max_fps=0`, `vsync_mode=0`, `screen_refresh_hz=60.000`, and exactly ~60 FPS (`frame_p95_ms=16.667`). This confirms the current visual smoke FPS metric is display/frame-pacing limited on this run, not a reliable proof of terrain renderer capacity above monitor refresh.
+- In the forced-uncapped GPU marker the terrain work itself is light: `mesh_avg_ms=0.82`, `mesh_max_ms=1.26`, `coll_avg_ms=0.16`, `gpu_upload_fail=0`, `gpu_subchunks=132`, `gpu_draws=132`, `gpu_faces=338`.
+- `scripts/gpu_terrain_perf_baseline.sh` now writes `logs/gpu_terrain_fps_cap/perf-baseline-summary.txt` with refresh-independent `*_terrain_work` lines. Current derived results: CPU terrain work `avg_ms=9.930`, `capacity_avg_fps=100.7`, `budget_status=fail`; GPU terrain work `avg_ms=0.986`, `capacity_avg_fps=1014.2`, `budget_status=pass` for a 150 FPS budget (`6.667ms`). Treat this as a terrain update/work proxy, not a full end-to-end FPS claim.
+- `./scripts/diff_guard.sh` still warns because the active slice is broad for sensitive Rust files: 1005 tracked lines at the time of this snapshot. Do not treat this as a failed build; treat it as a review/commit-size warning.
 
 Goal:
 

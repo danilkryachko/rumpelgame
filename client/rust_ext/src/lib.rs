@@ -698,6 +698,8 @@ impl GameClient {
         }
 
         let collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
+        let collision_faces_len = collision_faces.as_ref().map_or(0, |faces| faces.len());
+        let direct_collision_faces = collision_faces.is_some();
         if gpu_visible_render_active && let Some(collision_faces) = collision_faces {
             if !collision_faces.is_empty() {
                 self.terrain_collision_faces.insert(key, collision_faces);
@@ -745,6 +747,8 @@ impl GameClient {
                 node_counts_ms,
             },
             collision_ms,
+            collision_faces: collision_faces_len,
+            direct_collision_faces,
             collision_bodies,
             node_counts,
         });
@@ -1119,8 +1123,34 @@ impl GameClient {
                 mesh_instance.create_trimesh_collision();
             }
         }
-        self.perf.last_collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
-        self.perf.max_collision_ms = self.perf.max_collision_ms.max(self.perf.last_collision_ms);
+        let collision_ms = collision_start.elapsed().as_secs_f64() * 1000.0;
+        let collision_bodies = count_static_body_children(&mesh_instance);
+        let collision_faces = if needs_collision {
+            self.terrain_collision_faces
+                .get(&key)
+                .map_or(0, PackedVector3Array::len)
+        } else {
+            0
+        };
+        let payload = self
+            .cpu_proxy_mesh_payloads
+            .get(&key)
+            .copied()
+            .unwrap_or_default();
+        self.perf.record_collision_timing(CollisionPerfRecord {
+            ms: collision_ms,
+            source: CollisionPerfSource::RefreshQueue,
+            reason: None,
+            cpu_proxy_mesh: self.cpu_proxy_mesh_payloads.contains_key(&key),
+            compact_shadow_proxy_mesh: payload.compact_shadow_proxy_mesh,
+            compact_collision_proxy_mesh: payload.compact_collision_proxy_mesh,
+            collision_bodies,
+            collision_faces,
+            vertices: collision_faces,
+            reported_vertices: collision_faces,
+            cached_faces: collision_faces > 0,
+            phase_timing: TerrainMeshPhaseTiming::default(),
+        });
         let node_counts = self.subchunk_node_perf_counts_for_mesh_instance(key, &mesh_instance);
         self.replace_subchunk_node_perf_counts(key, node_counts);
         CollisionRefreshResult::Rebuilt
@@ -1614,8 +1644,63 @@ struct MeshRecord {
     timing: meshing::MeshTiming,
     phase_timing: TerrainMeshPhaseTiming,
     collision_ms: f64,
+    collision_faces: usize,
+    direct_collision_faces: bool,
     collision_bodies: i32,
     node_counts: NodePerfCounts,
+}
+
+#[cfg(test)]
+fn test_mesh_record(
+    vertices: usize,
+    normals: usize,
+    reported_vertices: usize,
+    reason: MeshQueueReason,
+    cpu_proxy_mesh: bool,
+    compact_shadow_proxy_mesh: bool,
+    compact_collision_proxy_mesh: bool,
+    mesh_ms: f64,
+    phase_timing: TerrainMeshPhaseTiming,
+    collision_bodies: i32,
+) -> MeshRecord {
+    MeshRecord {
+        vertices,
+        normals,
+        reported_vertices,
+        reason,
+        cpu_proxy_mesh,
+        compact_shadow_proxy_mesh,
+        compact_collision_proxy_mesh,
+        mesh_ms,
+        timing: meshing::MeshTiming::default(),
+        phase_timing,
+        collision_ms: 0.0,
+        collision_faces: 0,
+        direct_collision_faces: false,
+        collision_bodies,
+        node_counts: NodePerfCounts::default(),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CollisionPerfSource {
+    MeshBuild,
+    RefreshQueue,
+}
+
+struct CollisionPerfRecord {
+    ms: f64,
+    source: CollisionPerfSource,
+    reason: Option<MeshQueueReason>,
+    cpu_proxy_mesh: bool,
+    compact_shadow_proxy_mesh: bool,
+    compact_collision_proxy_mesh: bool,
+    collision_bodies: i32,
+    collision_faces: usize,
+    vertices: usize,
+    reported_vertices: usize,
+    cached_faces: bool,
+    phase_timing: TerrainMeshPhaseTiming,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1830,6 +1915,27 @@ impl PerfStats {
         self.last_collision_refresh_queue_missing_chunk_drops = missing_chunk_drops;
     }
 
+    fn record_collision_timing(&mut self, record: CollisionPerfRecord) {
+        self.last_collision_ms = record.ms;
+        self.max_collision_ms = self.max_collision_ms.max(record.ms);
+        let n = (self.mesh_jobs_completed + self.collision_refresh_rebuilt).max(1) as f64;
+        self.avg_collision_ms += (record.ms - self.avg_collision_ms) / n;
+
+        let _ = (
+            record.source,
+            record.reason,
+            record.cpu_proxy_mesh,
+            record.compact_shadow_proxy_mesh,
+            record.compact_collision_proxy_mesh,
+            record.collision_bodies,
+            record.collision_faces,
+            record.vertices,
+            record.reported_vertices,
+            record.cached_faces,
+            record.phase_timing,
+        );
+    }
+
     fn record_mesh(&mut self, record: MeshRecord) {
         self.mesh_jobs_completed += 1;
         let n = self.mesh_jobs_completed as f64;
@@ -1856,9 +1962,20 @@ impl PerfStats {
             self.max_array_mesh_reported_vertices = record.reported_vertices;
             self.max_array_mesh_job_phase = record.phase_timing;
         }
-        self.last_collision_ms = record.collision_ms;
-        self.avg_collision_ms += (record.collision_ms - self.avg_collision_ms) / n;
-        self.max_collision_ms = self.max_collision_ms.max(record.collision_ms);
+        self.record_collision_timing(CollisionPerfRecord {
+            ms: record.collision_ms,
+            source: CollisionPerfSource::MeshBuild,
+            reason: Some(record.reason),
+            cpu_proxy_mesh: record.cpu_proxy_mesh,
+            compact_shadow_proxy_mesh: record.compact_shadow_proxy_mesh,
+            compact_collision_proxy_mesh: record.compact_collision_proxy_mesh,
+            collision_bodies: record.collision_bodies,
+            collision_faces: record.collision_faces,
+            vertices: record.vertices,
+            reported_vertices: record.reported_vertices,
+            cached_faces: record.direct_collision_faces,
+            phase_timing: record.phase_timing,
+        });
         self.last_vertices = record.vertices;
         self.last_normals = record.normals;
         self.last_reported_vertices = record.reported_vertices;
@@ -3966,36 +4083,30 @@ mod tests {
             node_counts_ms: 10.0,
         };
 
-        perf.record_mesh(MeshRecord {
-            vertices: 1,
-            normals: 0,
-            reported_vertices: 1,
-            reason: MeshQueueReason::GeometryChanged,
-            cpu_proxy_mesh: false,
-            compact_shadow_proxy_mesh: false,
-            compact_collision_proxy_mesh: false,
-            mesh_ms: 1.0,
-            timing: meshing::MeshTiming::default(),
-            phase_timing: first,
-            collision_ms: 0.0,
-            collision_bodies: 0,
-            node_counts: NodePerfCounts::default(),
-        });
-        perf.record_mesh(MeshRecord {
-            vertices: 1,
-            normals: 0,
-            reported_vertices: 1,
-            reason: MeshQueueReason::ProxyRefresh,
-            cpu_proxy_mesh: false,
-            compact_shadow_proxy_mesh: false,
-            compact_collision_proxy_mesh: false,
-            mesh_ms: 1.0,
-            timing: meshing::MeshTiming::default(),
-            phase_timing: second,
-            collision_ms: 0.0,
-            collision_bodies: 0,
-            node_counts: NodePerfCounts::default(),
-        });
+        perf.record_mesh(test_mesh_record(
+            1,
+            0,
+            1,
+            MeshQueueReason::GeometryChanged,
+            false,
+            false,
+            false,
+            1.0,
+            first,
+            0,
+        ));
+        perf.record_mesh(test_mesh_record(
+            1,
+            0,
+            1,
+            MeshQueueReason::ProxyRefresh,
+            false,
+            false,
+            false,
+            1.0,
+            second,
+            0,
+        ));
 
         assert_eq!(perf.last_mesh_phase.cpu_mesh_ms, 6.0);
         assert_eq!(perf.avg_mesh_phase.padded_ms, 3.0);
@@ -4027,36 +4138,30 @@ mod tests {
             node_counts_ms: 0.1,
         };
 
-        perf.record_mesh(MeshRecord {
-            vertices: 30,
-            normals: 30,
-            reported_vertices: 30,
-            reason: MeshQueueReason::GeometryChanged,
-            cpu_proxy_mesh: false,
-            compact_shadow_proxy_mesh: false,
-            compact_collision_proxy_mesh: false,
-            mesh_ms: 5.0,
-            timing: meshing::MeshTiming::default(),
-            phase_timing: slow_mesh_phase,
-            collision_ms: 0.0,
-            collision_bodies: 1,
-            node_counts: NodePerfCounts::default(),
-        });
-        perf.record_mesh(MeshRecord {
-            vertices: 4,
-            normals: 0,
-            reported_vertices: 6,
-            reason: MeshQueueReason::ProxyRefresh,
-            cpu_proxy_mesh: true,
-            compact_shadow_proxy_mesh: true,
-            compact_collision_proxy_mesh: false,
-            mesh_ms: 1.0,
-            timing: meshing::MeshTiming::default(),
-            phase_timing: slow_array_mesh_phase,
-            collision_ms: 0.0,
-            collision_bodies: 0,
-            node_counts: NodePerfCounts::default(),
-        });
+        perf.record_mesh(test_mesh_record(
+            30,
+            30,
+            30,
+            MeshQueueReason::GeometryChanged,
+            false,
+            false,
+            false,
+            5.0,
+            slow_mesh_phase,
+            1,
+        ));
+        perf.record_mesh(test_mesh_record(
+            4,
+            0,
+            6,
+            MeshQueueReason::ProxyRefresh,
+            true,
+            true,
+            false,
+            1.0,
+            slow_array_mesh_phase,
+            0,
+        ));
 
         assert_eq!(perf.max_mesh_reason, Some(MeshQueueReason::GeometryChanged));
         assert_eq!(
@@ -4076,61 +4181,52 @@ mod tests {
     fn perf_records_compact_shadow_proxy_normal_savings() {
         let mut perf = PerfStats::default();
 
-        perf.record_mesh(MeshRecord {
-            vertices: 24,
-            normals: 0,
-            reported_vertices: 24,
-            reason: MeshQueueReason::GeometryChanged,
-            cpu_proxy_mesh: true,
-            compact_shadow_proxy_mesh: true,
-            compact_collision_proxy_mesh: false,
-            mesh_ms: 1.0,
-            timing: meshing::MeshTiming::default(),
-            phase_timing: TerrainMeshPhaseTiming::default(),
-            collision_ms: 0.0,
-            collision_bodies: 0,
-            node_counts: NodePerfCounts::default(),
-        });
+        perf.record_mesh(test_mesh_record(
+            24,
+            0,
+            24,
+            MeshQueueReason::GeometryChanged,
+            true,
+            true,
+            false,
+            1.0,
+            TerrainMeshPhaseTiming::default(),
+            0,
+        ));
 
         assert_eq!(perf.last_normals, 0);
         assert_eq!(perf.total_normals, 0);
         assert_eq!(perf.compact_shadow_proxy_normals_saved, 24);
 
-        perf.record_mesh(MeshRecord {
-            vertices: 12,
-            normals: 12,
-            reported_vertices: 12,
-            reason: MeshQueueReason::GeometryChanged,
-            cpu_proxy_mesh: true,
-            compact_shadow_proxy_mesh: false,
-            compact_collision_proxy_mesh: false,
-            mesh_ms: 1.0,
-            timing: meshing::MeshTiming::default(),
-            phase_timing: TerrainMeshPhaseTiming::default(),
-            collision_ms: 0.0,
-            collision_bodies: 0,
-            node_counts: NodePerfCounts::default(),
-        });
+        perf.record_mesh(test_mesh_record(
+            12,
+            12,
+            12,
+            MeshQueueReason::GeometryChanged,
+            true,
+            false,
+            false,
+            1.0,
+            TerrainMeshPhaseTiming::default(),
+            0,
+        ));
 
         assert_eq!(perf.last_normals, 12);
         assert_eq!(perf.total_normals, 12);
         assert_eq!(perf.compact_shadow_proxy_normals_saved, 24);
 
-        perf.record_mesh(MeshRecord {
-            vertices: 18,
-            normals: 0,
-            reported_vertices: 18,
-            reason: MeshQueueReason::GeometryChanged,
-            cpu_proxy_mesh: true,
-            compact_shadow_proxy_mesh: false,
-            compact_collision_proxy_mesh: true,
-            mesh_ms: 1.0,
-            timing: meshing::MeshTiming::default(),
-            phase_timing: TerrainMeshPhaseTiming::default(),
-            collision_ms: 0.0,
-            collision_bodies: 0,
-            node_counts: NodePerfCounts::default(),
-        });
+        perf.record_mesh(test_mesh_record(
+            18,
+            0,
+            18,
+            MeshQueueReason::GeometryChanged,
+            true,
+            false,
+            true,
+            1.0,
+            TerrainMeshPhaseTiming::default(),
+            0,
+        ));
 
         assert_eq!(perf.compact_collision_proxy_meshes_built, 1);
         assert_eq!(perf.compact_collision_proxy_normals_saved, 18);

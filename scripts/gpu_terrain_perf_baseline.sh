@@ -71,6 +71,24 @@ collision_triplet_value() {
     | sed -n '1p'
 }
 
+perf_triplet_value() {
+  key="$1"
+  marker_path="$2"
+  index="$3"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\).*/\1 \2 \3/p" "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+default_float() {
+  value="$1"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+  else
+    printf '0.000\n'
+  fi
+}
+
 require_marker() {
   marker_path="$1"
   test -s "$marker_path" || fail "missing marker $marker_path"
@@ -108,6 +126,7 @@ run_case() {
       RUMPELMC_VISUAL_SMOKE_PATH="$screenshot_path" \
       RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
       RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC="$FRAME_SAMPLE_SEC" \
+      RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED="${RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED:-0}" \
       RUMPELMC_VISUAL_SMOKE_HIDE_HUD=1 \
       RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1 \
       "$GODOT_BIN" --disable-vsync --max-fps 0 --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
@@ -119,7 +138,7 @@ run_case() {
 print_row() {
   label="$1"
   marker_path="$2"
-  printf '%-12s frame_avg_ms=%s frame_p50_ms=%s frame_p95_ms=%s frame_p99_ms=%s frame_max_ms=%s fps_avg=%s fps_p05=%s fps_min=%s mesh_avg_ms=%s mesh_max_ms=%s coll_avg_ms=%s cpu_proxy=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s gpu_mem_mb=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_free_ranges=%s gpu_largest_free=%s gpu_draw_rebuilds=%s gpu_draw_rebuild_ms=%s gpu_draw_patches=%s gpu_draw_patch_ms=%s terrain_samples=%s\n' \
+  printf '%-12s frame_avg_ms=%s frame_p50_ms=%s frame_p95_ms=%s frame_p99_ms=%s frame_max_ms=%s fps_avg=%s fps_p05=%s fps_min=%s engine_max_fps=%s vsync_mode=%s screen_refresh_hz=%s mesh_avg_ms=%s mesh_max_ms=%s coll_avg_ms=%s cpu_proxy=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s gpu_mem_mb=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_free_ranges=%s gpu_largest_free=%s gpu_draw_rebuilds=%s gpu_draw_rebuild_ms=%s gpu_draw_patches=%s gpu_draw_patch_ms=%s terrain_samples=%s\n' \
     "$label" \
     "$(float_metric frame_avg_ms "$marker_path")" \
     "$(float_metric frame_p50_ms "$marker_path")" \
@@ -129,6 +148,9 @@ print_row() {
     "$(float_metric fps_avg "$marker_path")" \
     "$(float_metric fps_p05 "$marker_path")" \
     "$(float_metric fps_min "$marker_path")" \
+    "$(metric engine_max_fps "$marker_path")" \
+    "$(metric vsync_mode "$marker_path")" \
+    "$(float_metric screen_refresh_hz "$marker_path")" \
     "$(mesh_triplet_value "$marker_path" 2)" \
     "$(mesh_triplet_value "$marker_path" 3)" \
     "$(collision_triplet_value "$marker_path" 2)" \
@@ -148,6 +170,48 @@ print_row() {
     "$(metric gpu_draw_patches "$marker_path")" \
     "$(perf_float gpu_draw_patch_ms "$marker_path")" \
     "$(metric terrain_samples "$marker_path")"
+}
+
+terrain_work_line() {
+  label="$1"
+  marker_path="$2"
+  budget_ms="$3"
+  mesh_avg="$(default_float "$(mesh_triplet_value "$marker_path" 2)")"
+  mesh_max="$(default_float "$(mesh_triplet_value "$marker_path" 3)")"
+  coll_avg="$(default_float "$(collision_triplet_value "$marker_path" 2)")"
+  coll_max="$(default_float "$(collision_triplet_value "$marker_path" 3)")"
+  draw_rebuild_avg="$(default_float "$(perf_triplet_value gpu_draw_rebuild_ms "$marker_path" 2)")"
+  draw_rebuild_max="$(default_float "$(perf_triplet_value gpu_draw_rebuild_ms "$marker_path" 3)")"
+  draw_patch_avg="$(default_float "$(perf_triplet_value gpu_draw_patch_ms "$marker_path" 2)")"
+  draw_patch_max="$(default_float "$(perf_triplet_value gpu_draw_patch_ms "$marker_path" 3)")"
+  refresh_hz="$(default_float "$(float_metric screen_refresh_hz "$marker_path")")"
+  awk \
+    -v label="$label" \
+    -v mesh_avg="$mesh_avg" \
+    -v mesh_max="$mesh_max" \
+    -v coll_avg="$coll_avg" \
+    -v coll_max="$coll_max" \
+    -v draw_rebuild_avg="$draw_rebuild_avg" \
+    -v draw_rebuild_max="$draw_rebuild_max" \
+    -v draw_patch_avg="$draw_patch_avg" \
+    -v draw_patch_max="$draw_patch_max" \
+    -v refresh_hz="$refresh_hz" \
+    -v budget="$budget_ms" '
+      BEGIN {
+        avg = mesh_avg + coll_avg + draw_rebuild_avg + draw_patch_avg
+        max = mesh_max + coll_max + draw_rebuild_max + draw_patch_max
+        fps = 0.0
+        if (avg > 0.0) {
+          fps = 1000.0 / avg
+        }
+        status = "pass"
+        over = avg - budget
+        if (over > 0.0) {
+          status = "fail"
+        }
+        printf("%s_terrain_work refresh_independent=1 avg_ms=%.3f max_ms=%.3f capacity_avg_fps=%.1f budget_status=%s budget_ms=%.3f over_ms=%.3f mesh_avg_ms=%.3f coll_avg_ms=%.3f draw_rebuild_avg_ms=%.3f draw_patch_avg_ms=%.3f screen_refresh_hz=%.3f\n", label, avg, max, fps, status, budget, over, mesh_avg, coll_avg, draw_rebuild_avg, draw_patch_avg, refresh_hz)
+      }
+    '
 }
 
 print_budget_status() {
@@ -202,6 +266,13 @@ print_row cpu "$cpu_marker"
 print_row gpu "$gpu_marker"
 
 budget_ms="$(frame_budget_ms)"
+summary_path="$OUT_DIR/perf-baseline-summary.txt"
+{
+  printf 'GPU terrain refresh-independent work summary target_fps=%s budget_ms=%s\n' "$TARGET_FPS" "$budget_ms"
+  terrain_work_line cpu "$cpu_marker" "$budget_ms"
+  terrain_work_line gpu "$gpu_marker" "$budget_ms"
+} | tee "$summary_path"
+
 print_budget_status cpu "$cpu_marker" "$budget_ms"
 print_budget_status gpu "$gpu_marker" "$budget_ms"
 case "$BUDGET_MODE" in

@@ -12,6 +12,7 @@ const VISUAL_SMOKE_MOTION_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION"
 const VISUAL_SMOKE_MOTION_STEP_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION_STEP_SEC"
 const VISUAL_SMOKE_MOTION_SETTLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION_SETTLE_SEC"
 const VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC"
+const VISUAL_SMOKE_FORCE_UNCAPPED_ENV = "RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED"
 const VISUAL_SMOKE_DEFAULT_DELAY_SEC = 6.0
 const VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC = 2.0
 const VISUAL_SMOKE_DEFAULT_MOTION_STEP_SEC = 0.55
@@ -200,6 +201,8 @@ func run_visual_smoke_if_requested():
 		env_float(VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC),
 		0.1
 	)
+	if env_flag_enabled(VISUAL_SMOKE_FORCE_UNCAPPED_ENV):
+		force_uncapped_visual_smoke()
 
 	if env_flag_enabled(VISUAL_SMOKE_HIDE_HUD_ENV):
 		var hud = get_node_or_null("HUD")
@@ -241,7 +244,8 @@ func capture_visual_smoke(screenshot_path: String):
 	if smoke_err == OK and metrics["terrain_luma_range"] < VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE:
 		smoke_err = FAILED
 	var frame_metrics = visual_smoke_frame_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var runtime_metrics = visual_smoke_runtime_metrics()
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		visual_smoke_motion_name,
@@ -274,6 +278,9 @@ func capture_visual_smoke(screenshot_path: String):
 		frame_metrics["fps_avg"],
 		frame_metrics["fps_p05"],
 		frame_metrics["fps_min"],
+		runtime_metrics["engine_max_fps"],
+		runtime_metrics["vsync_mode"],
+		runtime_metrics["screen_refresh_hz"],
 		visual_smoke_client_flag("is_texture_debug_stand_visible"),
 		visual_smoke_client_text("get_perf_text", "n/a"),
 		visual_smoke_chunk_text(),
@@ -356,6 +363,19 @@ func visual_smoke_frame_metrics() -> Dictionary:
 		"fps_avg": fps_from_frame_ms(avg_ms),
 		"fps_p05": fps_from_frame_ms(p95_ms),
 		"fps_min": fps_from_frame_ms(max_ms)
+	}
+
+func force_uncapped_visual_smoke():
+	Engine.max_fps = 0
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	log_event("Visual smoke forced uncapped: max_fps=0 vsync=disabled")
+
+func visual_smoke_runtime_metrics() -> Dictionary:
+	var screen = DisplayServer.window_get_current_screen()
+	return {
+		"engine_max_fps": Engine.max_fps,
+		"vsync_mode": DisplayServer.window_get_vsync_mode(),
+		"screen_refresh_hz": DisplayServer.screen_get_refresh_rate(screen)
 	}
 
 func sorted_percentile(sorted_values: Array, percentile: float) -> float:

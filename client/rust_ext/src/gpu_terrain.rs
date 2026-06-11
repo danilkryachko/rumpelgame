@@ -54,17 +54,45 @@ pub struct PackedFace {
     pub _pad: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PackedFaceExtent {
+    u: u32,
+    v: u32,
+}
+
 impl PackedFace {
     pub fn new(x: u32, y: u32, z: u32, face: u32, tile: u32, block_id: u32) -> Self {
+        Self::with_extent(
+            x,
+            y,
+            z,
+            face,
+            tile,
+            block_id,
+            PackedFaceExtent { u: 1, v: 1 },
+        )
+    }
+
+    fn with_extent(
+        x: u32,
+        y: u32,
+        z: u32,
+        face: u32,
+        tile: u32,
+        block_id: u32,
+        extent: PackedFaceExtent,
+    ) -> Self {
         debug_assert!(x < 64);
         debug_assert!(y < 64);
         debug_assert!(z < 64);
         debug_assert!(face < 8);
         debug_assert!(tile < 2048);
+        debug_assert!(extent.u > 0 && extent.u < 64);
+        debug_assert!(extent.v > 0 && extent.v < 64);
         Self {
             pos_face_tile: x | (y << 6) | (z << 12) | (face << 18) | (tile << 21),
             block_flags: block_id & 0xffff,
-            extent: 1 | (1 << 6),
+            extent: extent.u | (extent.v << 6),
             _pad: 0,
         }
     }
@@ -87,6 +115,18 @@ impl PackedFace {
 
     fn tile(self) -> u32 {
         (self.pos_face_tile >> 21) & 0x7ff
+    }
+
+    fn block_id(self) -> u32 {
+        self.block_flags & 0xffff
+    }
+
+    fn extent_u(self) -> u32 {
+        self.extent & 0x3f
+    }
+
+    fn extent_v(self) -> u32 {
+        (self.extent >> 6) & 0x3f
     }
 }
 
@@ -166,10 +206,15 @@ impl PackedFaceBatch {
         let mut uvs = Vec::with_capacity(vertices.capacity());
 
         for face in &self.faces {
-            if vertices.len() + 6 > MAX_CPU_ARRAY_MESH_VERTICES {
+            if !append_cpu_array_mesh_face_to_arrays(
+                *face,
+                &mut vertices,
+                &mut normals,
+                &mut uvs,
+                MAX_CPU_ARRAY_MESH_VERTICES,
+            ) {
                 break;
             }
-            append_cpu_array_mesh_face_to_arrays(*face, &mut vertices, &mut normals, &mut uvs);
         }
 
         let reported_vertex_count = vertices.len();
@@ -249,9 +294,6 @@ impl PackedFaceBatch {
     fn cpu_array_mesh_vertices(&self) -> Vec<(Vector3, Vector3, Vector2)> {
         let mut vertices = Vec::with_capacity(self.cpu_array_mesh_vertex_capacity());
         for face in &self.faces {
-            if vertices.len() + 6 > MAX_CPU_ARRAY_MESH_VERTICES {
-                break;
-            }
             append_cpu_array_mesh_face(*face, &mut vertices);
         }
         vertices
@@ -259,8 +301,13 @@ impl PackedFaceBatch {
 
     fn cpu_array_mesh_vertex_capacity(&self) -> usize {
         self.faces
-            .len()
-            .saturating_mul(6)
+            .iter()
+            .map(|face| {
+                (face.extent_u() as usize)
+                    .saturating_mul(face.extent_v() as usize)
+                    .saturating_mul(6)
+            })
+            .sum::<usize>()
             .min(MAX_CPU_ARRAY_MESH_VERTICES)
     }
 
@@ -283,14 +330,17 @@ impl PackedFaceBatch {
 
 #[cfg(test)]
 fn append_cpu_array_mesh_face(face: PackedFace, vertices: &mut Vec<(Vector3, Vector3, Vector2)>) {
-    let base = Vector3::new(face.x() as f32, face.y() as f32, face.z() as f32);
     let normal = cpu_proxy_face_normal(face.face());
-    let corners = cpu_proxy_face_corners(base, face.face());
     let uvs = cpu_array_mesh_face_uvs(face.face());
     let tile = face.tile();
 
-    for idx in [0usize, 2, 1, 0, 3, 2] {
-        vertices.push((corners[idx], normal, atlas_uv(uvs[idx], tile)));
+    for corners in unit_face_rects(face) {
+        if vertices.len() + 6 > MAX_CPU_ARRAY_MESH_VERTICES {
+            return;
+        }
+        for idx in [0usize, 2, 1, 0, 3, 2] {
+            vertices.push((corners[idx], normal, atlas_uv(uvs[idx], tile)));
+        }
     }
 }
 
@@ -299,24 +349,28 @@ fn append_cpu_array_mesh_face_to_arrays(
     vertices: &mut Vec<Vector3>,
     normals: &mut Vec<Vector3>,
     out_uvs: &mut Vec<Vector2>,
-) {
-    let base = Vector3::new(face.x() as f32, face.y() as f32, face.z() as f32);
+    max_vertices: usize,
+) -> bool {
     let normal = cpu_proxy_face_normal(face.face());
-    let corners = cpu_proxy_face_corners(base, face.face());
     let uvs = cpu_array_mesh_face_uvs(face.face());
     let tile = face.tile();
 
-    for idx in [0usize, 2, 1, 0, 3, 2] {
-        vertices.push(corners[idx]);
-        normals.push(normal);
-        out_uvs.push(atlas_uv(uvs[idx], tile));
+    for corners in unit_face_rects(face) {
+        if vertices.len() + 6 > max_vertices {
+            return false;
+        }
+        for idx in [0usize, 2, 1, 0, 3, 2] {
+            vertices.push(corners[idx]);
+            normals.push(normal);
+            out_uvs.push(atlas_uv(uvs[idx], tile));
+        }
     }
+    true
 }
 
 fn append_cpu_proxy_face(face: PackedFace, vertices: &mut Vec<(Vector3, Vector3)>) {
-    let base = Vector3::new(face.x() as f32, face.y() as f32, face.z() as f32);
     let normal = cpu_proxy_face_normal(face.face());
-    let corners = cpu_proxy_face_corners(base, face.face());
+    let corners = packed_face_rect_corners(face);
 
     for idx in [0usize, 2, 1, 0, 3, 2] {
         vertices.push((corners[idx], normal));
@@ -324,12 +378,32 @@ fn append_cpu_proxy_face(face: PackedFace, vertices: &mut Vec<(Vector3, Vector3)
 }
 
 fn append_cpu_proxy_face_positions(face: PackedFace, vertices: &mut Vec<Vector3>) {
-    let base = Vector3::new(face.x() as f32, face.y() as f32, face.z() as f32);
-    let corners = cpu_proxy_face_corners(base, face.face());
+    let corners = packed_face_rect_corners(face);
 
     for idx in [0usize, 2, 1, 0, 3, 2] {
         vertices.push(corners[idx]);
     }
+}
+
+fn packed_face_rect_corners(face: PackedFace) -> [Vector3; 4] {
+    let (plane, u, v) = collision_face_plane_uv(face);
+    rect_face_corners(
+        face.face(),
+        plane,
+        u,
+        v,
+        face.extent_u() as usize,
+        face.extent_v() as usize,
+    )
+}
+
+fn unit_face_rects(face: PackedFace) -> impl Iterator<Item = [Vector3; 4]> {
+    let (plane, u, v) = collision_face_plane_uv(face);
+    let face_idx = face.face();
+    (0..face.extent_v() as usize).flat_map(move |dv| {
+        (0..face.extent_u() as usize)
+            .map(move |du| rect_face_corners(face_idx, plane, u + du, v + dv, 1, 1))
+    })
 }
 
 fn append_greedy_indexed_cpu_proxy_face_positions(
@@ -338,13 +412,19 @@ fn append_greedy_indexed_cpu_proxy_face_positions(
     vertices: &mut Vec<Vector3>,
     indices: &mut Vec<i32>,
 ) {
-    visit_greedy_face_rects(faces, face_idx, |face_idx, plane, u, v, width, height| {
-        if vertices.len() + 4 > MAX_CPU_PROXY_VERTICES {
-            return false;
-        }
-        append_indexed_rect_face_positions(face_idx, plane, u, v, width, height, vertices, indices);
-        true
-    });
+    visit_greedy_face_rects_by_key(
+        faces,
+        face_idx,
+        greedy_face_merge_key,
+        |face_idx, plane, u, v, width, height| {
+            if vertices.len() + 4 > MAX_CPU_PROXY_VERTICES {
+                return false;
+            }
+            let corners = rect_face_corners(face_idx, plane, u, v, width, height);
+            append_indexed_rect_face_positions(&corners, vertices, indices);
+            true
+        },
+    );
 }
 
 fn append_greedy_collision_face_positions(
@@ -352,31 +432,36 @@ fn append_greedy_collision_face_positions(
     face_idx: u32,
     vertices: &mut Vec<Vector3>,
 ) {
-    visit_greedy_face_rects(faces, face_idx, |face_idx, plane, u, v, width, height| {
-        if vertices.len() + 6 > MAX_CPU_PROXY_VERTICES {
-            return false;
-        }
-        append_collision_rect_face_positions(face_idx, plane, u, v, width, height, vertices);
-        true
-    });
+    visit_greedy_face_rects_by_key(
+        faces,
+        face_idx,
+        |_| 0,
+        |face_idx, plane, u, v, width, height| {
+            if vertices.len() + 6 > MAX_CPU_PROXY_VERTICES {
+                return false;
+            }
+            append_collision_rect_face_positions(face_idx, plane, u, v, width, height, vertices);
+            true
+        },
+    );
 }
 
-fn visit_greedy_face_rects(
+fn visit_greedy_face_rects_by_key(
     faces: &[PackedFace],
     face_idx: u32,
+    key: impl Fn(PackedFace) -> u32,
     mut visit: impl FnMut(u32, usize, usize, usize, usize, usize) -> bool,
 ) {
     const GRID: usize = CHUNK_W;
     const GRID_CELLS: usize = GRID * GRID;
     const PLANES: usize = GRID + 1;
 
-    let mut occupied = vec![false; PLANES * GRID_CELLS];
+    let mut cells = vec![None; PLANES * GRID_CELLS];
     for face in faces {
         if face.face() != face_idx {
             continue;
         }
-        let (plane, u, v) = collision_face_plane_uv(*face);
-        occupied[collision_grid_index(plane, u, v)] = true;
+        mark_greedy_face_cells(*face, key(*face), &mut cells);
     }
 
     for plane in 0..PLANES {
@@ -384,20 +469,23 @@ fn visit_greedy_face_rects(
             let mut u = 0;
             while u < GRID {
                 let idx = collision_grid_index(plane, u, v);
-                if !occupied[idx] {
+                let Some(cell_key) = cells[idx] else {
                     u += 1;
                     continue;
-                }
+                };
 
                 let mut width = 1;
-                while u + width < GRID && occupied[collision_grid_index(plane, u + width, v)] {
+                while u + width < GRID
+                    && cells[collision_grid_index(plane, u + width, v)] == Some(cell_key)
+                {
                     width += 1;
                 }
 
                 let mut height = 1;
                 'height: while v + height < GRID {
                     for du in 0..width {
-                        if !occupied[collision_grid_index(plane, u + du, v + height)] {
+                        if cells[collision_grid_index(plane, u + du, v + height)] != Some(cell_key)
+                        {
                             break 'height;
                         }
                     }
@@ -406,7 +494,7 @@ fn visit_greedy_face_rects(
 
                 for dv in 0..height {
                     for du in 0..width {
-                        occupied[collision_grid_index(plane, u + du, v + dv)] = false;
+                        cells[collision_grid_index(plane, u + du, v + dv)] = None;
                     }
                 }
                 if !visit(face_idx, plane, u, v, width, height) {
@@ -414,6 +502,15 @@ fn visit_greedy_face_rects(
                 }
                 u += width;
             }
+        }
+    }
+}
+
+fn mark_greedy_face_cells(face: PackedFace, key: u32, cells: &mut [Option<u32>]) {
+    let (plane, u, v) = collision_face_plane_uv(face);
+    for dv in 0..face.extent_v() as usize {
+        for du in 0..face.extent_u() as usize {
+            cells[collision_grid_index(plane, u + du, v + dv)] = Some(key);
         }
     }
 }
@@ -450,17 +547,12 @@ fn append_collision_rect_face_positions(
 }
 
 fn append_indexed_rect_face_positions(
-    face_idx: u32,
-    plane: usize,
-    u: usize,
-    v: usize,
-    width: usize,
-    height: usize,
+    corners: &[Vector3; 4],
     vertices: &mut Vec<Vector3>,
     indices: &mut Vec<i32>,
 ) {
     let base_index = vertices.len() as i32;
-    vertices.extend_from_slice(&rect_face_corners(face_idx, plane, u, v, width, height));
+    vertices.extend_from_slice(corners);
     indices.extend_from_slice(&[
         base_index,
         base_index + 2,
@@ -566,47 +658,6 @@ fn cpu_proxy_face_normal(face_idx: u32) -> Vector3 {
         FACE_TOP => Vector3::new(0.0, 1.0, 0.0),
         FACE_BACK => Vector3::new(0.0, 0.0, -1.0),
         _ => Vector3::new(0.0, 0.0, 1.0),
-    }
-}
-
-fn cpu_proxy_face_corners(base: Vector3, face_idx: u32) -> [Vector3; 4] {
-    match face_idx {
-        FACE_LEFT => [
-            base + Vector3::new(0.0, 0.0, 1.0),
-            base + Vector3::new(0.0, 1.0, 1.0),
-            base + Vector3::new(0.0, 1.0, 0.0),
-            base + Vector3::new(0.0, 0.0, 0.0),
-        ],
-        FACE_RIGHT => [
-            base + Vector3::new(1.0, 0.0, 0.0),
-            base + Vector3::new(1.0, 1.0, 0.0),
-            base + Vector3::new(1.0, 1.0, 1.0),
-            base + Vector3::new(1.0, 0.0, 1.0),
-        ],
-        FACE_BOTTOM => [
-            base + Vector3::new(0.0, 0.0, 1.0),
-            base + Vector3::new(0.0, 0.0, 0.0),
-            base + Vector3::new(1.0, 0.0, 0.0),
-            base + Vector3::new(1.0, 0.0, 1.0),
-        ],
-        FACE_TOP => [
-            base + Vector3::new(0.0, 1.0, 0.0),
-            base + Vector3::new(0.0, 1.0, 1.0),
-            base + Vector3::new(1.0, 1.0, 1.0),
-            base + Vector3::new(1.0, 1.0, 0.0),
-        ],
-        FACE_BACK => [
-            base + Vector3::new(1.0, 0.0, 0.0),
-            base + Vector3::new(0.0, 0.0, 0.0),
-            base + Vector3::new(0.0, 1.0, 0.0),
-            base + Vector3::new(1.0, 1.0, 0.0),
-        ],
-        _ => [
-            base + Vector3::new(0.0, 0.0, 1.0),
-            base + Vector3::new(1.0, 0.0, 1.0),
-            base + Vector3::new(1.0, 1.0, 1.0),
-            base + Vector3::new(0.0, 1.0, 1.0),
-        ],
     }
 }
 
@@ -2068,7 +2119,64 @@ pub fn build_packed_faces(padded_blocks: &[u8]) -> PackedFaceBatch {
         }
     }
 
+    let faces = greedy_merge_packed_faces(&faces);
     PackedFaceBatch { faces }
+}
+
+fn greedy_merge_packed_faces(faces: &[PackedFace]) -> Vec<PackedFace> {
+    let mut merged = Vec::with_capacity(faces.len());
+    for face_idx in [
+        FACE_LEFT,
+        FACE_RIGHT,
+        FACE_BOTTOM,
+        FACE_TOP,
+        FACE_BACK,
+        FACE_FRONT,
+    ] {
+        visit_greedy_face_rects_by_key(
+            faces,
+            face_idx,
+            greedy_face_merge_key,
+            |face_idx, plane, u, v, width, height| {
+                let (x, y, z) = greedy_face_origin(face_idx, plane, u, v);
+                let sample = faces
+                    .iter()
+                    .find(|face| {
+                        face.face() == face_idx && collision_face_plane_uv(**face) == (plane, u, v)
+                    })
+                    .expect("greedy cell has source face");
+                merged.push(PackedFace::with_extent(
+                    x as u32,
+                    y as u32,
+                    z as u32,
+                    face_idx,
+                    sample.tile(),
+                    sample.block_id(),
+                    PackedFaceExtent {
+                        u: width as u32,
+                        v: height as u32,
+                    },
+                ));
+                true
+            },
+        );
+    }
+    merged
+}
+
+fn greedy_face_merge_key(face: PackedFace) -> u32 {
+    face.block_id() | (face.tile() << 16)
+}
+
+fn greedy_face_origin(face_idx: u32, plane: usize, u: usize, v: usize) -> (usize, usize, usize) {
+    match face_idx {
+        FACE_LEFT => (plane, v, u),
+        FACE_RIGHT => (plane - 1, v, u),
+        FACE_BOTTOM => (u, plane, v),
+        FACE_TOP => (u, plane - 1, v),
+        FACE_BACK => (u, v, plane),
+        _ => (u, v, plane - 1),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -2212,6 +2320,90 @@ mod tests {
     }
 
     #[test]
+    fn packed_faces_greedy_merge_coplanar_faces() {
+        let mut blocks = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        for z in 1..=2 {
+            for x in 1..=3 {
+                write_block(&mut blocks, x, 1, z, blocks::STONE as u16);
+            }
+        }
+
+        let batch = build_packed_faces(&blocks);
+        let top_face = batch
+            .faces()
+            .iter()
+            .find(|face| face.face() == FACE_TOP)
+            .expect("merged top face");
+
+        assert_eq!(top_face.x(), 0);
+        assert_eq!(top_face.y(), 0);
+        assert_eq!(top_face.z(), 0);
+        assert_eq!(top_face.extent_u(), 3);
+        assert_eq!(top_face.extent_v(), 2);
+        assert_eq!(
+            top_face.tile(),
+            blocks::tile_for_face(blocks::STONE, FACE_TOP, FACE_TOP, FACE_BOTTOM)
+        );
+        assert_eq!(
+            batch
+                .faces()
+                .iter()
+                .filter(|face| face.face() == FACE_TOP)
+                .count(),
+            1
+        );
+        assert_eq!(
+            batch
+                .faces()
+                .iter()
+                .filter(|face| face.face() == FACE_BOTTOM)
+                .count(),
+            1
+        );
+        assert!(batch.face_count() < 6 * 6);
+    }
+
+    #[test]
+    fn packed_faces_do_not_merge_different_tiles() {
+        let mut blocks = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        write_block(&mut blocks, 1, 1, 1, blocks::GRASS as u16);
+        write_block(&mut blocks, 2, 1, 1, blocks::STONE as u16);
+
+        let batch = build_packed_faces(&blocks);
+        let top_faces = batch
+            .faces()
+            .iter()
+            .filter(|face| face.face() == FACE_TOP)
+            .count();
+
+        assert_eq!(top_faces, 2);
+    }
+
+    #[test]
+    fn subchunk_bytes_preserve_extent_low_bits() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::with_extent(
+                1,
+                2,
+                3,
+                FACE_TOP,
+                7,
+                blocks::STONE,
+                PackedFaceExtent { u: 5, v: 6 },
+            )],
+        };
+
+        let bytes = batch.to_bytes_for_subchunk(GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: -3,
+        });
+
+        assert_eq!(read_u32(&bytes, 8) & 0xffff, 5 | (6 << 6));
+        assert_eq!(read_u32(&bytes, 8) >> 16, pack_signed_i16(-3));
+    }
+
+    #[test]
     fn hidden_neighbor_face_is_not_emitted() {
         let mut blocks = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
         write_block(&mut blocks, 1, 1, 1, blocks::STONE as u16);
@@ -2229,7 +2421,7 @@ mod tests {
             .filter(|face| face.face() == FACE_RIGHT)
             .count();
 
-        assert_eq!(batch.face_count(), 10);
+        assert_eq!(batch.face_count(), 6);
         assert_eq!(left_faces, 1);
         assert_eq!(right_faces, 1);
     }
@@ -2280,6 +2472,30 @@ mod tests {
 
         assert!(fragment_source.contains("frag_color = vec4(texel.rgb * lighting_in, 1.0);"));
         assert!(!fragment_source.contains("texel.a"));
+    }
+
+    #[test]
+    fn render_shader_uses_face_extent_for_geometry_and_tiled_uvs() {
+        let (vertex_source, fragment_source) =
+            split_render_shader_source().expect("render shader stages");
+
+        assert!(
+            vertex_source.contains("vec3 face_corner(uint face_idx, uint corner_idx, vec2 extent)")
+        );
+        assert!(
+            vertex_source.contains("vec2 face_uv(uint face_idx, uint corner_idx, vec2 extent)")
+        );
+        assert!(vertex_source.contains(
+            "vec2 extent = vec2(float(face.extent & 63u), float((face.extent >> 6u) & 63u));"
+        ));
+        assert!(vertex_source.contains("face_corner(face_idx, corner_idx, extent)"));
+        assert!(
+            vertex_source.contains(
+                "uv_tile_out = vec3(face_uv(face_idx, corner_idx, extent), float(tile));"
+            )
+        );
+        assert!(fragment_source.contains("vec2 tiled_uv = fract(tile_uv);"));
+        assert!(fragment_source.contains("vec2 uv_in = atlas_uv(uv_tile_in.xy, uv_tile_in.z);"));
     }
 
     #[test]
@@ -2425,6 +2641,30 @@ mod tests {
     }
 
     #[test]
+    fn indexed_compact_cpu_proxy_positions_preserve_merged_face_extent() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::with_extent(
+                1,
+                2,
+                3,
+                FACE_TOP,
+                7,
+                blocks::GRASS,
+                PackedFaceExtent { u: 3, v: 2 },
+            )],
+        };
+
+        let (positions, indices) = batch.indexed_cpu_proxy_positions();
+
+        assert_eq!(positions.len(), 4);
+        assert_eq!(positions[0], Vector3::new(1.0, 3.0, 3.0));
+        assert_eq!(positions[1], Vector3::new(1.0, 3.0, 5.0));
+        assert_eq!(positions[2], Vector3::new(4.0, 3.0, 5.0));
+        assert_eq!(positions[3], Vector3::new(4.0, 3.0, 3.0));
+        assert_eq!(indices, vec![0, 2, 1, 0, 3, 2]);
+    }
+
+    #[test]
     fn collision_faces_preserve_single_face_geometry() {
         for face_idx in [
             FACE_LEFT,
@@ -2463,6 +2703,31 @@ mod tests {
         assert_eq!(collision_faces[3], Vector3::new(1.0, 3.0, 3.0));
         assert_eq!(collision_faces[4], Vector3::new(3.0, 3.0, 3.0));
         assert_eq!(collision_faces[5], Vector3::new(3.0, 3.0, 4.0));
+    }
+
+    #[test]
+    fn collision_faces_preserve_merged_face_extent() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::with_extent(
+                1,
+                2,
+                3,
+                FACE_TOP,
+                7,
+                blocks::GRASS,
+                PackedFaceExtent { u: 3, v: 2 },
+            )],
+        };
+
+        let collision_faces = batch.collision_face_positions();
+
+        assert_eq!(collision_faces.len(), 6);
+        assert_eq!(collision_faces[0], Vector3::new(1.0, 3.0, 3.0));
+        assert_eq!(collision_faces[1], Vector3::new(4.0, 3.0, 5.0));
+        assert_eq!(collision_faces[2], Vector3::new(1.0, 3.0, 5.0));
+        assert_eq!(collision_faces[3], Vector3::new(1.0, 3.0, 3.0));
+        assert_eq!(collision_faces[4], Vector3::new(4.0, 3.0, 3.0));
+        assert_eq!(collision_faces[5], Vector3::new(4.0, 3.0, 5.0));
     }
 
     #[test]
@@ -2544,6 +2809,31 @@ mod tests {
         let mesh = batch.cpu_array_mesh_vertices();
 
         assert_eq!(mesh.len(), MAX_CPU_ARRAY_MESH_VERTICES / 6 * 6);
+    }
+
+    #[test]
+    fn cpu_array_mesh_respects_vertex_cap_for_merged_faces() {
+        let merged_face_vertices = 32 * 32 * 6;
+        let face_count = MAX_CPU_ARRAY_MESH_VERTICES / merged_face_vertices + 4;
+        let batch = PackedFaceBatch {
+            faces: vec![
+                PackedFace::with_extent(
+                    0,
+                    0,
+                    0,
+                    FACE_TOP,
+                    7,
+                    blocks::GRASS,
+                    PackedFaceExtent { u: 32, v: 32 },
+                );
+                face_count
+            ],
+        };
+
+        let mesh = batch.cpu_array_mesh_vertices();
+
+        assert!(mesh.len() <= MAX_CPU_ARRAY_MESH_VERTICES);
+        assert_eq!(mesh.len() % 6, 0);
     }
 
     #[test]
