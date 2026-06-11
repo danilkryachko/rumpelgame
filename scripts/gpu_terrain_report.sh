@@ -73,6 +73,28 @@ metric_sum() {
     '
 }
 
+metric_max_source() {
+  key="$1"
+  best_value=""
+  best_path=""
+  for path in $(summary_files); do
+    values="$(grep "$key=" "$path" 2>/dev/null \
+      | sed -n "s/.*$key=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p")"
+    for value in $values; do
+      if [ -z "$best_value" ] || awk -v value="$value" -v best="$best_value" 'BEGIN { exit !(value > best) }'; then
+        best_value="$value"
+        best_path="$path"
+      fi
+    done
+  done
+
+  if [ -n "$best_value" ]; then
+    printf '%s `%s` from `%s`\n' "$key" "$best_value" "$best_path"
+  else
+    printf '%s `n/a`\n' "$key"
+  fi
+}
+
 rasterization_states() {
   summary_files | xargs grep -h 'gpu_cull=' 2>/dev/null \
     | sed -n 's/.*gpu_cull=\([^ ]*\).*gpu_front_face=\([^ ]*\).*/gpu_cull=\1 gpu_front_face=\2/p' \
@@ -128,6 +150,14 @@ tmp_path="$OUT_PATH.tmp"
   else
     printf 'No `gpu_cull` marker fields found in existing artifacts.\n'
   fi
+
+  printf '\n## Metric Origins\n\n'
+  metric_max_source gpu_effective_draws | sed 's/^/- /'
+  metric_max_source gpu_faces | sed 's/^/- /'
+  metric_max_source gpu_fragmentation_pct | sed 's/^/- /'
+  metric_max_source terrain_queue_max_ms | sed 's/^/- /'
+  metric_max_source gpu_compositor_submit_max_ms | sed 's/^/- /'
+  metric_max_source frame_p95_ms | sed 's/^/- /'
 
   print_optional_file "Selected Movement Stress Summary" "$(latest_file movement-stress-summary.txt)"
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
