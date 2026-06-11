@@ -308,6 +308,8 @@ func capture_visual_smoke(screenshot_path: String):
 	]
 	write_visual_smoke_marker(output_path + ".txt", summary)
 	log_event(summary)
+	shutdown_visual_smoke_runtime()
+	await get_tree().process_frame
 	get_tree().quit(smoke_err)
 
 func write_visual_smoke_marker(marker_path: String, summary: String):
@@ -336,6 +338,12 @@ func visual_smoke_chunk_text() -> String:
 			client.get_chunk_collision_count()
 		]
 	return "n/a"
+
+func shutdown_visual_smoke_runtime():
+	var client = get_node_or_null("GameClient")
+	if client and client.has_method("shutdown_for_quit"):
+		log_event("Visual smoke runtime shutdown requested")
+		client.shutdown_for_quit()
 
 func record_visual_smoke_frame(delta: float):
 	if not visual_smoke_requested:

@@ -8,6 +8,8 @@ Date: 2026-06-11
 
 Fresh 2026-06-11 status:
 
+- Latest leak-cleanup slice adds explicit visual-smoke shutdown for `GameClient`, detaches the GPU terrain compositor before freeing its RIDs, and makes `ComputeMesher` free its local `RenderingDevice` through `Gd::free()` after releasing compute pipeline/shader RIDs.
+- Fresh verbose smoke artifact `logs/gpu_terrain_leak_fix/run.log` no longer reports `ObjectDB instances leaked at exit`; the previous leak was `RenderingDevice` plus two internal `Object` instances from the local compute mesher device lifetime. Release wrapper smoke also passed in `logs/gpu_terrain_leak_fix_release/run.log`.
 - Latest weak-spot cleanup adds `scripts/fix_godot_userdata_case.sh`, a safe local maintenance helper for the repeated macOS Godot userdata warning where `project.godot` uses `config/name="rumpelgame"` but the local app userdata directory existed as `RUMPELGAME`.
 - The helper renames through a temporary path when both names resolve to the same directory on a case-insensitive filesystem. If both variants are real different directories, it refuses to merge or delete user data automatically.
 - `scripts/gpu_terrain_pacing_matrix.sh` now normalizes relative output directories to repo-root absolute paths before launching Godot, so screenshot markers are not accidentally written under `client/`.

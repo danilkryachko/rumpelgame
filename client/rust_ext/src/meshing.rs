@@ -27,7 +27,7 @@ pub struct MeshResult {
 }
 
 pub struct ComputeMesher {
-    rd: Gd<RenderingDevice>,
+    rd: Option<Gd<RenderingDevice>>,
     shader_rid: Rid,
     pipeline: Rid,
 }
@@ -59,15 +59,27 @@ impl ComputeMesher {
             }
             None => {
                 godot_print!("shader_compile_spirv_from_source returned None");
+                rd.free();
                 return None;
             }
         };
 
         let shader_rid = rd.shader_create_from_spirv(&spirv);
+        if shader_rid.is_invalid() {
+            godot_print!("shader_create_from_spirv returned an invalid RID");
+            rd.free();
+            return None;
+        }
         let pipeline = rd.compute_pipeline_create(shader_rid);
+        if pipeline.is_invalid() {
+            godot_print!("compute_pipeline_create returned an invalid RID");
+            rd.free_rid(shader_rid);
+            rd.free();
+            return None;
+        }
 
         Some(Self {
-            rd,
+            rd: Some(rd),
             shader_rid,
             pipeline,
         })
@@ -80,6 +92,7 @@ impl ComputeMesher {
                 voxel_data.len()
             );
         }
+        let rd = self.rd.as_mut()?;
 
         let prepare_start = Instant::now();
         let mut gpu_voxels = Vec::with_capacity(voxel_data.len() * 2);
@@ -92,13 +105,11 @@ impl ComputeMesher {
         let out_data = vec![0u8; 3_200_004]; // ~100k vertices
         let out_pba = PackedByteArray::from(out_data.as_slice());
 
-        let voxel_buffer_rid = self.rd.storage_buffer_create(voxel_pba.len() as u32);
-        self.rd
-            .buffer_update(voxel_buffer_rid, 0, voxel_pba.len() as u32, &voxel_pba);
+        let voxel_buffer_rid = rd.storage_buffer_create(voxel_pba.len() as u32);
+        rd.buffer_update(voxel_buffer_rid, 0, voxel_pba.len() as u32, &voxel_pba);
 
-        let out_buffer_rid = self.rd.storage_buffer_create(out_pba.len() as u32);
-        self.rd
-            .buffer_update(out_buffer_rid, 0, out_pba.len() as u32, &out_pba);
+        let out_buffer_rid = rd.storage_buffer_create(out_pba.len() as u32);
+        rd.buffer_update(out_buffer_rid, 0, out_pba.len() as u32, &out_pba);
 
         let mut uniform_voxels = godot::classes::RdUniform::new_gd();
         uniform_voxels
@@ -112,33 +123,31 @@ impl ComputeMesher {
         uniform_out.add_id(out_buffer_rid);
 
         let uniforms = Array::from_iter([uniform_voxels, uniform_out]);
-        let uniform_set = self.rd.uniform_set_create(&uniforms, self.shader_rid, 0);
+        let uniform_set = rd.uniform_set_create(&uniforms, self.shader_rid, 0);
         let prepare_ms = prepare_start.elapsed().as_secs_f64() * 1000.0;
 
         let submit_start = Instant::now();
-        let compute_list = self.rd.compute_list_begin();
-        self.rd
-            .compute_list_bind_compute_pipeline(compute_list, self.pipeline);
-        self.rd
-            .compute_list_bind_uniform_set(compute_list, uniform_set, 0);
-        self.rd.compute_list_dispatch(compute_list, 4, 4, 4); // 32x32x32 / (8,8,8)
-        self.rd.compute_list_end();
+        let compute_list = rd.compute_list_begin();
+        rd.compute_list_bind_compute_pipeline(compute_list, self.pipeline);
+        rd.compute_list_bind_uniform_set(compute_list, uniform_set, 0);
+        rd.compute_list_dispatch(compute_list, 4, 4, 4); // 32x32x32 / (8,8,8)
+        rd.compute_list_end();
 
-        self.rd.submit();
+        rd.submit();
         let submit_ms = submit_start.elapsed().as_secs_f64() * 1000.0;
 
         let sync_start = Instant::now();
-        self.rd.sync();
+        rd.sync();
         let sync_ms = sync_start.elapsed().as_secs_f64() * 1000.0;
 
         let readback_start = Instant::now();
-        let out_bytes = self.rd.buffer_get_data(out_buffer_rid);
+        let out_bytes = rd.buffer_get_data(out_buffer_rid);
         let out_slice = out_bytes.as_slice();
         let readback_ms = readback_start.elapsed().as_secs_f64() * 1000.0;
 
-        self.rd.free_rid(uniform_set);
-        self.rd.free_rid(voxel_buffer_rid);
-        self.rd.free_rid(out_buffer_rid);
+        rd.free_rid(uniform_set);
+        rd.free_rid(voxel_buffer_rid);
+        rd.free_rid(out_buffer_rid);
 
         if out_slice.len() >= 4 {
             let reported_vertex_count =
@@ -233,6 +242,16 @@ impl ComputeMesher {
             })
         } else {
             None
+        }
+    }
+}
+
+impl Drop for ComputeMesher {
+    fn drop(&mut self) {
+        if let Some(mut rd) = self.rd.take() {
+            rd.free_rid(self.pipeline);
+            rd.free_rid(self.shader_rid);
+            rd.free();
         }
     }
 }

@@ -1041,6 +1041,15 @@ impl GpuTerrainCompositor {
         true
     }
 
+    pub fn detach_from_camera(&mut self) {
+        if self.camera_rid.is_invalid() {
+            return;
+        }
+
+        RenderingServer::singleton().camera_set_compositor(self.camera_rid, Rid::Invalid);
+        self.camera_rid = Rid::Invalid;
+    }
+
     pub fn is_attached(&self) -> bool {
         self.camera_rid.is_valid()
     }
@@ -1048,6 +1057,7 @@ impl GpuTerrainCompositor {
 
 impl Drop for GpuTerrainCompositor {
     fn drop(&mut self) {
+        self.detach_from_camera();
         let mut rs = RenderingServer::singleton();
         rs.free_rid(self.compositor_rid);
         rs.free_rid(self.effect_rid);

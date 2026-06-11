@@ -185,9 +185,24 @@ impl INode for GameClient {
             gpu_terrain.render_debug_offscreen_once();
         }
     }
+
+    fn exit_tree(&mut self) {
+        self.shutdown_runtime_resources();
+    }
 }
 
 impl GameClient {
+    fn shutdown_runtime_resources(&mut self) {
+        if let Some(compositor) = &mut self.gpu_terrain_compositor {
+            compositor.detach_from_camera();
+        }
+        self.gpu_terrain_compositor = None;
+        self.gpu_terrain = None;
+        self.mesher = None;
+        self.network = None;
+        self.packet_receiver = None;
+    }
+
     fn spawn_player(&mut self) {
         if self.player_spawned {
             return;
@@ -3130,6 +3145,12 @@ impl GameClient {
         if let Some(gpu_terrain) = &mut self.gpu_terrain {
             gpu_terrain.render_compositor(callback_type, render_data);
         }
+    }
+
+    #[func]
+    fn shutdown_for_quit(&mut self) {
+        self.emit_debug_log("GameClient runtime shutdown requested");
+        self.shutdown_runtime_resources();
     }
 
     #[func]
