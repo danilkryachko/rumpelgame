@@ -49,6 +49,24 @@ perf_triplet_value() {
     | sed -n '1p'
 }
 
+perf_pair_value() {
+  key="$1"
+  marker_path="$2"
+  index="$3"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\).*/\1 \2/p" "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+default_float() {
+  value="$1"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+  else
+    printf '0.000\n'
+  fi
+}
+
 mesh_triplet_value() {
   marker_path="$1"
   index="$2"
@@ -81,6 +99,8 @@ write_summary() {
   budget_ms="$(frame_budget_ms)"
   terrain_queue_avg="$(perf_triplet_value terrain_queue_work_ms "$marker_path" 2)"
   terrain_queue_max="$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)"
+  terrain_queue_max_mesh="$(default_float "$(perf_pair_value terrain_queue_work_max_parts "$marker_path" 1)")"
+  terrain_queue_max_coll="$(default_float "$(perf_pair_value terrain_queue_work_max_parts "$marker_path" 2)")"
   mesh_avg="$(mesh_triplet_value "$marker_path" 2)"
   mesh_max="$(mesh_triplet_value "$marker_path" 3)"
   coll_avg="$(collision_triplet_value "$marker_path" 2)"
@@ -94,6 +114,8 @@ write_summary() {
     -v budget="$budget_ms" \
     -v terrain_queue_avg="$terrain_queue_avg" \
     -v terrain_queue_max="$terrain_queue_max" \
+    -v terrain_queue_max_mesh="$terrain_queue_max_mesh" \
+    -v terrain_queue_max_coll="$terrain_queue_max_coll" \
     -v mesh_avg="$mesh_avg" \
     -v mesh_max="$mesh_max" \
     -v coll_avg="$coll_avg" \
@@ -107,7 +129,7 @@ write_summary() {
           status = "fail"
         }
         printf("GPU terrain movement stress summary target_fps=%.0f budget_ms=%.3f\n", 1000.0 / budget, budget)
-        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f budget_status=%s over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, status, over, mesh_avg, mesh_max, coll_avg, coll_max, frame_p95, fps_p05)
+        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, mesh_avg, mesh_max, coll_avg, coll_max, frame_p95, fps_p05)
       }
     ' > "$summary_path"
   cat "$summary_path"
