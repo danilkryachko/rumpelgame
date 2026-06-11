@@ -13,9 +13,11 @@ GODOT_TIMEOUT_SEC="${GODOT_TIMEOUT_SEC:-120}"
 GODOT_QUIT_AFTER_FRAMES="${GODOT_QUIT_AFTER_FRAMES:-8000}"
 SMOKE_DELAY_SEC="${SMOKE_DELAY_SEC:-5.0}"
 FRAME_SAMPLE_SEC="${RUMPELMC_MOVEMENT_STRESS_FRAME_SAMPLE_SEC:-5.0}"
+MOTION_NAME="${RUMPELMC_MOVEMENT_STRESS_MOTION:-chunk_walk}"
 MOTION_STEP_SEC="${RUMPELMC_MOVEMENT_STRESS_STEP_SEC:-0.55}"
 MOTION_SETTLE_SEC="${RUMPELMC_MOVEMENT_STRESS_SETTLE_SEC:-4.0}"
 MIN_MOTION_CHUNKS="${RUMPELMC_MOVEMENT_STRESS_MIN_CHUNKS:-4}"
+EXPECTED_CURRENT_CHUNK="${RUMPELMC_MOVEMENT_STRESS_EXPECTED_CHUNK:-3,2}"
 TARGET_FPS="${RUMPELMC_MOVEMENT_STRESS_TARGET_FPS:-150}"
 BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE:-enforce}"
 PROCESS_WALL_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE:-enforce}"
@@ -246,7 +248,7 @@ echo "==> GPU terrain movement stress"
     RUMPELMC_GPU_TERRAIN_RENDER=1 \
     RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE=conservative \
     RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=compact \
-    RUMPELMC_VISUAL_SMOKE_MOTION=chunk_walk \
+    RUMPELMC_VISUAL_SMOKE_MOTION="$MOTION_NAME" \
     RUMPELMC_VISUAL_SMOKE_MOTION_STEP_SEC="$MOTION_STEP_SEC" \
     RUMPELMC_VISUAL_SMOKE_MOTION_SETTLE_SEC="$MOTION_SETTLE_SEC" \
     RUMPELMC_VISUAL_SMOKE_PATH="$screenshot_path" \
@@ -261,8 +263,8 @@ echo "==> GPU terrain movement stress"
 test -s "$screenshot_path" || fail "missing screenshot $screenshot_path"
 test -s "$marker_path" || fail "missing marker $marker_path"
 grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke summary in $marker_path"
-grep -q 'motion="chunk_walk"' "$marker_path" || fail "unexpected motion in $marker_path"
-grep -q 'current_chunk="3,2"' "$marker_path" || fail "movement did not finish in chunk 3,2"
+grep -q "motion=\"$MOTION_NAME\"" "$marker_path" || fail "unexpected motion in $marker_path"
+grep -q "current_chunk=\"$EXPECTED_CURRENT_CHUNK\"" "$marker_path" || fail "movement did not finish in chunk $EXPECTED_CURRENT_CHUNK"
 grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
 require_godot_rust_ext_marker_profile "$marker_path"
 require_metric_ge "$marker_path" "motion_steps" 4

@@ -501,7 +501,7 @@ func apply_visual_smoke_look_at(player: Node3D, camera: Camera3D, position: Vect
 func run_visual_smoke_motion(motion_name: String):
 	visual_smoke_motion_steps = 0
 	visual_smoke_motion_chunks.clear()
-	if motion_name != "chunk_walk":
+	if motion_name != "chunk_walk" and motion_name != "chunk_walk_long":
 		return
 
 	var player = get_tree().root.find_child("Player", true, false) as Node3D
@@ -510,12 +510,20 @@ func run_visual_smoke_motion(motion_name: String):
 
 	var camera = visual_smoke_player_camera(player)
 	var step_sec = max(env_float(VISUAL_SMOKE_MOTION_STEP_SEC_ENV, VISUAL_SMOKE_DEFAULT_MOTION_STEP_SEC), 0.05)
-	for position in [
+	var positions = [
 		Vector3(16.0, 74.0, 16.0),
 		Vector3(48.0, 74.0, 16.0),
 		Vector3(80.0, 74.0, 48.0),
 		Vector3(112.0, 74.0, 80.0)
-	]:
+	]
+	if motion_name == "chunk_walk_long":
+		positions.append_array([
+			Vector3(144.0, 74.0, 112.0),
+			Vector3(176.0, 74.0, 112.0),
+			Vector3(208.0, 74.0, 144.0),
+			Vector3(240.0, 74.0, 176.0)
+		])
+	for position in positions:
 		player.global_position = position
 		visual_smoke_motion_steps += 1
 		visual_smoke_motion_chunks[visual_smoke_chunk_key(position)] = true
