@@ -1,8 +1,8 @@
 use crate::blocks;
 use godot::classes::rendering_device::{
-    CompareOperator, DataFormat, DrawFlags, PolygonCullMode, RenderPrimitive, SamplerFilter,
-    SamplerRepeatMode, ShaderLanguage, ShaderStage, StorageBufferUsage, TextureSamples,
-    TextureType, TextureUsageBits, UniformType,
+    CompareOperator, DataFormat, DrawFlags, PolygonCullMode, PolygonFrontFace, RenderPrimitive,
+    SamplerFilter, SamplerRepeatMode, ShaderLanguage, ShaderStage, StorageBufferUsage,
+    TextureSamples, TextureType, TextureUsageBits, UniformType,
 };
 use godot::classes::{
     Image, RdPipelineColorBlendState, RdPipelineColorBlendStateAttachment,
@@ -42,6 +42,7 @@ const GPU_TERRAIN_TIMESTAMP_BEGIN: &str = "rumpel_gpu_terrain_begin";
 const GPU_TERRAIN_TIMESTAMP_END: &str = "rumpel_gpu_terrain_end";
 const GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT_ENV: &str = "RUMPELMC_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT";
 const MAX_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT: u32 = 64;
+const GPU_TERRAIN_CULL_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_CULL_MODE";
 
 pub const FACE_LEFT: u32 = 0;
 pub const FACE_RIGHT: u32 = 1;
@@ -2076,11 +2077,26 @@ fn create_uniform_set(
 }
 
 fn create_rasterization_state() -> Gd<RdPipelineRasterizationState> {
+    let config = terrain_rasterization_config(gpu_terrain_cull_mode());
     let mut state = RdPipelineRasterizationState::new_gd();
-    state.set_cull_mode(PolygonCullMode::DISABLED);
+    state.set_cull_mode(config.cull_mode);
+    state.set_front_face(config.front_face);
     state.set_wireframe(false);
     state.set_discard_primitives(false);
     state
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TerrainRasterizationConfig {
+    cull_mode: PolygonCullMode,
+    front_face: PolygonFrontFace,
+}
+
+fn terrain_rasterization_config(cull_mode: PolygonCullMode) -> TerrainRasterizationConfig {
+    TerrainRasterizationConfig {
+        cull_mode,
+        front_face: PolygonFrontFace::CLOCKWISE,
+    }
 }
 
 fn create_multisample_state() -> Gd<RdPipelineMultisampleState> {
@@ -2235,6 +2251,24 @@ fn compositor_draw_repeat_from_env(value: Option<String>) -> u32 {
         .filter(|repeat| *repeat > 0)
         .map(|repeat| repeat.min(MAX_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT))
         .unwrap_or(1)
+}
+
+fn gpu_terrain_cull_mode() -> PolygonCullMode {
+    static CULL_MODE: OnceLock<PolygonCullMode> = OnceLock::new();
+    *CULL_MODE.get_or_init(|| {
+        gpu_terrain_cull_mode_from_env(std::env::var(GPU_TERRAIN_CULL_MODE_ENV).ok())
+    })
+}
+
+fn gpu_terrain_cull_mode_from_env(value: Option<String>) -> PolygonCullMode {
+    match value.as_deref().map(str::trim).map(str::to_lowercase) {
+        Some(value) if value == "disabled" || value == "none" || value == "off" => {
+            PolygonCullMode::DISABLED
+        }
+        Some(value) if value == "front" => PolygonCullMode::FRONT,
+        Some(value) if value == "back" || value.is_empty() => PolygonCullMode::BACK,
+        _ => PolygonCullMode::BACK,
+    }
 }
 
 pub fn build_packed_faces(padded_blocks: &[u8]) -> PackedFaceBatch {
@@ -2538,6 +2572,43 @@ mod tests {
             compositor_draw_repeat_from_env(Some("999".to_string())),
             MAX_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT
         );
+    }
+
+    #[test]
+    fn gpu_terrain_cull_mode_defaults_to_back_faces() {
+        assert_eq!(gpu_terrain_cull_mode_from_env(None), PolygonCullMode::BACK);
+        assert_eq!(
+            gpu_terrain_cull_mode_from_env(Some(String::new())),
+            PolygonCullMode::BACK
+        );
+        assert_eq!(
+            gpu_terrain_cull_mode_from_env(Some("unknown".to_string())),
+            PolygonCullMode::BACK
+        );
+    }
+
+    #[test]
+    fn gpu_terrain_cull_mode_supports_rollback_and_front_control() {
+        assert_eq!(
+            gpu_terrain_cull_mode_from_env(Some("disabled".to_string())),
+            PolygonCullMode::DISABLED
+        );
+        assert_eq!(
+            gpu_terrain_cull_mode_from_env(Some("off".to_string())),
+            PolygonCullMode::DISABLED
+        );
+        assert_eq!(
+            gpu_terrain_cull_mode_from_env(Some("front".to_string())),
+            PolygonCullMode::FRONT
+        );
+    }
+
+    #[test]
+    fn terrain_rasterization_uses_clockwise_front_faces() {
+        let config = terrain_rasterization_config(PolygonCullMode::BACK);
+
+        assert_eq!(config.cull_mode, PolygonCullMode::BACK);
+        assert_eq!(config.front_face, PolygonFrontFace::CLOCKWISE);
     }
 
     #[test]
