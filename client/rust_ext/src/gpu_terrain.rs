@@ -12,6 +12,7 @@ use godot::classes::{
 };
 use godot::prelude::*;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 const BLOCK_ATLAS_PATH: &str = "res://assets/textures/blocks/block_texture_atlas.png";
@@ -39,6 +40,8 @@ const DEFAULT_TERRAIN_AMBIENT: f32 = 0.55;
 const DEFAULT_TERRAIN_LIGHT_ENERGY: f32 = 0.45;
 const GPU_TERRAIN_TIMESTAMP_BEGIN: &str = "rumpel_gpu_terrain_begin";
 const GPU_TERRAIN_TIMESTAMP_END: &str = "rumpel_gpu_terrain_end";
+const GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT_ENV: &str = "RUMPELMC_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT";
+const MAX_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT: u32 = 64;
 
 pub const FACE_LEFT: u32 = 0;
 pub const FACE_RIGHT: u32 = 1;
@@ -900,6 +903,8 @@ pub struct GpuTerrainStats {
     pub faces: usize,
     pub bytes: usize,
     pub draw_count: usize,
+    pub compositor_draw_repeat: u32,
+    pub compositor_effective_draw_count: usize,
     pub compositor_frames: u64,
     pub upload_count: u64,
     pub upload_bytes: usize,
@@ -1286,6 +1291,10 @@ impl GpuTerrainBufferPool {
             faces: self.used_faces,
             bytes: self.used_faces * PACKED_FACE_BYTES,
             draw_count: self.draw_count,
+            compositor_draw_repeat: gpu_terrain_compositor_draw_repeat(),
+            compositor_effective_draw_count: self
+                .draw_count
+                .saturating_mul(gpu_terrain_compositor_draw_repeat() as usize),
             compositor_frames: self.compositor_frames,
             upload_count: self.upload_count,
             upload_bytes: self.upload_bytes,
@@ -1458,11 +1467,14 @@ impl GpuTerrainBufferPool {
             &push_constants,
             push_constants.len() as u32,
         );
-        self.rd
-            .draw_list_draw_indirect_ex(draw_list, false, self.indirect_buffer_rid)
-            .draw_count(self.draw_count as u32)
-            .stride(INDIRECT_DRAW_BYTES as u32)
-            .done();
+        let draw_repeat = gpu_terrain_compositor_draw_repeat();
+        for _ in 0..draw_repeat {
+            self.rd
+                .draw_list_draw_indirect_ex(draw_list, false, self.indirect_buffer_rid)
+                .draw_count(self.draw_count as u32)
+                .stride(INDIRECT_DRAW_BYTES as u32)
+                .done();
+        }
         self.rd.draw_list_end();
         self.rd.capture_timestamp(GPU_TERRAIN_TIMESTAMP_END);
         submit_breakdown.draw_ms = phase_start.elapsed().as_secs_f64() * 1000.0;
@@ -1475,12 +1487,14 @@ impl GpuTerrainBufferPool {
         if !self.compositor_logged {
             self.compositor_logged = true;
             godot_print!(
-                "GPU terrain compositor draw: size={}x{} views={} depth={} draws={} faces={}",
+                "GPU terrain compositor draw: size={}x{} views={} depth={} draws={} repeat={} effective_draws={} faces={}",
                 size.x,
                 size.y,
                 view_count,
                 depth_texture_rid.is_valid(),
                 self.draw_count,
+                draw_repeat,
+                self.draw_count.saturating_mul(draw_repeat as usize),
                 self.used_faces
             );
         }
@@ -2207,6 +2221,22 @@ fn sanitize_non_negative(value: f32, fallback: f32) -> f32 {
     }
 }
 
+fn gpu_terrain_compositor_draw_repeat() -> u32 {
+    static DRAW_REPEAT: OnceLock<u32> = OnceLock::new();
+    *DRAW_REPEAT.get_or_init(|| {
+        compositor_draw_repeat_from_env(std::env::var(GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT_ENV).ok())
+    })
+}
+
+fn compositor_draw_repeat_from_env(value: Option<String>) -> u32 {
+    value
+        .as_deref()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .filter(|repeat| *repeat > 0)
+        .map(|repeat| repeat.min(MAX_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT))
+        .unwrap_or(1)
+}
+
 pub fn build_packed_faces(padded_blocks: &[u8]) -> PackedFaceBatch {
     let block_lookup = PackedBlockLookup::from_definitions();
     let mut faces = Vec::with_capacity(4096);
@@ -2488,6 +2518,26 @@ mod tests {
                 .try_into()
                 .expect("f32 byte slice"),
         )
+    }
+
+    #[test]
+    fn compositor_draw_repeat_defaults_to_one() {
+        assert_eq!(compositor_draw_repeat_from_env(None), 1);
+        assert_eq!(compositor_draw_repeat_from_env(Some(String::new())), 1);
+        assert_eq!(
+            compositor_draw_repeat_from_env(Some("not-a-number".to_string())),
+            1
+        );
+        assert_eq!(compositor_draw_repeat_from_env(Some("0".to_string())), 1);
+    }
+
+    #[test]
+    fn compositor_draw_repeat_clamps_stress_value() {
+        assert_eq!(compositor_draw_repeat_from_env(Some("8".to_string())), 8);
+        assert_eq!(
+            compositor_draw_repeat_from_env(Some("999".to_string())),
+            MAX_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT
+        );
     }
 
     #[test]
