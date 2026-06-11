@@ -19,7 +19,7 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 | `50be49c` | Fill-stress report-only repeats | `/tmp/rumpel_fill_report_only_fail` | report-only failure path writes `status=failed` and exits 0 | normal repeat=1 validation can still miss screenshot capture |
 | `8ad45ad` | Fill-stress visual correctness fields | `scripts/gpu_terrain_fill_stress.sh` | pass lines include `status`, `smoke_err`, `terrain_samples`, and `terrain_color_buckets` | normal pass-line format was not revalidated by a successful fill-stress capture due capture-window instability |
 | `74518b8` | Fragmentation telemetry | unit tests | derives `gpu_fragmented_free_faces` and `gpu_fragmentation_pct` without allocator behavior changes | existing logs show `n/a` until a fresh marker is captured |
-| `82532a5` | Metric origins in GPU report | `logs/gpu-terrain-report.txt` | report points aggregate spikes to exact summary/marker files | path ordering is still deterministic, not mtime-based |
+| `82532a5` | Metric origins in GPU report | `logs/gpu-terrain-report.txt` | report points aggregate spikes to exact summary/marker files | selected summaries now use file mtime after `493c8e6` |
 
 ## Next Trend Entry
 

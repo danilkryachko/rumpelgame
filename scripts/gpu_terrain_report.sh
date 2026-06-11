@@ -23,7 +23,16 @@ mkdir -p "$(dirname -- "$OUT_PATH")"
 
 latest_file() {
   name="$1"
-  find "$LOG_DIR" -name "$name" -type f -print | sort | tail -n 1
+  latest_path=""
+  latest_mtime=0
+  for path in $(find "$LOG_DIR" -name "$name" -type f -print); do
+    mtime="$(stat -f '%m' "$path" 2>/dev/null || stat -c '%Y' "$path" 2>/dev/null || printf '0')"
+    if [ "$mtime" -gt "$latest_mtime" ]; then
+      latest_mtime="$mtime"
+      latest_path="$path"
+    fi
+  done
+  printf '%s\n' "$latest_path"
 }
 
 summary_files() {
