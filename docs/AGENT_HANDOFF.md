@@ -8,6 +8,9 @@ Date: 2026-06-11
 
 Fresh 2026-06-11 status:
 
+- Latest GPU compositor submit gate slice adds `gpu_compositor_submit=count` and `gpu_compositor_submit_ms=last/avg/max` to Rust perf text, perf baseline summaries, and movement stress summaries. The gate measures CPU callback submit/setup time inside the Godot compositor path; it is not a GPU timestamp query.
+- Fresh compositor submit artifacts: `logs/gpu_compositor_submit_baseline/perf-baseline-summary.txt` and `logs/gpu_compositor_submit_gate/movement-stress-summary.txt`. Static GPU baseline passes: `gpu_compositor_submit_avg_ms=0.029`, `gpu_compositor_submit_max_ms=0.121`, `terrain_queue_max_ms=2.017`, `process_wall_p95_ms=0.045`, `gpu_upload_fail=0`. Movement stress passes: `gpu_compositor_submit_avg_ms=0.033`, `gpu_compositor_submit_max_ms=0.128`, `terrain_queue_max_ms=2.051`, `process_wall_p95_ms=0.053`, `gpu_upload_fail=0`. Visual `frame_p95_ms` remains `16.667` due local 60 Hz display/driver pacing.
+
 - Latest process-wall gate slice adds refresh-independent `_process` wall-time gates to terrain perf scripts. `scripts/gpu_terrain_perf_baseline.sh` now defaults `RUMPELMC_PERF_BASELINE_PROCESS_WALL_BUDGET_MODE=enforce`; `scripts/gpu_terrain_movement_stress.sh` now defaults `RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE=enforce` and prints `process_wall_p95_ms` in `movement-stress-summary.txt`.
 - Fresh process-wall movement artifact: `logs/terrain_queue_max_parts/movement-stress-summary.txt`. Release GPU movement stress passes both real queue and process-wall gates: `terrain_queue_avg_ms=0.874`, `terrain_queue_max_ms=1.977`, `max_mesh_ms=1.977`, `max_coll_ms=0.000`, `process_wall_p95_ms=0.042`, `budget_status=pass`, `gpu_upload_fail=0`. Visual `frame_p95_ms` remains `16.667` because the current macOS/Metal visual smoke is display/driver paced at 60 Hz.
 

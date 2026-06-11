@@ -916,6 +916,10 @@ pub struct GpuTerrainStats {
     pub last_draw_patch_ms: f64,
     pub avg_draw_patch_ms: f64,
     pub max_draw_patch_ms: f64,
+    pub compositor_submit_count: u64,
+    pub last_compositor_submit_ms: f64,
+    pub avg_compositor_submit_ms: f64,
+    pub max_compositor_submit_ms: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1128,6 +1132,10 @@ pub struct GpuTerrainBufferPool {
     avg_draw_patch_ms: f64,
     max_draw_patch_ms: f64,
     last_draw_patch_ms: f64,
+    compositor_submit_count: u64,
+    avg_compositor_submit_ms: f64,
+    max_compositor_submit_ms: f64,
+    last_compositor_submit_ms: f64,
 }
 
 impl GpuTerrainBufferPool {
@@ -1184,6 +1192,10 @@ impl GpuTerrainBufferPool {
             avg_draw_patch_ms: 0.0,
             max_draw_patch_ms: 0.0,
             last_draw_patch_ms: 0.0,
+            compositor_submit_count: 0,
+            avg_compositor_submit_ms: 0.0,
+            max_compositor_submit_ms: 0.0,
+            last_compositor_submit_ms: 0.0,
         })
     }
 
@@ -1262,6 +1274,10 @@ impl GpuTerrainBufferPool {
             last_draw_patch_ms: self.last_draw_patch_ms,
             avg_draw_patch_ms: self.avg_draw_patch_ms,
             max_draw_patch_ms: self.max_draw_patch_ms,
+            compositor_submit_count: self.compositor_submit_count,
+            last_compositor_submit_ms: self.last_compositor_submit_ms,
+            avg_compositor_submit_ms: self.avg_compositor_submit_ms,
+            max_compositor_submit_ms: self.max_compositor_submit_ms,
         }
     }
 
@@ -1339,6 +1355,7 @@ impl GpuTerrainBufferPool {
         if self.render_pipeline.is_none() || self.slots.is_empty() {
             return;
         }
+        let submit_start = Instant::now();
 
         let Some(scene_buffers) = render_data.get_render_scene_buffers() else {
             return;
@@ -1403,6 +1420,7 @@ impl GpuTerrainBufferPool {
         self.rd.draw_list_end();
 
         self.compositor_frames += 1;
+        self.record_compositor_submit_ms(submit_start.elapsed().as_secs_f64() * 1000.0);
         if !self.compositor_logged {
             self.compositor_logged = true;
             godot_print!(
@@ -1599,6 +1617,14 @@ impl GpuTerrainBufferPool {
         let count = self.draw_patch_count as f64;
         self.avg_draw_patch_ms += (elapsed_ms - self.avg_draw_patch_ms) / count;
         self.max_draw_patch_ms = self.max_draw_patch_ms.max(elapsed_ms);
+    }
+
+    fn record_compositor_submit_ms(&mut self, elapsed_ms: f64) {
+        self.compositor_submit_count += 1;
+        self.last_compositor_submit_ms = elapsed_ms;
+        let count = self.compositor_submit_count as f64;
+        self.avg_compositor_submit_ms += (elapsed_ms - self.avg_compositor_submit_ms) / count;
+        self.max_compositor_submit_ms = self.max_compositor_submit_ms.max(elapsed_ms);
     }
 
     fn record_upload_failure(&mut self, requested_faces: usize) {
