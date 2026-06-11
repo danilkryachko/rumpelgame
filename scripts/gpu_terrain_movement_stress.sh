@@ -63,6 +63,15 @@ perf_pair_value() {
     | sed -n '1p'
 }
 
+perf_quad_value() {
+  key="$1"
+  marker_path="$2"
+  index="$3"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\).*/\1 \2 \3 \4/p" "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
 default_float() {
   value="$1"
   if [ -n "$value" ]; then
@@ -112,6 +121,10 @@ write_summary() {
   coll_max="$(collision_triplet_value "$marker_path" 3)"
   compositor_submit_avg="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 2)")"
   compositor_submit_max="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 3)")"
+  compositor_submit_max_setup="$(default_float "$(perf_quad_value gpu_compositor_submit_max_parts "$marker_path" 1)")"
+  compositor_submit_max_target="$(default_float "$(perf_quad_value gpu_compositor_submit_max_parts "$marker_path" 2)")"
+  compositor_submit_max_constants="$(default_float "$(perf_quad_value gpu_compositor_submit_max_parts "$marker_path" 3)")"
+  compositor_submit_max_draw="$(default_float "$(perf_quad_value gpu_compositor_submit_max_parts "$marker_path" 4)")"
   compositor_gpu_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 2)")"
   compositor_gpu_max="$(default_float "$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 3)")"
   compositor_gpu_us_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 2)")"
@@ -136,6 +149,10 @@ write_summary() {
     -v coll_max="$coll_max" \
     -v compositor_submit_avg="$compositor_submit_avg" \
     -v compositor_submit_max="$compositor_submit_max" \
+    -v compositor_submit_max_setup="$compositor_submit_max_setup" \
+    -v compositor_submit_max_target="$compositor_submit_max_target" \
+    -v compositor_submit_max_constants="$compositor_submit_max_constants" \
+    -v compositor_submit_max_draw="$compositor_submit_max_draw" \
     -v compositor_gpu_avg="$compositor_gpu_avg" \
     -v compositor_gpu_max="$compositor_gpu_max" \
     -v compositor_gpu_us_avg="$compositor_gpu_us_avg" \
@@ -151,7 +168,7 @@ write_summary() {
           status = "fail"
         }
         printf("GPU terrain movement stress summary target_fps=%.0f budget_ms=%.3f\n", 1000.0 / budget, budget)
-        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, mesh_avg, mesh_max, coll_avg, coll_max, compositor_submit_avg, compositor_submit_max, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
+        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, mesh_avg, mesh_max, coll_avg, coll_max, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
       }
     ' > "$summary_path"
   cat "$summary_path"

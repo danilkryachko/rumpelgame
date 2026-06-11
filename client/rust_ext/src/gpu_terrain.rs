@@ -922,10 +922,20 @@ pub struct GpuTerrainStats {
     pub last_compositor_submit_ms: f64,
     pub avg_compositor_submit_ms: f64,
     pub max_compositor_submit_ms: f64,
+    pub last_compositor_submit_breakdown_ms: GpuCompositorSubmitBreakdown,
+    pub max_compositor_submit_breakdown_ms: GpuCompositorSubmitBreakdown,
     pub compositor_gpu_sample_count: u64,
     pub last_compositor_gpu_ms: f64,
     pub avg_compositor_gpu_ms: f64,
     pub max_compositor_gpu_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GpuCompositorSubmitBreakdown {
+    pub setup_ms: f64,
+    pub target_ms: f64,
+    pub constants_ms: f64,
+    pub draw_ms: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1142,6 +1152,8 @@ pub struct GpuTerrainBufferPool {
     avg_compositor_submit_ms: f64,
     max_compositor_submit_ms: f64,
     last_compositor_submit_ms: f64,
+    last_compositor_submit_breakdown_ms: GpuCompositorSubmitBreakdown,
+    max_compositor_submit_breakdown_ms: GpuCompositorSubmitBreakdown,
     compositor_gpu_sample_count: u64,
     avg_compositor_gpu_ms: f64,
     max_compositor_gpu_ms: f64,
@@ -1207,6 +1219,8 @@ impl GpuTerrainBufferPool {
             avg_compositor_submit_ms: 0.0,
             max_compositor_submit_ms: 0.0,
             last_compositor_submit_ms: 0.0,
+            last_compositor_submit_breakdown_ms: GpuCompositorSubmitBreakdown::default(),
+            max_compositor_submit_breakdown_ms: GpuCompositorSubmitBreakdown::default(),
             compositor_gpu_sample_count: 0,
             avg_compositor_gpu_ms: 0.0,
             max_compositor_gpu_ms: 0.0,
@@ -1294,6 +1308,8 @@ impl GpuTerrainBufferPool {
             last_compositor_submit_ms: self.last_compositor_submit_ms,
             avg_compositor_submit_ms: self.avg_compositor_submit_ms,
             max_compositor_submit_ms: self.max_compositor_submit_ms,
+            last_compositor_submit_breakdown_ms: self.last_compositor_submit_breakdown_ms,
+            max_compositor_submit_breakdown_ms: self.max_compositor_submit_breakdown_ms,
             compositor_gpu_sample_count: self.compositor_gpu_sample_count,
             last_compositor_gpu_ms: self.last_compositor_gpu_ms,
             avg_compositor_gpu_ms: self.avg_compositor_gpu_ms,
@@ -1377,6 +1393,8 @@ impl GpuTerrainBufferPool {
             return;
         }
         let submit_start = Instant::now();
+        let mut phase_start = Instant::now();
+        let mut submit_breakdown = GpuCompositorSubmitBreakdown::default();
 
         let Some(scene_buffers) = render_data.get_render_scene_buffers() else {
             return;
@@ -1402,11 +1420,15 @@ impl GpuTerrainBufferPool {
         let depth_texture_rid = scene_buffers.get_depth_layer(0);
 
         let view_count = scene_buffers.get_view_count().max(1);
+        submit_breakdown.setup_ms = phase_start.elapsed().as_secs_f64() * 1000.0;
+        phase_start = Instant::now();
         let Some((framebuffer_rid, render_pipeline_rid, vertex_format, uniform_set_rid)) =
             self.ensure_scene_target(color_texture_rid, depth_texture_rid, view_count)
         else {
             return;
         };
+        submit_breakdown.target_ms = phase_start.elapsed().as_secs_f64() * 1000.0;
+        phase_start = Instant::now();
         let Some(atlas_layout) = self
             .render_pipeline
             .as_ref()
@@ -1416,6 +1438,8 @@ impl GpuTerrainBufferPool {
         };
         let push_constants =
             clip_from_world_push_constants(&render_data, self.lighting, atlas_layout);
+        submit_breakdown.constants_ms = phase_start.elapsed().as_secs_f64() * 1000.0;
+        phase_start = Instant::now();
 
         self.rd.capture_timestamp(GPU_TERRAIN_TIMESTAMP_BEGIN);
         let draw_list = self.rd.draw_list_begin(framebuffer_rid);
@@ -1441,9 +1465,13 @@ impl GpuTerrainBufferPool {
             .done();
         self.rd.draw_list_end();
         self.rd.capture_timestamp(GPU_TERRAIN_TIMESTAMP_END);
+        submit_breakdown.draw_ms = phase_start.elapsed().as_secs_f64() * 1000.0;
 
         self.compositor_frames += 1;
-        self.record_compositor_submit_ms(submit_start.elapsed().as_secs_f64() * 1000.0);
+        self.record_compositor_submit_ms(
+            submit_start.elapsed().as_secs_f64() * 1000.0,
+            submit_breakdown,
+        );
         if !self.compositor_logged {
             self.compositor_logged = true;
             godot_print!(
@@ -1642,12 +1670,20 @@ impl GpuTerrainBufferPool {
         self.max_draw_patch_ms = self.max_draw_patch_ms.max(elapsed_ms);
     }
 
-    fn record_compositor_submit_ms(&mut self, elapsed_ms: f64) {
+    fn record_compositor_submit_ms(
+        &mut self,
+        elapsed_ms: f64,
+        breakdown_ms: GpuCompositorSubmitBreakdown,
+    ) {
         self.compositor_submit_count += 1;
         self.last_compositor_submit_ms = elapsed_ms;
+        self.last_compositor_submit_breakdown_ms = breakdown_ms;
         let count = self.compositor_submit_count as f64;
         self.avg_compositor_submit_ms += (elapsed_ms - self.avg_compositor_submit_ms) / count;
-        self.max_compositor_submit_ms = self.max_compositor_submit_ms.max(elapsed_ms);
+        if elapsed_ms >= self.max_compositor_submit_ms {
+            self.max_compositor_submit_ms = elapsed_ms;
+            self.max_compositor_submit_breakdown_ms = breakdown_ms;
+        }
     }
 
     fn record_captured_compositor_gpu_timestamps(&mut self) {
