@@ -145,6 +145,7 @@ pub struct CpuArrayMesh {
     pub vertices: PackedVector3Array,
     pub normals: PackedVector3Array,
     pub uvs: PackedVector2Array,
+    pub indices: PackedInt32Array,
     pub reported_vertex_count: usize,
 }
 
@@ -201,27 +202,31 @@ impl PackedFaceBatch {
     }
 
     pub fn build_cpu_array_mesh(&self) -> CpuArrayMesh {
-        let mut vertices = Vec::with_capacity(self.cpu_array_mesh_vertex_capacity());
+        let reported_vertex_capacity = self.cpu_array_mesh_vertex_capacity();
+        let mut vertices = Vec::with_capacity(reported_vertex_capacity / 6 * 4);
         let mut normals = Vec::with_capacity(vertices.capacity());
         let mut uvs = Vec::with_capacity(vertices.capacity());
+        let mut indices = Vec::with_capacity(reported_vertex_capacity);
 
         for face in &self.faces {
-            if !append_cpu_array_mesh_face_to_arrays(
+            if !append_indexed_cpu_array_mesh_face_to_arrays(
                 *face,
                 &mut vertices,
                 &mut normals,
                 &mut uvs,
+                &mut indices,
                 MAX_CPU_ARRAY_MESH_VERTICES,
             ) {
                 break;
             }
         }
 
-        let reported_vertex_count = vertices.len();
+        let reported_vertex_count = indices.len();
         CpuArrayMesh {
             vertices: PackedVector3Array::from(vertices),
             normals: PackedVector3Array::from(normals),
             uvs: PackedVector2Array::from(uvs),
+            indices: PackedInt32Array::from(indices),
             reported_vertex_count,
         }
     }
@@ -299,6 +304,32 @@ impl PackedFaceBatch {
         vertices
     }
 
+    #[cfg(test)]
+    fn indexed_cpu_array_mesh_arrays(
+        &self,
+    ) -> (Vec<Vector3>, Vec<Vector3>, Vec<Vector2>, Vec<i32>) {
+        let reported_vertex_capacity = self.cpu_array_mesh_vertex_capacity();
+        let mut vertices = Vec::with_capacity(reported_vertex_capacity / 6 * 4);
+        let mut normals = Vec::with_capacity(vertices.capacity());
+        let mut uvs = Vec::with_capacity(vertices.capacity());
+        let mut indices = Vec::with_capacity(reported_vertex_capacity);
+
+        for face in &self.faces {
+            if !append_indexed_cpu_array_mesh_face_to_arrays(
+                *face,
+                &mut vertices,
+                &mut normals,
+                &mut uvs,
+                &mut indices,
+                MAX_CPU_ARRAY_MESH_VERTICES,
+            ) {
+                break;
+            }
+        }
+
+        (vertices, normals, uvs, indices)
+    }
+
     fn cpu_array_mesh_vertex_capacity(&self) -> usize {
         self.faces
             .iter()
@@ -344,26 +375,29 @@ fn append_cpu_array_mesh_face(face: PackedFace, vertices: &mut Vec<(Vector3, Vec
     }
 }
 
-fn append_cpu_array_mesh_face_to_arrays(
+fn append_indexed_cpu_array_mesh_face_to_arrays(
     face: PackedFace,
     vertices: &mut Vec<Vector3>,
     normals: &mut Vec<Vector3>,
     out_uvs: &mut Vec<Vector2>,
-    max_vertices: usize,
+    indices: &mut Vec<i32>,
+    max_reported_vertices: usize,
 ) -> bool {
     let normal = cpu_proxy_face_normal(face.face());
     let uvs = cpu_array_mesh_face_uvs(face.face());
     let tile = face.tile();
 
     for corners in unit_face_rects(face) {
-        if vertices.len() + 6 > max_vertices {
+        if indices.len() + 6 > max_reported_vertices {
             return false;
         }
-        for idx in [0usize, 2, 1, 0, 3, 2] {
+        let base = vertices.len() as i32;
+        for idx in 0..4 {
             vertices.push(corners[idx]);
             normals.push(normal);
             out_uvs.push(atlas_uv(uvs[idx], tile));
         }
+        indices.extend_from_slice(&[base, base + 2, base + 1, base, base + 3, base + 2]);
     }
     true
 }
@@ -2810,15 +2844,50 @@ mod tests {
     }
 
     #[test]
+    fn cpu_array_mesh_uses_quad_vertices_and_indices() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS)],
+        };
+
+        let (vertices, normals, uvs, indices) = batch.indexed_cpu_array_mesh_arrays();
+
+        assert_eq!(vertices.len(), 4);
+        assert_eq!(normals.len(), 4);
+        assert_eq!(uvs.len(), 4);
+        assert_eq!(indices, vec![0, 2, 1, 0, 3, 2]);
+    }
+
+    #[test]
+    fn indexed_cpu_array_mesh_preserves_grass_face_tiles() {
+        let mut blocks_data = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        write_block(&mut blocks_data, 1, 1, 1, blocks::GRASS as u16);
+
+        let batch = build_packed_faces(&blocks_data);
+        let top_face = PackedFaceBatch {
+            faces: batch
+                .faces()
+                .iter()
+                .copied()
+                .filter(|face| face.face() == FACE_TOP)
+                .collect(),
+        };
+
+        let (_, _, uvs, _) = top_face.indexed_cpu_array_mesh_arrays();
+
+        assert_eq!(uvs[0], Vector2::new(0.0, 0.0));
+    }
+
+    #[test]
     fn cpu_array_mesh_respects_vertex_cap_by_whole_faces() {
         let face_count = MAX_CPU_ARRAY_MESH_VERTICES / 6 + 4;
         let batch = PackedFaceBatch {
             faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::GRASS); face_count],
         };
 
-        let mesh = batch.cpu_array_mesh_vertices();
+        let (vertices, _, _, indices) = batch.indexed_cpu_array_mesh_arrays();
 
-        assert_eq!(mesh.len(), MAX_CPU_ARRAY_MESH_VERTICES / 6 * 6);
+        assert_eq!(indices.len(), MAX_CPU_ARRAY_MESH_VERTICES / 6 * 6);
+        assert_eq!(vertices.len(), indices.len() / 6 * 4);
     }
 
     #[test]
@@ -2840,10 +2909,11 @@ mod tests {
             ],
         };
 
-        let mesh = batch.cpu_array_mesh_vertices();
+        let (vertices, _, _, indices) = batch.indexed_cpu_array_mesh_arrays();
 
-        assert!(mesh.len() <= MAX_CPU_ARRAY_MESH_VERTICES);
-        assert_eq!(mesh.len() % 6, 0);
+        assert!(indices.len() <= MAX_CPU_ARRAY_MESH_VERTICES);
+        assert_eq!(indices.len() % 6, 0);
+        assert_eq!(vertices.len(), indices.len() / 6 * 4);
     }
 
     #[test]

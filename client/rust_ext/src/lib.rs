@@ -612,7 +612,7 @@ impl GameClient {
                 mesh.vertices,
                 mesh.normals,
                 mesh.uvs,
-                PackedInt32Array::new(),
+                mesh.indices,
                 meshing::MeshTiming::default(),
                 mesh.reported_vertex_count,
             )
