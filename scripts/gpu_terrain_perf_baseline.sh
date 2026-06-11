@@ -142,7 +142,7 @@ run_case() {
 print_row() {
   label="$1"
   marker_path="$2"
-  printf '%-12s frame_avg_ms=%s frame_p50_ms=%s frame_p95_ms=%s frame_p99_ms=%s frame_max_ms=%s fps_avg=%s fps_p05=%s fps_min=%s process_wall_avg_ms=%s process_wall_p95_ms=%s process_wall_max_ms=%s post_draw_wait_ms=%s image_read_ms=%s image_save_ms=%s image_metrics_ms=%s engine_max_fps=%s vsync_mode=%s screen_refresh_hz=%s mesh_avg_ms=%s mesh_max_ms=%s coll_avg_ms=%s cpu_proxy=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s gpu_mem_mb=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_free_ranges=%s gpu_largest_free=%s gpu_draw_rebuilds=%s gpu_draw_rebuild_ms=%s gpu_draw_patches=%s gpu_draw_patch_ms=%s terrain_samples=%s\n' \
+  printf '%-12s frame_avg_ms=%s frame_p50_ms=%s frame_p95_ms=%s frame_p99_ms=%s frame_max_ms=%s fps_avg=%s fps_p05=%s fps_min=%s process_wall_avg_ms=%s process_wall_p95_ms=%s process_wall_max_ms=%s post_draw_wait_ms=%s image_read_ms=%s image_save_ms=%s image_metrics_ms=%s engine_max_fps=%s vsync_mode=%s screen_refresh_hz=%s terrain_queue_avg_ms=%s terrain_queue_max_ms=%s mesh_avg_ms=%s mesh_max_ms=%s coll_avg_ms=%s cpu_proxy=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s gpu_mem_mb=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_free_ranges=%s gpu_largest_free=%s gpu_draw_rebuilds=%s gpu_draw_rebuild_ms=%s gpu_draw_patches=%s gpu_draw_patch_ms=%s terrain_samples=%s\n' \
     "$label" \
     "$(float_metric frame_avg_ms "$marker_path")" \
     "$(float_metric frame_p50_ms "$marker_path")" \
@@ -162,6 +162,8 @@ print_row() {
     "$(metric engine_max_fps "$marker_path")" \
     "$(metric vsync_mode "$marker_path")" \
     "$(float_metric screen_refresh_hz "$marker_path")" \
+    "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 2)" \
+    "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)" \
     "$(mesh_triplet_value "$marker_path" 2)" \
     "$(mesh_triplet_value "$marker_path" 3)" \
     "$(collision_triplet_value "$marker_path" 2)" \
@@ -195,6 +197,8 @@ terrain_work_line() {
   draw_rebuild_max="$(default_float "$(perf_triplet_value gpu_draw_rebuild_ms "$marker_path" 3)")"
   draw_patch_avg="$(default_float "$(perf_triplet_value gpu_draw_patch_ms "$marker_path" 2)")"
   draw_patch_max="$(default_float "$(perf_triplet_value gpu_draw_patch_ms "$marker_path" 3)")"
+  queue_avg="$(default_float "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 2)")"
+  queue_max="$(default_float "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)")"
   refresh_hz="$(default_float "$(float_metric screen_refresh_hz "$marker_path")")"
   awk \
     -v label="$label" \
@@ -206,11 +210,18 @@ terrain_work_line() {
     -v draw_rebuild_max="$draw_rebuild_max" \
     -v draw_patch_avg="$draw_patch_avg" \
     -v draw_patch_max="$draw_patch_max" \
+    -v queue_avg="$queue_avg" \
+    -v queue_max="$queue_max" \
     -v refresh_hz="$refresh_hz" \
     -v budget="$budget_ms" '
       BEGIN {
         avg = mesh_avg + coll_avg + draw_rebuild_avg + draw_patch_avg
         max = mesh_max + coll_max + draw_rebuild_max + draw_patch_max
+        queue_status = "pass"
+        queue_over = queue_max - budget
+        if (queue_over > 0.0) {
+          queue_status = "fail"
+        }
         fps = 0.0
         if (avg > 0.0) {
           fps = 1000.0 / avg
@@ -225,7 +236,7 @@ terrain_work_line() {
         if (max_over > 0.0) {
           max_status = "fail"
         }
-        printf("%s_terrain_work refresh_independent=1 avg_ms=%.3f max_pessimistic_ms=%.3f capacity_avg_fps=%.1f budget_status=%s max_pessimistic_budget_status=%s budget_ms=%.3f over_ms=%.3f max_pessimistic_over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f draw_rebuild_avg_ms=%.3f draw_rebuild_max_ms=%.3f draw_patch_avg_ms=%.3f draw_patch_max_ms=%.3f screen_refresh_hz=%.3f\n", label, avg, max, fps, status, max_status, budget, over, max_over, mesh_avg, mesh_max, coll_avg, coll_max, draw_rebuild_avg, draw_rebuild_max, draw_patch_avg, draw_patch_max, refresh_hz)
+        printf("%s_terrain_work refresh_independent=1 avg_ms=%.3f max_pessimistic_ms=%.3f capacity_avg_fps=%.1f budget_status=%s max_pessimistic_budget_status=%s terrain_queue_avg_ms=%.3f terrain_queue_max_ms=%.3f terrain_queue_budget_status=%s terrain_queue_over_ms=%.3f budget_ms=%.3f over_ms=%.3f max_pessimistic_over_ms=%.3f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f draw_rebuild_avg_ms=%.3f draw_rebuild_max_ms=%.3f draw_patch_avg_ms=%.3f draw_patch_max_ms=%.3f screen_refresh_hz=%.3f\n", label, avg, max, fps, status, max_status, queue_avg, queue_max, queue_status, queue_over, budget, over, max_over, mesh_avg, mesh_max, coll_avg, coll_max, draw_rebuild_avg, draw_rebuild_max, draw_patch_avg, draw_patch_max, refresh_hz)
       }
     '
 }
