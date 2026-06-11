@@ -60,6 +60,16 @@ RUMPELMC_FILL_STRESS_REPEATS="1 4 8" \
 ./scripts/gpu_terrain_fill_stress.sh logs/gpu_terrain_profile_fill
 ```
 
+Use report-only repeats for intentionally heavy cases that may fail capture without hiding the rest of the batch:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+RUMPELMC_FILL_STRESS_REPEATS="1 4 8" \
+RUMPELMC_FILL_STRESS_REPORT_ONLY_REPEATS="16" \
+./scripts/gpu_terrain_fill_stress.sh logs/gpu_terrain_profile_fill_heavy
+```
+
 Use workload matrix to compare movement and resident-load cases:
 
 ```sh

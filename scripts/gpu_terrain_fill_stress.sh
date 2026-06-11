@@ -8,7 +8,8 @@ case "$OUT_DIR" in
   *) OUT_DIR="$ROOT_DIR/$OUT_DIR" ;;
 esac
 
-REPEATS="${RUMPELMC_FILL_STRESS_REPEATS:-1 2 4 8}"
+REPEATS="${RUMPELMC_FILL_STRESS_REPEATS-1 2 4 8}"
+REPORT_ONLY_REPEATS="${RUMPELMC_FILL_STRESS_REPORT_ONLY_REPEATS-}"
 SERVER_VIEW_DISTANCE="${RUMPELMC_FILL_STRESS_SERVER_VIEW_DISTANCE:-16}"
 CLIENT_KEEP_CHUNK_DISTANCE="${RUMPELMC_FILL_STRESS_CLIENT_KEEP_CHUNK_DISTANCE:-$SERVER_VIEW_DISTANCE}"
 SERVER_CHUNKS_PER_UPDATE="${RUMPELMC_FILL_STRESS_SERVER_CHUNKS_PER_UPDATE:-64}"
@@ -63,6 +64,32 @@ default_float() {
   fi
 }
 
+is_report_only_repeat() {
+  needle="$1"
+  for report_repeat in $REPORT_ONLY_REPEATS; do
+    if [ "$needle" = "$report_repeat" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+validate_repeat_value() {
+  repeat="$1"
+  case "$repeat" in
+    ''|*[!0-9]*)
+      fail "repeat value must be a positive integer: $repeat"
+      ;;
+  esac
+  test "$repeat" -gt 0 || fail "repeat value must be greater than 0"
+}
+
+failed_summary_line() {
+  repeat="$1"
+  reason="$2"
+  printf 'repeat=%s status=failed reason=%s\n' "$repeat" "$reason"
+}
+
 summary_line() {
   repeat="$1"
   marker_path="$2"
@@ -105,17 +132,23 @@ summary_line() {
 }
 
 summary_path="$OUT_DIR/fill-stress-summary.txt"
-printf 'GPU terrain fill stress server_view_distance=%s client_keep_distance=%s server_chunks_per_update=%s repeats="%s"\n' "$SERVER_VIEW_DISTANCE" "$CLIENT_KEEP_CHUNK_DISTANCE" "$SERVER_CHUNKS_PER_UPDATE" "$REPEATS" | tee "$summary_path"
-for repeat in $REPEATS; do
-  case "$repeat" in
-    ''|*[!0-9]*)
-      fail "repeat value must be a positive integer: $repeat"
-      ;;
-  esac
-  test "$repeat" -gt 0 || fail "repeat value must be greater than 0"
+printf 'GPU terrain fill stress server_view_distance=%s client_keep_distance=%s server_chunks_per_update=%s repeats="%s" report_only_repeats="%s"\n' "$SERVER_VIEW_DISTANCE" "$CLIENT_KEEP_CHUNK_DISTANCE" "$SERVER_CHUNKS_PER_UPDATE" "$REPEATS" "$REPORT_ONLY_REPEATS" | tee "$summary_path"
+for repeat in $REPEATS $REPORT_ONLY_REPEATS; do
+  validate_repeat_value "$repeat"
+  report_only=0
+  movement_budget_mode=enforce
+  process_wall_budget_mode=enforce
+  gpu_compositor_budget_mode=report
+  if is_report_only_repeat "$repeat"; then
+    report_only=1
+    movement_budget_mode=report
+    process_wall_budget_mode=report
+    gpu_compositor_budget_mode=report
+  fi
   case_dir="$OUT_DIR/repeat-$repeat"
   rm -rf "$case_dir"
   echo "==> GPU terrain fill stress: repeat=$repeat" >&2
+  run_status=0
   RUMPELMC_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT="$repeat" \
     RUMPELMC_SERVER_VIEW_DISTANCE="$SERVER_VIEW_DISTANCE" \
     RUMPELMC_CLIENT_KEEP_CHUNK_DISTANCE="$CLIENT_KEEP_CHUNK_DISTANCE" \
@@ -124,13 +157,22 @@ for repeat in $REPEATS; do
     RUMPELMC_MOVEMENT_STRESS_EXPECTED_CHUNK=11,8 \
     RUMPELMC_MOVEMENT_STRESS_MIN_CHUNKS=12 \
     RUMPELMC_MOVEMENT_STRESS_SETTLE_SEC="$MOTION_SETTLE_SEC" \
-    RUMPELMC_MOVEMENT_STRESS_GPU_COMPOSITOR_BUDGET_MODE=report \
+    RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE="$movement_budget_mode" \
+    RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE="$process_wall_budget_mode" \
+    RUMPELMC_MOVEMENT_STRESS_GPU_COMPOSITOR_BUDGET_MODE="$gpu_compositor_budget_mode" \
     SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
     GODOT_QUIT_AFTER_FRAMES="$GODOT_QUIT_AFTER_FRAMES" \
     GODOT_TIMEOUT_SEC="$GODOT_TIMEOUT_SEC" \
-    "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$case_dir" > "$case_dir.run.log" 2>&1
+    "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$case_dir" > "$case_dir.run.log" 2>&1 || run_status=$?
   marker_path="$case_dir/gpu-terrain-movement-stress.png.txt"
-  test -s "$marker_path" || fail "missing marker $marker_path"
+  if [ "$run_status" -ne 0 ] || [ ! -s "$marker_path" ]; then
+    if [ "$report_only" -eq 1 ]; then
+      failed_summary_line "$repeat" "movement_stress_failed" | tee -a "$summary_path"
+      continue
+    fi
+    test "$run_status" -eq 0 || fail "movement stress failed for repeat=$repeat; see $case_dir.run.log"
+    fail "missing marker $marker_path"
+  fi
   summary_line "$repeat" "$marker_path" | tee -a "$summary_path"
 done
 
