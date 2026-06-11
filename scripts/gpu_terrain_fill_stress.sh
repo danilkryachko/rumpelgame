@@ -87,7 +87,9 @@ validate_repeat_value() {
 failed_summary_line() {
   repeat="$1"
   reason="$2"
-  printf 'repeat=%s status=failed reason=%s\n' "$repeat" "$reason"
+  run_status="$3"
+  marker_present="$4"
+  printf 'repeat=%s status=failed reason=%s run_status=%s marker_present=%s\n' "$repeat" "$reason" "$run_status" "$marker_present"
 }
 
 summary_line() {
@@ -173,7 +175,11 @@ for repeat in $REPEATS $REPORT_ONLY_REPEATS; do
   marker_path="$case_dir/gpu-terrain-movement-stress.png.txt"
   if [ "$run_status" -ne 0 ] || [ ! -s "$marker_path" ]; then
     if [ "$report_only" -eq 1 ]; then
-      failed_summary_line "$repeat" "movement_stress_failed" | tee -a "$summary_path"
+      marker_present=0
+      if [ -s "$marker_path" ]; then
+        marker_present=1
+      fi
+      failed_summary_line "$repeat" "movement_stress_failed" "$run_status" "$marker_present" | tee -a "$summary_path"
       continue
     fi
     test "$run_status" -eq 0 || fail "movement stress failed for repeat=$repeat; see $case_dir.run.log"
