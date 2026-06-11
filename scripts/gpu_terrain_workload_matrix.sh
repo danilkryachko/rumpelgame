@@ -9,6 +9,7 @@ case "$OUT_DIR" in
 esac
 
 TARGET_FPS="${RUMPELMC_WORKLOAD_MATRIX_TARGET_FPS:-150}"
+MAX_RESIDENT_SETTLE_SEC="${RUMPELMC_WORKLOAD_MATRIX_MAX_RESIDENT_SETTLE_SEC:-30.0}"
 
 mkdir -p "$OUT_DIR"
 
@@ -122,6 +123,7 @@ summary_line() {
 run_case short chunk_walk 3,2 4 0.55 4.0
 run_case long chunk_walk_long 7,5 8 0.55 4.0
 run_case long-filled chunk_walk_long 7,5 8 0.55 12.0
+run_case max-resident chunk_walk_long 7,5 8 0.55 "$MAX_RESIDENT_SETTLE_SEC"
 
 summary_path="$OUT_DIR/workload-matrix-summary.txt"
 {
@@ -129,6 +131,7 @@ summary_path="$OUT_DIR/workload-matrix-summary.txt"
   summary_line short "$OUT_DIR/short/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/short/movement-stress-summary.txt"
   summary_line long "$OUT_DIR/long/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/long/movement-stress-summary.txt"
   summary_line long-filled "$OUT_DIR/long-filled/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/long-filled/movement-stress-summary.txt"
+  summary_line max-resident "$OUT_DIR/max-resident/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/max-resident/movement-stress-summary.txt"
 } | tee "$summary_path"
 
 echo "GPU terrain workload matrix artifacts: $OUT_DIR"
