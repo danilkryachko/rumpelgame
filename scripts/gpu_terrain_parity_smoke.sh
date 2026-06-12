@@ -3,6 +3,10 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 OUT_DIR="${1:-"$ROOT_DIR/logs/gpu_terrain_visual_smoke/parity"}"
+case "$OUT_DIR" in
+  /*) ;;
+  *) OUT_DIR="$ROOT_DIR/$OUT_DIR" ;;
+esac
 GODOT_BIN="${GODOT_BIN:-/opt/homebrew/bin/godot}"
 TIMEOUT_BIN="${TIMEOUT_BIN:-/opt/homebrew/bin/timeout}"
 GODOT_TIMEOUT_SEC="${GODOT_TIMEOUT_SEC:-90}"
@@ -19,6 +23,8 @@ MIN_TERRAIN_COLOR_BUCKETS="${MIN_TERRAIN_COLOR_BUCKETS:-4}"
 MIN_TERRAIN_CHROMA_SAMPLES="${MIN_TERRAIN_CHROMA_SAMPLES:-8}"
 MIN_TERRAIN_LUMA_RANGE="${MIN_TERRAIN_LUMA_RANGE:-0.06}"
 VALIDATE_ONLY="${RUMPELMC_PARITY_SMOKE_VALIDATE_ONLY:-0}"
+
+. "$ROOT_DIR/scripts/godot_rust_ext_profile.sh"
 
 mkdir -p "$OUT_DIR"
 
@@ -141,6 +147,9 @@ validate_common_marker() {
   grep -q "shadow_mesh=$expected_shadow_mesh" "$marker_path" || fail "unexpected shadow mesh in $marker_path"
   grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"
   grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
+  if [ "$VALIDATE_ONLY" != "1" ]; then
+    require_godot_rust_ext_marker_profile "$marker_path"
+  fi
   require_metric_ge "$marker_path" "terrain_samples" 1
   require_metric_ge "$marker_path" "lit_samples" 1
   require_metric_ge "$marker_path" "collision" 1
@@ -161,6 +170,27 @@ validate_common_marker() {
   require_metric_eq "$marker_path" "proxy_coll" "$(metric "collision" "$marker_path")"
 }
 
+validate_native_shadow_fallback_marker() {
+  marker_path="$1"
+
+  validate_common_marker "$marker_path" "default" "conservative" "compact" "godot_proxy"
+  require_metric_eq "$marker_path" "native_shadow_requested" 1
+  require_metric_eq "$marker_path" "native_shadow_active" 0
+  require_metric_eq "$marker_path" "native_shadow_fallback" 1
+  require_metric_ge "$marker_path" "gpu_frames" 1
+  require_metric_ge "$marker_path" "gpu_subchunks" 1
+  require_metric_ge "$marker_path" "gpu_faces" 1
+  require_metric_ge "$marker_path" "proxy_shadow" 1
+  require_metric_ge "$marker_path" "proxy_both" 1
+  require_metric_ge "$marker_path" "compact_shadow_proxy" 1
+  require_metric_ge \
+    "$marker_path" \
+    "compact_shadow_normals_saved" \
+    "$(metric "compact_shadow_proxy" "$marker_path")"
+  require_metric_eq "$marker_path" "compact_collision_proxy" 0
+  require_metric_eq "$marker_path" "compact_collision_normals_saved" 0
+}
+
 run_case() {
   name="$1"
   gpu_flag="$2"
@@ -168,6 +198,7 @@ run_case() {
   pose="$4"
   shadow_mode="$5"
   shadow_mesh="$6"
+  native_shadow="${7:-0}"
   screenshot_path="$OUT_DIR/$name.png"
   marker_path="$screenshot_path.txt"
   expected_shadow_mesh="$shadow_mesh"
@@ -193,6 +224,7 @@ run_case() {
       RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE="$shadow_radius" \
       RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE="$shadow_mode" \
       RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH="$shadow_mesh" \
+      RUMPELMC_GPU_TERRAIN_NATIVE_SHADOW="$native_shadow" \
       RUMPELMC_VISUAL_SMOKE_POSE="$pose" \
       RUMPELMC_VISUAL_SMOKE_PATH="$screenshot_path" \
       RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
@@ -253,6 +285,7 @@ validate_parity_markers() {
   shadow_disabled_marker="$OUT_DIR/gpu-terrain-shadow-disabled-parity.png.txt"
   collision_only_marker="$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
   compact_shadow_marker="$OUT_DIR/gpu-terrain-compact-shadow-parity.png.txt"
+  native_fallback_marker="$OUT_DIR/gpu-terrain-native-shadow-fallback-parity.png.txt"
   compact_lighting_shadow_marker="$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
   texture_stand_cpu_marker="$OUT_DIR/cpu-arraymesh-texture-stand-parity.png.txt"
   texture_stand_gpu_marker="$OUT_DIR/gpu-terrain-texture-stand-parity.png.txt"
@@ -286,6 +319,13 @@ validate_parity_markers() {
   require_metric_ge "$gpu_marker" "proxy_both" 1
   require_metric_eq "$gpu_marker" "compact_collision_proxy" 0
   require_metric_eq "$gpu_marker" "compact_collision_normals_saved" 0
+
+  if [ -s "$native_fallback_marker" ]; then
+    validate_native_shadow_fallback_marker "$native_fallback_marker"
+    validate_visual_metric_pair "$gpu_marker" "$native_fallback_marker" "native_shadow_fallback"
+  elif [ "$VALIDATE_ONLY" != "1" ]; then
+    fail "missing native shadow fallback marker $native_fallback_marker"
+  fi
 
   require_metric_ge "$radius_marker" "gpu_frames" 1
   require_metric_ge "$radius_marker" "gpu_subchunks" 1
@@ -516,9 +556,12 @@ append_case_summary() {
   shadow_path="$(text_metric "shadow_path" "$append_case_marker_path")"
   shadow_mode="$(text_metric "shadow_mode" "$append_case_marker_path")"
   shadow_mesh="$(text_metric "shadow_mesh" "$append_case_marker_path")"
+  native_shadow_requested="$(value_or_na "$(metric "native_shadow_requested" "$append_case_marker_path")")"
+  native_shadow_active="$(value_or_na "$(metric "native_shadow_active" "$append_case_marker_path")")"
+  native_shadow_fallback="$(value_or_na "$(metric "native_shadow_fallback" "$append_case_marker_path")")"
 
   printf '%s\n' \
-    "case=$append_case_name marker=$append_case_marker_path smoke_err=$smoke_err terrain_samples=$terrain_samples terrain_color_buckets=$terrain_color_buckets terrain_luma_range=$terrain_luma_range gpu_frames=$gpu_frames gpu_subchunks=$gpu_subchunks shadow_path=$shadow_path shadow_mode=$shadow_mode shadow_mesh=$shadow_mesh" \
+    "case=$append_case_name marker=$append_case_marker_path smoke_err=$smoke_err terrain_samples=$terrain_samples terrain_color_buckets=$terrain_color_buckets terrain_luma_range=$terrain_luma_range gpu_frames=$gpu_frames gpu_subchunks=$gpu_subchunks shadow_path=$shadow_path shadow_mode=$shadow_mode shadow_mesh=$shadow_mesh native_shadow_requested=$native_shadow_requested native_shadow_active=$native_shadow_active native_shadow_fallback=$native_shadow_fallback" \
     >> "$append_case_summary_path"
 }
 
@@ -554,13 +597,18 @@ append_visual_pair_summary() {
 write_parity_summary() {
   parity_summary_path="$OUT_DIR/parity-summary.txt"
   parity_summary_tmp_path="$parity_summary_path.tmp"
+  native_fallback_marker="$OUT_DIR/gpu-terrain-native-shadow-fallback-parity.png.txt"
+  case_count=13
+  if [ -s "$native_fallback_marker" ]; then
+    case_count=14
+  fi
 
   {
     echo "# GPU Terrain Parity Summary"
     echo "generated_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     echo "out_dir=$OUT_DIR"
     echo "validate_only=$VALIDATE_ONLY"
-    echo "case_count=13"
+    echo "case_count=$case_count"
     echo "thresholds max_avg_luma_delta=$MAX_AVG_LUMA_DELTA max_terrain_luma_range_delta=$MAX_TERRAIN_LUMA_RANGE_DELTA max_terrain_sample_delta_percent=$MAX_TERRAIN_SAMPLE_DELTA_PERCENT min_terrain_sample_delta=$MIN_TERRAIN_SAMPLE_DELTA max_terrain_color_bucket_delta_percent=$MAX_TERRAIN_COLOR_BUCKET_DELTA_PERCENT min_terrain_color_bucket_delta=$MIN_TERRAIN_COLOR_BUCKET_DELTA"
     echo
   } > "$parity_summary_tmp_path"
@@ -571,6 +619,9 @@ write_parity_summary() {
   append_case_summary "$parity_summary_tmp_path" "gpu-terrain-shadow-disabled-parity" "$OUT_DIR/gpu-terrain-shadow-disabled-parity.png.txt"
   append_case_summary "$parity_summary_tmp_path" "gpu-terrain-collision-only-parity" "$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
   append_case_summary "$parity_summary_tmp_path" "gpu-terrain-compact-shadow-parity" "$OUT_DIR/gpu-terrain-compact-shadow-parity.png.txt"
+  if [ -s "$native_fallback_marker" ]; then
+    append_case_summary "$parity_summary_tmp_path" "gpu-terrain-native-shadow-fallback-parity" "$native_fallback_marker"
+  fi
   append_case_summary "$parity_summary_tmp_path" "cpu-arraymesh-atlas-depth-parity" "$OUT_DIR/cpu-arraymesh-atlas-depth-parity.png.txt"
   append_case_summary "$parity_summary_tmp_path" "gpu-terrain-atlas-depth-parity" "$OUT_DIR/gpu-terrain-atlas-depth-parity.png.txt"
   append_case_summary "$parity_summary_tmp_path" "cpu-arraymesh-lighting-shadow-parity" "$OUT_DIR/cpu-arraymesh-lighting-shadow-parity.png.txt"
@@ -581,6 +632,9 @@ write_parity_summary() {
 
   echo >> "$parity_summary_tmp_path"
   append_visual_pair_summary "$parity_summary_tmp_path" "default" "$OUT_DIR/cpu-arraymesh-parity.png.txt" "$OUT_DIR/gpu-terrain-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
+  if [ -s "$native_fallback_marker" ]; then
+    append_visual_pair_summary "$parity_summary_tmp_path" "native_shadow_fallback" "$OUT_DIR/gpu-terrain-parity.png.txt" "$native_fallback_marker" "gpu-terrain" "gpu-native-shadow-fallback"
+  fi
   append_visual_pair_summary "$parity_summary_tmp_path" "atlas_depth" "$OUT_DIR/cpu-arraymesh-atlas-depth-parity.png.txt" "$OUT_DIR/gpu-terrain-atlas-depth-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
   append_visual_pair_summary "$parity_summary_tmp_path" "lighting_shadow" "$OUT_DIR/cpu-arraymesh-lighting-shadow-parity.png.txt" "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
   append_visual_pair_summary "$parity_summary_tmp_path" "lighting_shadow_compact" "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" "$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt" "gpu-full-shadow" "gpu-compact-shadow"
@@ -626,12 +680,14 @@ validate_compact_shadow_pose_pair() {
 }
 
 if [ "$VALIDATE_ONLY" != "1" ]; then
+  prepare_godot_rust_ext_profile "$ROOT_DIR"
   run_case "cpu-arraymesh-parity" "0" "" "default" "conservative" "full"
   run_case "gpu-terrain-parity" "1" "" "default" "conservative" ""
   run_case "gpu-terrain-radius1-parity" "1" "1" "default" "conservative" "full"
   run_case "gpu-terrain-shadow-disabled-parity" "1" "0" "default" "conservative" "full"
   run_case "gpu-terrain-collision-only-parity" "1" "" "default" "collision_only" "full"
   run_case "gpu-terrain-compact-shadow-parity" "1" "" "default" "conservative" "compact"
+  run_case "gpu-terrain-native-shadow-fallback-parity" "1" "" "default" "conservative" "" "1"
   run_case "cpu-arraymesh-atlas-depth-parity" "0" "" "atlas_depth" "conservative" "full"
   run_case "gpu-terrain-atlas-depth-parity" "1" "" "atlas_depth" "conservative" "full"
   run_case "cpu-arraymesh-lighting-shadow-parity" "0" "" "lighting_shadow" "conservative" "full"
