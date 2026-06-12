@@ -21,6 +21,9 @@ esac
 PLAN_PATH="$FIXTURE_DIR/transparent-fixture-plan.txt"
 HARNESS_PATH="$FIXTURE_DIR/transparent-fixture-harness.txt"
 CHECK_PATH="$FIXTURE_DIR/transparent-fixture-check.txt"
+SCENE_CHECKLIST_PATH="$FIXTURE_DIR/transparent-fixture-scene-checklist.txt"
+SCENE_HARNESS_PATH="$FIXTURE_DIR/transparent-fixture-scene-harness.txt"
+SCENE_HARNESS_CHECK_PATH="$FIXTURE_DIR/transparent-fixture-scene-harness-check.txt"
 
 fail() {
   echo "gpu_terrain_transparent_fixture_report_check: $*" >&2
@@ -89,15 +92,22 @@ test -d "$FIXTURE_DIR" || fail "missing transparent fixture dir $FIXTURE_DIR"
 test -s "$PLAN_PATH" || fail "missing transparent fixture plan $PLAN_PATH"
 test -s "$HARNESS_PATH" || fail "missing transparent fixture harness $HARNESS_PATH"
 test -s "$CHECK_PATH" || fail "missing transparent fixture check $CHECK_PATH"
+test -s "$SCENE_CHECKLIST_PATH" || fail "missing transparent fixture scene checklist $SCENE_CHECKLIST_PATH"
+test -s "$SCENE_HARNESS_PATH" || fail "missing transparent fixture scene harness $SCENE_HARNESS_PATH"
+test -s "$SCENE_HARNESS_CHECK_PATH" || fail "missing transparent fixture scene harness check $SCENE_HARNESS_CHECK_PATH"
 mkdir -p "$(dirname -- "$OUT_PATH")"
 
 require_source "Selected Transparent Fixture Plan" "$PLAN_PATH"
 require_source "Selected Transparent Fixture Harness" "$HARNESS_PATH"
 require_source "Selected Transparent Fixture Check" "$CHECK_PATH"
+require_source "Selected Transparent Fixture Scene Checklist" "$SCENE_CHECKLIST_PATH"
+require_source "Selected Transparent Fixture Scene Harness" "$SCENE_HARNESS_PATH"
+require_source "Selected Transparent Fixture Scene Harness Check" "$SCENE_HARNESS_CHECK_PATH"
 
 plan_summary_line="$(required_line "$REPORT_PATH" "summary fixture_plan_status=")"
 harness_summary_line="$(required_line "$REPORT_PATH" "summary transparent_fixture_harness_status=")"
 check_summary_line="$(required_line "$REPORT_PATH" "summary transparent_fixture_check_status=")"
+scene_check_summary_line="$(required_line "$REPORT_PATH" "summary transparent_fixture_scene_harness_check_status=")"
 
 fixture_line="$(required_exact_line "$REPORT_PATH" "fixture=gpu-transparent-depth-collision")"
 material_line="$(required_exact_line "$REPORT_PATH" "material=transparent_test_glass")"
@@ -134,6 +144,11 @@ check_status="$(required_token "transparent_fixture_check_status" "$check_summar
 check_plan_status="$(required_token "fixture_plan_status" "$check_summary_line" "check summary")"
 check_harness_status="$(required_token "transparent_fixture_harness_status" "$check_summary_line" "check summary")"
 check_env_expected="$(required_token "env_on_expected" "$check_summary_line" "check summary")"
+scene_check_status="$(required_token "transparent_fixture_scene_harness_check_status" "$scene_check_summary_line" "scene harness-check summary")"
+scene_check_harness_status="$(required_token "transparent_fixture_scene_harness_status" "$scene_check_summary_line" "scene harness-check summary")"
+scene_check_scene_status="$(required_token "transparent_fixture_scene_checklist_status" "$scene_check_summary_line" "scene harness-check summary")"
+scene_check_roles="$(required_token "roles" "$scene_check_summary_line" "scene harness-check summary")"
+scene_check_env_expected="$(required_token "env_on_expected" "$scene_check_summary_line" "scene harness-check summary")"
 
 test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
 test "$plan_tokens" = "21" || fail "unexpected contract_tokens=$plan_tokens"
@@ -146,6 +161,11 @@ test "$check_status" = "pass" || fail "unexpected transparent_fixture_check_stat
 test "$check_plan_status" = "$plan_status" || fail "check fixture_plan_status does not match plan"
 test "$check_harness_status" = "$harness_status" || fail "check harness status does not match harness"
 test "$check_env_expected" = "$harness_env_expected" || fail "check env_on_expected does not match harness"
+test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scene_harness_check_status=$scene_check_status"
+test "$scene_check_harness_status" = "$harness_status" || fail "scene harness-check status does not match harness"
+test "$scene_check_scene_status" = "pending_scene_harness" || fail "unexpected scene checklist status=$scene_check_scene_status"
+test "$scene_check_roles" = "5" || fail "unexpected scene roles=$scene_check_roles"
+test "$scene_check_env_expected" = "$harness_env_expected" || fail "scene harness-check env_on_expected does not match harness"
 
 tmp_check="$OUT_PATH.tmp"
 trap 'rm -f "$tmp_check"' EXIT
@@ -157,14 +177,19 @@ trap 'rm -f "$tmp_check"' EXIT
   printf 'plan=%s\n' "$(relative_path "$PLAN_PATH")"
   printf 'harness=%s\n' "$(relative_path "$HARNESS_PATH")"
   printf 'check=%s\n' "$(relative_path "$CHECK_PATH")"
-  printf 'report_sections=plan/harness/check\n'
+  printf 'scene_checklist=%s\n' "$(relative_path "$SCENE_CHECKLIST_PATH")"
+  printf 'scene_harness=%s\n' "$(relative_path "$SCENE_HARNESS_PATH")"
+  printf 'scene_harness_check=%s\n' "$(relative_path "$SCENE_HARNESS_CHECK_PATH")"
+  printf 'report_sections=plan/harness/check/scene_checklist/scene_harness/scene_harness_check\n'
   printf 'transparent_fixture_check_status=%s\n' "$check_status"
+  printf 'transparent_fixture_scene_harness_check_status=%s\n' "$scene_check_status"
   printf 'fixture_plan_status=%s\n' "$plan_status"
   printf 'transparent_fixture_harness_status=%s\n' "$harness_status"
   printf 'env_on_expected=%s\n' "$check_env_expected"
   printf 'future_active_expected=1/0/0\n'
-  printf 'summary transparent_fixture_report_check_status=pass transparent_fixture_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_report_check_status=pass transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
     "$check_status" \
+    "$scene_check_status" \
     "$plan_status" \
     "$harness_status" \
     "$check_env_expected"
