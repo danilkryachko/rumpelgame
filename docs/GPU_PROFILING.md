@@ -128,6 +128,14 @@ sh scripts/gpu_terrain_shadow_profiler_plan.sh \
   logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-plan.txt
 ```
 
+Generate a fillable results template from the pending plan before recording external profiler data. The template rows are commented and contain `TODO` fields, so they are not accepted as evidence until the leading `# ` is removed and real `profiler_tool`, `profiler_artifact`, and positive `gpu_shadow_pass_ms` values are recorded:
+
+```sh
+sh scripts/gpu_terrain_shadow_profiler_results_template.sh \
+  logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-plan.txt \
+  logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results-template.txt
+```
+
 Record external profiler rows separately from the pending plan. Each result row must start with `external_profile_status=captured` and include `priority`, `radius`, `artifact`, `profiler_tool`, `profiler_artifact`, and a positive `gpu_shadow_pass_ms`. Validate results against the plan before citing them; by default all planned rows must be captured, while partial handoff validation requires an explicit `RUMPELMC_SHADOW_PROFILER_RESULTS_ALLOW_PARTIAL=1`:
 
 ```sh
