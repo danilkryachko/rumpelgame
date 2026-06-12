@@ -11,6 +11,12 @@ const VISUAL_SMOKE_POSE_ENV = "RUMPELMC_VISUAL_SMOKE_POSE"
 const VISUAL_SMOKE_MOTION_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION"
 const VISUAL_SMOKE_MOTION_STEP_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION_STEP_SEC"
 const VISUAL_SMOKE_MOTION_SETTLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_MOTION_SETTLE_SEC"
+const VISUAL_SMOKE_BLOCK_EDIT_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT"
+const VISUAL_SMOKE_BLOCK_EDIT_X_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_X"
+const VISUAL_SMOKE_BLOCK_EDIT_Y_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_Y"
+const VISUAL_SMOKE_BLOCK_EDIT_Z_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_Z"
+const VISUAL_SMOKE_BLOCK_EDIT_ID_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_ID"
+const VISUAL_SMOKE_BLOCK_EDIT_WAIT_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_WAIT_SEC"
 const VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC"
 const VISUAL_SMOKE_FORCE_UNCAPPED_ENV = "RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED"
 const VISUAL_SMOKE_MAX_FPS_ENV = "RUMPELMC_VISUAL_SMOKE_MAX_FPS"
@@ -18,6 +24,11 @@ const VISUAL_SMOKE_DEFAULT_DELAY_SEC = 6.0
 const VISUAL_SMOKE_DEFAULT_FRAME_SAMPLE_SEC = 2.0
 const VISUAL_SMOKE_DEFAULT_MOTION_STEP_SEC = 0.55
 const VISUAL_SMOKE_DEFAULT_MOTION_SETTLE_SEC = 0.0
+const VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_WAIT_SEC = 3.0
+const VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_X = 112
+const VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_Y = 64
+const VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_Z = 80
+const VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_ID = 1
 const VISUAL_SMOKE_SKY_COLOR = Color(0.34, 0.43, 0.54)
 const VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD = 0.08
 const VISUAL_SMOKE_MIN_TERRAIN_SAMPLES = 12
@@ -41,6 +52,8 @@ var visual_smoke_process_wall_ms: Array[float] = []
 var visual_smoke_motion_name: String = "none"
 var visual_smoke_motion_steps: int = 0
 var visual_smoke_motion_chunks = {}
+var visual_smoke_block_edit_name: String = "none"
+var visual_smoke_block_edit_dirty_observed: int = 0
 
 func _ready():
 	configure_window_stretch()
@@ -235,6 +248,7 @@ func capture_visual_smoke(screenshot_path: String):
 		visual_smoke_motion_chunks.size(),
 		visual_smoke_client_text("get_current_chunk_text", "n/a")
 	])
+	await run_visual_smoke_block_edit()
 	apply_visual_smoke_pose(pose_name)
 	var post_draw_wait_start_usec = Time.get_ticks_usec()
 	await get_tree().process_frame
@@ -275,12 +289,14 @@ func capture_visual_smoke(screenshot_path: String):
 	var frame_metrics = visual_smoke_frame_metrics()
 	var process_metrics = visual_smoke_process_wall_metrics()
 	var runtime_metrics = visual_smoke_runtime_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		visual_smoke_motion_name,
 		visual_smoke_motion_steps,
 		visual_smoke_motion_chunks.size(),
+		visual_smoke_block_edit_name,
+		visual_smoke_block_edit_dirty_observed,
 		image.get_width(),
 		image.get_height(),
 		metrics["avg_luma"],
@@ -565,6 +581,84 @@ func run_visual_smoke_motion(motion_name: String):
 	if settle_sec > 0.0:
 		await get_tree().create_timer(settle_sec).timeout
 
+func run_visual_smoke_block_edit():
+	visual_smoke_block_edit_name = OS.get_environment(VISUAL_SMOKE_BLOCK_EDIT_ENV).strip_edges().to_lower()
+	visual_smoke_block_edit_dirty_observed = 0
+	if visual_smoke_block_edit_name.is_empty() or visual_smoke_block_edit_name == "none":
+		visual_smoke_block_edit_name = "none"
+		return
+
+	var client = get_node_or_null("GameClient")
+	if not client:
+		log_event("Visual smoke block edit skipped: missing GameClient")
+		return
+	if not client.has_method("on_block_broken") or not client.has_method("on_block_placed"):
+		log_event("Visual smoke block edit skipped: missing block edit methods")
+		return
+
+	var x = env_int(VISUAL_SMOKE_BLOCK_EDIT_X_ENV, VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_X)
+	var y = env_int(VISUAL_SMOKE_BLOCK_EDIT_Y_ENV, VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_Y)
+	var z = env_int(VISUAL_SMOKE_BLOCK_EDIT_Z_ENV, VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_Z)
+	var block_id = env_int(VISUAL_SMOKE_BLOCK_EDIT_ID_ENV, VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_ID)
+	var wait_sec = max(env_float(VISUAL_SMOKE_BLOCK_EDIT_WAIT_SEC_ENV, VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_WAIT_SEC), 0.1)
+	log_event("Visual smoke block edit started action=%s x=%d y=%d z=%d block_id=%d" % [
+		visual_smoke_block_edit_name,
+		x,
+		y,
+		z,
+		block_id
+	])
+
+	var before_dirty = visual_smoke_perf_int("dirty_blocks", 0)
+	match visual_smoke_block_edit_name:
+		"break", "destroy":
+			client.call("on_block_broken", x, y, z)
+		"place":
+			client.call("on_block_placed", x, y, z, block_id)
+		"toggle":
+			client.call("on_block_placed", x, y, z, block_id)
+			await wait_for_visual_smoke_dirty_update(before_dirty, wait_sec)
+			before_dirty = visual_smoke_perf_int("dirty_blocks", before_dirty)
+			client.call("on_block_broken", x, y, z)
+		_:
+			log_event("Unknown visual smoke block edit: %s" % visual_smoke_block_edit_name)
+			visual_smoke_block_edit_name = "unknown"
+			return
+
+	var dirty_seen = await wait_for_visual_smoke_dirty_update(before_dirty, wait_sec)
+	visual_smoke_block_edit_dirty_observed = 1 if dirty_seen else 0
+	log_event("Visual smoke block edit complete action=%s dirty_observed=%d dirty_blocks=%d chunk_replace=%d" % [
+		visual_smoke_block_edit_name,
+		visual_smoke_block_edit_dirty_observed,
+		visual_smoke_perf_int("dirty_blocks", 0),
+		visual_smoke_perf_int("chunk_replace", 0)
+	])
+
+func wait_for_visual_smoke_dirty_update(before_dirty: int, wait_sec: float) -> bool:
+	var deadline_msec = Time.get_ticks_msec() + int(wait_sec * 1000.0)
+	while Time.get_ticks_msec() < deadline_msec:
+		await get_tree().process_frame
+		if visual_smoke_perf_int("dirty_blocks", 0) > before_dirty:
+			return true
+	return false
+
+func visual_smoke_perf_int(key: String, fallback: int) -> int:
+	var text = visual_smoke_client_text("get_perf_text", "")
+	var prefix = key + "="
+	var start = text.find(prefix)
+	if start < 0:
+		return fallback
+	var index = start + prefix.length()
+	var end = index
+	while end < text.length():
+		var code = text.unicode_at(end)
+		if code < 48 or code > 57:
+			break
+		end += 1
+	if end == index:
+		return fallback
+	return int(text.substr(index, end - index))
+
 func visual_smoke_chunk_key(position: Vector3) -> String:
 	return "%d,%d" % [
 		floori(position.x / VISUAL_SMOKE_CHUNK_SIZE),
@@ -677,4 +771,10 @@ func env_float(name: String, fallback: float) -> float:
 	var value = OS.get_environment(name).strip_edges()
 	if value.is_valid_float():
 		return float(value)
+	return fallback
+
+func env_int(name: String, fallback: int) -> int:
+	var value = OS.get_environment(name).strip_edges()
+	if value.is_valid_int():
+		return int(value)
 	return fallback
