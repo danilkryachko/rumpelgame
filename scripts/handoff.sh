@@ -4,6 +4,39 @@ set -eu
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+print_gpu_report() {
+  report_path="${TMPDIR:-/tmp}/rumpel-handoff-gpu-terrain-report-$$.txt"
+
+  if [ "${RUMPELMC_HANDOFF_REFRESH_GPU_REPORT:-0}" = "1" ] && [ -d logs ] && [ -f scripts/gpu_terrain_report.sh ]; then
+    if sh scripts/gpu_terrain_report.sh logs "$report_path" >/dev/null 2>&1; then
+      echo "## GPU Terrain Report"
+      echo
+      sed -n '1,120p' "$report_path"
+      echo
+      rm -f "$report_path"
+      return
+    fi
+    rm -f "$report_path"
+  fi
+
+  if [ -f logs/gpu-terrain-report.txt ]; then
+    current_commit="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+    report_commit="$(sed -n 's/^Git commit: `\([^`]*\)`.*/\1/p' logs/gpu-terrain-report.txt | sed -n '1p')"
+
+    echo "## GPU Terrain Report"
+    echo
+    if [ -n "$report_commit" ] && [ "$report_commit" != "$current_commit" ]; then
+      echo "Existing report artifact is stale: report commit \`$report_commit\`, current commit \`$current_commit\`."
+      echo "Set \`RUMPELMC_HANDOFF_REFRESH_GPU_REPORT=1\` to generate a fresh temporary report during handoff."
+      echo
+      return
+    fi
+
+    sed -n '1,120p' logs/gpu-terrain-report.txt
+    echo
+  fi
+}
+
 echo "# Codex Handoff Snapshot"
 echo
 echo "Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -56,12 +89,7 @@ if [ -f docs/GPU_TRENDS.md ]; then
   echo
 fi
 
-if [ -f logs/gpu-terrain-report.txt ]; then
-  echo "## GPU Terrain Report"
-  echo
-  sed -n '1,120p' logs/gpu-terrain-report.txt
-  echo
-fi
+print_gpu_report
 
 echo "## Recent Logs"
 echo
