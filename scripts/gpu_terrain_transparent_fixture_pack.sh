@@ -27,6 +27,7 @@ SCENE_CHECKLIST_PATH="$PACK_DIR/transparent-fixture-scene-checklist.txt"
 SCENE_HARNESS_PATH="$PACK_DIR/transparent-fixture-scene-harness.txt"
 SCENE_HARNESS_CHECK_PATH="$PACK_DIR/transparent-fixture-scene-harness-check.txt"
 ACCEPTANCE_CHECK_PATH="$PACK_DIR/transparent-fixture-acceptance-check.txt"
+DEFAULT_OFF_CHECK_PATH="$PACK_DIR/transparent-fixture-default-off-check.txt"
 REPORT_PATH="$PACK_DIR/gpu-terrain-transparent-fixture-report.txt"
 REPORT_CHECK_PATH="$PACK_DIR/transparent-fixture-report-check.txt"
 
@@ -294,6 +295,71 @@ required_line "$REPORT_PATH" "Source: \`$ACCEPTANCE_CHECK_PATH\`" >/dev/null
   printf 'ordinary_world_visibility=absent\n'
   printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
     "$acceptance_status" \
+    "$report_check_status" \
+    "$check_status" \
+    "$scene_harness_check_status" \
+    "$plan_status" \
+    "$harness_status" \
+    "$harness_env_expected"
+} > "$tmp_pack"
+mv "$tmp_pack" "$OUT_PATH"
+
+sh "$ROOT_DIR/scripts/gpu_terrain_transparent_fixture_default_off_check.sh" \
+  "$OUT_PATH" \
+  "$DEFAULT_OFF_CHECK_PATH" >/dev/null
+
+default_off_summary_line="$(required_line "$DEFAULT_OFF_CHECK_PATH" "summary transparent_fixture_default_off_status=")"
+default_off_status="$(required_token "transparent_fixture_default_off_status" "$default_off_summary_line" "default-off check summary")"
+default_off_acceptance_status="$(required_token "transparent_fixture_acceptance_status" "$default_off_summary_line" "default-off check summary")"
+default_off_gate="$(required_token "transparent_implementation_gate" "$default_off_summary_line" "default-off check summary")"
+default_off_env_expected="$(required_token "env_on_expected" "$default_off_summary_line" "default-off check summary")"
+default_off_future_active="$(required_token "future_active_expected" "$default_off_summary_line" "default-off check summary")"
+
+test "$default_off_status" = "pass" || fail "unexpected transparent_fixture_default_off_status=$default_off_status"
+test "$default_off_acceptance_status" = "$acceptance_status" || fail "default-off acceptance status does not match"
+test "$default_off_gate" = "false" || fail "unexpected default-off implementation gate=$default_off_gate"
+test "$default_off_env_expected" = "$harness_env_expected" || fail "default-off env_on_expected does not match harness"
+test "$default_off_future_active" = "1/0/0" || fail "unexpected default-off future active triplet=$default_off_future_active"
+
+sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
+  "$LOG_DIR" \
+  "$REPORT_PATH" >/dev/null
+required_line "$REPORT_PATH" "## Selected Transparent Fixture Default-Off Check" >/dev/null
+required_line "$REPORT_PATH" "Source: \`$DEFAULT_OFF_CHECK_PATH\`" >/dev/null
+
+{
+  printf 'GPU terrain transparent fixture pack\n'
+  printf 'pack_dir=%s\n' "$(relative_path "$PACK_DIR")"
+  printf 'log_dir=%s\n' "$(relative_path "$LOG_DIR")"
+  printf 'plan=%s\n' "$(relative_path "$PLAN_PATH")"
+  printf 'harness=%s\n' "$(relative_path "$HARNESS_PATH")"
+  printf 'check=%s\n' "$(relative_path "$CHECK_PATH")"
+  printf 'smoke_plan=%s\n' "$(relative_path "$SMOKE_PLAN_PATH")"
+  printf 'scene_checklist=%s\n' "$(relative_path "$SCENE_CHECKLIST_PATH")"
+  printf 'scene_harness=%s\n' "$(relative_path "$SCENE_HARNESS_PATH")"
+  printf 'scene_harness_check=%s\n' "$(relative_path "$SCENE_HARNESS_CHECK_PATH")"
+  printf 'acceptance_check=%s\n' "$(relative_path "$ACCEPTANCE_CHECK_PATH")"
+  printf 'default_off_check=%s\n' "$(relative_path "$DEFAULT_OFF_CHECK_PATH")"
+  printf 'report=%s\n' "$(relative_path "$REPORT_PATH")"
+  printf 'report_check=%s\n' "$(relative_path "$REPORT_CHECK_PATH")"
+  printf 'steps=plan/harness/check/report/report_check\n'
+  printf 'scene_steps=smoke_plan/scene_checklist/scene_harness/scene_harness_check\n'
+  printf 'acceptance_steps=acceptance_check/report_refresh\n'
+  printf 'default_off_steps=default_off_check/report_refresh\n'
+  printf 'fixture_plan_status=%s\n' "$plan_status"
+  printf 'transparent_fixture_harness_status=%s\n' "$harness_status"
+  printf 'transparent_fixture_check_status=%s\n' "$check_status"
+  printf 'transparent_fixture_scene_harness_check_status=%s\n' "$scene_harness_check_status"
+  printf 'transparent_fixture_acceptance_status=%s\n' "$acceptance_status"
+  printf 'transparent_fixture_default_off_status=%s\n' "$default_off_status"
+  printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
+  printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'contract_tokens=%s\n' "$contract_tokens"
+  printf 'runtime_behavior=unchanged\n'
+  printf 'ordinary_world_visibility=absent\n'
+  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+    "$acceptance_status" \
+    "$default_off_status" \
     "$report_check_status" \
     "$check_status" \
     "$scene_harness_check_status" \
