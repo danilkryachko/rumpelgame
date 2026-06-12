@@ -89,6 +89,21 @@ value_or_na() {
   fi
 }
 
+normal_total_savings_evidence() {
+  normal_status="$1"
+  case "$normal_status" in
+    reduced)
+      printf '%s\n' "usable"
+      ;;
+    increased)
+      printf '%s\n' "rejected"
+      ;;
+    *)
+      printf '%s\n' "unknown"
+      ;;
+  esac
+}
+
 profiler_role() {
   radius="$1"
   case "$radius" in
@@ -143,10 +158,11 @@ matrix_line() {
   compact_terrain_samples="$(value_or_na "$(summary_row_token "compact" "terrain_samples" "$summary_path")")"
   normal_delta="$(value_or_na "$(summary_token "shadow_normal_total_delta" "$summary_path")")"
   normal_status="$(value_or_na "$(summary_token "shadow_normal_total_status" "$summary_path")")"
+  normal_evidence="$(normal_total_savings_evidence "$normal_status")"
   shadow_disabled_collision_saved="$(value_or_na "$(summary_token "shadow_disabled_collision_normal_payload_saved" "$summary_path")")"
   collision_only_collision_saved="$(value_or_na "$(summary_token "collision_only_collision_normal_payload_saved" "$summary_path")")"
 
-  printf 'radius=%s status=pass child_capture=%s child_reuse_server=%s child_shadow_radius_override=%s full_cpu_proxy=%s full_shadow_only=%s full_mesh_max_ms=%s full_avg_luma=%s full_terrain_samples=%s compact_cpu_proxy=%s compact_shadow_only=%s compact_shadow_proxy=%s compact_shadow_normals_saved=%s compact_mesh_max_ms=%s compact_coll_avg_ms=%s compact_gpu_frames=%s compact_avg_luma=%s compact_terrain_samples=%s shadow_normal_total_delta=%s shadow_normal_total_status=%s shadow_disabled_collision_normals_saved=%s collision_only_collision_normals_saved=%s artifact=%s\n' \
+  printf 'radius=%s status=pass child_capture=%s child_reuse_server=%s child_shadow_radius_override=%s full_cpu_proxy=%s full_shadow_only=%s full_mesh_max_ms=%s full_avg_luma=%s full_terrain_samples=%s compact_cpu_proxy=%s compact_shadow_only=%s compact_shadow_proxy=%s compact_shadow_normals_saved=%s compact_mesh_max_ms=%s compact_coll_avg_ms=%s compact_gpu_frames=%s compact_avg_luma=%s compact_terrain_samples=%s shadow_normal_total_delta=%s shadow_normal_total_status=%s shadow_normal_total_savings_evidence=%s shadow_disabled_collision_normals_saved=%s collision_only_collision_normals_saved=%s artifact=%s\n' \
     "$radius" \
     "$child_capture" \
     "$child_reuse" \
@@ -167,6 +183,7 @@ matrix_line() {
     "$compact_terrain_samples" \
     "$normal_delta" \
     "$normal_status" \
+    "$normal_evidence" \
     "$shadow_disabled_collision_saved" \
     "$collision_only_collision_saved" \
     "$(relative_path "$case_dir")"
@@ -191,8 +208,9 @@ profiler_manifest_line() {
   compact_gpu_frames="$(value_or_na "$(summary_row_token "compact" "gpu_frames" "$summary_path")")"
   compact_terrain_samples="$(value_or_na "$(summary_row_token "compact" "terrain_samples" "$summary_path")")"
   normal_status="$(value_or_na "$(summary_token "shadow_normal_total_status" "$summary_path")")"
+  normal_evidence="$(normal_total_savings_evidence "$normal_status")"
 
-  printf 'priority=%s radius=%s role=%s child_shadow_radius_override=%s artifact=%s full_png=%s compact_png=%s compact_marker=%s compact_shadow_proxy=%s compact_shadow_normals_saved=%s full_avg_luma=%s compact_avg_luma=%s compact_terrain_samples=%s compact_gpu_frames=%s full_mesh_max_ms=%s compact_mesh_max_ms=%s shadow_normal_total_status=%s profiler_required=external_metal\n' \
+  printf 'priority=%s radius=%s role=%s child_shadow_radius_override=%s artifact=%s full_png=%s compact_png=%s compact_marker=%s compact_shadow_proxy=%s compact_shadow_normals_saved=%s full_avg_luma=%s compact_avg_luma=%s compact_terrain_samples=%s compact_gpu_frames=%s full_mesh_max_ms=%s compact_mesh_max_ms=%s shadow_normal_total_status=%s shadow_normal_total_savings_evidence=%s profiler_required=external_metal\n' \
     "$priority" \
     "$radius" \
     "$role" \
@@ -209,7 +227,8 @@ profiler_manifest_line() {
     "$compact_gpu_frames" \
     "$full_mesh_max_ms" \
     "$compact_mesh_max_ms" \
-    "$normal_status"
+    "$normal_status" \
+    "$normal_evidence"
 }
 
 case "$CAPTURE" in
@@ -218,17 +237,19 @@ case "$CAPTURE" in
 esac
 test -n "$RADII" || fail "RUMPELMC_SHADOW_RADIUS_MATRIX_RADII must not be empty"
 
-summary_path="$OUT_DIR/shadow-radius-matrix-summary.txt"
-tmp_summary_path="$summary_path.tmp"
+matrix_summary_path="$OUT_DIR/shadow-radius-matrix-summary.txt"
+tmp_matrix_summary_path="$matrix_summary_path.tmp"
 manifest_path="$OUT_DIR/shadow-radius-profiler-manifest.txt"
 tmp_manifest_path="$manifest_path.tmp"
 {
   printf 'GPU terrain shadow radius matrix capture=%s radii="%s"\n' "$CAPTURE" "$RADII"
   printf 'compact_proxy_benchmark=scripts/gpu_terrain_compact_proxy_benchmark.sh\n'
-} > "$tmp_summary_path"
+  printf 'note=shadow_normal_total_savings_evidence is usable only when shadow_normal_total_status=reduced\n'
+} > "$tmp_matrix_summary_path"
 {
   printf 'GPU terrain shadow radius profiler manifest capture=%s radii="%s"\n' "$CAPTURE" "$RADII"
   printf 'note=external profiler evidence is required before changing production shadow behavior\n'
+  printf 'note=shadow_normal_total_savings_evidence=rejected rows must not be used as normal-total savings evidence\n'
 } > "$tmp_manifest_path"
 
 for radius in $RADII; do
@@ -255,13 +276,13 @@ for radius in $RADII; do
   if [ "$run_status" -ne 0 ]; then
     fail "compact proxy benchmark failed for radius=$radius; see $(relative_path "$case_dir/run.log")"
   fi
-  matrix_line "$radius" "$case_dir" >> "$tmp_summary_path"
+  matrix_line "$radius" "$case_dir" >> "$tmp_matrix_summary_path"
   profiler_manifest_line "$radius" "$case_dir" >> "$tmp_manifest_path"
 done
 
-mv "$tmp_summary_path" "$summary_path"
+mv "$tmp_matrix_summary_path" "$matrix_summary_path"
 mv "$tmp_manifest_path" "$manifest_path"
 echo
-cat "$summary_path"
+cat "$matrix_summary_path"
 echo
 cat "$manifest_path"
