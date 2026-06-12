@@ -234,6 +234,11 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `gpu_upload_update_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_update_ms)"
   printf -- '- max `terrain_queue_gpu_uploads` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_uploads)"
   printf -- '- max `terrain_queue_gpu_upload_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_kb)"
+  printf -- '- max `chunk_replace`: `%s`\n' "$(metric_max chunk_replace)"
+  printf -- '- max `dirty_chunks`: `%s`\n' "$(metric_max dirty_chunks)"
+  printf -- '- max `dirty_blocks`: `%s`\n' "$(metric_max dirty_blocks)"
+  printf -- '- max `dirty_last_blocks`: `%s`\n' "$(metric_max dirty_last_blocks)"
+  printf -- '- max `dirty_last_rebuild_subchunks`: `%s`\n' "$(metric_max dirty_last_rebuild_subchunks)"
   printf -- '- max `gpu_fragmented_free_faces`: `%s`\n' "$(metric_max gpu_fragmented_free_faces)"
   printf -- '- max `gpu_fragmentation_pct`: `%s`\n' "$(metric_max gpu_fragmentation_pct)"
   printf -- '- max `terrain_queue_max_ms`: `%s`\n' "$(metric_max_terrain_queue)"
@@ -254,6 +259,8 @@ tmp_path="$OUT_PATH.tmp"
   printf '\n## Metric Origins\n\n'
   metric_max_source gpu_effective_draws | sed 's/^/- /'
   metric_max_source gpu_faces | sed 's/^/- /'
+  metric_max_source dirty_blocks | sed 's/^/- /'
+  metric_max_source dirty_last_blocks | sed 's/^/- /'
   metric_max_source gpu_fragmentation_pct | sed 's/^/- /'
   metric_max_source_terrain_queue | sed 's/^/- /'
   metric_max_source gpu_compositor_submit_max_ms | sed 's/^/- /'
