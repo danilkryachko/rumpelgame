@@ -28,6 +28,7 @@ SCENE_HARNESS_PATH="$PACK_DIR/transparent-fixture-scene-harness.txt"
 SCENE_HARNESS_CHECK_PATH="$PACK_DIR/transparent-fixture-scene-harness-check.txt"
 ACCEPTANCE_CHECK_PATH="$PACK_DIR/transparent-fixture-acceptance-check.txt"
 DEFAULT_OFF_CHECK_PATH="$PACK_DIR/transparent-fixture-default-off-check.txt"
+FINAL_REPORT_CHECK_PATH="$PACK_DIR/transparent-fixture-final-report-check.txt"
 REPORT_PATH="$PACK_DIR/gpu-terrain-transparent-fixture-report.txt"
 REPORT_CHECK_PATH="$PACK_DIR/transparent-fixture-report-check.txt"
 
@@ -342,6 +343,7 @@ required_line "$REPORT_PATH" "Source: \`$DEFAULT_OFF_CHECK_PATH\`" >/dev/null
   printf 'default_off_check=%s\n' "$(relative_path "$DEFAULT_OFF_CHECK_PATH")"
   printf 'report=%s\n' "$(relative_path "$REPORT_PATH")"
   printf 'report_check=%s\n' "$(relative_path "$REPORT_CHECK_PATH")"
+  printf 'final_report_check=%s\n' "$(relative_path "$FINAL_REPORT_CHECK_PATH")"
   printf 'steps=plan/harness/check/report/report_check\n'
   printf 'scene_steps=smoke_plan/scene_checklist/scene_harness/scene_harness_check\n'
   printf 'acceptance_steps=acceptance_check/report_refresh\n'
@@ -369,4 +371,84 @@ required_line "$REPORT_PATH" "Source: \`$DEFAULT_OFF_CHECK_PATH\`" >/dev/null
 } > "$tmp_pack"
 
 mv "$tmp_pack" "$OUT_PATH"
+
+sh "$ROOT_DIR/scripts/gpu_terrain_transparent_fixture_final_report_check.sh" \
+  "$OUT_PATH" \
+  "$FINAL_REPORT_CHECK_PATH" >/dev/null
+
+final_report_summary_line="$(required_line "$FINAL_REPORT_CHECK_PATH" "summary transparent_fixture_final_report_check_status=")"
+final_report_status="$(required_token "transparent_fixture_final_report_check_status" "$final_report_summary_line" "final-report check summary")"
+final_report_pack_status="$(required_token "transparent_fixture_pack_status" "$final_report_summary_line" "final-report check summary")"
+final_report_acceptance_status="$(required_token "transparent_fixture_acceptance_status" "$final_report_summary_line" "final-report check summary")"
+final_report_default_off_status="$(required_token "transparent_fixture_default_off_status" "$final_report_summary_line" "final-report check summary")"
+final_report_env_expected="$(required_token "env_on_expected" "$final_report_summary_line" "final-report check summary")"
+
+test "$final_report_status" = "pass" || fail "unexpected transparent_fixture_final_report_check_status=$final_report_status"
+test "$final_report_pack_status" = "pass" || fail "final-report pack status does not match"
+test "$final_report_acceptance_status" = "$acceptance_status" || fail "final-report acceptance status does not match"
+test "$final_report_default_off_status" = "$default_off_status" || fail "final-report default-off status does not match"
+test "$final_report_env_expected" = "$harness_env_expected" || fail "final-report env_on_expected does not match harness"
+
+sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
+  "$LOG_DIR" \
+  "$REPORT_PATH" >/dev/null
+required_line "$REPORT_PATH" "## Selected Transparent Fixture Final Report Check" >/dev/null
+required_line "$REPORT_PATH" "Source: \`$FINAL_REPORT_CHECK_PATH\`" >/dev/null
+
+{
+  printf 'GPU terrain transparent fixture pack\n'
+  printf 'pack_dir=%s\n' "$(relative_path "$PACK_DIR")"
+  printf 'log_dir=%s\n' "$(relative_path "$LOG_DIR")"
+  printf 'plan=%s\n' "$(relative_path "$PLAN_PATH")"
+  printf 'harness=%s\n' "$(relative_path "$HARNESS_PATH")"
+  printf 'check=%s\n' "$(relative_path "$CHECK_PATH")"
+  printf 'smoke_plan=%s\n' "$(relative_path "$SMOKE_PLAN_PATH")"
+  printf 'scene_checklist=%s\n' "$(relative_path "$SCENE_CHECKLIST_PATH")"
+  printf 'scene_harness=%s\n' "$(relative_path "$SCENE_HARNESS_PATH")"
+  printf 'scene_harness_check=%s\n' "$(relative_path "$SCENE_HARNESS_CHECK_PATH")"
+  printf 'acceptance_check=%s\n' "$(relative_path "$ACCEPTANCE_CHECK_PATH")"
+  printf 'default_off_check=%s\n' "$(relative_path "$DEFAULT_OFF_CHECK_PATH")"
+  printf 'report=%s\n' "$(relative_path "$REPORT_PATH")"
+  printf 'report_check=%s\n' "$(relative_path "$REPORT_CHECK_PATH")"
+  printf 'final_report_check=%s\n' "$(relative_path "$FINAL_REPORT_CHECK_PATH")"
+  printf 'steps=plan/harness/check/report/report_check\n'
+  printf 'scene_steps=smoke_plan/scene_checklist/scene_harness/scene_harness_check\n'
+  printf 'acceptance_steps=acceptance_check/report_refresh\n'
+  printf 'default_off_steps=default_off_check/report_refresh\n'
+  printf 'final_report_steps=final_report_check/report_refresh\n'
+  printf 'fixture_plan_status=%s\n' "$plan_status"
+  printf 'transparent_fixture_harness_status=%s\n' "$harness_status"
+  printf 'transparent_fixture_check_status=%s\n' "$check_status"
+  printf 'transparent_fixture_scene_harness_check_status=%s\n' "$scene_harness_check_status"
+  printf 'transparent_fixture_acceptance_status=%s\n' "$acceptance_status"
+  printf 'transparent_fixture_default_off_status=%s\n' "$default_off_status"
+  printf 'transparent_fixture_final_report_check_status=%s\n' "$final_report_status"
+  printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
+  printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'contract_tokens=%s\n' "$contract_tokens"
+  printf 'runtime_behavior=unchanged\n'
+  printf 'ordinary_world_visibility=absent\n'
+  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+    "$acceptance_status" \
+    "$default_off_status" \
+    "$final_report_status" \
+    "$report_check_status" \
+    "$check_status" \
+    "$scene_harness_check_status" \
+    "$plan_status" \
+    "$harness_status" \
+    "$harness_env_expected"
+} > "$tmp_pack"
+
+mv "$tmp_pack" "$OUT_PATH"
+
+sh "$ROOT_DIR/scripts/gpu_terrain_transparent_fixture_final_report_check.sh" \
+  "$OUT_PATH" \
+  "$FINAL_REPORT_CHECK_PATH" >/dev/null
+
+sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
+  "$LOG_DIR" \
+  "$REPORT_PATH" >/dev/null
+required_line "$REPORT_PATH" "## Selected Transparent Fixture Final Report Check" >/dev/null
+required_line "$REPORT_PATH" "Source: \`$FINAL_REPORT_CHECK_PATH\`" >/dev/null
 cat "$OUT_PATH"
