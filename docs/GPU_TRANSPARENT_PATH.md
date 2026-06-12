@@ -187,7 +187,7 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - `scripts/gpu_terrain_transparent_fixture_check.sh` validates the generated plan and harness summaries together and writes a line-oriented `transparent-fixture-check.txt` pass artifact.
 - `scripts/gpu_terrain_report.sh` surfaces the latest transparent fixture plan, harness, and check artifacts under the selected log directory when they exist.
 - `scripts/gpu_terrain_transparent_fixture_report_check.sh` validates that an aggregate GPU report includes the selected transparent fixture plan, harness, and check artifacts from the fixture directory.
-- `scripts/gpu_terrain_transparent_fixture_pack.sh` regenerates the fixture plan, harness, check, smoke-plan, scene checklist, scene harness, scene harness-check, aggregate report, report-check, acceptance-check, default-off check, final-report check, and refreshed aggregate report artifacts together without launching Godot.
+- `scripts/gpu_terrain_transparent_fixture_pack.sh` regenerates the fixture plan, harness, check, smoke-plan, scene checklist, scene harness, scene harness-check, aggregate report, report-check, acceptance-check, default-off check, final-report check, scene implementation checklist, and refreshed aggregate report artifacts together without launching Godot.
 - `scripts/gpu_terrain_transparent_fixture_smoke_plan.sh` consumes the pack and writes a no-render `transparent-fixture-smoke-plan.txt` with current fallback and future fixture scene gates.
 - `scripts/gpu_terrain_transparent_fixture_scene_checklist.sh` consumes the smoke plan and writes a no-render `transparent-fixture-scene-checklist.txt` with fixed scene roles for depth, adjacency, and collision checks.
 - `scripts/gpu_terrain_transparent_fixture_scene_harness.sh` consumes the scene checklist and writes a no-render `transparent-fixture-scene-harness.txt` placeholder with fixed role checks and current/future acceptance gates.
@@ -195,13 +195,13 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - `scripts/gpu_terrain_transparent_fixture_acceptance_check.sh` validates the no-render pack, report-check, smoke-plan, and scene harness-check artifacts together before any real fixture scene or renderer path is allowed; the pack now emits and reports this acceptance artifact.
 - `scripts/gpu_terrain_transparent_fixture_default_off_check.sh` validates the final no-render pack against the Rust implementation gate, the movement-stress env-on fallback guard, and the transparent fixture contract so `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` keeps env-on captures requested-but-fallback until a real implementation exists; the pack now emits and reports this default-off artifact.
 - `scripts/gpu_terrain_transparent_fixture_final_report_check.sh` validates the final no-render pack and aggregate report together, requiring both selected acceptance and default-off report sections to point at the linked artifacts and surface their pass summaries; the pack now emits and reports this final guard artifact.
-- `scripts/gpu_terrain_transparent_fixture_scene_implementation_checklist.sh` validates the final no-render pack and scene artifact chain, then writes a pending fixture-scene implementation checklist for the future scene-only harness work.
+- `scripts/gpu_terrain_transparent_fixture_scene_implementation_checklist.sh` validates the final no-render pack and scene artifact chain, then writes a pending fixture-scene implementation checklist for the future scene-only harness work; the pack now emits and reports this checklist artifact.
 - Ignored local fixture artifacts under `logs/gpu_transparent_fixture_plan` now provide the current real-log checklist source for aggregate reports.
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
 
 The next safe implementation slice is still no-render work:
 
-- Integrate the scene implementation checklist into the fixture pack/report chain or add the next fixture-only guard while preserving current opaque behavior.
+- Add the next fixture-only guard or fixture-scene harness checklist while preserving current opaque behavior.
 - Keep all current opaque correctness gates unchanged while the implementation gate remains false.
 - Defer shader alpha, blending, sorting, block-ID, asset, protocol, storage, worldgen, and render-path work until the fixture contract has env-off and env-on fallback gates.

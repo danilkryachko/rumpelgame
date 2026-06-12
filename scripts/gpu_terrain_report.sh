@@ -487,6 +487,7 @@ tmp_path="$OUT_PATH.tmp"
   print_optional_artifact "Selected Transparent Fixture Acceptance Check" "$(latest_file transparent-fixture-acceptance-check.txt)"
   print_optional_artifact "Selected Transparent Fixture Default-Off Check" "$(latest_file transparent-fixture-default-off-check.txt)"
   print_optional_artifact "Selected Transparent Fixture Final Report Check" "$(latest_file transparent-fixture-final-report-check.txt)"
+  print_optional_artifact "Selected Transparent Fixture Scene Implementation Checklist" "$(latest_file transparent-fixture-scene-implementation-checklist.txt)"
 
   printf '\n## Recent Summary Files\n\n'
   summary_files | sed "s#^$ROOT_DIR/##" | tail -n 80 | sed 's/^/- `/' | sed 's/$/`/'
