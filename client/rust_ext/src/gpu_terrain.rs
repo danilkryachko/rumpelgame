@@ -856,6 +856,11 @@ pub struct GpuTerrainSlot {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 struct IndirectDrawCommand {
+    // RenderingDevice uses the Vulkan-style DrawIndirectCommand ABI:
+    // vertex_count, instance_count, first_vertex, first_instance. Terrain binds
+    // no vertex buffer, so first_vertex stays zero, but first_instance is not
+    // spare: the shader consumes it through gl_InstanceIndex as the face-buffer
+    // base for each subchunk slot.
     vertex_count: u32,
     instance_count: u32,
     first_vertex: u32,
@@ -2916,6 +2921,15 @@ mod tests {
         );
         assert!(fragment_source.contains("vec2 tiled_uv = fract(tile_uv);"));
         assert!(fragment_source.contains("vec2 uv_in = atlas_uv(uv_tile_in.xy, uv_tile_in.z);"));
+    }
+
+    #[test]
+    fn render_shader_consumes_indirect_instance_range() {
+        let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
+
+        assert!(vertex_source.contains("uint face_instance = uint(gl_InstanceIndex);"));
+        assert!(vertex_source.contains("PackedFace face = face_buffer.faces[face_instance];"));
+        assert!(vertex_source.contains("uint corner_idx = corner_map[uint(gl_VertexIndex) % 6u];"));
     }
 
     #[test]
