@@ -20,7 +20,7 @@ trap 'rm -f "$TMP_FILES" "$TMP_WARNINGS"' EXIT
 } | sed '/^$/d' | sort -u > "$TMP_FILES"
 
 if [ ! -s "$TMP_FILES" ]; then
-  echo "diff_guard: no tracked file changes"
+  echo "diff_guard: no file changes"
   exit 0
 fi
 
@@ -51,15 +51,21 @@ warn() {
 }
 
 if [ "$FILE_COUNT" -gt 5 ]; then
-  warn "changed $FILE_COUNT tracked files; explain why before continuing"
+  warn "changed $FILE_COUNT files; explain why before continuing"
 fi
 
 if [ "$LINE_COUNT" -gt 300 ]; then
-  warn "changed $LINE_COUNT tracked lines; explain why before continuing"
+  warn "changed $LINE_COUNT lines; explain why before continuing"
 fi
 
 while IFS= read -r path; do
   case "$path" in
+    *.dylib|*.so|*.dll|*.exe|server/server)
+      printf "diff_guard: warning: binary/executable artifact changed: %s\n" "$path" >> "$TMP_WARNINGS"
+      ;;
+    .DS_Store|.godot/*|*/.godot/*|target/*|*/target/*|tmp/*|*/tmp/*)
+      printf "diff_guard: warning: local/generated artifact changed: %s\n" "$path" >> "$TMP_WARNINGS"
+      ;;
     *.pb.go|*.pb.rs|*.pb.cc|*.pb.h)
       printf "diff_guard: warning: generated protocol file changed: %s\n" "$path" >> "$TMP_WARNINGS"
       ;;
