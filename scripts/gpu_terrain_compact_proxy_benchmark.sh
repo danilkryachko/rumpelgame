@@ -152,16 +152,30 @@ require_metric_eq() {
   fi
 }
 
+validate_shadow_casting_path() {
+  marker_path="$1"
+  expected_shadow_path="$2"
+  case "$expected_shadow_path" in
+    godot_proxy | gpu_native_shadow) ;;
+    *)
+      fail "shadow-casting validation cannot use diagnostic path $expected_shadow_path"
+      ;;
+  esac
+
+  grep -q "shadow_path=$expected_shadow_path" "$marker_path" || fail "unexpected shadow path in $marker_path"
+}
+
 validate_shadow_marker() {
   marker_path="$1"
   expected_shadow_mesh="$2"
+  expected_shadow_path="${3:-godot_proxy}"
   screenshot_path="${marker_path%.txt}"
 
   test -s "$screenshot_path" || fail "missing screenshot $screenshot_path"
   test -s "$marker_path" || fail "missing marker $marker_path"
   grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke summary in $marker_path"
   grep -q "pose=\"$SMOKE_POSE\"" "$marker_path" || fail "unexpected pose in $marker_path"
-  grep -q "shadow_path=godot_proxy" "$marker_path" || fail "unexpected shadow path in $marker_path"
+  validate_shadow_casting_path "$marker_path" "$expected_shadow_path"
   grep -q "shadow_mode=conservative" "$marker_path" || fail "unexpected shadow mode in $marker_path"
   grep -q "shadow_mesh=$expected_shadow_mesh" "$marker_path" || fail "unexpected shadow mesh in $marker_path"
   grep -q "current_chunk=\"0,0\"" "$marker_path" || fail "unexpected current chunk in $marker_path"

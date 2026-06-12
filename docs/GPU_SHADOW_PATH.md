@@ -110,9 +110,12 @@ A future GPU-native shadow path can become default only after all of these are t
 
 ## Next Implementation Slice
 
-The next code slice should be telemetry/test scaffolding, not a renderer rewrite:
+The current code slice is telemetry/test scaffolding, not a renderer rewrite:
 
-- Add an enum value and marker-only contract for `gpu_native_shadow` behind an off-by-default flag.
-- Keep `terrain_shadow_path_decision` tests explicit for production, disabled, diagnostic, and prototype paths.
-- Extend focused benchmark validation so future prototype markers cannot be confused with `scene_shadows_disabled` or `diagnostic_no_shadow_proxy`.
-- Do not remove any CPU proxy mesh builder or Godot `SHADOWS_ONLY` fallback in the same slice.
+- `GpuTerrainShadowPath::GpuNativeShadow` reserves the future marker token `gpu_native_shadow`.
+- `RUMPELMC_GPU_TERRAIN_NATIVE_SHADOW` is off by default and is additionally blocked by `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`, so current runtime markers remain on `godot_proxy` even if the env flag is set.
+- `terrain_shadow_path_decision` tests stay explicit for production, disabled, diagnostic, and future prototype paths.
+- `scripts/gpu_terrain_compact_proxy_benchmark.sh` validates shadow-casting paths through a helper that accepts only `godot_proxy` and future `gpu_native_shadow`, keeping them separate from `scene_shadows_disabled` and `diagnostic_no_shadow_proxy`.
+- No CPU proxy mesh builder or Godot `SHADOWS_ONLY` fallback was removed.
+
+The next implementation slice can add marker/report fields for native-shadow requested vs active counts, or start a tiny renderer proof only after the fallback and parity gates above are kept intact.

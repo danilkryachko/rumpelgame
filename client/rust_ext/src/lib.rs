@@ -1609,7 +1609,12 @@ impl GameClient {
         } else {
             0
         };
-        terrain_shadow_path_decision(gpu_visible, mode, radius)
+        terrain_shadow_path_decision(
+            gpu_visible,
+            mode,
+            radius,
+            gpu_terrain_native_shadow_active(),
+        )
     }
 
     fn gpu_terrain_visible_render_active(&self) -> bool {
@@ -2616,6 +2621,8 @@ const GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE";
 const GPU_TERRAIN_SHADOW_PROXY_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE";
 const GPU_TERRAIN_SHADOW_PROXY_MESH_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH";
+const GPU_TERRAIN_NATIVE_SHADOW_ENV: &str = "RUMPELMC_GPU_TERRAIN_NATIVE_SHADOW";
+const GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED: bool = false;
 const FACE_LEFT: u32 = 0;
 const FACE_RIGHT: u32 = 1;
 const FACE_BOTTOM: u32 = 2;
@@ -2939,6 +2946,23 @@ fn gpu_terrain_visible_render_active_decision(
     render_enabled && compositor_attached && visible_render_confirmed
 }
 
+fn gpu_terrain_native_shadow_active() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_native_shadow_active_decision(
+            env_flag_state(GPU_TERRAIN_NATIVE_SHADOW_ENV),
+            GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED,
+        )
+    })
+}
+
+fn gpu_terrain_native_shadow_active_decision(
+    env_state: Option<bool>,
+    implementation_ready: bool,
+) -> bool {
+    env_state.unwrap_or(false) && implementation_ready
+}
+
 fn gpu_terrain_shadow_proxy_chunk_distance_override() -> Option<i32> {
     static OVERRIDE: OnceLock<Option<i32>> = OnceLock::new();
     *OVERRIDE.get_or_init(|| {
@@ -3015,6 +3039,7 @@ fn gpu_terrain_shadow_proxy_mode() -> GpuTerrainShadowProxyMode {
 enum GpuTerrainShadowPath {
     ArrayMesh,
     GodotProxy,
+    GpuNativeShadow,
     SceneShadowsDisabled,
     DiagnosticNoShadowProxy,
 }
@@ -3024,6 +3049,7 @@ impl GpuTerrainShadowPath {
         match self {
             Self::ArrayMesh => "arraymesh",
             Self::GodotProxy => "godot_proxy",
+            Self::GpuNativeShadow => "gpu_native_shadow",
             Self::SceneShadowsDisabled => "scene_shadows_disabled",
             Self::DiagnosticNoShadowProxy => "diagnostic_no_shadow_proxy",
         }
@@ -3034,6 +3060,7 @@ fn terrain_shadow_path_decision(
     gpu_visible_render_active: bool,
     mode: GpuTerrainShadowProxyMode,
     shadow_proxy_radius: i32,
+    native_shadow_active: bool,
 ) -> GpuTerrainShadowPath {
     if !gpu_visible_render_active {
         return GpuTerrainShadowPath::ArrayMesh;
@@ -3043,6 +3070,9 @@ fn terrain_shadow_path_decision(
     }
     if shadow_proxy_radius <= 0 {
         return GpuTerrainShadowPath::SceneShadowsDisabled;
+    }
+    if native_shadow_active {
+        return GpuTerrainShadowPath::GpuNativeShadow;
     }
 
     GpuTerrainShadowPath::GodotProxy
@@ -4226,21 +4256,43 @@ mod tests {
     #[test]
     fn terrain_shadow_path_keeps_production_and_diagnostic_paths_explicit() {
         assert_eq!(
-            terrain_shadow_path_decision(false, GpuTerrainShadowProxyMode::Conservative, 5),
+            terrain_shadow_path_decision(false, GpuTerrainShadowProxyMode::Conservative, 5, true),
             GpuTerrainShadowPath::ArrayMesh
         );
         assert_eq!(
-            terrain_shadow_path_decision(true, GpuTerrainShadowProxyMode::Conservative, 5),
+            terrain_shadow_path_decision(true, GpuTerrainShadowProxyMode::Conservative, 5, false),
             GpuTerrainShadowPath::GodotProxy
         );
         assert_eq!(
-            terrain_shadow_path_decision(true, GpuTerrainShadowProxyMode::Conservative, 0),
+            terrain_shadow_path_decision(true, GpuTerrainShadowProxyMode::Conservative, 5, true),
+            GpuTerrainShadowPath::GpuNativeShadow
+        );
+        assert_eq!(
+            GpuTerrainShadowPath::GpuNativeShadow.as_str(),
+            "gpu_native_shadow"
+        );
+        assert_eq!(
+            terrain_shadow_path_decision(true, GpuTerrainShadowProxyMode::Conservative, 0, true),
             GpuTerrainShadowPath::SceneShadowsDisabled
         );
         assert_eq!(
-            terrain_shadow_path_decision(true, GpuTerrainShadowProxyMode::CollisionOnly, 5),
+            terrain_shadow_path_decision(true, GpuTerrainShadowProxyMode::CollisionOnly, 5, true),
             GpuTerrainShadowPath::DiagnosticNoShadowProxy
         );
+    }
+
+    #[test]
+    fn gpu_native_shadow_gate_stays_disabled_until_implemented() {
+        assert!(!gpu_terrain_native_shadow_active_decision(None, false));
+        assert!(!gpu_terrain_native_shadow_active_decision(
+            Some(false),
+            true
+        ));
+        assert!(!gpu_terrain_native_shadow_active_decision(
+            Some(true),
+            false
+        ));
+        assert!(gpu_terrain_native_shadow_active_decision(Some(true), true));
     }
 
     #[test]
