@@ -13,6 +13,9 @@ const JUMP_VELOCITY: f32 = 8.0;
 const MOVE_SPEED: f32 = 5.0;
 const FLY_SPEED: f32 = 12.0;
 const BLOCK_PICK_SURFACE_EPSILON: f32 = 0.01;
+const FLY_DISABLE_GROUND_CHECK_DISTANCE: f32 = 160.0;
+const FLY_DISABLE_MIN_FLOOR_NORMAL_Y: f32 = 0.7;
+const GROUND_SAFETY_RAYCAST_NAME: &str = "GroundSafetyRayCast";
 const VISUAL_SMOKE_DISABLE_PLAYER_INPUT_ENV: &str = "RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT";
 
 struct BlockHit {
@@ -77,6 +80,18 @@ impl ICharacterBody3D for Player {
             .upcast::<godot::classes::CollisionObject3D>();
         raycast.add_exception(&player_collision);
         camera.add_child(&raycast.upcast::<godot::classes::Node>());
+
+        let mut ground_raycast = godot::classes::RayCast3D::new_alloc();
+        ground_raycast.set_position(Vector3::new(0.0, 1.0, 0.0));
+        ground_raycast.set_target_position(Vector3::new(
+            0.0,
+            -FLY_DISABLE_GROUND_CHECK_DISTANCE,
+            0.0,
+        ));
+        ground_raycast.set_name(&StringName::from(GROUND_SAFETY_RAYCAST_NAME));
+        ground_raycast.add_exception(&player_collision);
+        self.base_mut()
+            .add_child(&ground_raycast.upcast::<godot::classes::Node>());
 
         self.base_mut()
             .add_child(&camera.clone().upcast::<godot::classes::Node>());
@@ -274,6 +289,11 @@ impl Player {
     }
 
     fn set_fly_mode(&mut self, enabled: bool) {
+        if !enabled && self.fly_mode && !self.has_safe_ground_collision_below() {
+            self.emit_debug_log("Fly noclip disable blocked: no ground collision below");
+            return;
+        }
+
         self.fly_mode = enabled;
         let layer = if enabled {
             0
@@ -298,6 +318,18 @@ impl Player {
         godot_print!("{}", message);
         self.base_mut()
             .emit_signal(&StringName::from("debug_log"), &[message.to_variant()]);
+    }
+
+    fn has_safe_ground_collision_below(&mut self) -> bool {
+        let Some(mut raycast) = self
+            .base()
+            .try_get_node_as::<godot::classes::RayCast3D>(GROUND_SAFETY_RAYCAST_NAME)
+        else {
+            return false;
+        };
+
+        raycast.force_raycast_update();
+        raycast.is_colliding() && raycast.get_collision_normal().y >= FLY_DISABLE_MIN_FLOOR_NORMAL_Y
     }
 
     fn capture_mouse() {
