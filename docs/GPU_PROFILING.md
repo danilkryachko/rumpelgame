@@ -136,6 +136,14 @@ sh scripts/gpu_terrain_shadow_profiler_results_template.sh \
   logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results-template.txt
 ```
 
+For external handoff, generate the plan, template, and capture checklist together. The capture pack still records `capture_pack_status=pending_external_profiler`; it is not profiler evidence:
+
+```sh
+sh scripts/gpu_terrain_shadow_profiler_capture_pack.sh \
+  logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-manifest.txt \
+  logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-capture-pack.txt
+```
+
 Record external profiler rows separately from the pending plan. Each result row must start with `external_profile_status=captured` and include `priority`, `radius`, `artifact`, `profiler_tool`, `profiler_artifact`, and a positive `gpu_shadow_pass_ms`. Validate results against the plan before citing them; by default all planned rows must be captured, while partial handoff validation requires an explicit `RUMPELMC_SHADOW_PROFILER_RESULTS_ALLOW_PARTIAL=1`:
 
 ```sh
