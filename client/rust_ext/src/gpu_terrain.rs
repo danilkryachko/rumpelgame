@@ -2965,6 +2965,47 @@ mod tests {
     }
 
     #[test]
+    fn render_shader_lighting_contract_keeps_vertex_lighting_and_fragment_handoff() {
+        let (vertex_source, fragment_source) =
+            split_render_shader_source().expect("render shader stages");
+
+        assert!(vertex_source.contains("layout(location = 1) out vec3 lighting_out;"));
+        assert!(fragment_source.contains("layout(location = 1) in vec3 lighting_in;"));
+        assert!(vertex_source.contains("vec3 face_lighting(uint face_idx)"));
+        assert!(vertex_source.contains("vec3 normal = face_normal(face_idx);"));
+        assert!(vertex_source.contains(
+            "vec3 direction_to_light = normalize(terrain_push.light_direction_ambient.xyz);"
+        ));
+        assert!(
+            vertex_source.contains(
+                "float ambient = clamp(terrain_push.light_direction_ambient.w, 0.0, 1.0);"
+            )
+        );
+        assert!(
+            vertex_source.contains(
+                "vec3 light_color = max(terrain_push.light_color_energy.rgb, vec3(0.0));"
+            )
+        );
+        assert!(
+            vertex_source
+                .contains("float light_energy = max(terrain_push.light_color_energy.w, 0.0);")
+        );
+        assert!(
+            vertex_source.contains("float diffuse = max(dot(normal, direction_to_light), 0.0);")
+        );
+        assert!(
+            vertex_source.contains("return vec3(ambient) + light_color * diffuse * light_energy;")
+        );
+        assert!(vertex_source.contains("lighting_out = face_lighting(face_idx);"));
+        assert!(fragment_source.contains("frag_color = vec4(texel.rgb * lighting_in, 1.0);"));
+        assert!(!fragment_source.contains("face_lighting("));
+        assert!(!fragment_source.contains("face_normal("));
+        assert!(!fragment_source.contains("dot(normal"));
+        assert!(!fragment_source.contains("terrain_push.light_direction_ambient"));
+        assert!(!fragment_source.contains("terrain_push.light_color_energy"));
+    }
+
+    #[test]
     fn render_shader_uses_face_extent_for_geometry_and_tiled_uvs() {
         let (vertex_source, fragment_source) =
             split_render_shader_source().expect("render shader stages");

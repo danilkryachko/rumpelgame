@@ -13,6 +13,7 @@ This file stores stable project decisions and invariants for agents. Keep it sho
 - World generation and chunk serialization must remain deterministic unless explicitly changed.
 - Storage and persistence changes require extra review before finalizing.
 - Rust GDExtension changes can affect client behavior and performance; review them carefully.
+- GPU terrain render shader assumptions matter: vertex code computes terrain lighting from packed face normals and lighting push constants, fragment code applies the passed lighting to atlas color with opaque alpha, and scene depth uses reverse-Z `GREATER_OR_EQUAL`.
 - Godot scene/resource/import files should not be reformatted casually.
 
 ## Agent Roles
