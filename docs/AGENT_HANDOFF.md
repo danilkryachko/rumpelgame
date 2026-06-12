@@ -9,8 +9,9 @@ Date: 2026-06-13
 Fresh 2026-06-13 status:
 
 - Current transparent fixture scene fallback smoke slice adds the first runtime harness while preserving opaque-only behavior. `client/main.gd` now supports `RUMPELMC_VISUAL_SMOKE_POSE=transparent_fixture`, and `scripts/gpu_terrain_transparent_fixture_scene_smoke.sh` launches the existing Godot visual smoke path with `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1`, then validates `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples. The release capture passed in `logs/gpu_transparent_fixture_scene_smoke` with `terrain_samples=488`, `terrain_color_buckets=8`, `gpu_subchunks=108`, `gpu_draws=108`, `terrain_queue_max_ms=1.053`, `process_wall_p95_ms=0.019`, and `gpu_compositor_submit_max_ms=0.145`.
+- Current aggregate-report slice surfaces that runtime fixture scene fallback smoke in `scripts/gpu_terrain_report.sh`. The latest report run selected `logs/gpu_transparent_fixture_scene_smoke/transparent-fixture-scene-smoke-summary.txt` and includes `status=pass`, `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, and `terrain_samples=488`.
 - This runtime harness does not add fixture block/material identity, shader alpha, blending, transparent pass, sorting, block IDs, atlas assets, protocol, storage, worldgen, `.tscn` changes, or default render behavior. `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` remains the active implementation gate.
-- Next useful GPU step: integrate the new `transparent-fixture-scene-smoke-summary.txt` into the aggregate GPU report/pack chain, then add fixture workload marker fields only after that report integration is stable.
+- Next useful GPU step: add fixture workload marker fields only after the current report integration remains stable, still keeping `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` and the env-on fallback marker triplet intact.
 
 Previous snapshot:
 
