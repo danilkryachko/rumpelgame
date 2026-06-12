@@ -77,13 +77,18 @@ write_summary() {
   {
     printf 'GPU terrain flyback stress summary motion=%s expected_chunk=%s grace_sec=%s\n' \
       "$MOTION_NAME" "$EXPECTED_CURRENT_CHUNK" "${RUMPELMC_CLIENT_CHUNK_UNLOAD_GRACE_SEC:-default}"
-    printf 'flyback_return current_chunk_loaded=%s current_chunk_submeshes=%s current_chunk_collision=%s ground_hit=%s ground_distance=%s ground_y=%s motion_steps=%s motion_chunks=%s terrain_samples=%s smoke_err=%s gpu_upload_fail=%s\n' \
+    printf 'flyback_return current_chunk_loaded=%s current_chunk_submeshes=%s current_chunk_collision=%s ground_hit=%s ground_distance=%s ground_y=%s ground_samples=%s ground_hits=%s ground_misses=%s ground_max_distance=%s ground_min_y=%s motion_steps=%s motion_chunks=%s terrain_samples=%s smoke_err=%s gpu_upload_fail=%s\n' \
       "$(metric current_chunk_loaded "$marker_path")" \
       "$(metric current_chunk_submeshes "$marker_path")" \
       "$(metric current_chunk_collision "$marker_path")" \
       "$(metric ground_hit "$marker_path")" \
       "$(float_metric ground_distance "$marker_path")" \
       "$(float_metric ground_y "$marker_path")" \
+      "$(metric ground_samples "$marker_path")" \
+      "$(metric ground_hits "$marker_path")" \
+      "$(metric ground_misses "$marker_path")" \
+      "$(float_metric ground_max_distance "$marker_path")" \
+      "$(float_metric ground_min_y "$marker_path")" \
       "$(metric motion_steps "$marker_path")" \
       "$(metric motion_chunks "$marker_path")" \
       "$(metric terrain_samples "$marker_path")" \
@@ -119,6 +124,9 @@ require_metric_ge "$marker_path" current_chunk_submeshes 1
 require_metric_ge "$marker_path" current_chunk_collision 1
 require_metric_eq "$marker_path" ground_hit 1
 require_float_between "$marker_path" ground_distance 0.5 "$MAX_GROUND_DISTANCE"
+require_metric_ge "$marker_path" ground_samples 9
+require_metric_eq "$marker_path" ground_misses 0
+require_float_between "$marker_path" ground_max_distance 0.5 "$MAX_GROUND_DISTANCE"
 require_metric_eq "$marker_path" gpu_upload_fail 0
 write_summary
 

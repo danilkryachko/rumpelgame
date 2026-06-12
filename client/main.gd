@@ -290,7 +290,7 @@ func capture_visual_smoke(screenshot_path: String):
 	var frame_metrics = visual_smoke_frame_metrics()
 	var process_metrics = visual_smoke_process_wall_metrics()
 	var runtime_metrics = visual_smoke_runtime_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f ground_samples=%d ground_hits=%d ground_misses=%d ground_max_distance=%.3f ground_min_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		visual_smoke_motion_name,
@@ -343,6 +343,11 @@ func capture_visual_smoke(screenshot_path: String):
 		ground_metrics["hit"],
 		ground_metrics["distance"],
 		ground_metrics["y"],
+		ground_metrics["samples"],
+		ground_metrics["hits"],
+		ground_metrics["misses"],
+		ground_metrics["max_distance"],
+		ground_metrics["min_y"],
 		visual_smoke_client_text("get_perf_text", "n/a"),
 		visual_smoke_chunk_text(),
 		visual_smoke_client_text("get_current_chunk_text", "n/a")
@@ -379,8 +384,45 @@ func visual_smoke_client_int(method: String, fallback: int) -> int:
 func visual_smoke_ground_metrics() -> Dictionary:
 	var player = get_tree().root.find_child("Player", true, false) as Node3D
 	if not player:
-		return {"hit": 0, "distance": -1.0, "y": 0.0}
-	var origin = player.global_position + Vector3(0.0, 1.0, 0.0)
+		return {
+			"hit": 0,
+			"distance": -1.0,
+			"y": 0.0,
+			"samples": 0,
+			"hits": 0,
+			"misses": 0,
+			"max_distance": -1.0,
+			"min_y": 0.0
+		}
+	var center = visual_smoke_ground_sample(player, Vector3.ZERO)
+	var samples = 0
+	var hits = 0
+	var max_distance = 0.0
+	var min_y = INF
+	for offset_x in [-8.0, 0.0, 8.0]:
+		for offset_z in [-8.0, 0.0, 8.0]:
+			samples += 1
+			var sample = visual_smoke_ground_sample(player, Vector3(offset_x, 0.0, offset_z))
+			if sample["hit"] == 0:
+				continue
+			hits += 1
+			max_distance = max(max_distance, sample["distance"])
+			min_y = min(min_y, sample["y"])
+	if hits == 0:
+		min_y = 0.0
+	return {
+		"hit": center["hit"],
+		"distance": center["distance"],
+		"y": center["y"],
+		"samples": samples,
+		"hits": hits,
+		"misses": samples - hits,
+		"max_distance": max_distance,
+		"min_y": min_y
+	}
+
+func visual_smoke_ground_sample(player: Node3D, horizontal_offset: Vector3) -> Dictionary:
+	var origin = player.global_position + horizontal_offset + Vector3(0.0, 1.0, 0.0)
 	var target = origin + Vector3(0.0, -160.0, 0.0)
 	var query = PhysicsRayQueryParameters3D.create(origin, target)
 	if player.has_method("get_rid"):
