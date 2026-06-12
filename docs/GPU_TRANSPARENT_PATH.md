@@ -126,6 +126,52 @@ Transparent terrain can become default only after all of these are true:
 - External GPU profiler evidence shows acceptable pass cost for the transparent workload.
 - `./scripts/check.sh fast`, `./scripts/diff_guard.sh`, and targeted Rust/render tests pass for the implementation slice.
 
+## First Fixture Contract
+
+The first transparent terrain fixture is a fixture-only contract, not a production block or asset rollout.
+
+Fixture identity:
+
+- Use a non-production material label such as `transparent_test_glass` until a real block ID is approved.
+- Keep the material absent from ordinary world generation, storage defaults, server protocol payloads, and atlas defaults.
+- Load it only through a dedicated transparent fixture or smoke harness.
+- Treat the fixture name as stable, for example `gpu-transparent-depth-collision`, so future logs and reports can cite one scenario.
+
+Material semantics:
+
+- `render_class=transparent` means the block does not fully occlude neighboring opaque faces.
+- `solid=true` is allowed only when the fixture is testing glass-like collision; collision assertions must name that solidity explicitly.
+- Render opacity and collision solidity must stay separate. An alpha value cannot imply collision.
+- Opaque faces next to transparent fixture blocks must remain visible.
+- Faces between equivalent adjacent transparent fixture blocks may be culled only when the fixture states that same-material seams are hidden.
+
+Scene shape:
+
+- Use a fixed camera, fixed light setup, and fixed fixture chunk coordinates.
+- Put one transparent fixture block in front of opaque terrain and one behind an opaque terrain wall.
+- Add one opaque occluder in front of a transparent block to prove depth testing against the opaque pass.
+- Add an adjacent same-material transparent pair to define seam/culling behavior.
+- Include a ground or ray/collision path that touches or passes beside the transparent fixture block, so collision checks cannot be inferred from visuals alone.
+
+Required future marker fields:
+
+- Keep `transparent_requested`, `transparent_active`, and `transparent_fallback`.
+- Add transparent workload fields before an active path is accepted: `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`.
+- If sorting or a separate upload path exists, report sort/build cost and transparent upload bytes/counts.
+- Keep a fallback reason when the env flag is requested but the active path is disabled.
+
+Acceptance gates:
+
+- With the transparent env flag unset, ordinary opaque terrain markers and parity gates remain unchanged.
+- While `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, the env-on fixture must still report requested-but-fallback markers: `transparent_requested=1`, `transparent_active=0`, and `transparent_fallback=1`.
+- A future active transparent path must prove `transparent_active=1`, `transparent_fallback=0`, `gpu_upload_fail=0`, non-sky terrain samples, opaque-depth occlusion, explicit collision-by-solidity behavior, and visible opaque faces next to transparent fixture blocks.
+- CPU/GPU parity and external profiler evidence are required before the transparent path can move beyond fixture/prototype status.
+
+Non-goals for this contract:
+
+- No new production block ID, asset, protocol field, storage record, worldgen rule, shader alpha path, transparent pass, or sort implementation.
+- No change to default opaque terrain rendering.
+
 ## Current Implementation Slice
 
 The current code slice is telemetry/test scaffolding, not blended rendering:
@@ -141,6 +187,6 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 
 The next safe implementation slice is still no-render work:
 
-- Define the first real transparent fixture/material contract before adding renderer behavior.
+- Add a fixture-only harness placeholder or docs-backed smoke plan that references this contract without enabling a transparent material in ordinary worlds.
 - Keep all current opaque correctness gates unchanged while the implementation gate remains false.
-- Use the fixture plan to specify how future visual smoke will prove depth, collision, and fallback behavior.
+- Defer shader alpha, blending, sorting, block-ID, asset, protocol, storage, worldgen, and render-path work until the fixture contract has env-off and env-on fallback gates.
