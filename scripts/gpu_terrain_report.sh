@@ -332,6 +332,19 @@ print_optional_file() {
   fi
 }
 
+print_optional_artifact() {
+  label="$1"
+  path="$2"
+  if [ -n "$path" ] && [ -s "$path" ]; then
+    printf '\n## %s\n\n' "$label"
+    printf 'Source: `%s`\n\n' "$path"
+    sed -n '1,80p' "$path"
+  else
+    printf '\n## %s\n\n' "$label"
+    printf 'No matching artifact found under `%s`.\n' "$LOG_DIR"
+  fi
+}
+
 error_scan() {
   summary_files | xargs grep -nE 'ERROR|SCRIPT ERROR|panic|ObjectDB|leaked|exceeds|gpu_upload_fail=[1-9]' 2>/dev/null \
     | sed -n '1,80p'
@@ -458,6 +471,7 @@ tmp_path="$OUT_PATH.tmp"
   print_optional_file "Selected Workload Matrix Summary" "$(latest_file workload-matrix-summary.txt)"
   print_optional_file "Selected Perf Baseline Summary" "$(latest_file perf-baseline-summary.txt)"
   print_optional_file "Selected Shadow Profiler Results Summary" "$(latest_file shadow-radius-profiler-results-summary.txt)"
+  print_optional_artifact "Selected Shadow Profiler Capture Pack" "$(latest_file shadow-radius-profiler-capture-pack.txt)"
 
   printf '\n## Recent Summary Files\n\n'
   summary_files | sed "s#^$ROOT_DIR/##" | tail -n 80 | sed 's/^/- `/' | sed 's/$/`/'

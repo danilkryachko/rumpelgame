@@ -153,7 +153,7 @@ sh scripts/gpu_terrain_shadow_profiler_results_check.sh \
   logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results-summary.txt
 ```
 
-`scripts/gpu_terrain_report.sh` surfaces the latest `shadow-radius-profiler-results-summary.txt` under the log directory when one exists. This report section is only as trustworthy as the validated external result rows it displays.
+`scripts/gpu_terrain_report.sh` surfaces the latest `shadow-radius-profiler-results-summary.txt` under the log directory when one exists, and also surfaces the latest `shadow-radius-profiler-capture-pack.txt` as pending external-profiler handoff state. Only the validated results summary is profiler evidence; the capture pack remains a checklist until real captured rows are recorded and checked.
 
 ## Shadow Path Design
 
