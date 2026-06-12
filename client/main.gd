@@ -587,6 +587,8 @@ func apply_visual_smoke_pose(pose_name: String):
 			apply_visual_smoke_look_at(player, camera, Vector3(16.0, 76.0, 24.0), Vector3(16.0, 62.0, 3.0))
 		"lighting_shadow":
 			apply_visual_smoke_look_at(player, camera, Vector3(7.0, 78.0, 25.0), Vector3(25.0, 61.0, 5.0))
+		"transparent_fixture":
+			apply_visual_smoke_look_at(player, camera, Vector3(24.0, 78.0, 40.0), Vector3(32.0, 63.0, 18.0))
 		"texture_stand":
 			var player_position = Vector3(16.0, 74.0, 24.0)
 			apply_visual_smoke_look_at(player, camera, player_position, player_position + Vector3(6.3, 0.5, -5.0))

@@ -197,6 +197,7 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - `scripts/gpu_terrain_transparent_fixture_final_report_check.sh` validates the final no-render pack and aggregate report together, requiring both selected acceptance and default-off report sections to point at the linked artifacts and surface their pass summaries; the pack now emits and reports this final guard artifact.
 - `scripts/gpu_terrain_transparent_fixture_scene_implementation_checklist.sh` validates the final no-render pack and scene artifact chain, then writes a pending fixture-scene implementation checklist for the future scene-only harness work; the pack now emits and reports this checklist artifact.
 - `scripts/gpu_terrain_transparent_fixture_scene_implementation_gate_check.sh` validates that the pending scene implementation checklist, linked pack, and aggregate report still keep the transparent implementation gate false with current env-on fallback and future active-path gates intact; the pack now emits and reports this gate-check artifact.
+- `scripts/gpu_terrain_transparent_fixture_scene_smoke.sh` launches the existing Godot visual smoke path with `RUMPELMC_VISUAL_SMOKE_POSE=transparent_fixture` and `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1`, then validates the current requested-but-fallback marker triplet plus `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples. The first release capture in `logs/gpu_transparent_fixture_scene_smoke` passed with `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `terrain_samples=488`, and `gpu_upload_fail=0`.
 - Ignored local fixture artifacts under `logs/gpu_transparent_fixture_plan` now provide the current real-log checklist source for aggregate reports.
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
@@ -215,9 +216,9 @@ First runtime slice:
 
 Implementation order:
 
-1. Add an env name for the fixture scenario, for example `RUMPELMC_VISUAL_SMOKE_POSE=transparent_fixture`, with a fixed camera target and no renderer behavior change.
-2. Add a wrapper script that launches the existing visual smoke path with `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1`, the fixture pose, and a dedicated output directory.
-3. Make the wrapper assert current fallback markers, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.
+1. Add an env name for the fixture scenario, for example `RUMPELMC_VISUAL_SMOKE_POSE=transparent_fixture`, with a fixed camera target and no renderer behavior change. Done in `client/main.gd`.
+2. Add a wrapper script that launches the existing visual smoke path with `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1`, the fixture pose, and a dedicated output directory. Done in `scripts/gpu_terrain_transparent_fixture_scene_smoke.sh`.
+3. Make the wrapper assert current fallback markers, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples. Done for the current fallback harness.
 4. Add fixture workload marker fields only after the harness can produce a stable current fallback capture.
 5. Add fixture-only block/material identity only after the fallback harness is stable and reviewed.
 
