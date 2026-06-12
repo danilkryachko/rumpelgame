@@ -8,6 +8,12 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 - `gpu_time` is report-only on the current macOS/Metal path because Godot timestamp samples report `0.0us`.
 - Prefer `terrain_queue_max_ms`, `process_wall_p95_ms`, `gpu_compositor_submit_max_ms`, `gpu_upload_fail`, draw counts, and external GPU profiler captures for decisions.
 
+## 2026-06-13
+
+| Commit | Slice | Artifact | Key Result | Caveat |
+| --- | --- | --- | --- | --- |
+| `d88596c` | Week 1 isolated GPU baseline and 100-week roadmap checkpoint | `logs/week1_gpu_baseline_20260613/gpu-terrain-report.txt`, `logs/week1_gpu_baseline_20260613/movement`, `logs/week1_gpu_baseline_20260613/workload_standard`, `logs/week1_gpu_baseline_20260613/fill`, `logs/week1_gpu_baseline_20260613/perf_baseline` | scoped report over the isolated baseline produced `gpu_upload_fail=0`, `gpu_cull=back`, `gpu_front_face=clockwise`, max `gpu_effective_draws=13344`, max draw command occupancy `10.181%`, max workload `terrain_queue_max_ms=2.155`, max fill `terrain_queue_max_ms=2.125`, movement `terrain_queue_max_ms=1.146`, and fill repeats `1/4/8/16` all passed with `smoke_err=0` and `terrain_samples=384`; `docs/GPU_ROADMAP.md` now records the 100-week rolling long-horizon plan | perf baseline exited nonzero because the CPU ArrayMesh control had `terrain_queue_max_ms=16.862 > 6.667`; the GPU terrain side of the same perf baseline passed with `terrain_queue_max_ms=1.003` and `gpu_upload_fail=0`; local FPS and GPU timestamp samples remain report-only on macOS/Metal |
+
 ## 2026-06-12
 
 | Commit | Slice | Artifact | Key Result | Caveat |

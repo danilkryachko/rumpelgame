@@ -166,3 +166,137 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 118. Add cross-platform GPU validation matrix.
 119. Keep a trend log for important GPU metrics.
 120. Checkpoint the roadmap and choose the next bottleneck from data.
+
+## 100-Week Long Horizon Plan
+
+This long-horizon plan is a rolling GPU program, not a promise to follow stale details blindly. Re-check it every 4 weeks against fresh reports, profiler evidence, and current gameplay priorities. Each week should still land as a small, reversible slice with its own artifact and trend entry.
+
+### Weeks 1-10: Measurement And Memory Groundwork
+
+1. Refresh the aggregate GPU report on current `HEAD` and remove stale evidence from handoff assumptions.
+2. Capture fresh movement, workload, and fill-stress baselines.
+3. Refresh dirty-update default-on evidence on current runtime behavior.
+4. Improve dirty-update report summaries and failure diagnostics where evidence is weak.
+5. Checkpoint dirty-update status with rollback flag, docs, and trend entry.
+6. Refresh GPU allocator fragmentation, largest-free-range, and failure-cause telemetry.
+7. Add or refresh allocator stress gates.
+8. Design a safe GPU terrain buffer repack behind an explicit rollback flag.
+9. Prototype buffer repack behind that flag.
+10. Compare repack against the current path and keep or drop it from evidence.
+
+### Weeks 11-20: Upload And Draw Submission
+
+11. Audit CPU copies before GPU upload.
+12. Add or refresh upload queue-depth and latency telemetry.
+13. Split initial chunk upload and block-update upload in summaries.
+14. Add upload budget gates and focused tests.
+15. Prototype an upload pool only if staging churn evidence justifies it.
+16. Audit indirect draw command layout and command-buffer occupancy.
+17. Run a heavy draw-pressure workload matrix.
+18. Prototype grouped draws behind an explicit rollback flag if evidence justifies it.
+19. Compare grouped draws and current draws on the workload matrix.
+20. Keep or drop grouped draws, then record the decision.
+
+### Weeks 21-30: Binding, Shader, Shadow, And Transparent Fixture Setup
+
+21. Clean up binding/frame data only where measured churn justifies it.
+22. Prepare shader profiler capture packs for the current branchless shader path.
+23. Integrate validated external profiler results into reports when available.
+24. Decide the next shadow proxy optimization from measured cost.
+25. Checkpoint the shadow path; keep native shadow work behind a rollback flag.
+26. Build the first transparent fixture scene harness without enabling transparent rendering.
+27. Add transparent workload telemetry fields for blocks, faces, draws, and subchunks.
+28. Decide the first transparent prototype shape: split buffers, cutout-only, or Godot fallback.
+29. Build the first transparent prototype behind an explicit rollback flag.
+30. Checkpoint transparent fixture/prototype evidence and choose the next bottleneck.
+
+### Weeks 31-40: Transparent Terrain Hardening
+
+31. Refresh opaque parity with transparent features disabled.
+32. Add transparent fixture visual smoke.
+33. Add opaque-depth occlusion gates for transparent fixtures.
+34. Add collision-by-solidity gates.
+35. Add same-material transparent seam or culling gates.
+36. Add transparent upload metrics.
+37. Add transparent sort/build cost metrics.
+38. Capture macOS external profiler evidence for the transparent fixture workload.
+39. Add at least one non-macOS validation path before broad enablement.
+40. Decide whether the transparent prototype stays default-off, advances, or is dropped.
+
+### Weeks 41-50: Shadow Path
+
+41. Refresh the shadow proxy workload matrix.
+42. Refresh compact proxy focused cost evidence.
+43. Update the GPU-native shadow design from current measurements.
+44. Prototype native shadow behavior behind an explicit rollback flag if justified.
+45. Add shadow visual parity.
+46. Add shadow depth and lighting parity.
+47. Capture external profiler evidence for the shadow path.
+48. Compare native and current shadow paths.
+49. Harden rollback and fallback behavior.
+50. Keep, drop, or defer the native shadow path.
+
+### Weeks 51-60: Residency And Streaming
+
+51. Refresh resident chunk pressure baselines.
+52. Refresh chunk enter/exit stress.
+53. Refresh rapid camera-turn stress.
+54. Track max-resident memory trends.
+55. Diagnose unload/reload churn.
+56. Define a buffer residency budget.
+57. Audit streaming priority behavior.
+58. Prototype scheduler changes behind a rollback flag if evidence justifies them.
+59. Compare scheduler variants on the workload matrix.
+60. Checkpoint streaming and residency decisions.
+
+### Weeks 61-70: World Interaction Performance
+
+61. Refresh block-edit stress.
+62. Benchmark repeated edits.
+63. Benchmark border edits.
+64. Refresh dirty partial-upload edge cases.
+65. Audit collision refresh cost.
+66. Audit shadow proxy refresh cost.
+67. Add edit-burst budget gates.
+68. Add edit visual parity where needed.
+69. Integrate edit workload evidence into the aggregate report.
+70. Checkpoint world interaction performance.
+
+### Weeks 71-80: Cross-Platform And Quality Guards
+
+71. Refresh macOS Metal capture evidence.
+72. Prepare Windows RenderDoc or PIX capture flow.
+73. Add a Linux/Vulkan smoke path if the backend is available.
+74. Compare marker parity across backends.
+75. Audit atlas sampling quality.
+76. Verify lighting quality parity.
+77. Verify shadow quality parity.
+78. Add texture-quality guards.
+79. Document backend-specific fallback rules.
+80. Checkpoint cross-platform GPU readiness.
+
+### Weeks 81-90: Evidence-Led Optimization
+
+81. Select the top bottleneck from current data.
+82. Prototype one optimization behind a rollback flag.
+83. Add explicit rollback and path markers.
+84. Run narrow correctness gates.
+85. Run workload comparison.
+86. Run profiler comparison where required.
+87. Keep or drop the optimization.
+88. Record any stable invariant.
+89. Remove dropped prototype paths when safe.
+90. Checkpoint the optimization round.
+
+### Weeks 91-100: Default-On Decisions And Roadmap Refresh
+
+91. Audit all GPU env flags.
+92. Audit report and trend coverage.
+93. Audit stale logs and stale evidence references.
+94. Consolidate GPU docs.
+95. Run broad checks where practical.
+96. Run diff guard and sensitive review.
+97. Review default-on candidates.
+98. Roll out or defer default-on candidates based on evidence.
+99. Rewrite the long-horizon roadmap from current measurements.
+100. Checkpoint the 100-week program and choose the next bottleneck.

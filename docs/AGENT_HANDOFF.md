@@ -4,6 +4,18 @@ This file is the current continuation state for Codex threads. Update it after n
 
 ## Latest Snapshot
 
+Date: 2026-06-13
+
+Fresh 2026-06-13 status:
+
+- Current GPU long-horizon planning and Week 1 baseline slice is docs/artifact-only and behavior-preserving. `docs/GPU_ROADMAP.md` now includes a 100-week rolling long-horizon plan with 4-week re-check expectations and weekly artifact/trend checkpoints. No renderer, shader, runtime, protocol, storage, worldgen, asset, or Godot scene behavior changed.
+- Fresh isolated Week 1 baseline artifacts live under `logs/week1_gpu_baseline_20260613`. The scoped aggregate report is `logs/week1_gpu_baseline_20260613/gpu-terrain-report.txt` and intentionally uses that isolated log root so fresh metrics are not mixed with historical logs. A historical full-log report was also refreshed at `logs/gpu-terrain-report.txt`.
+- Fresh Week 1 baseline results: movement stress passed with `gpu_upload_fail=0`, `terrain_queue_max_ms=1.146`, `process_wall_p95_ms=0.017`, and `gpu_compositor_submit_max_ms=0.112`; standard workload matrix passed all four cases with max `terrain_queue_max_ms=2.155`, max `gpu_compositor_submit_max_ms=0.165`, `gpu_upload_fail=0`, and terrain samples present; fill stress repeats `1/4/8/16` all passed with `gpu_upload_fail=0`, `smoke_err=0`, `terrain_samples=384`, max `gpu_effective_draws=13344`, and max fill `terrain_queue_max_ms=2.125`.
+- Week 1 caveat/blocker: `scripts/gpu_terrain_perf_baseline.sh logs/week1_gpu_baseline_20260613/perf_baseline` exited nonzero because the CPU ArrayMesh control reported `terrain_queue_max_ms=16.862 > 6.667`; the GPU terrain side of the same perf baseline passed with `terrain_queue_max_ms=1.003`, `gpu_upload_fail=0`, and `gpu_compositor_submit_max_ms=0.312`. Treat the CPU control spike as inconclusive baseline evidence, not a GPU terrain regression. Local visual FPS and `gpu_compositor_gpu_us/ms` remain report-only on macOS/Metal.
+- Next useful GPU step: continue Week 2 by stopping the no-render transparent guard chain and beginning the real transparent fixture scene/harness plan while keeping `transparent_active=0` and `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, or continue Week 1 optional heavy baseline only if a stronger draw-pressure sample is needed. External profiler evidence is still required before shader, shadow, or transparent default-on decisions.
+
+Previous snapshot:
+
 Date: 2026-06-12
 
 Fresh 2026-06-12 status:
