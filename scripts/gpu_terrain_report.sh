@@ -162,6 +162,130 @@ metric_max_source() {
   fi
 }
 
+metric_pair_ratio_max_percent() {
+  numerator_key="$1"
+  denominator_key="$2"
+  summary_files | xargs grep -h "$numerator_key=" 2>/dev/null \
+    | awk -v numerator_key="$numerator_key" -v denominator_key="$denominator_key" '
+      BEGIN {
+        found = 0
+        max = 0.0
+        numerator_prefix = numerator_key "="
+        denominator_prefix = denominator_key "="
+      }
+      {
+        numerator = ""
+        denominator = ""
+        for (i = 1; i <= NF; i++) {
+          if (index($i, numerator_prefix) == 1) {
+            numerator = substr($i, length(numerator_prefix) + 1) + 0.0
+          }
+          if (index($i, denominator_prefix) == 1) {
+            denominator = substr($i, length(denominator_prefix) + 1) + 0.0
+          }
+        }
+        if (denominator > 0.0) {
+          value = numerator * 100.0 / denominator
+          if (!found || value > max) {
+            max = value
+            found = 1
+          }
+        }
+      }
+      END {
+        if (found) {
+          printf("%.3f\n", max)
+        } else {
+          printf("n/a\n")
+        }
+      }
+    '
+}
+
+metric_pair_headroom_min() {
+  used_key="$1"
+  capacity_key="$2"
+  summary_files | xargs grep -h "$used_key=" 2>/dev/null \
+    | awk -v used_key="$used_key" -v capacity_key="$capacity_key" '
+      BEGIN {
+        found = 0
+        min = 0.0
+        used_prefix = used_key "="
+        capacity_prefix = capacity_key "="
+      }
+      {
+        used = ""
+        capacity = ""
+        for (i = 1; i <= NF; i++) {
+          if (index($i, used_prefix) == 1) {
+            used = substr($i, length(used_prefix) + 1) + 0.0
+          }
+          if (index($i, capacity_prefix) == 1) {
+            capacity = substr($i, length(capacity_prefix) + 1) + 0.0
+          }
+        }
+        if (capacity > 0.0) {
+          value = capacity - used
+          if (!found || value < min) {
+            min = value
+            found = 1
+          }
+        }
+      }
+      END {
+        if (found) {
+          printf("%.3f\n", min)
+        } else {
+          printf("n/a\n")
+        }
+      }
+    '
+}
+
+metric_pair_ratio_max_source() {
+  label="$1"
+  numerator_key="$2"
+  denominator_key="$3"
+  best_value=""
+  best_path=""
+  for path in $(summary_files); do
+    values="$(grep "$numerator_key=" "$path" 2>/dev/null \
+      | awk -v numerator_key="$numerator_key" -v denominator_key="$denominator_key" '
+        BEGIN {
+          numerator_prefix = numerator_key "="
+          denominator_prefix = denominator_key "="
+        }
+        {
+          numerator = ""
+          denominator = ""
+          for (i = 1; i <= NF; i++) {
+            if (index($i, numerator_prefix) == 1) {
+              numerator = substr($i, length(numerator_prefix) + 1) + 0.0
+            }
+            if (index($i, denominator_prefix) == 1) {
+              denominator = substr($i, length(denominator_prefix) + 1) + 0.0
+            }
+          }
+          if (denominator > 0.0) {
+            printf("%.3f\n", numerator * 100.0 / denominator)
+          }
+        }
+      ')"
+    for value in $values; do
+      if [ -z "$best_value" ] || awk -v value="$value" -v best="$best_value" 'BEGIN { exit !(value > best) }'; then
+        best_value="$value"
+        best_path="$path"
+      fi
+    done
+  done
+
+  if [ -n "$best_value" ]; then
+    printf '%s `%s` from `%s`\n' "$label" "$best_value" "$best_path"
+  else
+    printf '%s `n/a`\n' "$label"
+  fi
+}
+
 metric_max_source_terrain_queue() {
   best_value=""
   best_path=""
@@ -229,6 +353,8 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `gpu_draw_cmd_bytes`: `%s`\n' "$(metric_max gpu_draw_cmd_bytes)"
   printf -- '- max `gpu_draw_cmd_capacity_bytes`: `%s`\n' "$(metric_max gpu_draw_cmd_capacity_bytes)"
   printf -- '- max `gpu_draw_cmd_stride`: `%s`\n' "$(metric_max gpu_draw_cmd_stride)"
+  printf -- '- max `gpu_draw_cmd_occupancy_pct`: `%s`\n' "$(metric_pair_ratio_max_percent gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes)"
+  printf -- '- min `gpu_draw_cmd_headroom_bytes`: `%s`\n' "$(metric_pair_headroom_min gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes)"
   printf -- '- max `gpu_faces`: `%s`\n' "$(metric_max gpu_faces)"
   printf -- '- sum `gpu_upload_fail`: `%s`\n' "$(metric_sum gpu_upload_fail)"
   printf -- '- max `gpu_upload_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_ms)"
@@ -274,6 +400,7 @@ tmp_path="$OUT_PATH.tmp"
   printf '\n## Metric Origins\n\n'
   metric_max_source gpu_effective_draws | sed 's/^/- /'
   metric_max_source gpu_draw_cmd_bytes | sed 's/^/- /'
+  metric_pair_ratio_max_source gpu_draw_cmd_occupancy_pct gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes | sed 's/^/- /'
   metric_max_source gpu_faces | sed 's/^/- /'
   metric_max_source dirty_blocks | sed 's/^/- /'
   metric_max_source dirty_last_blocks | sed 's/^/- /'
