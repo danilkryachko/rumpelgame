@@ -62,6 +62,31 @@ metric_max() {
     '
 }
 
+metric_max_terrain_queue() {
+  {
+    summary_files | xargs grep -h 'terrain_queue_max_ms=' 2>/dev/null \
+      | sed -n 's/.*terrain_queue_max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
+    summary_files | xargs grep -h '^movement_terrain_queue ' 2>/dev/null \
+      | sed -n 's/.* max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
+  } | awk '
+    BEGIN { found = 0; max = 0.0 }
+    {
+      value = $1 + 0.0
+      if (!found || value > max) {
+        max = value
+        found = 1
+      }
+    }
+    END {
+      if (found) {
+        printf("%.3f\n", max)
+      } else {
+        printf("n/a\n")
+      }
+    }
+  '
+}
+
 metric_sum() {
   key="$1"
   summary_files | xargs grep -h "$key=" 2>/dev/null \
@@ -137,6 +162,33 @@ metric_max_source() {
   fi
 }
 
+metric_max_source_terrain_queue() {
+  best_value=""
+  best_path=""
+  for path in $(summary_files); do
+    values="$(
+      {
+        grep 'terrain_queue_max_ms=' "$path" 2>/dev/null \
+          | sed -n 's/.*terrain_queue_max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
+        grep '^movement_terrain_queue ' "$path" 2>/dev/null \
+          | sed -n 's/.* max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
+      } || true
+    )"
+    for value in $values; do
+      if [ -z "$best_value" ] || awk -v value="$value" -v best="$best_value" 'BEGIN { exit !(value > best) }'; then
+        best_value="$value"
+        best_path="$path"
+      fi
+    done
+  done
+
+  if [ -n "$best_value" ]; then
+    printf 'terrain_queue_max_ms `%s` from `%s`\n' "$best_value" "$best_path"
+  else
+    printf 'terrain_queue_max_ms `n/a`\n'
+  fi
+}
+
 rasterization_states() {
   summary_files | xargs grep -h 'gpu_cull=' 2>/dev/null \
     | sed -n 's/.*gpu_cull=\([^ ]*\).*gpu_front_face=\([^ ]*\).*/gpu_cull=\1 gpu_front_face=\2/p' \
@@ -177,11 +229,14 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `gpu_faces`: `%s`\n' "$(metric_max gpu_faces)"
   printf -- '- sum `gpu_upload_fail`: `%s`\n' "$(metric_sum gpu_upload_fail)"
   printf -- '- max `gpu_upload_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_ms)"
+  printf -- '- max `gpu_upload_encode_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_encode_ms)"
+  printf -- '- max `gpu_upload_stage_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_stage_ms)"
+  printf -- '- max `gpu_upload_update_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_update_ms)"
   printf -- '- max `terrain_queue_gpu_uploads` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_uploads)"
   printf -- '- max `terrain_queue_gpu_upload_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_kb)"
   printf -- '- max `gpu_fragmented_free_faces`: `%s`\n' "$(metric_max gpu_fragmented_free_faces)"
   printf -- '- max `gpu_fragmentation_pct`: `%s`\n' "$(metric_max gpu_fragmentation_pct)"
-  printf -- '- max `terrain_queue_max_ms`: `%s`\n' "$(metric_max terrain_queue_max_ms)"
+  printf -- '- max `terrain_queue_max_ms`: `%s`\n' "$(metric_max_terrain_queue)"
   printf -- '- max `process_wall_p95_ms`: `%s`\n' "$(metric_max process_wall_p95_ms)"
   printf -- '- max `gpu_compositor_submit_max_ms`: `%s`\n' "$(metric_max gpu_compositor_submit_max_ms)"
   printf -- '- max `gpu_compositor_gpu_max_us`: `%s`\n' "$(metric_max gpu_compositor_gpu_max_us)"
@@ -200,7 +255,7 @@ tmp_path="$OUT_PATH.tmp"
   metric_max_source gpu_effective_draws | sed 's/^/- /'
   metric_max_source gpu_faces | sed 's/^/- /'
   metric_max_source gpu_fragmentation_pct | sed 's/^/- /'
-  metric_max_source terrain_queue_max_ms | sed 's/^/- /'
+  metric_max_source_terrain_queue | sed 's/^/- /'
   metric_max_source gpu_compositor_submit_max_ms | sed 's/^/- /'
   metric_max_source frame_p95_ms | sed 's/^/- /'
 

@@ -927,6 +927,15 @@ pub struct GpuTerrainStats {
     pub last_upload_ms: f64,
     pub avg_upload_ms: f64,
     pub max_upload_ms: f64,
+    pub last_upload_encode_ms: f64,
+    pub avg_upload_encode_ms: f64,
+    pub max_upload_encode_ms: f64,
+    pub last_upload_stage_ms: f64,
+    pub avg_upload_stage_ms: f64,
+    pub max_upload_stage_ms: f64,
+    pub last_upload_update_ms: f64,
+    pub avg_upload_update_ms: f64,
+    pub max_upload_update_ms: f64,
     pub upload_failures: u64,
     pub upload_capacity_failures: u64,
     pub upload_fragmentation_failures: u64,
@@ -1165,6 +1174,15 @@ pub struct GpuTerrainBufferPool {
     last_upload_ms: f64,
     avg_upload_ms: f64,
     max_upload_ms: f64,
+    last_upload_encode_ms: f64,
+    avg_upload_encode_ms: f64,
+    max_upload_encode_ms: f64,
+    last_upload_stage_ms: f64,
+    avg_upload_stage_ms: f64,
+    max_upload_stage_ms: f64,
+    last_upload_update_ms: f64,
+    avg_upload_update_ms: f64,
+    max_upload_update_ms: f64,
     upload_failures: u64,
     upload_capacity_failures: u64,
     upload_fragmentation_failures: u64,
@@ -1235,6 +1253,15 @@ impl GpuTerrainBufferPool {
             last_upload_ms: 0.0,
             avg_upload_ms: 0.0,
             max_upload_ms: 0.0,
+            last_upload_encode_ms: 0.0,
+            avg_upload_encode_ms: 0.0,
+            max_upload_encode_ms: 0.0,
+            last_upload_stage_ms: 0.0,
+            avg_upload_stage_ms: 0.0,
+            max_upload_stage_ms: 0.0,
+            last_upload_update_ms: 0.0,
+            avg_upload_update_ms: 0.0,
+            max_upload_update_ms: 0.0,
             upload_failures: 0,
             upload_capacity_failures: 0,
             upload_fragmentation_failures: 0,
@@ -1275,15 +1302,26 @@ impl GpuTerrainBufferPool {
             self.record_upload_failure(batch.face_count());
             return None;
         };
+        let encode_start = Instant::now();
         let bytes = batch.to_bytes_for_subchunk(key);
+        let upload_encode_ms = encode_start.elapsed().as_secs_f64() * 1000.0;
+        let stage_start = Instant::now();
         let pba = PackedByteArray::from(bytes.as_slice());
+        let upload_stage_ms = stage_start.elapsed().as_secs_f64() * 1000.0;
         let offset = (range.start * PACKED_FACE_BYTES) as u32;
+        let update_start = Instant::now();
         self.rd
             .buffer_update(self.faces_buffer_rid, offset, pba.len() as u32, &pba);
+        let upload_update_ms = update_start.elapsed().as_secs_f64() * 1000.0;
         self.upload_count += 1;
         self.upload_bytes += pba.len();
         self.last_upload_bytes = pba.len();
-        self.record_upload_timing(upload_start.elapsed().as_secs_f64() * 1000.0);
+        self.record_upload_timing(
+            upload_start.elapsed().as_secs_f64() * 1000.0,
+            upload_encode_ms,
+            upload_stage_ms,
+            upload_update_ms,
+        );
 
         let slot = GpuTerrainSlot {
             start_face: range.start,
@@ -1295,11 +1333,26 @@ impl GpuTerrainBufferPool {
         Some(slot)
     }
 
-    fn record_upload_timing(&mut self, upload_ms: f64) {
+    fn record_upload_timing(
+        &mut self,
+        upload_ms: f64,
+        upload_encode_ms: f64,
+        upload_stage_ms: f64,
+        upload_update_ms: f64,
+    ) {
         self.last_upload_ms = upload_ms;
         let n = self.upload_count as f64;
         self.avg_upload_ms += (upload_ms - self.avg_upload_ms) / n;
         self.max_upload_ms = self.max_upload_ms.max(upload_ms);
+        self.last_upload_encode_ms = upload_encode_ms;
+        self.avg_upload_encode_ms += (upload_encode_ms - self.avg_upload_encode_ms) / n;
+        self.max_upload_encode_ms = self.max_upload_encode_ms.max(upload_encode_ms);
+        self.last_upload_stage_ms = upload_stage_ms;
+        self.avg_upload_stage_ms += (upload_stage_ms - self.avg_upload_stage_ms) / n;
+        self.max_upload_stage_ms = self.max_upload_stage_ms.max(upload_stage_ms);
+        self.last_upload_update_ms = upload_update_ms;
+        self.avg_upload_update_ms += (upload_update_ms - self.avg_upload_update_ms) / n;
+        self.max_upload_update_ms = self.max_upload_update_ms.max(upload_update_ms);
     }
 
     pub fn remove_subchunk(&mut self, key: GpuSubchunkKey) {
@@ -1337,6 +1390,15 @@ impl GpuTerrainBufferPool {
             last_upload_ms: self.last_upload_ms,
             avg_upload_ms: self.avg_upload_ms,
             max_upload_ms: self.max_upload_ms,
+            last_upload_encode_ms: self.last_upload_encode_ms,
+            avg_upload_encode_ms: self.avg_upload_encode_ms,
+            max_upload_encode_ms: self.max_upload_encode_ms,
+            last_upload_stage_ms: self.last_upload_stage_ms,
+            avg_upload_stage_ms: self.avg_upload_stage_ms,
+            max_upload_stage_ms: self.max_upload_stage_ms,
+            last_upload_update_ms: self.last_upload_update_ms,
+            avg_upload_update_ms: self.avg_upload_update_ms,
+            max_upload_update_ms: self.max_upload_update_ms,
             upload_failures: self.upload_failures,
             upload_capacity_failures: self.upload_capacity_failures,
             upload_fragmentation_failures: self.upload_fragmentation_failures,

@@ -12,6 +12,8 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 
 | Commit | Slice | Artifact | Key Result | Caveat |
 | --- | --- | --- | --- | --- |
+| `post-da6ebb3` | GPU upload breakdown telemetry | `logs/gpu_upload_breakdown_frame` | release movement passed with `gpu_upload_ms=0.046/0.006/0.052`, `gpu_upload_encode_ms=0.002/0.000/0.004`, `gpu_upload_stage_ms=0.009/0.001/0.014`, `gpu_upload_update_ms=0.034/0.004/0.043`, `terrain_queue_max_ms=2.042`, `gpu_compositor_submit_max_ms=0.154`, and `gpu_upload_fail=0` | default radius/load only; visual FPS stayed display-paced at 60 Hz |
+| `post-da6ebb3` | Heavy radius-16 upload telemetry | `logs/gpu_terrain_upload_heavy_radius16` | 5/6 heavy cases passed with stable upload pressure: `terrain_queue_gpu_uploads_max=1`, `terrain_queue_gpu_upload_kb_max=1.5`, `gpu_upload_fail=0`, `gpu_upload_ms_max=0.062`, `gpu_effective_draws=1584`, `gpu_faces=2246`, `terrain_queue_max_ms=1.928`, `gpu_compositor_submit_max_ms=0.165`, and `process_wall_p95_ms=0.051` | `extended-filled` reached the expected chunk but missed/hung during screenshot capture; visual FPS stayed display-paced at 60 Hz |
 | `post-d270c2a` | GPU upload frame telemetry | `logs/gpu_terrain_queue_upload_frame` | release movement passed with `terrain_queue_gpu_uploads=1/0.84/1`, `terrain_queue_gpu_upload_kb=0.0/0.0/1.5`, `gpu_upload_ms=0.014/0.005/0.136`, `gpu_upload_fail=0`, `gpu_fragmentation_pct=0.0`, `smoke_err=0`, `terrain_queue_max_ms=3.660`, and `gpu_compositor_submit_max_ms=0.169` | visual FPS was display-paced at 60 Hz; default server batch/radius produced `gpu_draws=246`, so repeat under heavy workload before drawing upload-budget conclusions |
 
 ## 2026-06-11
@@ -29,7 +31,7 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 
 ## Next Trend Entry
 
-Record the next entry after a fresh successful heavy or fill-stress run that includes:
+Record the next entry after a fresh successful dirty-update, external-profiler, or fill-stress run that includes:
 
 - `gpu_cull` and `gpu_front_face`.
 - `gpu_fragmented_free_faces` and `gpu_fragmentation_pct`.
