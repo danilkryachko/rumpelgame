@@ -159,6 +159,10 @@ sh scripts/gpu_terrain_shadow_profiler_results_check.sh \
 
 The current production GPU terrain shadow path is still Godot CPU shadow proxies. `docs/GPU_SHADOW_PATH.md` records the Phase 12 design for a future GPU-native terrain shadow path. Treat `scene_shadows_disabled` and `diagnostic_no_shadow_proxy` as diagnostic controls only; they cannot justify production shadow reductions. A future native path must be behind an explicit rollback flag, report its own `shadow_path`, preserve the existing Godot proxy fallback, and pass visual parity plus an external profiler comparison before becoming default.
 
+## Transparent Path Design
+
+The current production GPU terrain path is opaque-only. `docs/GPU_TRANSPARENT_PATH.md` records the Phase 12 design for a future transparent terrain path. A future transparent path must keep the current opaque pass as the default rollback, separate render opacity from collision solidity, report requested/active/fallback transparent markers, and pass visual/depth/collision parity plus external profiler evidence before becoming default.
+
 ## Recording Results
 
 For each meaningful GPU iteration, record:

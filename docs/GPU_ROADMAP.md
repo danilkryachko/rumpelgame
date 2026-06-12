@@ -160,7 +160,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 112. Design GPU-native terrain shadow path. See `docs/GPU_SHADOW_PATH.md`.
 113. Prototype shadow proxy reduction without disabling shadows.
 114. Add shadow correctness smoke.
-115. Design transparent block GPU path.
+115. Design transparent block GPU path. See `docs/GPU_TRANSPARENT_PATH.md`.
 116. Split opaque and transparent pass design.
 117. Prototype transparent terrain behind an env flag.
 118. Add cross-platform GPU validation matrix.
