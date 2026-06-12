@@ -955,6 +955,12 @@ pub struct GpuTerrainStats {
     pub atlas_texture_create_count: u64,
     pub atlas_sampler_create_count: u64,
     pub push_constant_bytes: usize,
+    pub push_constant_update_count: u64,
+    pub push_constant_total_bytes: u64,
+    pub avg_push_constant_bytes: f64,
+    pub push_constant_camera_bytes: usize,
+    pub push_constant_lighting_bytes: usize,
+    pub push_constant_atlas_bytes: usize,
     pub upload_count: u64,
     pub upload_bytes: usize,
     pub last_upload_bytes: usize,
@@ -1207,6 +1213,8 @@ pub struct GpuTerrainBufferPool {
     atlas_texture_create_count: u64,
     atlas_sampler_create_count: u64,
     push_constant_bytes: usize,
+    push_constant_update_count: u64,
+    push_constant_total_bytes: u64,
     compositor_logged: bool,
     lighting: GpuTerrainLighting,
     upload_count: u64,
@@ -1294,6 +1302,8 @@ impl GpuTerrainBufferPool {
             atlas_texture_create_count: immutable_binding_create_count,
             atlas_sampler_create_count: immutable_binding_create_count,
             push_constant_bytes: 0,
+            push_constant_update_count: 0,
+            push_constant_total_bytes: 0,
             compositor_logged: false,
             lighting: GpuTerrainLighting::default(),
             upload_count: 0,
@@ -1443,6 +1453,16 @@ impl GpuTerrainBufferPool {
             atlas_texture_create_count: self.atlas_texture_create_count,
             atlas_sampler_create_count: self.atlas_sampler_create_count,
             push_constant_bytes: self.push_constant_bytes,
+            push_constant_update_count: self.push_constant_update_count,
+            push_constant_total_bytes: self.push_constant_total_bytes,
+            avg_push_constant_bytes: if self.push_constant_update_count == 0 {
+                0.0
+            } else {
+                self.push_constant_total_bytes as f64 / self.push_constant_update_count as f64
+            },
+            push_constant_camera_bytes: CLIP_FROM_WORLD_PUSH_CONSTANT_BYTES,
+            push_constant_lighting_bytes: TERRAIN_LIGHTING_PUSH_CONSTANT_BYTES,
+            push_constant_atlas_bytes: TERRAIN_ATLAS_PUSH_CONSTANT_BYTES,
             upload_count: self.upload_count,
             upload_bytes: self.upload_bytes,
             last_upload_bytes: self.last_upload_bytes,
@@ -1538,7 +1558,7 @@ impl GpuTerrainBufferPool {
         );
         let push_constants =
             push_constants_for_debug_projection(self.lighting, render_pipeline.atlas_layout);
-        self.push_constant_bytes = push_constants.len();
+        self.record_push_constant_update(push_constants.len());
         self.rd.draw_list_set_push_constant(
             draw_list,
             &push_constants,
@@ -1609,7 +1629,6 @@ impl GpuTerrainBufferPool {
         };
         let push_constants =
             clip_from_world_push_constants(&render_data, self.lighting, atlas_layout);
-        self.push_constant_bytes = push_constants.len();
         submit_breakdown.constants_ms = phase_start.elapsed().as_secs_f64() * 1000.0;
         phase_start = Instant::now();
 
@@ -1625,6 +1644,7 @@ impl GpuTerrainBufferPool {
             .draw_list_bind_uniform_set(draw_list, uniform_set_rid, 0);
         self.rd
             .draw_list_bind_vertex_buffers_format(draw_list, vertex_format, 6, &Array::new());
+        self.record_push_constant_update(push_constants.len());
         self.rd.draw_list_set_push_constant(
             draw_list,
             &push_constants,
@@ -1867,6 +1887,14 @@ impl GpuTerrainBufferPool {
             self.max_compositor_submit_ms = elapsed_ms;
             self.max_compositor_submit_breakdown_ms = breakdown_ms;
         }
+    }
+
+    fn record_push_constant_update(&mut self, byte_count: usize) {
+        self.push_constant_bytes = byte_count;
+        self.push_constant_update_count += 1;
+        self.push_constant_total_bytes = self
+            .push_constant_total_bytes
+            .saturating_add(byte_count as u64);
     }
 
     fn record_captured_compositor_gpu_timestamps(&mut self) {

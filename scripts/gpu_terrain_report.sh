@@ -362,6 +362,12 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `gpu_atlas_texture_create`: `%s`\n' "$(metric_max gpu_atlas_texture_create)"
   printf -- '- max `gpu_atlas_sampler_create`: `%s`\n' "$(metric_max gpu_atlas_sampler_create)"
   printf -- '- max `gpu_push_constant_bytes`: `%s`\n' "$(metric_max gpu_push_constant_bytes)"
+  printf -- '- max `gpu_push_constant_updates`: `%s`\n' "$(metric_max gpu_push_constant_updates)"
+  printf -- '- max `gpu_push_constant_total_bytes`: `%s`\n' "$(metric_max gpu_push_constant_total_bytes)"
+  printf -- '- max `gpu_push_constant_avg_bytes`: `%s`\n' "$(metric_max gpu_push_constant_avg_bytes)"
+  printf -- '- max `gpu_push_constant_camera_bytes`: `%s`\n' "$(metric_max gpu_push_constant_camera_bytes)"
+  printf -- '- max `gpu_push_constant_lighting_bytes`: `%s`\n' "$(metric_max gpu_push_constant_lighting_bytes)"
+  printf -- '- max `gpu_push_constant_atlas_bytes`: `%s`\n' "$(metric_max gpu_push_constant_atlas_bytes)"
   printf -- '- max `gpu_faces`: `%s`\n' "$(metric_max gpu_faces)"
   printf -- '- sum `gpu_upload_fail`: `%s`\n' "$(metric_sum gpu_upload_fail)"
   printf -- '- max `gpu_upload_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_ms)"
@@ -413,6 +419,9 @@ tmp_path="$OUT_PATH.tmp"
   metric_max_source gpu_scene_target_replace | sed 's/^/- /'
   metric_max_source gpu_uniform_set_create | sed 's/^/- /'
   metric_max_source gpu_push_constant_bytes | sed 's/^/- /'
+  metric_max_source gpu_push_constant_updates | sed 's/^/- /'
+  metric_max_source gpu_push_constant_total_bytes | sed 's/^/- /'
+  metric_max_source gpu_push_constant_atlas_bytes | sed 's/^/- /'
   metric_max_source gpu_faces | sed 's/^/- /'
   metric_max_source dirty_blocks | sed 's/^/- /'
   metric_max_source dirty_last_blocks | sed 's/^/- /'
