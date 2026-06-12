@@ -137,6 +137,8 @@ sh scripts/gpu_terrain_shadow_profiler_results_check.sh \
   logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results-summary.txt
 ```
 
+`scripts/gpu_terrain_report.sh` surfaces the latest `shadow-radius-profiler-results-summary.txt` under the log directory when one exists. This report section is only as trustworthy as the validated external result rows it displays.
+
 ## Shadow Path Design
 
 The current production GPU terrain shadow path is still Godot CPU shadow proxies. `docs/GPU_SHADOW_PATH.md` records the Phase 12 design for a future GPU-native terrain shadow path. Treat `scene_shadows_disabled` and `diagnostic_no_shadow_proxy` as diagnostic controls only; they cannot justify production shadow reductions. A future native path must be behind an explicit rollback flag, report its own `shadow_path`, preserve the existing Godot proxy fallback, and pass visual parity plus an external profiler comparison before becoming default.
