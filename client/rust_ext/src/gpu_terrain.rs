@@ -2998,6 +2998,27 @@ mod tests {
     }
 
     #[test]
+    fn render_shader_binding_layout_matches_uniform_set_contract() {
+        let (vertex_source, fragment_source) =
+            split_render_shader_source().expect("render shader stages");
+
+        assert!(
+            vertex_source
+                .contains("layout(set = 0, binding = 0, std430) readonly buffer FaceBuffer")
+        );
+        assert!(vertex_source.contains("} face_buffer;"));
+        assert!(
+            vertex_source.contains("layout(set = 0, binding = 1) uniform sampler2D atlas_texture;")
+        );
+        assert!(
+            fragment_source
+                .contains("layout(set = 0, binding = 1) uniform sampler2D atlas_texture;")
+        );
+        assert!(vertex_source.contains("PackedFace face = face_buffer.faces[face_instance];"));
+        assert!(fragment_source.contains("vec4 texel = texture(atlas_texture, uv_in);"));
+    }
+
+    #[test]
     fn render_shader_push_constant_layout_matches_rust_bytes() {
         let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
         let clip_idx = vertex_source
