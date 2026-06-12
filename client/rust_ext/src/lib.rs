@@ -1243,16 +1243,13 @@ impl GameClient {
 
     fn subchunk_needs_shadow_proxy(&self, key: SubchunkKey) -> bool {
         let mode = gpu_terrain_shadow_proxy_mode();
-        if !mode.keeps_shadow_proxies() {
-            return false;
-        }
-
-        subchunk_needs_shadow_proxy(
-            key,
-            self.current_player_chunk,
+        let radius = terrain_godot_shadow_proxy_chunk_distance(
             mode,
             self.terrain_shadow_proxy_chunk_distance(),
-        )
+            gpu_terrain_native_shadow_active(),
+        );
+
+        subchunk_needs_shadow_proxy(key, self.current_player_chunk, mode, radius)
     }
 
     fn terrain_shadow_proxy_chunk_distance(&self) -> i32 {
@@ -1300,11 +1297,11 @@ impl GameClient {
             return;
         }
 
-        let shadow_radius = if gpu_terrain_shadow_proxy_mode().keeps_shadow_proxies() {
-            self.terrain_shadow_proxy_chunk_distance()
-        } else {
-            0
-        };
+        let shadow_radius = terrain_godot_shadow_proxy_chunk_distance(
+            gpu_terrain_shadow_proxy_mode(),
+            self.terrain_shadow_proxy_chunk_distance(),
+            gpu_terrain_native_shadow_active(),
+        );
         let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
         for coord in loaded_chunks {
             if chunk_needs_cpu_proxy_refresh(coord, previous, current, shadow_radius) {
@@ -3090,6 +3087,18 @@ fn terrain_shadow_path_decision(
     GpuTerrainShadowPath::GodotProxy
 }
 
+fn terrain_godot_shadow_proxy_chunk_distance(
+    mode: GpuTerrainShadowProxyMode,
+    scene_shadow_radius: i32,
+    native_shadow_active: bool,
+) -> i32 {
+    if native_shadow_active || !mode.keeps_shadow_proxies() {
+        return 0;
+    }
+
+    scene_shadow_radius.max(0)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum GpuTerrainShadowProxyMeshMode {
     Full,
@@ -4315,6 +4324,33 @@ mod tests {
         assert!(!gpu_terrain_native_shadow_fallback_decision(false, true));
         assert!(gpu_terrain_native_shadow_fallback_decision(true, false));
         assert!(!gpu_terrain_native_shadow_fallback_decision(true, true));
+    }
+
+    #[test]
+    fn native_shadow_active_separates_renderer_path_from_godot_proxy_radius() {
+        let scene_shadow_radius = 5;
+        let mode = GpuTerrainShadowProxyMode::Conservative;
+
+        assert_eq!(
+            terrain_shadow_path_decision(true, mode, scene_shadow_radius, true),
+            GpuTerrainShadowPath::GpuNativeShadow
+        );
+        assert_eq!(
+            terrain_godot_shadow_proxy_chunk_distance(mode, scene_shadow_radius, true),
+            0
+        );
+        assert_eq!(
+            terrain_godot_shadow_proxy_chunk_distance(mode, scene_shadow_radius, false),
+            scene_shadow_radius
+        );
+        assert_eq!(
+            terrain_godot_shadow_proxy_chunk_distance(
+                GpuTerrainShadowProxyMode::CollisionOnly,
+                scene_shadow_radius,
+                false,
+            ),
+            0
+        );
     }
 
     #[test]
