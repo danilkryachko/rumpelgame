@@ -8,6 +8,11 @@ Date: 2026-06-12
 
 Fresh 2026-06-12 status:
 
+- First parallel worker round was reviewed in HQ and integrated as adapted main commits, not direct worktree merges, because all worker worktrees were detached/dirty and behind current `main`.
+- Integrated commits from the worker round: `58543c6` strengthens `scripts/diff_guard.sh` artifact warnings; `f0bbb79` adds world/chunk invariant tests; `5a96759` adds protocol docs plus packet/framing compatibility tests; `ad449e4` documents/tests current RocksDB key invariants; `724dd66` adds Rust client packet length guards and graceful stream-clone failure.
+- Do not continue worker edits from the old detached worktrees without refreshing/syncing them. Storage/World/Protocol/Client Rust/Review QA worktrees still contain their original dirty worker patches, some of which are now obsolete or adapted differently in `main`.
+- Client Rust worker was based on an old pre-GPU-resident tree. Its meshing patch was not applied because current `main` already has a different shader/Rust path with capacity guards; only the current-main-safe packet guard and clone handling were integrated.
+
 - Parallel development coordination now reuses the five existing pinned worker chats instead of creating new chats. The coordination plan is `docs/PARALLEL_DEVELOPMENT_MONTH_PLAN.md`.
 - Existing worker thread IDs and scopes: Storage `019eaae8-a9ab-7f41-a7c7-1a96321277a4`, World `019eaae8-d0df-7c21-b8b8-ea57022e6f9a`, Protocol `019eaae8-ef74-7722-922a-150e57f513aa`, Client Rust `019eaae9-0c21-70e0-abbc-e5de2e1b0d0f`, Review QA `019eaae9-2f10-70b0-9069-dc171db3f94a`.
 - All five worker worktrees currently have dirty or untracked local changes, so do not force-reset or overwrite them. Workers should preserve their local state, summarize it, then continue from their assigned backlog.
