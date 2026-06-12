@@ -107,7 +107,7 @@ RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 sh scripts/gpu_terrain_compact_proxy_benchmark.sh logs/gpu_shadow_proxy_radius1_capture
 ```
 
-Use the shadow-radius matrix wrapper to run or re-report several compact-proxy profiler controls into one `shadow-radius-matrix-summary.txt`. The `scene` entry keeps the scene-derived shadow radius, positive integers set explicit shadow-casting radius overrides, and `0` stays reserved for the compact proxy benchmark's shadow-disabled control:
+Use the shadow-radius matrix wrapper to run or re-report several compact-proxy profiler controls into one `shadow-radius-matrix-summary.txt` plus a line-oriented `shadow-radius-profiler-manifest.txt` for external Xcode/Metal capture planning. The `scene` entry keeps the scene-derived shadow radius, positive integers set explicit shadow-casting radius overrides, and `0` stays reserved for the compact proxy benchmark's shadow-disabled control:
 
 ```sh
 RUMPELMC_SHADOW_RADIUS_MATRIX_CAPTURE=1 \
@@ -118,7 +118,7 @@ RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 sh scripts/gpu_terrain_shadow_radius_matrix.sh logs/gpu_shadow_radius_matrix
 ```
 
-After a capture, re-run the same matrix with `RUMPELMC_SHADOW_RADIUS_MATRIX_CAPTURE=0` to validate the existing case directories and regenerate the top-level summary without taking new screenshots.
+After a capture, re-run the same matrix with `RUMPELMC_SHADOW_RADIUS_MATRIX_CAPTURE=0` to validate the existing case directories and regenerate the top-level summary and profiler manifest without taking new screenshots.
 
 ## Shadow Path Design
 

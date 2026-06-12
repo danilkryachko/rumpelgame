@@ -89,6 +89,34 @@ value_or_na() {
   fi
 }
 
+profiler_role() {
+  radius="$1"
+  case "$radius" in
+    scene)
+      printf '%s\n' "default_high_proxy"
+      ;;
+    1)
+      printf '%s\n' "low_proxy_control"
+      ;;
+    2)
+      printf '%s\n' "mid_proxy_control"
+      ;;
+    *)
+      printf '%s\n' "extra_proxy_control"
+      ;;
+  esac
+}
+
+profiler_priority() {
+  radius="$1"
+  case "$radius" in
+    scene) printf '%s\n' "1" ;;
+    2) printf '%s\n' "2" ;;
+    1) printf '%s\n' "3" ;;
+    *) printf '%s\n' "4" ;;
+  esac
+}
+
 matrix_line() {
   radius="$1"
   case_dir="$2"
@@ -144,6 +172,46 @@ matrix_line() {
     "$(relative_path "$case_dir")"
 }
 
+profiler_manifest_line() {
+  radius="$1"
+  case_dir="$2"
+  summary_path="$case_dir/compact-proxy-benchmark-summary.txt"
+
+  test -s "$summary_path" || fail "missing summary $summary_path"
+
+  role="$(profiler_role "$radius")"
+  priority="$(profiler_priority "$radius")"
+  child_radius="$(value_or_na "$(summary_token "shadow_radius_override" "$summary_path")")"
+  full_avg_luma="$(value_or_na "$(summary_row_token "full" "avg_luma" "$summary_path")")"
+  compact_avg_luma="$(value_or_na "$(summary_row_token "compact" "avg_luma" "$summary_path")")"
+  compact_shadow_proxy="$(value_or_na "$(summary_row_token "compact" "compact_shadow_proxy" "$summary_path")")"
+  compact_normals_saved="$(value_or_na "$(summary_row_token "compact" "shadow_normals_saved" "$summary_path")")"
+  full_mesh_max_ms="$(value_or_na "$(summary_row_token "full" "mesh_max_ms" "$summary_path")")"
+  compact_mesh_max_ms="$(value_or_na "$(summary_row_token "compact" "mesh_max_ms" "$summary_path")")"
+  compact_gpu_frames="$(value_or_na "$(summary_row_token "compact" "gpu_frames" "$summary_path")")"
+  compact_terrain_samples="$(value_or_na "$(summary_row_token "compact" "terrain_samples" "$summary_path")")"
+  normal_status="$(value_or_na "$(summary_token "shadow_normal_total_status" "$summary_path")")"
+
+  printf 'priority=%s radius=%s role=%s child_shadow_radius_override=%s artifact=%s full_png=%s compact_png=%s compact_marker=%s compact_shadow_proxy=%s compact_shadow_normals_saved=%s full_avg_luma=%s compact_avg_luma=%s compact_terrain_samples=%s compact_gpu_frames=%s full_mesh_max_ms=%s compact_mesh_max_ms=%s shadow_normal_total_status=%s profiler_required=external_metal\n' \
+    "$priority" \
+    "$radius" \
+    "$role" \
+    "$child_radius" \
+    "$(relative_path "$case_dir")" \
+    "$(relative_path "$case_dir/gpu-terrain-full.png")" \
+    "$(relative_path "$case_dir/gpu-terrain-compact.png")" \
+    "$(relative_path "$case_dir/gpu-terrain-compact.png.txt")" \
+    "$compact_shadow_proxy" \
+    "$compact_normals_saved" \
+    "$full_avg_luma" \
+    "$compact_avg_luma" \
+    "$compact_terrain_samples" \
+    "$compact_gpu_frames" \
+    "$full_mesh_max_ms" \
+    "$compact_mesh_max_ms" \
+    "$normal_status"
+}
+
 case "$CAPTURE" in
   0|1) ;;
   *) fail "RUMPELMC_SHADOW_RADIUS_MATRIX_CAPTURE must be 0 or 1" ;;
@@ -152,10 +220,16 @@ test -n "$RADII" || fail "RUMPELMC_SHADOW_RADIUS_MATRIX_RADII must not be empty"
 
 summary_path="$OUT_DIR/shadow-radius-matrix-summary.txt"
 tmp_summary_path="$summary_path.tmp"
+manifest_path="$OUT_DIR/shadow-radius-profiler-manifest.txt"
+tmp_manifest_path="$manifest_path.tmp"
 {
   printf 'GPU terrain shadow radius matrix capture=%s radii="%s"\n' "$CAPTURE" "$RADII"
   printf 'compact_proxy_benchmark=scripts/gpu_terrain_compact_proxy_benchmark.sh\n'
 } > "$tmp_summary_path"
+{
+  printf 'GPU terrain shadow radius profiler manifest capture=%s radii="%s"\n' "$CAPTURE" "$RADII"
+  printf 'note=external profiler evidence is required before changing production shadow behavior\n'
+} > "$tmp_manifest_path"
 
 for radius in $RADII; do
   validate_radius "$radius"
@@ -182,8 +256,12 @@ for radius in $RADII; do
     fail "compact proxy benchmark failed for radius=$radius; see $(relative_path "$case_dir/run.log")"
   fi
   matrix_line "$radius" "$case_dir" >> "$tmp_summary_path"
+  profiler_manifest_line "$radius" "$case_dir" >> "$tmp_manifest_path"
 done
 
 mv "$tmp_summary_path" "$summary_path"
+mv "$tmp_manifest_path" "$manifest_path"
 echo
 cat "$summary_path"
+echo
+cat "$manifest_path"
