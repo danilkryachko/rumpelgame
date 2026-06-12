@@ -948,6 +948,13 @@ pub struct GpuTerrainStats {
     pub compositor_draw_repeat: u32,
     pub compositor_effective_draw_count: usize,
     pub compositor_frames: u64,
+    pub scene_target_create_count: u64,
+    pub scene_target_reuse_count: u64,
+    pub scene_target_replace_count: u64,
+    pub uniform_set_create_count: u64,
+    pub atlas_texture_create_count: u64,
+    pub atlas_sampler_create_count: u64,
+    pub push_constant_bytes: usize,
     pub upload_count: u64,
     pub upload_bytes: usize,
     pub last_upload_bytes: usize,
@@ -1193,6 +1200,13 @@ pub struct GpuTerrainBufferPool {
     draw_dirty: bool,
     debug_offscreen_rendered: bool,
     compositor_frames: u64,
+    scene_target_create_count: u64,
+    scene_target_reuse_count: u64,
+    scene_target_replace_count: u64,
+    uniform_set_create_count: u64,
+    atlas_texture_create_count: u64,
+    atlas_sampler_create_count: u64,
+    push_constant_bytes: usize,
     compositor_logged: bool,
     lighting: GpuTerrainLighting,
     upload_count: u64,
@@ -1257,6 +1271,7 @@ impl GpuTerrainBufferPool {
         } else {
             None
         };
+        let immutable_binding_create_count = u64::from(render_pipeline.is_some());
 
         Some(Self {
             rd,
@@ -1272,6 +1287,13 @@ impl GpuTerrainBufferPool {
             draw_dirty: false,
             debug_offscreen_rendered: false,
             compositor_frames: 0,
+            scene_target_create_count: 0,
+            scene_target_reuse_count: 0,
+            scene_target_replace_count: 0,
+            uniform_set_create_count: immutable_binding_create_count,
+            atlas_texture_create_count: immutable_binding_create_count,
+            atlas_sampler_create_count: immutable_binding_create_count,
+            push_constant_bytes: 0,
             compositor_logged: false,
             lighting: GpuTerrainLighting::default(),
             upload_count: 0,
@@ -1414,6 +1436,13 @@ impl GpuTerrainBufferPool {
                 .draw_count
                 .saturating_mul(gpu_terrain_compositor_draw_repeat() as usize),
             compositor_frames: self.compositor_frames,
+            scene_target_create_count: self.scene_target_create_count,
+            scene_target_reuse_count: self.scene_target_reuse_count,
+            scene_target_replace_count: self.scene_target_replace_count,
+            uniform_set_create_count: self.uniform_set_create_count,
+            atlas_texture_create_count: self.atlas_texture_create_count,
+            atlas_sampler_create_count: self.atlas_sampler_create_count,
+            push_constant_bytes: self.push_constant_bytes,
             upload_count: self.upload_count,
             upload_bytes: self.upload_bytes,
             last_upload_bytes: self.last_upload_bytes,
@@ -1509,6 +1538,7 @@ impl GpuTerrainBufferPool {
         );
         let push_constants =
             push_constants_for_debug_projection(self.lighting, render_pipeline.atlas_layout);
+        self.push_constant_bytes = push_constants.len();
         self.rd.draw_list_set_push_constant(
             draw_list,
             &push_constants,
@@ -1579,6 +1609,7 @@ impl GpuTerrainBufferPool {
         };
         let push_constants =
             clip_from_world_push_constants(&render_data, self.lighting, atlas_layout);
+        self.push_constant_bytes = push_constants.len();
         submit_breakdown.constants_ms = phase_start.elapsed().as_secs_f64() * 1000.0;
         phase_start = Instant::now();
 
@@ -1648,6 +1679,7 @@ impl GpuTerrainBufferPool {
                     && target.view_count == view_count
             });
         if target_matches {
+            self.scene_target_reuse_count += 1;
             let pipeline = self.render_pipeline.as_ref()?;
             let target = pipeline.scene_target.as_ref()?;
             return Some((
@@ -1667,6 +1699,7 @@ impl GpuTerrainBufferPool {
                 pipeline.scene_target.take(),
             )
         };
+        let old_target_existed = old_target.is_some();
         if let Some(target) = old_target {
             self.rd.free_rid(target.render_pipeline_rid);
             self.rd.free_rid(target.framebuffer_rid);
@@ -1704,6 +1737,10 @@ impl GpuTerrainBufferPool {
             render_pipeline_rid,
             view_count,
         });
+        self.scene_target_create_count += 1;
+        if old_target_existed {
+            self.scene_target_replace_count += 1;
+        }
 
         Some((
             framebuffer_rid,

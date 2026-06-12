@@ -154,6 +154,13 @@ write_summary() {
   gpu_draw_cmd_bytes="$(metric gpu_draw_cmd_bytes "$marker_path")"
   gpu_draw_cmd_capacity_bytes="$(metric gpu_draw_cmd_capacity_bytes "$marker_path")"
   gpu_draw_cmd_stride="$(metric gpu_draw_cmd_stride "$marker_path")"
+  gpu_scene_target_create="$(metric gpu_scene_target_create "$marker_path")"
+  gpu_scene_target_reuse="$(metric gpu_scene_target_reuse "$marker_path")"
+  gpu_scene_target_replace="$(metric gpu_scene_target_replace "$marker_path")"
+  gpu_uniform_set_create="$(metric gpu_uniform_set_create "$marker_path")"
+  gpu_atlas_texture_create="$(metric gpu_atlas_texture_create "$marker_path")"
+  gpu_atlas_sampler_create="$(metric gpu_atlas_sampler_create "$marker_path")"
+  gpu_push_constant_bytes="$(metric gpu_push_constant_bytes "$marker_path")"
   gpu_cull="$(text_metric gpu_cull "$marker_path")"
   gpu_front_face="$(text_metric gpu_front_face "$marker_path")"
   frame_p95="$(float_metric frame_p95_ms "$marker_path")"
@@ -193,6 +200,13 @@ write_summary() {
     -v gpu_draw_cmd_bytes="${gpu_draw_cmd_bytes:-0}" \
     -v gpu_draw_cmd_capacity_bytes="${gpu_draw_cmd_capacity_bytes:-0}" \
     -v gpu_draw_cmd_stride="${gpu_draw_cmd_stride:-0}" \
+    -v gpu_scene_target_create="${gpu_scene_target_create:-0}" \
+    -v gpu_scene_target_reuse="${gpu_scene_target_reuse:-0}" \
+    -v gpu_scene_target_replace="${gpu_scene_target_replace:-0}" \
+    -v gpu_uniform_set_create="${gpu_uniform_set_create:-0}" \
+    -v gpu_atlas_texture_create="${gpu_atlas_texture_create:-0}" \
+    -v gpu_atlas_sampler_create="${gpu_atlas_sampler_create:-0}" \
+    -v gpu_push_constant_bytes="${gpu_push_constant_bytes:-0}" \
     -v gpu_cull="${gpu_cull:-n/a}" \
     -v gpu_front_face="${gpu_front_face:-n/a}" \
     -v frame_p95="$frame_p95" \
@@ -205,7 +219,7 @@ write_summary() {
           status = "fail"
         }
         printf("GPU terrain movement stress summary target_fps=%.0f budget_ms=%.3f\n", 1000.0 / budget, budget)
-        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f queue_uploads_avg=%.2f queue_uploads_max=%.0f queue_upload_kb_avg=%.1f queue_upload_kb_max=%.1f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_effective_draws=%d gpu_draw_repeat=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_cull=%s gpu_front_face=%s gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, terrain_queue_uploads_avg, terrain_queue_uploads_max, terrain_queue_upload_kb_avg, terrain_queue_upload_kb_max, mesh_avg, mesh_max, coll_avg, coll_max, gpu_effective_draws, gpu_draw_repeat, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_cull, gpu_front_face, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
+        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f queue_uploads_avg=%.2f queue_uploads_max=%.0f queue_upload_kb_avg=%.1f queue_upload_kb_max=%.1f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_effective_draws=%d gpu_draw_repeat=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_scene_target_create=%d gpu_scene_target_reuse=%d gpu_scene_target_replace=%d gpu_uniform_set_create=%d gpu_atlas_texture_create=%d gpu_atlas_sampler_create=%d gpu_push_constant_bytes=%d gpu_cull=%s gpu_front_face=%s gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, terrain_queue_uploads_avg, terrain_queue_uploads_max, terrain_queue_upload_kb_avg, terrain_queue_upload_kb_max, mesh_avg, mesh_max, coll_avg, coll_max, gpu_effective_draws, gpu_draw_repeat, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_scene_target_create, gpu_scene_target_reuse, gpu_scene_target_replace, gpu_uniform_set_create, gpu_atlas_texture_create, gpu_atlas_sampler_create, gpu_push_constant_bytes, gpu_cull, gpu_front_face, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
       }
     ' > "$summary_path"
   cat "$summary_path"

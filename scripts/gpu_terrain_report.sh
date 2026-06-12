@@ -355,6 +355,13 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `gpu_draw_cmd_stride`: `%s`\n' "$(metric_max gpu_draw_cmd_stride)"
   printf -- '- max `gpu_draw_cmd_occupancy_pct`: `%s`\n' "$(metric_pair_ratio_max_percent gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes)"
   printf -- '- min `gpu_draw_cmd_headroom_bytes`: `%s`\n' "$(metric_pair_headroom_min gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes)"
+  printf -- '- max `gpu_scene_target_create`: `%s`\n' "$(metric_max gpu_scene_target_create)"
+  printf -- '- max `gpu_scene_target_reuse`: `%s`\n' "$(metric_max gpu_scene_target_reuse)"
+  printf -- '- max `gpu_scene_target_replace`: `%s`\n' "$(metric_max gpu_scene_target_replace)"
+  printf -- '- max `gpu_uniform_set_create`: `%s`\n' "$(metric_max gpu_uniform_set_create)"
+  printf -- '- max `gpu_atlas_texture_create`: `%s`\n' "$(metric_max gpu_atlas_texture_create)"
+  printf -- '- max `gpu_atlas_sampler_create`: `%s`\n' "$(metric_max gpu_atlas_sampler_create)"
+  printf -- '- max `gpu_push_constant_bytes`: `%s`\n' "$(metric_max gpu_push_constant_bytes)"
   printf -- '- max `gpu_faces`: `%s`\n' "$(metric_max gpu_faces)"
   printf -- '- sum `gpu_upload_fail`: `%s`\n' "$(metric_sum gpu_upload_fail)"
   printf -- '- max `gpu_upload_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_ms)"
@@ -401,6 +408,11 @@ tmp_path="$OUT_PATH.tmp"
   metric_max_source gpu_effective_draws | sed 's/^/- /'
   metric_max_source gpu_draw_cmd_bytes | sed 's/^/- /'
   metric_pair_ratio_max_source gpu_draw_cmd_occupancy_pct gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes | sed 's/^/- /'
+  metric_max_source gpu_scene_target_create | sed 's/^/- /'
+  metric_max_source gpu_scene_target_reuse | sed 's/^/- /'
+  metric_max_source gpu_scene_target_replace | sed 's/^/- /'
+  metric_max_source gpu_uniform_set_create | sed 's/^/- /'
+  metric_max_source gpu_push_constant_bytes | sed 's/^/- /'
   metric_max_source gpu_faces | sed 's/^/- /'
   metric_max_source dirty_blocks | sed 's/^/- /'
   metric_max_source dirty_last_blocks | sed 's/^/- /'
