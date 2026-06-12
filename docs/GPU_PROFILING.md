@@ -96,6 +96,10 @@ RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 sh scripts/gpu_terrain_compact_proxy_benchmark.sh logs/gpu_shadow_proxy_focused_capture
 ```
 
+## Shadow Path Design
+
+The current production GPU terrain shadow path is still Godot CPU shadow proxies. `docs/GPU_SHADOW_PATH.md` records the Phase 12 design for a future GPU-native terrain shadow path. Treat `scene_shadows_disabled` and `diagnostic_no_shadow_proxy` as diagnostic controls only; they cannot justify production shadow reductions. A future native path must be behind an explicit rollback flag, report its own `shadow_path`, preserve the existing Godot proxy fallback, and pass visual parity plus an external profiler comparison before becoming default.
+
 ## Recording Results
 
 For each meaningful GPU iteration, record:
