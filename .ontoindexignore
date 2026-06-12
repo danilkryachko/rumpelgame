@@ -1,0 +1,15 @@
+.git/
+.godot/
+.ontoindex/
+target/
+tmp/
+logs/
+server/data/
+server/server
+server/server.exe
+client/.godot/
+client/rust_ext/target/
+rumpelgame/.godot/
+**/*.import
+**/*.uid
+**/node_modules/

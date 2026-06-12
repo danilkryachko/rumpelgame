@@ -19,6 +19,7 @@
 
 - Use `docs/AI_TASK_TEMPLATE.md` for large, ambiguous, or multi-layer tasks.
 - Use `docs/NEXT_STEP_WORKFLOW.md` for planning questions such as "what next?", "what should we improve?", or "where should development go now?".
+- Use `docs/ONTOINDEX.md` before using OntoIndex for graph-based code navigation.
 - Read `docs/HANDOFF.md` and `docs/AGENT_HANDOFF.md` before resuming work from another chat or after a long interruption.
 - Read `docs/ARCHITECTURE.md` before design changes.
 - Read `docs/AGENT_MEMORY.md` before architectural, storage, networking, world generation, chunk serialization, persistence, or Rust extension changes.
@@ -45,11 +46,18 @@
 - Run `./scripts/handoff.sh` to collect a continuation snapshot before delegating or resuming another chat's work.
 - Rust checks use optional `sccache`; see `docs/BUILD_CACHE.md`.
 
+## Code Navigation
+
+- Prefer `rg` for exact text/file search.
+- Use OntoIndex for graph questions, impact checks, and broad orientation when it is installed and indexed.
+- Run OntoIndex through `bash ./scripts/ontoindex.sh`; do not run raw `ontoindex setup` or `ontoindex analyze` without explicit approval.
+- When indexing, keep `--skip-agents-md --no-stats` so OntoIndex does not rewrite project agent rules.
+- Treat OntoIndex failures as non-blocking and fall back to `rg`, project docs, tests, and review passes.
+
 ## Review And Subagents
 
 - Use research subagents only for read-only exploration.
 - Use review subagents to find risks, not to rewrite code.
 - Run a review pass before finalizing storage, networking, world generation, chunk serialization, persistence, or Rust extension changes.
-- If a task changes more than 5 files or more than 300 lines, stop and explain why before continuing.
 - Update `docs/AGENT_HANDOFF.md` before handing off non-trivial work to another chat.
 - Update `docs/AGENT_MEMORY.md` only with stable project decisions and invariants, not temporary task notes.

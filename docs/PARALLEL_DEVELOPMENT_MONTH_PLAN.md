@@ -62,7 +62,6 @@ Checks:
 Review gates:
 
 - Storage, protocol, world generation, chunk serialization, persistence, and Rust extension changes require a review pass before final integration.
-- If a slice changes more than 5 files or more than 300 lines, stop and explain why before continuing.
 
 ## Worker Threads
 
@@ -199,14 +198,13 @@ Known current worker worktree state:
 
 1. Finish/inspect current `scripts/diff_guard.sh` changes and record intent.
 2. Strengthen diff guard for generated files if current patterns are clear.
-3. Add/verify line-count and file-count warnings for broad patches.
-4. Add optional report output for changed sensitive areas.
-5. Improve `scripts/check.sh` messages without changing check semantics.
-6. Verify `fast` and `full` modes remain stable.
-7. Add docs for when to use GitHub MCP and Context7 MCP.
-8. Add a review checklist for GPU/client Rust slices.
-9. Add a review checklist for storage/protocol/world slices.
-10. Add artifact index/report hygiene for GPU logs.
+3. Add optional report output for changed sensitive areas.
+4. Improve `scripts/check.sh` messages without changing check semantics.
+5. Verify `fast` and `full` modes remain stable.
+6. Add docs for when to use GitHub MCP and Context7 MCP.
+7. Add a review checklist for GPU/client Rust slices.
+8. Add a review checklist for storage/protocol/world slices.
+9. Add artifact index/report hygiene for GPU logs.
 11. Add stale-log cleanup guidance without deleting artifacts automatically.
 12. Add handoff quality checks to `scripts/handoff.sh` if low-risk.
 13. Review `docs/AI_GUIDELINES.md` for duplicates after recent changes.
