@@ -12,8 +12,9 @@ Fresh 2026-06-13 status:
 - Current aggregate-report slice surfaces that runtime fixture scene fallback smoke in `scripts/gpu_terrain_report.sh`. The latest report run selected `logs/gpu_transparent_fixture_scene_smoke/transparent-fixture-scene-smoke-summary.txt` and includes `status=pass`, `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `transparent_blocks=0`, `transparent_faces=0`, `transparent_draws=0`, `transparent_subchunks=0`, `gpu_upload_fail=0`, and `terrain_samples=496`.
 - Current transparent workload marker scaffold adds `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks` to runtime perf markers, report origins, and fixture fallback guards. They are expected to remain `0` while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
 - Current no-render fixture pack sync makes plan/smoke/checklist/harness/acceptance/default-off/implementation gate artifacts require those same zero workload markers in current env-on fallback guard lines. `sh scripts/gpu_terrain_transparent_fixture_pack.sh logs/gpu_transparent_fixture_plan` passed with `env_on_expected=1/0/1`.
+- Current blocker: adding a real `transparent_test_glass` fixture identity cannot be done safely as a local-only edit without either a production block ID/asset/protocol/storage/worldgen change or a new client-only fixture overlay path. The current runtime consumes serialized `u16` block IDs and block definitions for texture/solid behavior.
 - This runtime harness does not add fixture block/material identity, shader alpha, blending, transparent pass, sorting, block IDs, atlas assets, protocol, storage, worldgen, `.tscn` changes, or default render behavior. `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` remains the active implementation gate.
-- Next useful GPU step: decide whether to add fixture-only block/material identity behind the same fallback gate.
+- Next useful GPU step: design a client-only fixture overlay path, or explicitly approve a production block ID path before implementing fixture material identity.
 
 Previous snapshot:
 

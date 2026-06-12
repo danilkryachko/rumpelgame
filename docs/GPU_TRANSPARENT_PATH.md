@@ -225,6 +225,12 @@ Implementation order:
 4. Add fixture workload marker fields only after the harness can produce a stable current fallback capture. Done for the current inactive path with zero `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`.
 5. Add fixture-only block/material identity only after the fallback harness is stable and reviewed.
 
+Current blocker for step 5:
+
+- A real fixture-only transparent material cannot be represented today without either a production block ID/asset/protocol/storage/worldgen change or a new client-only fixture overlay path.
+- The current runtime receives serialized `u16` block IDs from the server and resolves solid/texture behavior through client/server block definitions. Adding `transparent_test_glass` directly as a block would therefore cross protocol/storage/worldgen compatibility boundaries.
+- Next safe implementation should first design a client-only fixture overlay or explicitly approve a production block ID path.
+
 Still out of scope for the first runtime slice:
 
 - No shader alpha, blending, transparent pass, sorting, production block ID, atlas asset, protocol field, storage record, worldgen rule, or default behavior change.
