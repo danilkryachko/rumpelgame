@@ -183,11 +183,12 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - The env-on release movement smoke in `logs/gpu_transparent_fallback_capture` passed with `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.
 - `scripts/gpu_terrain_movement_stress.sh` now fails env-on transparent captures unless those same requested/active/fallback marker values are present.
 - `scripts/gpu_terrain_transparent_fixture_plan.sh` validates this fixture contract plus the current movement-stress fallback guard and writes a line-oriented `transparent-fixture-plan.txt` checklist.
+- `scripts/gpu_terrain_transparent_fixture_harness.sh` consumes that plan and writes a placeholder `transparent-fixture-harness.txt` with env-off, env-on fallback, future marker, future active, and non-goal gates.
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
 
 The next safe implementation slice is still no-render work:
 
-- Add a fixture-only harness placeholder that consumes `transparent-fixture-plan.txt` without enabling a transparent material in ordinary worlds.
+- Surface the fixture plan and harness artifacts in the aggregate GPU report or add validation around their generated summaries.
 - Keep all current opaque correctness gates unchanged while the implementation gate remains false.
 - Defer shader alpha, blending, sorting, block-ID, asset, protocol, storage, worldgen, and render-path work until the fixture contract has env-off and env-on fallback gates.
