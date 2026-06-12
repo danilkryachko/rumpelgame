@@ -478,6 +478,8 @@ tmp_path="$OUT_PATH.tmp"
   print_optional_file "Selected Perf Baseline Summary" "$(latest_file perf-baseline-summary.txt)"
   print_optional_file "Selected Shadow Profiler Results Summary" "$(latest_file shadow-radius-profiler-results-summary.txt)"
   print_optional_artifact "Selected Shadow Profiler Capture Pack" "$(latest_file shadow-radius-profiler-capture-pack.txt)"
+  print_optional_artifact "Selected Transparent Fixture Plan" "$(latest_file transparent-fixture-plan.txt)"
+  print_optional_artifact "Selected Transparent Fixture Harness" "$(latest_file transparent-fixture-harness.txt)"
 
   printf '\n## Recent Summary Files\n\n'
   summary_files | sed "s#^$ROOT_DIR/##" | tail -n 80 | sed 's/^/- `/' | sed 's/$/`/'
