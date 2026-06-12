@@ -4,7 +4,14 @@ This file is the current continuation state for Codex threads. Update it after n
 
 ## Latest Snapshot
 
-Date: 2026-06-11
+Date: 2026-06-12
+
+Fresh 2026-06-12 status:
+
+- Latest GPU upload-frame telemetry slice adds Rust perf fields `terrain_queue_gpu_uploads=last/avg/max` and `terrain_queue_gpu_upload_kb=last/avg/max` for successful GPU uploads completed during terrain mesh-queue frames. `scripts/gpu_terrain_movement_stress.sh` surfaces those fields in movement summaries, and `scripts/gpu_terrain_report.sh` aggregates them from markers/reports. This is telemetry-only; upload behavior, draw distance, lighting, shadows, and texture quality are unchanged.
+- Fresh release movement artifact: `logs/gpu_terrain_queue_upload_frame/movement-stress-summary.txt` from `RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release GODOT_QUIT_AFTER_FRAMES=36000 GODOT_TIMEOUT_SEC=300 ./scripts/gpu_terrain_movement_stress.sh logs/gpu_terrain_queue_upload_frame`. It passed with `terrain_queue_gpu_uploads=1/0.84/1`, `terrain_queue_gpu_upload_kb=0.0/0.0/1.5`, `gpu_upload_ms=0.014/0.005/0.136`, `gpu_upload_fail=0`, `gpu_fragmented_free_faces=18`, `gpu_fragmentation_pct=0.0`, `smoke_err=0`, `terrain_queue_max_ms=3.660`, `process_wall_p95_ms=0.037`, and `gpu_compositor_submit_max_ms=0.169`. Visual FPS was display-paced at 60 Hz on macOS/Metal. The local server left on port `25565` after the stress run was stopped.
+- Checks passed for the slice: `cargo fmt --manifest-path client/rust_ext/Cargo.toml -- --check`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (90/90), `sh -n` for the changed GPU scripts, `./scripts/check.sh fast` (required an unsandboxed rerun because Go/sccache cache access was blocked in sandbox), `./scripts/gpu_terrain_report.sh logs /tmp/rumpel-gpu-report-upload-frame-full.txt`, `git diff --check`, and `./scripts/diff_guard.sh`.
+- Next useful GPU step: rerun a heavy workload or fill-stress case with the new per-frame upload telemetry. If `terrain_queue_gpu_uploads` or `terrain_queue_gpu_upload_kb` spikes under radius-16/heavy streaming, add an upload budget/retry/backoff gate; if it stays at `1` upload per frame, continue toward staging allocation reuse or dirty-update telemetry.
 
 Fresh 2026-06-11 status:
 

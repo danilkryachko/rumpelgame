@@ -176,16 +176,20 @@ impl INode for GameClient {
             }
         }
         let collision_frame = self.process_collision_refresh_queue();
-        let mesh_work_ms =
+        let mesh_frame =
             if should_process_mesh_queue_after_collision_refresh(collision_frame.rebuilt) {
                 self.process_mesh_queue()
             } else {
                 self.perf
                     .record_mesh_queue_frame(self.mesh_queue.len(), 0, 0, 0, 0, 0);
-                0.0
+                MeshQueueFrame::default()
             };
-        self.perf
-            .record_terrain_queue_frame_work(mesh_work_ms, collision_frame.work_ms);
+        self.perf.record_terrain_queue_frame_work(
+            mesh_frame.work_ms,
+            collision_frame.work_ms,
+            mesh_frame.gpu_uploads,
+            mesh_frame.gpu_upload_bytes,
+        );
         self.sync_gpu_terrain_lighting();
         self.update_gpu_visible_transition();
         if gpu_terrain_render_enabled()
@@ -297,14 +301,14 @@ impl GameClient {
         }
     }
 
-    fn process_mesh_queue(&mut self) -> f64 {
+    fn process_mesh_queue(&mut self) -> MeshQueueFrame {
         let mut processed = 0;
         let mut drained = 0;
         let mut geometry_drained = 0;
         let mut proxy_refresh_drained = 0;
         let mut stale_drops = 0;
         let mut missing_chunk_drops = 0;
-        let mut work_ms = 0.0;
+        let mut frame = MeshQueueFrame::default();
         while processed < MAX_MESH_JOBS_PER_FRAME && drained < MAX_MESH_QUEUE_DRAINS_PER_FRAME {
             let Some(key) =
                 pop_next_mesh_queue_key(&mut self.mesh_queue, self.current_player_chunk)
@@ -328,11 +332,11 @@ impl GameClient {
             if reason == MeshQueueReason::ProxyRefresh {
                 let proxy_refresh_start = Instant::now();
                 if self.handle_proxy_refresh_without_mesh_job(key) {
-                    work_ms += elapsed_ms(proxy_refresh_start);
+                    frame.work_ms += elapsed_ms(proxy_refresh_start);
                     continue;
                 }
             }
-            work_ms += self.render_subchunk_mesh(key, reason);
+            frame.record_mesh_job(self.render_subchunk_mesh(key, reason));
             processed += 1;
         }
         self.perf.record_mesh_queue_frame(
@@ -343,7 +347,7 @@ impl GameClient {
             stale_drops,
             missing_chunk_drops,
         );
-        work_ms
+        frame
     }
 
     fn process_collision_refresh_queue(&mut self) -> CollisionRefreshFrame {
@@ -478,7 +482,7 @@ impl GameClient {
             .record_collision_refresh_queue_enqueue(self.collision_refresh_queue.len(), inserted);
     }
 
-    fn render_subchunk_mesh(&mut self, key: SubchunkKey, reason: MeshQueueReason) -> f64 {
+    fn render_subchunk_mesh(&mut self, key: SubchunkKey, reason: MeshQueueReason) -> MeshJobResult {
         let work_start = Instant::now();
         let upload_enabled = gpu_terrain_upload_enabled();
         let gpu_key = gpu_subchunk_key(key);
@@ -498,7 +502,7 @@ impl GameClient {
             && !needs_cpu_proxy
         {
             self.remove_cpu_subchunk_mesh_node(key);
-            return elapsed_ms(work_start);
+            return MeshJobResult::elapsed(work_start);
         }
         if reason == MeshQueueReason::ProxyRefresh
             && gpu_visible_render_active
@@ -517,13 +521,13 @@ impl GameClient {
                 should_have_collision,
                 should_have_shadow_proxy,
             ) {
-                return elapsed_ms(work_start);
+                return MeshJobResult::elapsed(work_start);
             }
         }
 
         let padded_start = Instant::now();
         let Some(padded_blocks) = self.build_padded_subchunk_blocks(key) else {
-            return elapsed_ms(work_start);
+            return MeshJobResult::elapsed(work_start);
         };
         let padded_ms = padded_start.elapsed().as_secs_f64() * 1000.0;
         let should_upload_gpu = upload_enabled
@@ -544,13 +548,19 @@ impl GameClient {
             );
         }
         let mut gpu_upload_state = TerrainGpuUploadState::for_request(upload_enabled);
+        let mut gpu_uploads = 0;
+        let mut gpu_upload_bytes = 0;
         let gpu_upload_start = Instant::now();
         if should_upload_gpu
             && let (Some(gpu_terrain), Some(packed_faces)) = (&mut self.gpu_terrain, &packed_faces)
         {
-            gpu_upload_state = TerrainGpuUploadState::from_upload_result(
-                gpu_terrain.upload_subchunk(gpu_key, packed_faces).is_some(),
-            );
+            let upload_bytes = packed_faces.byte_len();
+            let uploaded = gpu_terrain.upload_subchunk(gpu_key, packed_faces).is_some();
+            gpu_upload_state = TerrainGpuUploadState::from_upload_result(uploaded);
+            if uploaded {
+                gpu_uploads = 1;
+                gpu_upload_bytes = upload_bytes;
+            }
         } else if existing_gpu_slot {
             gpu_upload_state = TerrainGpuUploadState::Uploaded;
         }
@@ -564,7 +574,7 @@ impl GameClient {
         );
         if mesh_build_plan == TerrainMeshBuildPlan::RemoveCpuNode {
             self.remove_cpu_subchunk_mesh_node(key);
-            return elapsed_ms(work_start);
+            return MeshJobResult::new(elapsed_ms(work_start), gpu_uploads, gpu_upload_bytes);
         }
 
         let cpu_proxy_mesh = mesh_build_plan == TerrainMeshBuildPlan::CpuProxyMesh;
@@ -618,10 +628,10 @@ impl GameClient {
             )
         } else {
             let Some(mesher) = &mut self.mesher else {
-                return elapsed_ms(work_start);
+                return MeshJobResult::new(elapsed_ms(work_start), gpu_uploads, gpu_upload_bytes);
             };
             let Some(mesh_result) = mesher.mesh_chunk(&padded_blocks) else {
-                return elapsed_ms(work_start);
+                return MeshJobResult::new(elapsed_ms(work_start), gpu_uploads, gpu_upload_bytes);
             };
             (
                 mesh_result.vertices,
@@ -636,7 +646,7 @@ impl GameClient {
 
         if vertices.is_empty() {
             self.remove_subchunk_mesh(key);
-            return elapsed_ms(work_start);
+            return MeshJobResult::new(elapsed_ms(work_start), gpu_uploads, gpu_upload_bytes);
         }
         let render_mode =
             TerrainMeshRenderMode::from_proxy_state(cpu_proxy_mesh, should_have_shadow_proxy);
@@ -783,7 +793,7 @@ impl GameClient {
             collision_bodies,
             node_counts,
         });
-        elapsed_ms(work_start)
+        MeshJobResult::new(elapsed_ms(work_start), gpu_uploads, gpu_upload_bytes)
     }
 
     fn handle_proxy_refresh_without_mesh_job(&mut self, key: SubchunkKey) -> bool {
@@ -1554,6 +1564,42 @@ struct CollisionRefreshFrame {
     work_ms: f64,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct MeshQueueFrame {
+    work_ms: f64,
+    gpu_uploads: usize,
+    gpu_upload_bytes: usize,
+}
+
+impl MeshQueueFrame {
+    fn record_mesh_job(&mut self, job: MeshJobResult) {
+        self.work_ms += job.work_ms;
+        self.gpu_uploads += job.gpu_uploads;
+        self.gpu_upload_bytes += job.gpu_upload_bytes;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct MeshJobResult {
+    work_ms: f64,
+    gpu_uploads: usize,
+    gpu_upload_bytes: usize,
+}
+
+impl MeshJobResult {
+    fn new(work_ms: f64, gpu_uploads: usize, gpu_upload_bytes: usize) -> Self {
+        Self {
+            work_ms,
+            gpu_uploads,
+            gpu_upload_bytes,
+        }
+    }
+
+    fn elapsed(start: Instant) -> Self {
+        Self::new(elapsed_ms(start), 0, 0)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct CollisionRefreshRecord {
     result: CollisionRefreshResult,
@@ -1696,6 +1742,12 @@ struct PerfStats {
     max_terrain_queue_work_ms: f64,
     max_terrain_queue_mesh_work_ms: f64,
     max_terrain_queue_collision_work_ms: f64,
+    last_terrain_queue_gpu_uploads: usize,
+    avg_terrain_queue_gpu_uploads: f64,
+    max_terrain_queue_gpu_uploads: usize,
+    last_terrain_queue_gpu_upload_bytes: usize,
+    avg_terrain_queue_gpu_upload_bytes: f64,
+    max_terrain_queue_gpu_upload_bytes: usize,
     last_collision_refresh_phase: CollisionRefreshPhaseTiming,
     max_collision_refresh_phase: CollisionRefreshPhaseTiming,
     last_vertices: usize,
@@ -2025,12 +2077,28 @@ impl PerfStats {
         self.last_collision_refresh_queue_missing_chunk_drops = missing_chunk_drops;
     }
 
-    fn record_terrain_queue_frame_work(&mut self, mesh_work_ms: f64, collision_work_ms: f64) {
+    fn record_terrain_queue_frame_work(
+        &mut self,
+        mesh_work_ms: f64,
+        collision_work_ms: f64,
+        gpu_uploads: usize,
+        gpu_upload_bytes: usize,
+    ) {
         let work_ms = mesh_work_ms + collision_work_ms;
         self.terrain_queue_work_frames += 1;
         let n = self.terrain_queue_work_frames as f64;
         self.last_terrain_queue_work_ms = work_ms;
         self.avg_terrain_queue_work_ms += (work_ms - self.avg_terrain_queue_work_ms) / n;
+        self.last_terrain_queue_gpu_uploads = gpu_uploads;
+        self.avg_terrain_queue_gpu_uploads +=
+            (gpu_uploads as f64 - self.avg_terrain_queue_gpu_uploads) / n;
+        self.max_terrain_queue_gpu_uploads = self.max_terrain_queue_gpu_uploads.max(gpu_uploads);
+        self.last_terrain_queue_gpu_upload_bytes = gpu_upload_bytes;
+        self.avg_terrain_queue_gpu_upload_bytes +=
+            (gpu_upload_bytes as f64 - self.avg_terrain_queue_gpu_upload_bytes) / n;
+        self.max_terrain_queue_gpu_upload_bytes = self
+            .max_terrain_queue_gpu_upload_bytes
+            .max(gpu_upload_bytes);
         if work_ms >= self.max_terrain_queue_work_ms {
             self.max_terrain_queue_work_ms = work_ms;
             self.max_terrain_queue_mesh_work_ms = mesh_work_ms;
@@ -3168,7 +3236,7 @@ impl GameClient {
             })
             .unwrap_or_default();
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -3234,6 +3302,12 @@ impl GameClient {
             self.perf.max_terrain_queue_work_ms,
             self.perf.max_terrain_queue_mesh_work_ms,
             self.perf.max_terrain_queue_collision_work_ms,
+            self.perf.last_terrain_queue_gpu_uploads,
+            self.perf.avg_terrain_queue_gpu_uploads,
+            self.perf.max_terrain_queue_gpu_uploads,
+            self.perf.last_terrain_queue_gpu_upload_bytes as f64 / 1024.0,
+            self.perf.avg_terrain_queue_gpu_upload_bytes / 1024.0,
+            self.perf.max_terrain_queue_gpu_upload_bytes as f64 / 1024.0,
             self.perf.last_mesh_ms,
             self.perf.avg_mesh_ms,
             self.perf.max_mesh_ms,
@@ -4064,9 +4138,9 @@ mod tests {
     fn perf_records_terrain_queue_frame_work() {
         let mut perf = PerfStats::default();
 
-        perf.record_terrain_queue_frame_work(1.5, 0.5);
-        perf.record_terrain_queue_frame_work(4.0, 2.0);
-        perf.record_terrain_queue_frame_work(0.5, 0.5);
+        perf.record_terrain_queue_frame_work(1.5, 0.5, 1, 4096);
+        perf.record_terrain_queue_frame_work(4.0, 2.0, 3, 12_288);
+        perf.record_terrain_queue_frame_work(0.5, 0.5, 0, 0);
 
         assert_eq!(perf.terrain_queue_work_frames, 3);
         assert_eq!(perf.last_terrain_queue_work_ms, 1.0);
@@ -4074,6 +4148,12 @@ mod tests {
         assert_eq!(perf.max_terrain_queue_work_ms, 6.0);
         assert_eq!(perf.max_terrain_queue_mesh_work_ms, 4.0);
         assert_eq!(perf.max_terrain_queue_collision_work_ms, 2.0);
+        assert_eq!(perf.last_terrain_queue_gpu_uploads, 0);
+        assert!((perf.avg_terrain_queue_gpu_uploads - 4.0 / 3.0).abs() < 0.000_001);
+        assert_eq!(perf.max_terrain_queue_gpu_uploads, 3);
+        assert_eq!(perf.last_terrain_queue_gpu_upload_bytes, 0);
+        assert!((perf.avg_terrain_queue_gpu_upload_bytes - (16_384.0 / 3.0)).abs() < 0.000_001);
+        assert_eq!(perf.max_terrain_queue_gpu_upload_bytes, 12_288);
     }
 
     #[test]

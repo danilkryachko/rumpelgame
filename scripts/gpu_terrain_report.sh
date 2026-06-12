@@ -85,14 +85,24 @@ metric_sum() {
 metric_triplet_max() {
   key="$1"
   summary_files | xargs grep -h "$key=" 2>/dev/null \
-    | sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\).*/\3/p" \
-    | awk '
-      BEGIN { found = 0; max = 0.0 }
+    | awk -v key="$key" '
+      BEGIN {
+        found = 0
+        max = 0.0
+        prefix = key "="
+      }
       {
-        value = $1 + 0.0
-        if (!found || value > max) {
-          max = value
-          found = 1
+        for (i = 1; i <= NF; i++) {
+          if (index($i, prefix) == 1) {
+            part_count = split(substr($i, length(prefix) + 1), parts, "/")
+            if (part_count >= 3) {
+              value = parts[3] + 0.0
+              if (!found || value > max) {
+                max = value
+                found = 1
+              }
+            }
+          }
         }
       }
       END {
@@ -167,6 +177,8 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `gpu_faces`: `%s`\n' "$(metric_max gpu_faces)"
   printf -- '- sum `gpu_upload_fail`: `%s`\n' "$(metric_sum gpu_upload_fail)"
   printf -- '- max `gpu_upload_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_ms)"
+  printf -- '- max `terrain_queue_gpu_uploads` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_uploads)"
+  printf -- '- max `terrain_queue_gpu_upload_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_kb)"
   printf -- '- max `gpu_fragmented_free_faces`: `%s`\n' "$(metric_max gpu_fragmented_free_faces)"
   printf -- '- max `gpu_fragmentation_pct`: `%s`\n' "$(metric_max gpu_fragmentation_pct)"
   printf -- '- max `terrain_queue_max_ms`: `%s`\n' "$(metric_max terrain_queue_max_ms)"

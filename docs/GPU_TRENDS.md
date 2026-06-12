@@ -8,6 +8,12 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 - `gpu_time` is report-only on the current macOS/Metal path because Godot timestamp samples report `0.0us`.
 - Prefer `terrain_queue_max_ms`, `process_wall_p95_ms`, `gpu_compositor_submit_max_ms`, `gpu_upload_fail`, draw counts, and external GPU profiler captures for decisions.
 
+## 2026-06-12
+
+| Commit | Slice | Artifact | Key Result | Caveat |
+| --- | --- | --- | --- | --- |
+| `post-d270c2a` | GPU upload frame telemetry | `logs/gpu_terrain_queue_upload_frame` | release movement passed with `terrain_queue_gpu_uploads=1/0.84/1`, `terrain_queue_gpu_upload_kb=0.0/0.0/1.5`, `gpu_upload_ms=0.014/0.005/0.136`, `gpu_upload_fail=0`, `gpu_fragmentation_pct=0.0`, `smoke_err=0`, `terrain_queue_max_ms=3.660`, and `gpu_compositor_submit_max_ms=0.169` | visual FPS was display-paced at 60 Hz; default server batch/radius produced `gpu_draws=246`, so repeat under heavy workload before drawing upload-budget conclusions |
+
 ## 2026-06-11
 
 | Commit | Slice | Artifact | Key Result | Caveat |
@@ -23,9 +29,10 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 
 ## Next Trend Entry
 
-Record the next entry after a fresh successful stress run that includes:
+Record the next entry after a fresh successful heavy or fill-stress run that includes:
 
 - `gpu_cull` and `gpu_front_face`.
 - `gpu_fragmented_free_faces` and `gpu_fragmentation_pct`.
-- fill-stress visual correctness fields on a pass line.
+- `terrain_queue_gpu_uploads` and `terrain_queue_gpu_upload_kb`.
+- fill-stress visual correctness fields on a pass line, if the run is fill stress.
 - the artifact path and exact env vars.
