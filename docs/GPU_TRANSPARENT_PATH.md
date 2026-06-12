@@ -186,12 +186,13 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - `scripts/gpu_terrain_transparent_fixture_harness.sh` consumes that plan and writes a placeholder `transparent-fixture-harness.txt` with env-off, env-on fallback, future marker, future active, and non-goal gates.
 - `scripts/gpu_terrain_transparent_fixture_check.sh` validates the generated plan and harness summaries together and writes a line-oriented `transparent-fixture-check.txt` pass artifact.
 - `scripts/gpu_terrain_report.sh` surfaces the latest transparent fixture plan, harness, and check artifacts under the selected log directory when they exist.
+- `scripts/gpu_terrain_transparent_fixture_report_check.sh` validates that an aggregate GPU report includes the selected transparent fixture plan, harness, and check artifacts from the fixture directory.
 - Ignored local fixture artifacts under `logs/gpu_transparent_fixture_plan` now provide the current real-log checklist source for aggregate reports.
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
 
 The next safe implementation slice is still no-render work:
 
-- Add the next fixture-only guard that still preserves current opaque behavior.
+- Add the next fixture-only guard or one-command no-render fixture pack that still preserves current opaque behavior.
 - Keep all current opaque correctness gates unchanged while the implementation gate remains false.
 - Defer shader alpha, blending, sorting, block-ID, asset, protocol, storage, worldgen, and render-path work until the fixture contract has env-off and env-on fallback gates.
