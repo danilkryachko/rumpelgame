@@ -126,11 +126,20 @@ Transparent terrain can become default only after all of these are true:
 - External GPU profiler evidence shows acceptable pass cost for the transparent workload.
 - `./scripts/check.sh fast`, `./scripts/diff_guard.sh`, and targeted Rust/render tests pass for the implementation slice.
 
-## Next Implementation Slice
+## Current Implementation Slice
 
-The next safe code slice is telemetry/test scaffolding, not blended rendering:
+The current code slice is telemetry/test scaffolding, not blended rendering:
 
-- Reserve a transparent path marker with requested/active/fallback fields, behind an implementation gate that keeps current behavior inactive.
-- Add tests that current placeable blocks remain opaque and the current shader still writes opaque alpha.
-- Add report fields for transparent markers that initially show `n/a` or `0`.
-- Add a planned transparent smoke case only after a real transparent block fixture exists.
+- `RUMPELMC_GPU_TERRAIN_TRANSPARENT` is reserved as a future opt-in flag.
+- `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` keeps the requested flag inactive, so current runtime behavior stays opaque-only even when the env flag is set.
+- Perf markers expose `transparent_requested`, `transparent_active`, and `transparent_fallback`.
+- `scripts/gpu_terrain_report.sh` aggregates those marker fields and records metric origins.
+- The env-on release movement smoke in `logs/gpu_transparent_fallback_capture` passed with `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.
+- Existing tests still lock the current opaque-only block and fragment-alpha contracts.
+- No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
+
+The next safe implementation slice is still no-render work:
+
+- Add a focused report or harness assertion that fails when an env-on transparent marker capture does not contain `transparent_requested=1`, `transparent_active=0`, and `transparent_fallback=1`.
+- Keep all current opaque correctness gates unchanged while the implementation gate remains false.
+- Plan a real transparent fixture only after a transparent block/material contract exists.

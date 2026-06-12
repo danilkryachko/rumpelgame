@@ -407,6 +407,9 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `native_shadow_requested`: `%s`\n' "$(metric_max native_shadow_requested)"
   printf -- '- max `native_shadow_active`: `%s`\n' "$(metric_max native_shadow_active)"
   printf -- '- max `native_shadow_fallback`: `%s`\n' "$(metric_max native_shadow_fallback)"
+  printf -- '- max `transparent_requested`: `%s`\n' "$(metric_max transparent_requested)"
+  printf -- '- max `transparent_active`: `%s`\n' "$(metric_max transparent_active)"
+  printf -- '- max `transparent_fallback`: `%s`\n' "$(metric_max transparent_fallback)"
   printf -- '- max `compact_shadow_proxy`: `%s`\n' "$(metric_max compact_shadow_proxy)"
   printf -- '- max `compact_shadow_normals_saved`: `%s`\n' "$(metric_max compact_shadow_normals_saved)"
   printf -- '- max `compact_collision_proxy`: `%s`\n' "$(metric_max compact_collision_proxy)"
@@ -455,6 +458,9 @@ tmp_path="$OUT_PATH.tmp"
   metric_max_source native_shadow_requested | sed 's/^/- /'
   metric_max_source native_shadow_active | sed 's/^/- /'
   metric_max_source native_shadow_fallback | sed 's/^/- /'
+  metric_max_source transparent_requested | sed 's/^/- /'
+  metric_max_source transparent_active | sed 's/^/- /'
+  metric_max_source transparent_fallback | sed 's/^/- /'
   metric_max_source compact_shadow_proxy | sed 's/^/- /'
   metric_max_source compact_shadow_normals_saved | sed 's/^/- /'
   metric_max_source compact_collision_proxy | sed 's/^/- /'
