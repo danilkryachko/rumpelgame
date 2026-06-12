@@ -392,6 +392,10 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `proxy_shadow`: `%s`\n' "$(metric_max proxy_shadow)"
   printf -- '- max `proxy_shadow_only`: `%s`\n' "$(metric_max proxy_shadow_only)"
   printf -- '- max `compact_shadow_proxy`: `%s`\n' "$(metric_max compact_shadow_proxy)"
+  printf -- '- max `compact_shadow_normals_saved`: `%s`\n' "$(metric_max compact_shadow_normals_saved)"
+  printf -- '- max `compact_collision_proxy`: `%s`\n' "$(metric_max compact_collision_proxy)"
+  printf -- '- max `compact_collision_normals_saved`: `%s`\n' "$(metric_max compact_collision_normals_saved)"
+  printf -- '- max `fast_proxy`: `%s`\n' "$(metric_max fast_proxy)"
   printf -- '- max `proxy_refresh_reuse`: `%s`\n' "$(metric_max proxy_refresh_reuse)"
   printf -- '- max `gpu_fragmented_free_faces`: `%s`\n' "$(metric_max gpu_fragmented_free_faces)"
   printf -- '- max `gpu_fragmentation_pct`: `%s`\n' "$(metric_max gpu_fragmentation_pct)"
@@ -429,7 +433,14 @@ tmp_path="$OUT_PATH.tmp"
   metric_max_source dirty_partial_saved_subchunks | sed 's/^/- /'
   metric_max_source current_chunk_collision | sed 's/^/- /'
   metric_max_source collision_refresh_rebuilt | sed 's/^/- /'
+  metric_max_source mesh_shadow_only | sed 's/^/- /'
+  metric_max_source proxy_shadow | sed 's/^/- /'
+  metric_max_source proxy_shadow_only | sed 's/^/- /'
   metric_max_source compact_shadow_proxy | sed 's/^/- /'
+  metric_max_source compact_shadow_normals_saved | sed 's/^/- /'
+  metric_max_source compact_collision_proxy | sed 's/^/- /'
+  metric_max_source compact_collision_normals_saved | sed 's/^/- /'
+  metric_max_source fast_proxy | sed 's/^/- /'
   metric_max_source proxy_refresh_reuse | sed 's/^/- /'
   metric_max_source gpu_fragmentation_pct | sed 's/^/- /'
   metric_max_source_terrain_queue | sed 's/^/- /'
