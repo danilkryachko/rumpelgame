@@ -59,6 +59,24 @@ float_metric() {
   ' "$marker_path"
 }
 
+text_metric() {
+  key="$1"
+  marker_path="$2"
+  awk -v key="$key" '
+    {
+      for (i = 1; i <= NF; i++) {
+        split($i, kv, "=")
+        if (kv[1] == key) {
+          gsub(/^"/, "", kv[2])
+          gsub(/"$/, "", kv[2])
+          print kv[2]
+          exit
+        }
+      }
+    }
+  ' "$marker_path"
+}
+
 require_metric_ge() {
   marker_path="$1"
   key="$2"
@@ -451,6 +469,127 @@ validate_visual_metric_pair() {
     "$label terrain_chroma_samples"
 }
 
+abs_float_delta_value() {
+  left="$1"
+  right="$2"
+  awk -v left="$left" -v right="$right" '
+    BEGIN {
+      delta = left - right
+      if (delta < 0) {
+        delta = -delta
+      }
+      printf("%.4f", delta)
+    }
+  '
+}
+
+abs_int_delta_value() {
+  left="$1"
+  right="$2"
+  delta=$((left - right))
+  if [ "$delta" -lt 0 ]; then
+    delta=$((-delta))
+  fi
+  echo "$delta"
+}
+
+value_or_na() {
+  value="$1"
+  if [ -n "$value" ]; then
+    echo "$value"
+  else
+    echo "n/a"
+  fi
+}
+
+append_case_summary() {
+  append_case_summary_path="$1"
+  append_case_name="$2"
+  append_case_marker_path="$3"
+
+  smoke_err="$(metric "smoke_err" "$append_case_marker_path")"
+  terrain_samples="$(metric "terrain_samples" "$append_case_marker_path")"
+  terrain_color_buckets="$(metric "terrain_color_buckets" "$append_case_marker_path")"
+  terrain_luma_range="$(float_metric "terrain_luma_range" "$append_case_marker_path")"
+  gpu_frames="$(value_or_na "$(metric "gpu_frames" "$append_case_marker_path")")"
+  gpu_subchunks="$(value_or_na "$(metric "gpu_subchunks" "$append_case_marker_path")")"
+  shadow_path="$(text_metric "shadow_path" "$append_case_marker_path")"
+  shadow_mode="$(text_metric "shadow_mode" "$append_case_marker_path")"
+  shadow_mesh="$(text_metric "shadow_mesh" "$append_case_marker_path")"
+
+  printf '%s\n' \
+    "case=$append_case_name marker=$append_case_marker_path smoke_err=$smoke_err terrain_samples=$terrain_samples terrain_color_buckets=$terrain_color_buckets terrain_luma_range=$terrain_luma_range gpu_frames=$gpu_frames gpu_subchunks=$gpu_subchunks shadow_path=$shadow_path shadow_mode=$shadow_mode shadow_mesh=$shadow_mesh" \
+    >> "$append_case_summary_path"
+}
+
+append_visual_pair_summary() {
+  append_pair_summary_path="$1"
+  append_pair_name="$2"
+  append_pair_left_marker="$3"
+  append_pair_right_marker="$4"
+  append_pair_left_name="$5"
+  append_pair_right_name="$6"
+
+  left_luma="$(float_metric "avg_luma" "$append_pair_left_marker")"
+  right_luma="$(float_metric "avg_luma" "$append_pair_right_marker")"
+  luma_delta="$(abs_float_delta_value "$left_luma" "$right_luma")"
+  left_luma_range="$(float_metric "terrain_luma_range" "$append_pair_left_marker")"
+  right_luma_range="$(float_metric "terrain_luma_range" "$append_pair_right_marker")"
+  luma_range_delta="$(abs_float_delta_value "$left_luma_range" "$right_luma_range")"
+  left_terrain_samples="$(metric "terrain_samples" "$append_pair_left_marker")"
+  right_terrain_samples="$(metric "terrain_samples" "$append_pair_right_marker")"
+  terrain_samples_delta="$(abs_int_delta_value "$left_terrain_samples" "$right_terrain_samples")"
+  left_terrain_color_buckets="$(metric "terrain_color_buckets" "$append_pair_left_marker")"
+  right_terrain_color_buckets="$(metric "terrain_color_buckets" "$append_pair_right_marker")"
+  terrain_color_buckets_delta="$(abs_int_delta_value "$left_terrain_color_buckets" "$right_terrain_color_buckets")"
+  left_terrain_chroma_samples="$(metric "terrain_chroma_samples" "$append_pair_left_marker")"
+  right_terrain_chroma_samples="$(metric "terrain_chroma_samples" "$append_pair_right_marker")"
+  terrain_chroma_samples_delta="$(abs_int_delta_value "$left_terrain_chroma_samples" "$right_terrain_chroma_samples")"
+
+  printf '%s\n' \
+    "pair=$append_pair_name left=$append_pair_left_name right=$append_pair_right_name avg_luma=$left_luma/$right_luma delta=$luma_delta terrain_luma_range=$left_luma_range/$right_luma_range delta=$luma_range_delta terrain_samples=$left_terrain_samples/$right_terrain_samples delta=$terrain_samples_delta terrain_color_buckets=$left_terrain_color_buckets/$right_terrain_color_buckets delta=$terrain_color_buckets_delta terrain_chroma_samples=$left_terrain_chroma_samples/$right_terrain_chroma_samples delta=$terrain_chroma_samples_delta" \
+    >> "$append_pair_summary_path"
+}
+
+write_parity_summary() {
+  parity_summary_path="$OUT_DIR/parity-summary.txt"
+  parity_summary_tmp_path="$parity_summary_path.tmp"
+
+  {
+    echo "# GPU Terrain Parity Summary"
+    echo "generated_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    echo "out_dir=$OUT_DIR"
+    echo "validate_only=$VALIDATE_ONLY"
+    echo "case_count=13"
+    echo "thresholds max_avg_luma_delta=$MAX_AVG_LUMA_DELTA max_terrain_luma_range_delta=$MAX_TERRAIN_LUMA_RANGE_DELTA max_terrain_sample_delta_percent=$MAX_TERRAIN_SAMPLE_DELTA_PERCENT min_terrain_sample_delta=$MIN_TERRAIN_SAMPLE_DELTA max_terrain_color_bucket_delta_percent=$MAX_TERRAIN_COLOR_BUCKET_DELTA_PERCENT min_terrain_color_bucket_delta=$MIN_TERRAIN_COLOR_BUCKET_DELTA"
+    echo
+  } > "$parity_summary_tmp_path"
+
+  append_case_summary "$parity_summary_tmp_path" "cpu-arraymesh-parity" "$OUT_DIR/cpu-arraymesh-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-parity" "$OUT_DIR/gpu-terrain-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-radius1-parity" "$OUT_DIR/gpu-terrain-radius1-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-shadow-disabled-parity" "$OUT_DIR/gpu-terrain-shadow-disabled-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-collision-only-parity" "$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-compact-shadow-parity" "$OUT_DIR/gpu-terrain-compact-shadow-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "cpu-arraymesh-atlas-depth-parity" "$OUT_DIR/cpu-arraymesh-atlas-depth-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-atlas-depth-parity" "$OUT_DIR/gpu-terrain-atlas-depth-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "cpu-arraymesh-lighting-shadow-parity" "$OUT_DIR/cpu-arraymesh-lighting-shadow-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-lighting-shadow-parity" "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-compact-lighting-shadow-parity" "$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "cpu-arraymesh-texture-stand-parity" "$OUT_DIR/cpu-arraymesh-texture-stand-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-texture-stand-parity" "$OUT_DIR/gpu-terrain-texture-stand-parity.png.txt"
+
+  echo >> "$parity_summary_tmp_path"
+  append_visual_pair_summary "$parity_summary_tmp_path" "default" "$OUT_DIR/cpu-arraymesh-parity.png.txt" "$OUT_DIR/gpu-terrain-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
+  append_visual_pair_summary "$parity_summary_tmp_path" "atlas_depth" "$OUT_DIR/cpu-arraymesh-atlas-depth-parity.png.txt" "$OUT_DIR/gpu-terrain-atlas-depth-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
+  append_visual_pair_summary "$parity_summary_tmp_path" "lighting_shadow" "$OUT_DIR/cpu-arraymesh-lighting-shadow-parity.png.txt" "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
+  append_visual_pair_summary "$parity_summary_tmp_path" "lighting_shadow_compact" "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" "$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt" "gpu-full-shadow" "gpu-compact-shadow"
+  append_visual_pair_summary "$parity_summary_tmp_path" "texture_stand" "$OUT_DIR/cpu-arraymesh-texture-stand-parity.png.txt" "$OUT_DIR/gpu-terrain-texture-stand-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
+
+  mv "$parity_summary_tmp_path" "$parity_summary_path"
+  echo "Terrain parity summary written: $parity_summary_path"
+}
+
 validate_compact_shadow_pose_pair() {
   full_marker="$1"
   compact_marker="$2"
@@ -503,5 +642,6 @@ if [ "$VALIDATE_ONLY" != "1" ]; then
 fi
 
 validate_parity_markers
+write_parity_summary
 
 echo "Terrain parity smoke passed: $OUT_DIR"

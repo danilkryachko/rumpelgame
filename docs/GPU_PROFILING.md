@@ -24,6 +24,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 - GPU terrain face lighting normals now use a branchless 8-entry shader lookup table. Entries `5`, `6`, and `7` intentionally resolve to `+Z`, preserving the previous fallback behavior for any masked nonstandard face index while removing the old `face_normal` branch chain.
 - GPU terrain face UVs now use a branchless 32-entry shader lookup table. Rows `6` and `7` intentionally preserve the previous fallback UV order.
 - GPU terrain face corners now use branchless `FACE_CORNER_BASES`, `FACE_CORNER_EXTENT_X_FACTORS`, and `FACE_CORNER_EXTENT_Y_FACTORS` tables. Rows `6` and `7` intentionally preserve the previous front-face fallback, and the geometry-affecting change was checked with full CPU/GPU terrain parity in `logs/gpu_shader_branchless_corners_parity`.
+- `scripts/gpu_terrain_parity_smoke.sh` writes `parity-summary.txt` after a passing full or validate-only parity run. Use it as the compact evidence for atlas/depth, lighting/shadow, compact-shadow, and texture-stand visual deltas before deciding whether another shader change needs fresh captures.
 
 ## Report-Only Or Untrusted Local Signals
 
