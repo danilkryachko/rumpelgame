@@ -35,6 +35,17 @@ const vec3 FACE_NORMALS[8] = vec3[8](
     vec3(0.0, 0.0, 1.0)
 );
 
+const vec2 FACE_UV_FACTORS[32] = vec2[32](
+    vec2(0.0, 1.0), vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0),
+    vec2(0.0, 1.0), vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0),
+    vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
+    vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
+    vec2(1.0, 1.0), vec2(0.0, 1.0), vec2(0.0, 0.0), vec2(1.0, 0.0),
+    vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0),
+    vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
+    vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0)
+);
+
 vec3 face_corner(uint face_idx, uint corner_idx, vec2 extent) {
     if (face_idx == 0u) {
         vec3 corners[4] = vec3[4](
@@ -106,41 +117,7 @@ vec3 face_lighting(uint face_idx) {
 }
 
 vec2 face_uv(uint face_idx, uint corner_idx, vec2 extent) {
-    if (face_idx == 0u || face_idx == 1u) {
-        vec2 uvs[4] = vec2[4](
-            vec2(0.0, extent.y),
-            vec2(0.0, 0.0),
-            vec2(extent.x, 0.0),
-            vec2(extent.x, extent.y)
-        );
-        return uvs[corner_idx];
-    }
-    if (face_idx == 4u) {
-        vec2 uvs[4] = vec2[4](
-            vec2(extent.x, extent.y),
-            vec2(0.0, extent.y),
-            vec2(0.0, 0.0),
-            vec2(extent.x, 0.0)
-        );
-        return uvs[corner_idx];
-    }
-    if (face_idx == 5u) {
-        vec2 uvs[4] = vec2[4](
-            vec2(0.0, extent.y),
-            vec2(extent.x, extent.y),
-            vec2(extent.x, 0.0),
-            vec2(0.0, 0.0)
-        );
-        return uvs[corner_idx];
-    }
-
-    vec2 uvs[4] = vec2[4](
-        vec2(0.0, 0.0),
-        vec2(0.0, extent.y),
-        vec2(extent.x, extent.y),
-        vec2(extent.x, 0.0)
-    );
-    return uvs[corner_idx];
+    return FACE_UV_FACTORS[(face_idx & 7u) * 4u + corner_idx] * extent;
 }
 
 int unpack_signed_i16(uint value) {

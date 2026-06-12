@@ -22,6 +22,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 ## Shader Findings
 
 - GPU terrain face lighting normals now use a branchless 8-entry shader lookup table. Entries `5`, `6`, and `7` intentionally resolve to `+Z`, preserving the previous fallback behavior for any masked nonstandard face index while removing the old `face_normal` branch chain.
+- GPU terrain face UVs now use a branchless 32-entry shader lookup table. Rows `6` and `7` intentionally preserve the previous fallback UV order, while `face_corner` remains branch-based until a separate vertex-position parity pass justifies changing geometry code.
 
 ## Report-Only Or Untrusted Local Signals
 

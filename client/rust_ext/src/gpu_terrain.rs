@@ -3030,6 +3030,27 @@ mod tests {
     }
 
     #[test]
+    fn render_shader_uses_branchless_face_uv_table() {
+        let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
+
+        assert!(vertex_source.contains("const vec2 FACE_UV_FACTORS[32] = vec2[32]("));
+        assert!(
+            vertex_source
+                .contains("return FACE_UV_FACTORS[(face_idx & 7u) * 4u + corner_idx] * extent;")
+        );
+        assert!(
+            vertex_source
+                .contains("vec2(1.0, 1.0), vec2(0.0, 1.0), vec2(0.0, 0.0), vec2(1.0, 0.0),")
+        );
+        assert!(
+            vertex_source
+                .contains("vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0),")
+        );
+        assert!(!vertex_source.contains("if (face_idx == 0u || face_idx == 1u)"));
+        assert!(!vertex_source.contains("vec2 uvs[4]"));
+    }
+
+    #[test]
     fn render_shader_push_constant_layout_matches_rust_bytes() {
         let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
         let clip_idx = vertex_source
