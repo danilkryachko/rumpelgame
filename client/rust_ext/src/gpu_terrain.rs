@@ -24,7 +24,8 @@ const PADDED_H: usize = 34;
 const PADDED_D: usize = 34;
 const BLOCK_BYTES: usize = 2;
 const PACKED_FACE_BYTES: usize = std::mem::size_of::<PackedFace>();
-const INDIRECT_DRAW_BYTES: usize = 16;
+const INDIRECT_DRAW_FIELD_COUNT: usize = 4;
+const INDIRECT_DRAW_BYTES: usize = INDIRECT_DRAW_FIELD_COUNT * std::mem::size_of::<u32>();
 const CLIP_FROM_WORLD_PUSH_CONSTANT_BYTES: usize = 64;
 const TERRAIN_LIGHTING_PUSH_CONSTANT_BYTES: usize = 32;
 const TERRAIN_ATLAS_PUSH_CONSTANT_BYTES: usize = 16;
@@ -852,12 +853,21 @@ pub struct GpuTerrainSlot {
     pub face_count: usize,
 }
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 struct IndirectDrawCommand {
     vertex_count: u32,
     instance_count: u32,
     first_vertex: u32,
     first_instance: u32,
+}
+
+fn draw_command_active_bytes(draw_count: usize) -> usize {
+    draw_count.saturating_mul(INDIRECT_DRAW_BYTES)
+}
+
+fn draw_command_capacity_bytes(max_draws: usize) -> usize {
+    max_draws.saturating_mul(INDIRECT_DRAW_BYTES)
 }
 
 impl IndirectDrawCommand {
@@ -927,6 +937,9 @@ pub struct GpuTerrainStats {
     pub faces: usize,
     pub bytes: usize,
     pub draw_count: usize,
+    pub draw_command_bytes: usize,
+    pub draw_command_capacity_bytes: usize,
+    pub draw_command_stride_bytes: usize,
     pub compositor_draw_repeat: u32,
     pub compositor_effective_draw_count: usize,
     pub compositor_frames: u64,
@@ -1228,7 +1241,7 @@ impl GpuTerrainBufferPool {
         };
 
         let faces_bytes = (MAX_GPU_TERRAIN_FACES * PACKED_FACE_BYTES) as u32;
-        let indirect_bytes = (MAX_INDIRECT_DRAWS * INDIRECT_DRAW_BYTES) as u32;
+        let indirect_bytes = draw_command_capacity_bytes(MAX_INDIRECT_DRAWS) as u32;
         let faces_buffer_rid = rd.storage_buffer_create(faces_bytes);
         let indirect_buffer_rid = rd
             .storage_buffer_create_ex(indirect_bytes)
@@ -1388,6 +1401,9 @@ impl GpuTerrainBufferPool {
             faces: self.used_faces,
             bytes: self.used_faces * PACKED_FACE_BYTES,
             draw_count: self.draw_count,
+            draw_command_bytes: draw_command_active_bytes(self.draw_count),
+            draw_command_capacity_bytes: draw_command_capacity_bytes(MAX_INDIRECT_DRAWS),
+            draw_command_stride_bytes: INDIRECT_DRAW_BYTES,
             compositor_draw_repeat: gpu_terrain_compositor_draw_repeat(),
             compositor_effective_draw_count: self
                 .draw_count
@@ -3389,6 +3405,42 @@ mod tests {
         ];
 
         assert_eq!(compositor_gpu_timestamp_delta_ms(timestamps), None);
+    }
+
+    #[test]
+    fn indirect_draw_command_layout_matches_rendering_device_stride() {
+        assert_eq!(
+            std::mem::size_of::<IndirectDrawCommand>(),
+            INDIRECT_DRAW_BYTES
+        );
+        assert_eq!(
+            std::mem::align_of::<IndirectDrawCommand>(),
+            std::mem::align_of::<u32>()
+        );
+
+        let slot = GpuTerrainSlot {
+            start_face: 7,
+            face_count: 13,
+        };
+        let mut bytes = Vec::new();
+        IndirectDrawCommand::for_slot(slot).append_bytes(&mut bytes);
+
+        assert_eq!(bytes.len(), INDIRECT_DRAW_BYTES);
+        let words = bytes
+            .chunks_exact(std::mem::size_of::<u32>())
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(words, vec![6, 13, 0, 7]);
+    }
+
+    #[test]
+    fn draw_command_buffer_byte_counts_track_active_and_capacity() {
+        assert_eq!(draw_command_active_bytes(0), 0);
+        assert_eq!(draw_command_active_bytes(3), 3 * INDIRECT_DRAW_BYTES);
+        assert_eq!(
+            draw_command_capacity_bytes(MAX_INDIRECT_DRAWS),
+            MAX_INDIRECT_DRAWS * INDIRECT_DRAW_BYTES
+        );
     }
 
     #[test]

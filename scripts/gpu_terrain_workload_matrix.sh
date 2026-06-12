@@ -121,6 +121,9 @@ summary_line() {
   motion_chunks="$(metric motion_chunks "$marker_path")"
   gpu_subchunks="$(metric gpu_subchunks "$marker_path")"
   gpu_draws="$(metric gpu_draws "$marker_path")"
+  gpu_draw_cmd_bytes="$(metric gpu_draw_cmd_bytes "$marker_path")"
+  gpu_draw_cmd_capacity_bytes="$(metric gpu_draw_cmd_capacity_bytes "$marker_path")"
+  gpu_draw_cmd_stride="$(metric gpu_draw_cmd_stride "$marker_path")"
   gpu_faces="$(metric gpu_faces "$marker_path")"
   cpu_proxy="$(metric cpu_proxy "$marker_path")"
   gpu_upload_fail="$(metric gpu_upload_fail "$marker_path")"
@@ -150,6 +153,9 @@ summary_line() {
     -v motion_chunks="${motion_chunks:-0}" \
     -v gpu_subchunks="${gpu_subchunks:-0}" \
     -v gpu_draws="${gpu_draws:-0}" \
+    -v gpu_draw_cmd_bytes="${gpu_draw_cmd_bytes:-0}" \
+    -v gpu_draw_cmd_capacity_bytes="${gpu_draw_cmd_capacity_bytes:-0}" \
+    -v gpu_draw_cmd_stride="${gpu_draw_cmd_stride:-0}" \
     -v gpu_faces="${gpu_faces:-0}" \
     -v cpu_proxy="${cpu_proxy:-0}" \
     -v gpu_upload_fail="${gpu_upload_fail:-0}" \
@@ -168,7 +174,7 @@ summary_line() {
     -v frame_p95="$frame_p95" \
     -v fps_p05="$fps_p05" '
       BEGIN {
-        printf("%s server_reused=%d motion_steps=%d motion_chunks=%d gpu_subchunks=%d gpu_draws=%d gpu_faces=%d cpu_proxy=%d gpu_upload_fail=%d terrain_samples=%d terrain_queue_avg_ms=%.3f terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_max_us=%.1f frame_p95_ms=%.3f fps_p05=%.1f\n", label, server_reused, motion_steps, motion_chunks, gpu_subchunks, gpu_draws, gpu_faces, cpu_proxy, gpu_upload_fail, terrain_samples, queue_avg, queue_max, process_wall_p95, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_us_max, frame_p95, fps_p05)
+        printf("%s server_reused=%d motion_steps=%d motion_chunks=%d gpu_subchunks=%d gpu_draws=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_faces=%d cpu_proxy=%d gpu_upload_fail=%d terrain_samples=%d terrain_queue_avg_ms=%.3f terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_max_us=%.1f frame_p95_ms=%.3f fps_p05=%.1f\n", label, server_reused, motion_steps, motion_chunks, gpu_subchunks, gpu_draws, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_faces, cpu_proxy, gpu_upload_fail, terrain_samples, queue_avg, queue_max, process_wall_p95, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_us_max, frame_p95, fps_p05)
       }
     '
 }
