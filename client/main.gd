@@ -250,6 +250,7 @@ func capture_visual_smoke(screenshot_path: String):
 	])
 	await run_visual_smoke_block_edit()
 	apply_visual_smoke_pose(pose_name)
+	var ground_metrics = visual_smoke_ground_metrics()
 	var post_draw_wait_start_usec = Time.get_ticks_usec()
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
@@ -289,7 +290,7 @@ func capture_visual_smoke(screenshot_path: String):
 	var frame_metrics = visual_smoke_frame_metrics()
 	var process_metrics = visual_smoke_process_wall_metrics()
 	var runtime_metrics = visual_smoke_runtime_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		visual_smoke_motion_name,
@@ -336,6 +337,12 @@ func capture_visual_smoke(screenshot_path: String):
 		runtime_metrics["vsync_mode"],
 		runtime_metrics["screen_refresh_hz"],
 		visual_smoke_client_flag("is_texture_debug_stand_visible"),
+		visual_smoke_client_int("get_current_chunk_loaded", 0),
+		visual_smoke_client_int("get_current_chunk_rendered_count", 0),
+		visual_smoke_client_int("get_current_chunk_collision_count", 0),
+		ground_metrics["hit"],
+		ground_metrics["distance"],
+		ground_metrics["y"],
 		visual_smoke_client_text("get_perf_text", "n/a"),
 		visual_smoke_chunk_text(),
 		visual_smoke_client_text("get_current_chunk_text", "n/a")
@@ -362,6 +369,31 @@ func visual_smoke_client_flag(method: String) -> int:
 	if client and client.has_method(method) and bool(client.call(method)):
 		return 1
 	return 0
+
+func visual_smoke_client_int(method: String, fallback: int) -> int:
+	var client = get_node_or_null("GameClient")
+	if client and client.has_method(method):
+		return int(client.call(method))
+	return fallback
+
+func visual_smoke_ground_metrics() -> Dictionary:
+	var player = get_tree().root.find_child("Player", true, false) as Node3D
+	if not player:
+		return {"hit": 0, "distance": -1.0, "y": 0.0}
+	var origin = player.global_position + Vector3(0.0, 1.0, 0.0)
+	var target = origin + Vector3(0.0, -160.0, 0.0)
+	var query = PhysicsRayQueryParameters3D.create(origin, target)
+	if player.has_method("get_rid"):
+		query.exclude = [player.get_rid()]
+	var result = player.get_world_3d().direct_space_state.intersect_ray(query)
+	if result.is_empty():
+		return {"hit": 0, "distance": -1.0, "y": 0.0}
+	var hit_position: Vector3 = result["position"]
+	return {
+		"hit": 1,
+		"distance": origin.distance_to(hit_position),
+		"y": hit_position.y
+	}
 
 func visual_smoke_chunk_text() -> String:
 	var client = get_node_or_null("GameClient")
@@ -535,7 +567,7 @@ func apply_visual_smoke_look_at(player: Node3D, camera: Camera3D, position: Vect
 func run_visual_smoke_motion(motion_name: String):
 	visual_smoke_motion_steps = 0
 	visual_smoke_motion_chunks.clear()
-	if motion_name != "chunk_walk" and motion_name != "chunk_walk_long" and motion_name != "chunk_walk_extended":
+	if motion_name != "chunk_walk" and motion_name != "chunk_walk_long" and motion_name != "chunk_walk_extended" and motion_name != "chunk_fly_out_back":
 		return
 
 	var player = get_tree().root.find_child("Player", true, false) as Node3D
@@ -544,30 +576,7 @@ func run_visual_smoke_motion(motion_name: String):
 
 	var camera = visual_smoke_player_camera(player)
 	var step_sec = max(env_float(VISUAL_SMOKE_MOTION_STEP_SEC_ENV, VISUAL_SMOKE_DEFAULT_MOTION_STEP_SEC), 0.05)
-	var positions = [
-		Vector3(16.0, 74.0, 16.0),
-		Vector3(48.0, 74.0, 16.0),
-		Vector3(80.0, 74.0, 48.0),
-		Vector3(112.0, 74.0, 80.0)
-	]
-	if motion_name == "chunk_walk_long":
-		positions.append_array([
-			Vector3(144.0, 74.0, 112.0),
-			Vector3(176.0, 74.0, 112.0),
-			Vector3(208.0, 74.0, 144.0),
-			Vector3(240.0, 74.0, 176.0)
-		])
-	if motion_name == "chunk_walk_extended":
-		positions.append_array([
-			Vector3(144.0, 74.0, 112.0),
-			Vector3(176.0, 74.0, 112.0),
-			Vector3(208.0, 74.0, 144.0),
-			Vector3(240.0, 74.0, 176.0),
-			Vector3(272.0, 74.0, 208.0),
-			Vector3(304.0, 74.0, 240.0),
-			Vector3(336.0, 74.0, 240.0),
-			Vector3(368.0, 74.0, 272.0)
-		])
+	var positions = visual_smoke_motion_positions(motion_name)
 	for position in positions:
 		player.global_position = position
 		visual_smoke_motion_steps += 1
@@ -580,6 +589,45 @@ func run_visual_smoke_motion(motion_name: String):
 	var settle_sec = max(env_float(VISUAL_SMOKE_MOTION_SETTLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_MOTION_SETTLE_SEC), 0.0)
 	if settle_sec > 0.0:
 		await get_tree().create_timer(settle_sec).timeout
+
+func visual_smoke_motion_positions(motion_name: String) -> Array[Vector3]:
+	var positions: Array[Vector3] = [
+		Vector3(16.0, 74.0, 16.0),
+		Vector3(48.0, 74.0, 16.0),
+		Vector3(80.0, 74.0, 48.0),
+		Vector3(112.0, 74.0, 80.0)
+	]
+	if motion_name == "chunk_walk_long" or motion_name == "chunk_walk_extended":
+		positions.append_array([
+			Vector3(144.0, 74.0, 112.0),
+			Vector3(176.0, 74.0, 112.0),
+			Vector3(208.0, 74.0, 144.0),
+			Vector3(240.0, 74.0, 176.0)
+		])
+	if motion_name == "chunk_walk_extended":
+		positions.append_array([
+			Vector3(272.0, 74.0, 208.0),
+			Vector3(304.0, 74.0, 240.0),
+			Vector3(336.0, 74.0, 240.0),
+			Vector3(368.0, 74.0, 272.0)
+		])
+	if motion_name == "chunk_fly_out_back":
+		return [
+			Vector3(16.0, 84.0, 16.0),
+			Vector3(80.0, 84.0, 16.0),
+			Vector3(144.0, 84.0, 16.0),
+			Vector3(208.0, 84.0, 16.0),
+			Vector3(272.0, 84.0, 16.0),
+			Vector3(336.0, 84.0, 16.0),
+			Vector3(400.0, 84.0, 16.0),
+			Vector3(336.0, 84.0, 16.0),
+			Vector3(272.0, 84.0, 16.0),
+			Vector3(208.0, 84.0, 16.0),
+			Vector3(144.0, 84.0, 16.0),
+			Vector3(80.0, 84.0, 16.0),
+			Vector3(16.0, 74.0, 16.0)
+		]
+	return positions
 
 func run_visual_smoke_block_edit():
 	visual_smoke_block_edit_name = OS.get_environment(VISUAL_SMOKE_BLOCK_EDIT_ENV).strip_edges().to_lower()

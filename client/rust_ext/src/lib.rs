@@ -1407,6 +1407,22 @@ impl GameClient {
         }
     }
 
+    fn current_chunk_node_counts(&self) -> NodePerfCounts {
+        let Some((chunk_x, chunk_z)) = self.current_player_chunk else {
+            return NodePerfCounts::default();
+        };
+        self.subchunk_node_counts
+            .iter()
+            .filter(|(key, _)| key.chunk_x == chunk_x && key.chunk_z == chunk_z)
+            .fold(
+                NodePerfCounts::default(),
+                |mut counts, (_, subchunk_counts)| {
+                    counts.add(*subchunk_counts);
+                    counts
+                },
+            )
+    }
+
     fn subchunk_node_perf_counts_for_mesh_instance(
         &self,
         key: SubchunkKey,
@@ -3526,6 +3542,24 @@ impl GameClient {
     #[func]
     fn get_chunk_collision_count(&self) -> i32 {
         self.perf.node_counts.total_collision_bodies
+    }
+
+    #[func]
+    fn get_current_chunk_loaded(&self) -> i32 {
+        let Some(coord) = self.current_player_chunk else {
+            return 0;
+        };
+        i32::from(self.chunk_blocks.contains_key(&coord))
+    }
+
+    #[func]
+    fn get_current_chunk_rendered_count(&self) -> i32 {
+        self.current_chunk_node_counts().rendered_submeshes
+    }
+
+    #[func]
+    fn get_current_chunk_collision_count(&self) -> i32 {
+        self.current_chunk_node_counts().total_collision_bodies
     }
 
     #[func]
