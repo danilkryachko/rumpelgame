@@ -609,7 +609,7 @@ func apply_visual_smoke_look_at(player: Node3D, camera: Camera3D, position: Vect
 func run_visual_smoke_motion(motion_name: String):
 	visual_smoke_motion_steps = 0
 	visual_smoke_motion_chunks.clear()
-	if motion_name != "chunk_walk" and motion_name != "chunk_walk_long" and motion_name != "chunk_walk_extended" and motion_name != "chunk_fly_out_back":
+	if motion_name != "chunk_walk" and motion_name != "chunk_walk_long" and motion_name != "chunk_walk_extended" and motion_name != "chunk_fly_out_back" and motion_name != "chunk_fly_snap_back":
 		return
 
 	var player = get_tree().root.find_child("Player", true, false) as Node3D
@@ -619,13 +619,17 @@ func run_visual_smoke_motion(motion_name: String):
 	var camera = visual_smoke_player_camera(player)
 	var step_sec = max(env_float(VISUAL_SMOKE_MOTION_STEP_SEC_ENV, VISUAL_SMOKE_DEFAULT_MOTION_STEP_SEC), 0.05)
 	var positions = visual_smoke_motion_positions(motion_name)
-	for position in positions:
+	for index in range(positions.size()):
+		var position = positions[index]
 		player.global_position = position
 		visual_smoke_motion_steps += 1
 		visual_smoke_motion_chunks[visual_smoke_chunk_key(position)] = true
 		if camera:
 			apply_visual_smoke_look_at(player, camera, position, position + Vector3(24.0, -10.0, -28.0))
 		await get_tree().process_frame
+		if motion_name == "chunk_fly_snap_back" and index == positions.size() - 1:
+			await get_tree().process_frame
+			continue
 		await get_tree().create_timer(step_sec).timeout
 
 	var settle_sec = max(env_float(VISUAL_SMOKE_MOTION_SETTLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_MOTION_SETTLE_SEC), 0.0)
@@ -667,6 +671,18 @@ func visual_smoke_motion_positions(motion_name: String) -> Array[Vector3]:
 			Vector3(208.0, 84.0, 16.0),
 			Vector3(144.0, 84.0, 16.0),
 			Vector3(80.0, 84.0, 16.0),
+			Vector3(16.0, 74.0, 16.0)
+		]
+	if motion_name == "chunk_fly_snap_back":
+		return [
+			Vector3(16.0, 84.0, 16.0),
+			Vector3(96.0, 84.0, -64.0),
+			Vector3(176.0, 84.0, -128.0),
+			Vector3(256.0, 84.0, -192.0),
+			Vector3(336.0, 84.0, -256.0),
+			Vector3(416.0, 84.0, -320.0),
+			Vector3(496.0, 84.0, -384.0),
+			Vector3(576.0, 84.0, -448.0),
 			Vector3(16.0, 74.0, 16.0)
 		]
 	return positions

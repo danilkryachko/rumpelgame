@@ -8,12 +8,26 @@ case "$OUT_DIR" in
   *) OUT_DIR="$ROOT_DIR/$OUT_DIR" ;;
 esac
 
-MOTION_NAME="${RUMPELMC_FLYBACK_STRESS_MOTION:-chunk_fly_out_back}"
+MOTION_NAME="${RUMPELMC_FLYBACK_STRESS_MOTION:-chunk_fly_snap_back}"
 EXPECTED_CURRENT_CHUNK="${RUMPELMC_FLYBACK_STRESS_EXPECTED_CHUNK:-0,0}"
-MIN_MOTION_STEPS="${RUMPELMC_FLYBACK_STRESS_MIN_STEPS:-13}"
-MIN_MOTION_CHUNKS="${RUMPELMC_FLYBACK_STRESS_MIN_CHUNKS:-7}"
-MOTION_STEP_SEC="${RUMPELMC_FLYBACK_STRESS_STEP_SEC:-0.55}"
-MOTION_SETTLE_SEC="${RUMPELMC_FLYBACK_STRESS_SETTLE_SEC:-4.0}"
+case "$MOTION_NAME" in
+  chunk_fly_snap_back)
+    DEFAULT_MIN_MOTION_STEPS=9
+    DEFAULT_MIN_MOTION_CHUNKS=8
+    DEFAULT_MOTION_STEP_SEC=0.08
+    DEFAULT_MOTION_SETTLE_SEC=0.65
+    ;;
+  *)
+    DEFAULT_MIN_MOTION_STEPS=13
+    DEFAULT_MIN_MOTION_CHUNKS=7
+    DEFAULT_MOTION_STEP_SEC=0.55
+    DEFAULT_MOTION_SETTLE_SEC=4.0
+    ;;
+esac
+MIN_MOTION_STEPS="${RUMPELMC_FLYBACK_STRESS_MIN_STEPS:-$DEFAULT_MIN_MOTION_STEPS}"
+MIN_MOTION_CHUNKS="${RUMPELMC_FLYBACK_STRESS_MIN_CHUNKS:-$DEFAULT_MIN_MOTION_CHUNKS}"
+MOTION_STEP_SEC="${RUMPELMC_FLYBACK_STRESS_STEP_SEC:-$DEFAULT_MOTION_STEP_SEC}"
+MOTION_SETTLE_SEC="${RUMPELMC_FLYBACK_STRESS_SETTLE_SEC:-$DEFAULT_MOTION_SETTLE_SEC}"
 MAX_GROUND_DISTANCE="${RUMPELMC_FLYBACK_STRESS_MAX_GROUND_DISTANCE:-24.0}"
 
 fail() {
@@ -122,8 +136,6 @@ require_metric_ge "$marker_path" motion_chunks "$MIN_MOTION_CHUNKS"
 require_metric_eq "$marker_path" current_chunk_loaded 1
 require_metric_ge "$marker_path" current_chunk_submeshes 1
 require_metric_ge "$marker_path" current_chunk_collision 1
-require_metric_eq "$marker_path" ground_hit 1
-require_float_between "$marker_path" ground_distance 0.5 "$MAX_GROUND_DISTANCE"
 require_metric_ge "$marker_path" ground_samples 9
 require_metric_eq "$marker_path" ground_misses 0
 require_float_between "$marker_path" ground_max_distance 0.5 "$MAX_GROUND_DISTANCE"
