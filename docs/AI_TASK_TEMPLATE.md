@@ -34,6 +34,7 @@ Review gates:
 - Prefer conservative assumptions for small tasks.
 - Ask clarifying questions before large, ambiguous, protocol, storage, persistence, UI, or gameplay changes.
 - Do not use the brief to expand the user's request beyond what they asked for.
+- Do not impose fixed file-count or line-count caps; split work by risk, reviewability, and testability instead.
 - If delegating to worker threads, give each worker a disjoint write scope.
 - The main agent remains responsible for final coordination and integration.
 

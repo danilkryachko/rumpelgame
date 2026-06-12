@@ -3003,6 +3003,10 @@ fn gpu_terrain_transparent_fallback_decision(requested: bool, active: bool) -> b
     requested && !active
 }
 
+fn gpu_terrain_transparent_workload_counts(_active: bool) -> (u32, u32, u32, u32) {
+    (0, 0, 0, 0)
+}
+
 fn gpu_terrain_shadow_proxy_chunk_distance_override() -> Option<i32> {
     static OVERRIDE: OnceLock<Option<i32>> = OnceLock::new();
     *OVERRIDE.get_or_init(|| {
@@ -3930,11 +3934,13 @@ impl GameClient {
         let transparent_active = gpu_terrain_transparent_active();
         let transparent_fallback =
             gpu_terrain_transparent_fallback_decision(transparent_requested, transparent_active);
+        let (transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks) =
+            gpu_terrain_transparent_workload_counts(transparent_active);
         let gpu_terrain_text = self.gpu_terrain_perf_text();
         let dirty_bounds = dirty_bounds_label(self.perf.last_dirty_bounds);
         let dirty_edges = dirty_edge_label(self.perf.last_dirty_edge_mask);
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} transparent_requested={} transparent_active={} transparent_fallback={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -3971,6 +3977,10 @@ impl GameClient {
             transparent_requested as u8,
             transparent_active as u8,
             transparent_fallback as u8,
+            transparent_blocks,
+            transparent_faces,
+            transparent_draws,
+            transparent_subchunks,
             gpu_terrain_shadow_proxy_mode().as_str(),
             gpu_terrain_shadow_proxy_mesh_mode().as_str(),
             self.perf.compact_shadow_proxy_meshes_built,
@@ -4377,6 +4387,7 @@ mod tests {
         assert!(!gpu_terrain_transparent_fallback_decision(false, true));
         assert!(gpu_terrain_transparent_fallback_decision(true, false));
         assert!(!gpu_terrain_transparent_fallback_decision(true, true));
+        assert_eq!(gpu_terrain_transparent_workload_counts(false), (0, 0, 0, 0));
     }
 
     #[test]
