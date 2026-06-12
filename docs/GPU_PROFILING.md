@@ -87,6 +87,15 @@ RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 ./scripts/gpu_terrain_workload_matrix.sh logs/gpu_terrain_profile_matrix
 ```
 
+Use the compact proxy benchmark for focused shadow-proxy measurements. It writes `compact-proxy-benchmark-summary.txt` and, in capture mode, requires a free local `25565` server port:
+
+```sh
+RUMPELMC_COMPACT_PROXY_BENCH_CAPTURE=1 \
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+sh scripts/gpu_terrain_compact_proxy_benchmark.sh logs/gpu_shadow_proxy_focused_capture
+```
+
 ## Recording Results
 
 For each meaningful GPU iteration, record:

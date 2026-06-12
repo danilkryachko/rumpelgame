@@ -8,6 +8,10 @@ if [ "$CAPTURE" = "1" ]; then
 else
   OUT_DIR="${1:-"$ROOT_DIR/logs/gpu_terrain_visual_smoke/parity"}"
 fi
+case "$OUT_DIR" in
+  /*) ;;
+  *) OUT_DIR="$ROOT_DIR/$OUT_DIR" ;;
+esac
 GODOT_BIN="${GODOT_BIN:-/opt/homebrew/bin/godot}"
 TIMEOUT_BIN="${TIMEOUT_BIN:-/opt/homebrew/bin/timeout}"
 GODOT_TIMEOUT_SEC="${GODOT_TIMEOUT_SEC:-90}"
@@ -28,18 +32,82 @@ fail() {
   exit 1
 }
 
+listener_pid() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -tiTCP:25565 -sTCP:LISTEN 2>/dev/null | sed -n '1p'
+  fi
+}
+
+wait_for_port_clear() {
+  tries=0
+  while [ "$tries" -lt 10 ]; do
+    pid="$(listener_pid || true)"
+    if [ -z "$pid" ]; then
+      return 0
+    fi
+    tries=$((tries + 1))
+    sleep 1
+  done
+  fail "port 25565 is still listening after compact proxy benchmark cleanup"
+}
+
+cleanup_capture_server() {
+  if [ "$CAPTURE" != "1" ]; then
+    return 0
+  fi
+  pid="$(listener_pid || true)"
+  if [ -n "$pid" ]; then
+    kill "$pid" 2>/dev/null || true
+    wait_for_port_clear
+  fi
+}
+
+if [ "$CAPTURE" = "1" ]; then
+  listener="$(listener_pid || true)"
+  if [ -n "$listener" ]; then
+    fail "port 25565 is already in use; stop the existing server before capture"
+  fi
+  trap cleanup_capture_server EXIT
+fi
+
 . "$ROOT_DIR/scripts/godot_rust_ext_profile.sh"
 
 metric() {
   key="$1"
   marker_path="$2"
-  sed -n "s/.*$key=\([0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+  awk -v key="$key" '
+    {
+      prefix = key "="
+      for (i = 1; i <= NF; i++) {
+        if (index($i, prefix) == 1) {
+          value = substr($i, length(prefix) + 1)
+          if (value ~ /^[0-9][0-9]*$/) {
+            print value
+            exit
+          }
+        }
+      }
+    }
+  ' "$marker_path"
 }
 
 float_metric() {
   key="$1"
   marker_path="$2"
-  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+  awk -v key="$key" '
+    {
+      prefix = key "="
+      for (i = 1; i <= NF; i++) {
+        if (index($i, prefix) == 1) {
+          value = substr($i, length(prefix) + 1)
+          if (value ~ /^[0-9][0-9]*\.[0-9][0-9]*$/) {
+            print value
+            exit
+          }
+        }
+      }
+    }
+  ' "$marker_path"
 }
 
 mesh_avg_ms() {
@@ -296,16 +364,32 @@ if [ "$CAPTURE" = "1" ]; then
   collision_marker="$OUT_DIR/gpu-terrain-collision-only.png.txt"
 else
   if [ -z "$FULL_MARKER" ]; then
-    FULL_MARKER="$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt"
+    if [ -s "$OUT_DIR/gpu-terrain-full.png.txt" ]; then
+      FULL_MARKER="$OUT_DIR/gpu-terrain-full.png.txt"
+    else
+      FULL_MARKER="$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt"
+    fi
   fi
   if [ -z "$COMPACT_MARKER" ]; then
-    COMPACT_MARKER="$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
+    if [ -s "$OUT_DIR/gpu-terrain-compact.png.txt" ]; then
+      COMPACT_MARKER="$OUT_DIR/gpu-terrain-compact.png.txt"
+    else
+      COMPACT_MARKER="$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
+    fi
   fi
   if [ -z "$COLLISION_MARKER" ]; then
-    COLLISION_MARKER="$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
+    if [ -s "$OUT_DIR/gpu-terrain-collision-only.png.txt" ]; then
+      COLLISION_MARKER="$OUT_DIR/gpu-terrain-collision-only.png.txt"
+    else
+      COLLISION_MARKER="$OUT_DIR/gpu-terrain-collision-only-parity.png.txt"
+    fi
   fi
   if [ -z "$SHADOW_DISABLED_MARKER" ]; then
-    SHADOW_DISABLED_MARKER="$OUT_DIR/gpu-terrain-shadow-disabled-parity.png.txt"
+    if [ -s "$OUT_DIR/gpu-terrain-shadow-disabled.png.txt" ]; then
+      SHADOW_DISABLED_MARKER="$OUT_DIR/gpu-terrain-shadow-disabled.png.txt"
+    else
+      SHADOW_DISABLED_MARKER="$OUT_DIR/gpu-terrain-shadow-disabled-parity.png.txt"
+    fi
   fi
   full_marker="$FULL_MARKER"
   compact_marker="$COMPACT_MARKER"
@@ -319,25 +403,6 @@ else
   require_metric_eq "$full_marker" "compact_shadow_normals_saved" 0
   require_metric_ge "$compact_marker" "compact_shadow_proxy" 1
   require_metric_ge "$compact_marker" "compact_shadow_normals_saved" "$(metric "compact_shadow_proxy" "$compact_marker")"
-fi
-
-echo
-echo "Compact proxy benchmark summary:"
-print_row full "$full_marker"
-print_row compact "$compact_marker"
-print_row shadow_disabled "$shadow_disabled_marker"
-print_row collision_only "$collision_marker"
-
-full_normals="$(normal_total "$full_marker")"
-compact_normals="$(normal_total "$compact_marker")"
-if [ -n "$full_normals" ] && [ -n "$compact_normals" ] && [ "$full_normals" -gt 0 ]; then
-  awk -v full="$full_normals" -v compact="$compact_normals" '
-    BEGIN {
-      saved = full - compact
-      pct = saved * 100.0 / full
-      printf("shadow_normal_total_delta=%d shadow_normal_total_reduction=%.1f%%\n", saved, pct)
-    }
-  '
 fi
 
 print_collision_payload_reduction() {
@@ -359,5 +424,34 @@ print_collision_payload_reduction() {
   fi
 }
 
-print_collision_payload_reduction shadow_disabled "$shadow_disabled_marker"
-print_collision_payload_reduction collision_only "$collision_marker"
+summary_path="$OUT_DIR/compact-proxy-benchmark-summary.txt"
+tmp_summary_path="$summary_path.tmp"
+{
+  echo "Compact proxy benchmark summary:"
+  print_row full "$full_marker"
+  print_row compact "$compact_marker"
+  print_row shadow_disabled "$shadow_disabled_marker"
+  print_row collision_only "$collision_marker"
+
+  full_normals="$(normal_total "$full_marker")"
+  compact_normals="$(normal_total "$compact_marker")"
+  if [ -n "$full_normals" ] && [ -n "$compact_normals" ] && [ "$full_normals" -gt 0 ]; then
+    awk -v full="$full_normals" -v compact="$compact_normals" '
+      BEGIN {
+        saved = full - compact
+        pct = saved * 100.0 / full
+        printf("shadow_normal_total_delta=%d shadow_normal_total_reduction=%.1f%%\n", saved, pct)
+      }
+    '
+  fi
+
+  print_collision_payload_reduction shadow_disabled "$shadow_disabled_marker"
+  print_collision_payload_reduction collision_only "$collision_marker"
+} > "$tmp_summary_path"
+mv "$tmp_summary_path" "$summary_path"
+echo
+cat "$summary_path"
+if [ "$CAPTURE" = "1" ]; then
+  trap - EXIT
+  cleanup_capture_server
+fi
