@@ -315,6 +315,29 @@ require_metric_eq() {
   fi
 }
 
+env_flag_is_true() {
+  value="$1"
+  normalized="$(
+    printf '%s\n' "$value" \
+      | awk '{ gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print tolower($0); exit }'
+  )"
+  case "$normalized" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_transparent_fallback_marker_if_requested() {
+  marker_path="$1"
+  if ! env_flag_is_true "${RUMPELMC_GPU_TERRAIN_TRANSPARENT:-}"; then
+    return 0
+  fi
+
+  require_metric_eq "$marker_path" "transparent_requested" 1
+  require_metric_eq "$marker_path" "transparent_active" 0
+  require_metric_eq "$marker_path" "transparent_fallback" 1
+}
+
 screenshot_path="$OUT_DIR/gpu-terrain-movement-stress.png"
 marker_path="$screenshot_path.txt"
 rm -f "$screenshot_path" "$marker_path"
@@ -370,6 +393,7 @@ require_metric_ge "$marker_path" "gpu_uploads" 1
 require_metric_eq "$marker_path" "gpu_upload_fail" 0
 require_metric_eq "$marker_path" "gpu_upload_fail_capacity" 0
 require_metric_eq "$marker_path" "gpu_upload_fail_fragmented" 0
+require_transparent_fallback_marker_if_requested "$marker_path"
 test -n "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)" || fail "missing terrain_queue_work_ms in $marker_path"
 
 write_summary

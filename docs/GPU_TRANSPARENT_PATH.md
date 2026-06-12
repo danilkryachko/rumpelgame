@@ -135,11 +135,12 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - Perf markers expose `transparent_requested`, `transparent_active`, and `transparent_fallback`.
 - `scripts/gpu_terrain_report.sh` aggregates those marker fields and records metric origins.
 - The env-on release movement smoke in `logs/gpu_transparent_fallback_capture` passed with `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.
+- `scripts/gpu_terrain_movement_stress.sh` now fails env-on transparent captures unless those same requested/active/fallback marker values are present.
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
 
 The next safe implementation slice is still no-render work:
 
-- Add a focused report or harness assertion that fails when an env-on transparent marker capture does not contain `transparent_requested=1`, `transparent_active=0`, and `transparent_fallback=1`.
+- Define the first real transparent fixture/material contract before adding renderer behavior.
 - Keep all current opaque correctness gates unchanged while the implementation gate remains false.
-- Plan a real transparent fixture only after a transparent block/material contract exists.
+- Use the fixture plan to specify how future visual smoke will prove depth, collision, and fallback behavior.
