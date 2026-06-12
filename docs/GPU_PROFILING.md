@@ -128,6 +128,15 @@ sh scripts/gpu_terrain_shadow_profiler_plan.sh \
   logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-plan.txt
 ```
 
+Record external profiler rows separately from the pending plan. Each result row must start with `external_profile_status=captured` and include `priority`, `radius`, `artifact`, `profiler_tool`, `profiler_artifact`, and a positive `gpu_shadow_pass_ms`. Validate results against the plan before citing them; by default all planned rows must be captured, while partial handoff validation requires an explicit `RUMPELMC_SHADOW_PROFILER_RESULTS_ALLOW_PARTIAL=1`:
+
+```sh
+sh scripts/gpu_terrain_shadow_profiler_results_check.sh \
+  logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-plan.txt \
+  logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results.txt \
+  logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results-summary.txt
+```
+
 ## Shadow Path Design
 
 The current production GPU terrain shadow path is still Godot CPU shadow proxies. `docs/GPU_SHADOW_PATH.md` records the Phase 12 design for a future GPU-native terrain shadow path. Treat `scene_shadows_disabled` and `diagnostic_no_shadow_proxy` as diagnostic controls only; they cannot justify production shadow reductions. A future native path must be behind an explicit rollback flag, report its own `shadow_path`, preserve the existing Godot proxy fallback, and pass visual parity plus an external profiler comparison before becoming default.
