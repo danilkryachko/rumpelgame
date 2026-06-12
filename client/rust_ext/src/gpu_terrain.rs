@@ -51,6 +51,15 @@ pub const FACE_TOP: u32 = 3;
 pub const FACE_BACK: u32 = 4;
 pub const FACE_FRONT: u32 = 5;
 
+const FACE_NEIGHBOR_OFFSETS: [(u32, usize, usize, usize); 6] = [
+    (FACE_LEFT, 0, 1, 1),
+    (FACE_RIGHT, 2, 1, 1),
+    (FACE_BOTTOM, 1, 0, 1),
+    (FACE_TOP, 1, 2, 1),
+    (FACE_BACK, 1, 1, 0),
+    (FACE_FRONT, 1, 1, 2),
+];
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PackedFace {
@@ -2415,84 +2424,26 @@ pub fn build_packed_faces(padded_blocks: &[u8]) -> PackedFaceBatch {
                     continue;
                 };
 
-                push_visible_face(
-                    &mut faces,
-                    &block_lookup,
-                    block_info,
-                    FaceCandidate {
-                        x,
-                        y,
-                        z,
-                        block_id,
-                        face: FACE_LEFT,
-                        neighbor_block_id: padded_block(padded_blocks, x, y + 1, z + 1),
-                    },
-                );
-                push_visible_face(
-                    &mut faces,
-                    &block_lookup,
-                    block_info,
-                    FaceCandidate {
-                        x,
-                        y,
-                        z,
-                        block_id,
-                        face: FACE_RIGHT,
-                        neighbor_block_id: padded_block(padded_blocks, x + 2, y + 1, z + 1),
-                    },
-                );
-                push_visible_face(
-                    &mut faces,
-                    &block_lookup,
-                    block_info,
-                    FaceCandidate {
-                        x,
-                        y,
-                        z,
-                        block_id,
-                        face: FACE_BOTTOM,
-                        neighbor_block_id: padded_block(padded_blocks, x + 1, y, z + 1),
-                    },
-                );
-                push_visible_face(
-                    &mut faces,
-                    &block_lookup,
-                    block_info,
-                    FaceCandidate {
-                        x,
-                        y,
-                        z,
-                        block_id,
-                        face: FACE_TOP,
-                        neighbor_block_id: padded_block(padded_blocks, x + 1, y + 2, z + 1),
-                    },
-                );
-                push_visible_face(
-                    &mut faces,
-                    &block_lookup,
-                    block_info,
-                    FaceCandidate {
-                        x,
-                        y,
-                        z,
-                        block_id,
-                        face: FACE_BACK,
-                        neighbor_block_id: padded_block(padded_blocks, x + 1, y + 1, z),
-                    },
-                );
-                push_visible_face(
-                    &mut faces,
-                    &block_lookup,
-                    block_info,
-                    FaceCandidate {
-                        x,
-                        y,
-                        z,
-                        block_id,
-                        face: FACE_FRONT,
-                        neighbor_block_id: padded_block(padded_blocks, x + 1, y + 1, z + 2),
-                    },
-                );
+                for (face, neighbor_x, neighbor_y, neighbor_z) in FACE_NEIGHBOR_OFFSETS {
+                    push_visible_face(
+                        &mut faces,
+                        &block_lookup,
+                        block_info,
+                        FaceCandidate {
+                            x,
+                            y,
+                            z,
+                            block_id,
+                            face,
+                            neighbor_block_id: padded_block(
+                                padded_blocks,
+                                x + neighbor_x,
+                                y + neighbor_y,
+                                z + neighbor_z,
+                            ),
+                        },
+                    );
+                }
             }
         }
     }
