@@ -239,8 +239,18 @@ tmp_path="$OUT_PATH.tmp"
   printf -- '- max `dirty_blocks`: `%s`\n' "$(metric_max dirty_blocks)"
   printf -- '- max `dirty_last_blocks`: `%s`\n' "$(metric_max dirty_last_blocks)"
   printf -- '- max `dirty_last_rebuild_subchunks`: `%s`\n' "$(metric_max dirty_last_rebuild_subchunks)"
+  printf -- '- max `dirty_edge_neighbor_subchunks`: `%s`\n' "$(metric_max dirty_edge_neighbor_subchunks)"
+  printf -- '- max `dirty_last_edge_neighbor_subchunks`: `%s`\n' "$(metric_max dirty_last_edge_neighbor_subchunks)"
   printf -- '- max `dirty_partial_subchunks`: `%s`\n' "$(metric_max dirty_partial_subchunks)"
   printf -- '- max `dirty_partial_saved_subchunks`: `%s`\n' "$(metric_max dirty_partial_saved_subchunks)"
+  printf -- '- max `current_chunk_collision`: `%s`\n' "$(metric_max current_chunk_collision)"
+  printf -- '- max `collision_refresh_rebuilt`: `%s`\n' "$(metric_max collision_refresh_rebuilt)"
+  printf -- '- max `collision_refresh_last_rebuilt`: `%s`\n' "$(metric_max collision_refresh_last_rebuilt)"
+  printf -- '- max `mesh_shadow_only`: `%s`\n' "$(metric_max mesh_shadow_only)"
+  printf -- '- max `proxy_shadow`: `%s`\n' "$(metric_max proxy_shadow)"
+  printf -- '- max `proxy_shadow_only`: `%s`\n' "$(metric_max proxy_shadow_only)"
+  printf -- '- max `compact_shadow_proxy`: `%s`\n' "$(metric_max compact_shadow_proxy)"
+  printf -- '- max `proxy_refresh_reuse`: `%s`\n' "$(metric_max proxy_refresh_reuse)"
   printf -- '- max `gpu_fragmented_free_faces`: `%s`\n' "$(metric_max gpu_fragmented_free_faces)"
   printf -- '- max `gpu_fragmentation_pct`: `%s`\n' "$(metric_max gpu_fragmentation_pct)"
   printf -- '- max `terrain_queue_max_ms`: `%s`\n' "$(metric_max_terrain_queue)"
@@ -263,7 +273,12 @@ tmp_path="$OUT_PATH.tmp"
   metric_max_source gpu_faces | sed 's/^/- /'
   metric_max_source dirty_blocks | sed 's/^/- /'
   metric_max_source dirty_last_blocks | sed 's/^/- /'
+  metric_max_source dirty_edge_neighbor_subchunks | sed 's/^/- /'
   metric_max_source dirty_partial_saved_subchunks | sed 's/^/- /'
+  metric_max_source current_chunk_collision | sed 's/^/- /'
+  metric_max_source collision_refresh_rebuilt | sed 's/^/- /'
+  metric_max_source compact_shadow_proxy | sed 's/^/- /'
+  metric_max_source proxy_refresh_reuse | sed 's/^/- /'
   metric_max_source gpu_fragmentation_pct | sed 's/^/- /'
   metric_max_source_terrain_queue | sed 's/^/- /'
   metric_max_source gpu_compositor_submit_max_ms | sed 's/^/- /'
