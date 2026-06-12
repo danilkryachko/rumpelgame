@@ -3019,6 +3019,17 @@ mod tests {
     }
 
     #[test]
+    fn render_shader_uses_branchless_face_normal_table() {
+        let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
+
+        assert!(vertex_source.contains("const vec3 FACE_NORMALS[8] = vec3[8]("));
+        assert!(vertex_source.contains("return FACE_NORMALS[face_idx & 7u];"));
+        assert!(vertex_source.contains("vec3(0.0, 0.0, 1.0),\n    vec3(0.0, 0.0, 1.0)\n);"));
+        assert!(!vertex_source.contains("if (face_idx == 0u) return vec3"));
+        assert!(!vertex_source.contains("if (face_idx == 1u) return vec3"));
+    }
+
+    #[test]
     fn render_shader_push_constant_layout_matches_rust_bytes() {
         let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
         let clip_idx = vertex_source

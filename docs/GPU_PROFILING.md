@@ -19,6 +19,10 @@ This document defines how GPU terrain performance should be measured. The goal i
 - `gpu_draws`, `gpu_effective_draws`, `gpu_faces`, `gpu_subchunks`: useful for workload size.
 - `smoke_err`, `terrain_samples`, color buckets, and marker generation: useful for visual correctness gates.
 
+## Shader Findings
+
+- GPU terrain face lighting normals now use a branchless 8-entry shader lookup table. Entries `5`, `6`, and `7` intentionally resolve to `+Z`, preserving the previous fallback behavior for any masked nonstandard face index while removing the old `face_normal` branch chain.
+
 ## Report-Only Or Untrusted Local Signals
 
 - `frame_p95_ms` and `fps_p05` above monitor refresh: can be capped by display/driver pacing.

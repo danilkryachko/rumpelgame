@@ -24,6 +24,17 @@ layout(push_constant, std430) uniform TerrainPushConstants {
 layout(location = 0) out vec3 uv_tile_out;
 layout(location = 1) out vec3 lighting_out;
 
+const vec3 FACE_NORMALS[8] = vec3[8](
+    vec3(-1.0, 0.0, 0.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(0.0, -1.0, 0.0),
+    vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, -1.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, 1.0)
+);
+
 vec3 face_corner(uint face_idx, uint corner_idx, vec2 extent) {
     if (face_idx == 0u) {
         vec3 corners[4] = vec3[4](
@@ -81,12 +92,7 @@ vec3 face_corner(uint face_idx, uint corner_idx, vec2 extent) {
 }
 
 vec3 face_normal(uint face_idx) {
-    if (face_idx == 0u) return vec3(-1.0, 0.0, 0.0);
-    if (face_idx == 1u) return vec3(1.0, 0.0, 0.0);
-    if (face_idx == 2u) return vec3(0.0, -1.0, 0.0);
-    if (face_idx == 3u) return vec3(0.0, 1.0, 0.0);
-    if (face_idx == 4u) return vec3(0.0, 0.0, -1.0);
-    return vec3(0.0, 0.0, 1.0);
+    return FACE_NORMALS[face_idx & 7u];
 }
 
 vec3 face_lighting(uint face_idx) {
