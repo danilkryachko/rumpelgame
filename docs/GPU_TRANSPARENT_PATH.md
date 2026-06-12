@@ -193,12 +193,13 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - `scripts/gpu_terrain_transparent_fixture_scene_harness.sh` consumes the scene checklist and writes a no-render `transparent-fixture-scene-harness.txt` placeholder with fixed role checks and current/future acceptance gates.
 - `scripts/gpu_terrain_transparent_fixture_scene_harness_check.sh` validates the generated scene checklist and harness together and writes a no-render `transparent-fixture-scene-harness-check.txt` pass artifact; aggregate reports and report checks now surface this scene artifact chain.
 - `scripts/gpu_terrain_transparent_fixture_acceptance_check.sh` validates the no-render pack, report-check, smoke-plan, and scene harness-check artifacts together before any real fixture scene or renderer path is allowed; the pack now emits and reports this acceptance artifact.
+- `scripts/gpu_terrain_transparent_fixture_default_off_check.sh` validates the final no-render pack against the Rust implementation gate, the movement-stress env-on fallback guard, and the transparent fixture contract so `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` keeps env-on captures requested-but-fallback until a real implementation exists.
 - Ignored local fixture artifacts under `logs/gpu_transparent_fixture_plan` now provide the current real-log checklist source for aggregate reports.
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
 
 The next safe implementation slice is still no-render work:
 
-- Add the next fixture-only guard while preserving current opaque behavior.
+- Integrate the default-off guard into the fixture pack/report chain or add the next fixture-only guard while preserving current opaque behavior.
 - Keep all current opaque correctness gates unchanged while the implementation gate remains false.
 - Defer shader alpha, blending, sorting, block-ID, asset, protocol, storage, worldgen, and render-path work until the fixture contract has env-off and env-on fallback gates.
