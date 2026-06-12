@@ -189,12 +189,13 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - `scripts/gpu_terrain_transparent_fixture_report_check.sh` validates that an aggregate GPU report includes the selected transparent fixture plan, harness, and check artifacts from the fixture directory.
 - `scripts/gpu_terrain_transparent_fixture_pack.sh` regenerates the fixture plan, harness, check, aggregate report, and report-check artifacts together without launching Godot.
 - `scripts/gpu_terrain_transparent_fixture_smoke_plan.sh` consumes the pack and writes a no-render `transparent-fixture-smoke-plan.txt` with current fallback and future fixture scene gates.
+- `scripts/gpu_terrain_transparent_fixture_scene_checklist.sh` consumes the smoke plan and writes a no-render `transparent-fixture-scene-checklist.txt` with fixed scene roles for depth, adjacency, and collision checks.
 - Ignored local fixture artifacts under `logs/gpu_transparent_fixture_plan` now provide the current real-log checklist source for aggregate reports.
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
 
 The next safe implementation slice is still no-render work:
 
-- Add the next fixture-only guard or fixture-scene implementation checklist that still preserves current opaque behavior.
+- Add the next fixture-only harness/checklist that still preserves current opaque behavior.
 - Keep all current opaque correctness gates unchanged while the implementation gate remains false.
 - Defer shader alpha, blending, sorting, block-ID, asset, protocol, storage, worldgen, and render-path work until the fixture contract has env-off and env-on fallback gates.
