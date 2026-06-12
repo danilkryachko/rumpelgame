@@ -46,60 +46,44 @@ const vec2 FACE_UV_FACTORS[32] = vec2[32](
     vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0)
 );
 
-vec3 face_corner(uint face_idx, uint corner_idx, vec2 extent) {
-    if (face_idx == 0u) {
-        vec3 corners[4] = vec3[4](
-            vec3(0.0, 0.0, extent.x),
-            vec3(0.0, extent.y, extent.x),
-            vec3(0.0, extent.y, 0.0),
-            vec3(0.0, 0.0, 0.0)
-        );
-        return corners[corner_idx];
-    }
-    if (face_idx == 1u) {
-        vec3 corners[4] = vec3[4](
-            vec3(1.0, 0.0, 0.0),
-            vec3(1.0, extent.y, 0.0),
-            vec3(1.0, extent.y, extent.x),
-            vec3(1.0, 0.0, extent.x)
-        );
-        return corners[corner_idx];
-    }
-    if (face_idx == 2u) {
-        vec3 corners[4] = vec3[4](
-            vec3(0.0, 0.0, extent.y),
-            vec3(0.0, 0.0, 0.0),
-            vec3(extent.x, 0.0, 0.0),
-            vec3(extent.x, 0.0, extent.y)
-        );
-        return corners[corner_idx];
-    }
-    if (face_idx == 3u) {
-        vec3 corners[4] = vec3[4](
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 1.0, extent.y),
-            vec3(extent.x, 1.0, extent.y),
-            vec3(extent.x, 1.0, 0.0)
-        );
-        return corners[corner_idx];
-    }
-    if (face_idx == 4u) {
-        vec3 corners[4] = vec3[4](
-            vec3(extent.x, 0.0, 0.0),
-            vec3(0.0, 0.0, 0.0),
-            vec3(0.0, extent.y, 0.0),
-            vec3(extent.x, extent.y, 0.0)
-        );
-        return corners[corner_idx];
-    }
+const vec3 FACE_CORNER_BASES[32] = vec3[32](
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0),
+    vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0),
+    vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0)
+);
 
-    vec3 corners[4] = vec3[4](
-        vec3(0.0, 0.0, 1.0),
-        vec3(extent.x, 0.0, 1.0),
-        vec3(extent.x, extent.y, 1.0),
-        vec3(0.0, extent.y, 1.0)
-    );
-    return corners[corner_idx];
+const vec3 FACE_CORNER_EXTENT_X_FACTORS[32] = vec3[32](
+    vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0),
+    vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0)
+);
+
+const vec3 FACE_CORNER_EXTENT_Y_FACTORS[32] = vec3[32](
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0)
+);
+
+vec3 face_corner(uint face_idx, uint corner_idx, vec2 extent) {
+    uint table_idx = (face_idx & 7u) * 4u + corner_idx;
+    return FACE_CORNER_BASES[table_idx]
+        + FACE_CORNER_EXTENT_X_FACTORS[table_idx] * extent.x
+        + FACE_CORNER_EXTENT_Y_FACTORS[table_idx] * extent.y;
 }
 
 vec3 face_normal(uint face_idx) {

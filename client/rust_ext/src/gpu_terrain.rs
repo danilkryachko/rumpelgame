@@ -3051,6 +3051,21 @@ mod tests {
     }
 
     #[test]
+    fn render_shader_uses_branchless_face_corner_tables() {
+        let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
+
+        assert!(vertex_source.contains("const vec3 FACE_CORNER_BASES[32] = vec3[32]("));
+        assert!(vertex_source.contains("const vec3 FACE_CORNER_EXTENT_X_FACTORS[32] = vec3[32]("));
+        assert!(vertex_source.contains("const vec3 FACE_CORNER_EXTENT_Y_FACTORS[32] = vec3[32]("));
+        assert!(vertex_source.contains("uint table_idx = (face_idx & 7u) * 4u + corner_idx;"));
+        assert!(vertex_source.contains("FACE_CORNER_BASES[table_idx]"));
+        assert!(vertex_source.contains("FACE_CORNER_EXTENT_X_FACTORS[table_idx] * extent.x"));
+        assert!(vertex_source.contains("FACE_CORNER_EXTENT_Y_FACTORS[table_idx] * extent.y"));
+        assert!(!vertex_source.contains("vec3 corners[4]"));
+        assert!(!vertex_source.contains("if (face_idx == 0u) {"));
+    }
+
+    #[test]
     fn render_shader_push_constant_layout_matches_rust_bytes() {
         let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
         let clip_idx = vertex_source

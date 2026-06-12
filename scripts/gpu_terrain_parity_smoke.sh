@@ -30,13 +30,33 @@ fail() {
 metric() {
   key="$1"
   marker_path="$2"
-  sed -n "s/.*$key=\([0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+  awk -v key="$key" '
+    {
+      for (i = 1; i <= NF; i++) {
+        split($i, kv, "=")
+        if (kv[1] == key && match(kv[2], /^[0-9][0-9]*/)) {
+          print substr(kv[2], RSTART, RLENGTH)
+          exit
+        }
+      }
+    }
+  ' "$marker_path"
 }
 
 float_metric() {
   key="$1"
   marker_path="$2"
-  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+  awk -v key="$key" '
+    {
+      for (i = 1; i <= NF; i++) {
+        split($i, kv, "=")
+        if (kv[1] == key && match(kv[2], /^[0-9][0-9]*\.[0-9][0-9]*/)) {
+          print substr(kv[2], RSTART, RLENGTH)
+          exit
+        }
+      }
+    }
+  ' "$marker_path"
 }
 
 require_metric_ge() {
