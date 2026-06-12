@@ -118,5 +118,6 @@ The current code slice is telemetry/test scaffolding, not a renderer rewrite:
 - `terrain_shadow_path_decision` tests stay explicit for production, disabled, diagnostic, and future prototype paths.
 - `scripts/gpu_terrain_compact_proxy_benchmark.sh` validates shadow-casting paths through a helper that accepts only `godot_proxy` and future `gpu_native_shadow`, keeping them separate from `scene_shadows_disabled` and `diagnostic_no_shadow_proxy`.
 - No CPU proxy mesh builder or Godot `SHADOWS_ONLY` fallback was removed.
+- Fresh release movement capture in `logs/gpu_native_shadow_requested_active_capture` reports `shadow_path=godot_proxy`, `native_shadow_requested=0`, and `native_shadow_active=0`; the aggregate report now resolves both native-shadow fields to `0.000` with metric origins instead of `n/a`.
 
-The next implementation slice can run a fresh marker/report capture for the requested-vs-active fields, or start a tiny renderer proof only after the fallback and parity gates above are kept intact.
+The next implementation slice can keep measuring the current compact proxy path with an external profiler, or start a tiny renderer proof only after the fallback and parity gates above are kept intact.
