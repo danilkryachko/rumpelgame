@@ -129,7 +129,7 @@ required_line "$CHECKLIST_PATH" "required_role collision_probe material=transpar
 current_guard_line="$(required_line "$CHECKLIST_PATH" "required_current_guard env_on_fallback")"
 future_gate_line="$(required_line "$CHECKLIST_PATH" "required_future_gate active_path")"
 non_goals_line="$(required_line "$CHECKLIST_PATH" "non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no")"
-for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
+for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
   require_text "$current_guard_line" "$token" "current env-on fallback guard"
 done
 for token in transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required; do

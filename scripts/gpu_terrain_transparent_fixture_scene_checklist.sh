@@ -121,7 +121,7 @@ for token in transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaqu
   require_text "$future_active_line" "$token" "future active gate"
 done
 require_text "$env_off_line" "expected=ordinary_opaque_markers_unchanged" "env-off gate"
-for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
+for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
   require_text "$env_on_line" "$token" "env-on fallback gate"
 done
 require_text "$non_goals_line" "shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no" "non-goals"
@@ -147,7 +147,7 @@ trap 'rm -f "$tmp_checklist"' EXIT
   printf 'block_role=adjacent_same_material_pair material=%s relation=neighbor_pair expected_same_material_seam=hidden_or_explicit\n' "$material"
   printf 'block_role=collision_probe material=%s relation=ray_or_ground_path expected_collision_solidity=explicit\n' "$material"
   printf 'assertion=env_off_current status=required expected=ordinary_opaque_markers_unchanged\n'
-  printf 'assertion=env_on_fallback_current status=required transparent_requested=1 transparent_active=0 transparent_fallback=1 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero\n'
+  printf 'assertion=env_on_fallback_current status=required transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero\n'
   printf 'assertion=future_active_path status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required\n'
   printf 'assertion=future_workload_markers status=blocked_until_fixture transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending\n'
   printf 'non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'

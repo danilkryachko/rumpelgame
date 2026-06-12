@@ -89,7 +89,7 @@ trap 'rm -f "$tmp_plan"' EXIT
   printf 'opaque_path_rollback=required\n'
   printf 'step=contract_guard status=present required_tokens=%s\n' "$token_count"
   printf 'step=env_off_gate status=required expected=ordinary_opaque_markers_unchanged\n'
-  printf 'step=env_on_fallback_gate status=current_expected transparent_requested=1 transparent_active=0 transparent_fallback=1\n'
+  printf 'step=env_on_fallback_gate status=current_expected transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0\n'
   printf 'step=future_workload_markers status=required transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending\n'
   printf 'step=future_active_gate status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0\n'
   printf 'step=non_goals status=enforced shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'

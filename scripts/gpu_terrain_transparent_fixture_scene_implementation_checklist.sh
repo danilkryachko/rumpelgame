@@ -188,7 +188,7 @@ done
 for token in material=transparent_test_glass expected_collision_solidity=explicit; do
   require_text "$collision_line" "$token" "collision probe role"
 done
-for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
+for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
   require_text "$env_on_line" "$token" "current env-on fallback"
 done
 for token in transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required; do
@@ -222,7 +222,7 @@ trap 'rm -f "$tmp_checklist"' EXIT
   printf 'required_role opaque_depth_occluder material=current_opaque_block depth_write=required\n'
   printf 'required_role adjacent_same_material_pair material=transparent_test_glass same_material_seam=hidden_or_explicit\n'
   printf 'required_role collision_probe material=transparent_test_glass collision_solidity=explicit\n'
-  printf 'required_current_guard env_on_fallback transparent_requested=1 transparent_active=0 transparent_fallback=1 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero\n'
+  printf 'required_current_guard env_on_fallback transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero\n'
   printf 'required_future_gate active_path transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required\n'
   printf 'non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
   printf 'summary transparent_fixture_scene_implementation_checklist_status=pending_scene_implementation transparent_fixture_pack_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_default_off_status=%s transparent_implementation_gate=false env_on_expected=%s future_active_expected=1/0/0\n' \

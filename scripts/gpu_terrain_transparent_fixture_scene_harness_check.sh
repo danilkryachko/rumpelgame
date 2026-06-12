@@ -189,7 +189,7 @@ for token in expected=ordinary_opaque_markers_unchanged; do
   require_text "$checklist_env_off_line" "$token" "checklist env-off assertion"
   require_text "$harness_env_off_line" "$token" "harness env-off assertion"
 done
-for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
+for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
   require_text "$checklist_env_on_line" "$token" "checklist env-on assertion"
   require_text "$harness_env_on_line" "$token" "harness env-on assertion"
 done

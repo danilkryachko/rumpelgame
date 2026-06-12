@@ -137,7 +137,7 @@ test "$acceptance_env_expected" = "$env_expected" || fail "acceptance env_on_exp
 smoke_env_on_line="$(required_line "$smoke_plan_path" "step=env_on_fallback_current status=required")"
 smoke_future_workload_line="$(required_line "$smoke_plan_path" "step=future_workload_markers status=blocked_until_fixture")"
 smoke_future_active_line="$(required_line "$smoke_plan_path" "step=future_active_gate status=blocked_until_implementation")"
-for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
+for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
   require_text "$smoke_env_on_line" "$token" "smoke env-on fallback gate"
 done
 for token in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
