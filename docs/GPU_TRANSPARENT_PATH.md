@@ -196,12 +196,13 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - `scripts/gpu_terrain_transparent_fixture_default_off_check.sh` validates the final no-render pack against the Rust implementation gate, the movement-stress env-on fallback guard, and the transparent fixture contract so `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` keeps env-on captures requested-but-fallback until a real implementation exists; the pack now emits and reports this default-off artifact.
 - `scripts/gpu_terrain_transparent_fixture_final_report_check.sh` validates the final no-render pack and aggregate report together, requiring both selected acceptance and default-off report sections to point at the linked artifacts and surface their pass summaries; the pack now emits and reports this final guard artifact.
 - `scripts/gpu_terrain_transparent_fixture_scene_implementation_checklist.sh` validates the final no-render pack and scene artifact chain, then writes a pending fixture-scene implementation checklist for the future scene-only harness work; the pack now emits and reports this checklist artifact.
+- `scripts/gpu_terrain_transparent_fixture_scene_implementation_gate_check.sh` validates that the pending scene implementation checklist, linked pack, and aggregate report still keep the transparent implementation gate false with current env-on fallback and future active-path gates intact.
 - Ignored local fixture artifacts under `logs/gpu_transparent_fixture_plan` now provide the current real-log checklist source for aggregate reports.
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
 
 The next safe implementation slice is still no-render work:
 
-- Add the next fixture-only guard or fixture-scene harness checklist while preserving current opaque behavior.
+- Integrate the scene implementation gate check into the fixture pack/report chain or add the next fixture-only guard while preserving current opaque behavior.
 - Keep all current opaque correctness gates unchanged while the implementation gate remains false.
 - Defer shader alpha, blending, sorting, block-ID, asset, protocol, storage, worldgen, and render-path work until the fixture contract has env-off and env-on fallback gates.
