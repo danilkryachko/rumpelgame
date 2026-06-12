@@ -201,8 +201,28 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
 
-The next safe implementation slice is still no-render work:
+## Fixture Scene Implementation Plan
 
-- Add the next fixture-only guard or stop the no-render guard chain and begin a fixture-scene plan while preserving current opaque behavior.
-- Keep all current opaque correctness gates unchanged while the implementation gate remains false.
-- Defer shader alpha, blending, sorting, block-ID, asset, protocol, storage, worldgen, and render-path work until the fixture contract has env-off and env-on fallback gates.
+The next implementation step should stop extending the no-render guard chain and move to an env-driven fixture scene harness. The current Godot project has a minimal scene structure (`client/main.tscn` plus `client/main.gd`), and visual smoke behavior is already controlled through environment variables, so the first fixture harness should avoid hand-editing new `.tscn` resources unless a later slice proves it is necessary.
+
+First runtime slice:
+
+- Add a dedicated fixture-smoke mode to the existing visual smoke path, not a new default scene.
+- Keep `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, so `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1` still reports `transparent_requested=1`, `transparent_active=0`, and `transparent_fallback=1`.
+- Reuse existing `main.gd` smoke controls for fixed camera, fixed light, block edit, movement, ground/collision sampling, marker writing, and runtime shutdown.
+- Prefer placing or toggling fixture blocks through existing `GameClient` block-edit methods only after the fixture identity is explicitly isolated from ordinary world generation and storage.
+- Keep the first fixture run out of ordinary gameplay and ordinary world generation.
+
+Implementation order:
+
+1. Add an env name for the fixture scenario, for example `RUMPELMC_VISUAL_SMOKE_POSE=transparent_fixture`, with a fixed camera target and no renderer behavior change.
+2. Add a wrapper script that launches the existing visual smoke path with `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1`, the fixture pose, and a dedicated output directory.
+3. Make the wrapper assert current fallback markers, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.
+4. Add fixture workload marker fields only after the harness can produce a stable current fallback capture.
+5. Add fixture-only block/material identity only after the fallback harness is stable and reviewed.
+
+Still out of scope for the first runtime slice:
+
+- No shader alpha, blending, transparent pass, sorting, production block ID, atlas asset, protocol field, storage record, worldgen rule, or default behavior change.
+- No broad `.tscn` rewrite or generated/imported Godot file edit.
+- No default-on decision without visual/depth/collision parity and external profiler evidence.

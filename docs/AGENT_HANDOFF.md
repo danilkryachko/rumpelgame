@@ -8,6 +8,15 @@ Date: 2026-06-13
 
 Fresh 2026-06-13 status:
 
+- Current transparent fixture scene implementation planning slice is docs-only and behavior-preserving. `docs/GPU_TRANSPARENT_PATH.md` now says the next implementation step should stop extending the no-render guard chain and move to an env-driven fixture scene harness using the existing `main.gd` visual smoke path. The first runtime slice should add a `transparent_fixture` pose/wrapper while keeping `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` and current env-on fallback markers. It explicitly avoids new `.tscn` rewrites, shader alpha, blending, transparent pass, block IDs, atlas assets, protocol, storage, worldgen, or default behavior changes.
+- Next useful GPU step: implement the documented first runtime slice by adding the env-driven `transparent_fixture` visual smoke pose and wrapper script, then run the fallback capture with `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1` and assert `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.
+
+Previous snapshot:
+
+Date: 2026-06-13
+
+Fresh 2026-06-13 status:
+
 - Current GPU long-horizon planning and Week 1 baseline slice is docs/artifact-only and behavior-preserving. `docs/GPU_ROADMAP.md` now includes a 100-week rolling long-horizon plan with 4-week re-check expectations and weekly artifact/trend checkpoints. No renderer, shader, runtime, protocol, storage, worldgen, asset, or Godot scene behavior changed.
 - Fresh isolated Week 1 baseline artifacts live under `logs/week1_gpu_baseline_20260613`. The scoped aggregate report is `logs/week1_gpu_baseline_20260613/gpu-terrain-report.txt` and intentionally uses that isolated log root so fresh metrics are not mixed with historical logs. A historical full-log report was also refreshed at `logs/gpu-terrain-report.txt`.
 - Fresh Week 1 baseline results: movement stress passed with `gpu_upload_fail=0`, `terrain_queue_max_ms=1.146`, `process_wall_p95_ms=0.017`, and `gpu_compositor_submit_max_ms=0.112`; standard workload matrix passed all four cases with max `terrain_queue_max_ms=2.155`, max `gpu_compositor_submit_max_ms=0.165`, `gpu_upload_fail=0`, and terrain samples present; fill stress repeats `1/4/8/16` all passed with `gpu_upload_fail=0`, `smoke_err=0`, `terrain_samples=384`, max `gpu_effective_draws=13344`, and max fill `terrain_queue_max_ms=2.125`.
