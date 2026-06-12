@@ -3,6 +3,7 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 CAPTURE="${RUMPELMC_COMPACT_PROXY_BENCH_CAPTURE:-0}"
+REUSE_SERVER="${RUMPELMC_COMPACT_PROXY_BENCH_REUSE_SERVER:-0}"
 if [ "$CAPTURE" = "1" ]; then
   OUT_DIR="${1:-"$ROOT_DIR/logs/gpu_terrain_visual_smoke/compact_proxy_benchmark"}"
 else
@@ -20,6 +21,7 @@ SMOKE_DELAY_SEC="${SMOKE_DELAY_SEC:-3.0}"
 SMOKE_POSE="${SMOKE_POSE:-lighting_shadow}"
 COLLISION_SMOKE_POSE="${RUMPELMC_COMPACT_PROXY_BENCH_COLLISION_POSE:-default}"
 SHADOW_DISABLED_SMOKE_POSE="${RUMPELMC_COMPACT_PROXY_BENCH_SHADOW_DISABLED_POSE:-default}"
+SHADOW_RADIUS="${RUMPELMC_COMPACT_PROXY_BENCH_SHADOW_RADIUS:-}"
 FULL_MARKER="${RUMPELMC_COMPACT_PROXY_BENCH_FULL_MARKER:-}"
 COMPACT_MARKER="${RUMPELMC_COMPACT_PROXY_BENCH_COMPACT_MARKER:-}"
 COLLISION_MARKER="${RUMPELMC_COMPACT_PROXY_BENCH_COLLISION_MARKER:-}"
@@ -52,7 +54,7 @@ wait_for_port_clear() {
 }
 
 cleanup_capture_server() {
-  if [ "$CAPTURE" != "1" ]; then
+  if [ "$CAPTURE" != "1" ] || [ "$REUSE_SERVER" = "1" ]; then
     return 0
   fi
   pid="$(listener_pid || true)"
@@ -64,7 +66,10 @@ cleanup_capture_server() {
 
 if [ "$CAPTURE" = "1" ]; then
   listener="$(listener_pid || true)"
-  if [ -n "$listener" ]; then
+  if [ "$REUSE_SERVER" = "1" ] && [ -z "$listener" ]; then
+    fail "RUMPELMC_COMPACT_PROXY_BENCH_REUSE_SERVER=1 requires an existing server on port 25565"
+  fi
+  if [ "$REUSE_SERVER" != "1" ] && [ -n "$listener" ]; then
     fail "port 25565 is already in use; stop the existing server before capture"
   fi
   trap cleanup_capture_server EXIT
@@ -108,6 +113,28 @@ float_metric() {
       }
     }
   ' "$marker_path"
+}
+
+validate_shadow_radius() {
+  if [ -z "$SHADOW_RADIUS" ]; then
+    return 0
+  fi
+  case "$SHADOW_RADIUS" in
+    *[!0-9]*)
+      fail "RUMPELMC_COMPACT_PROXY_BENCH_SHADOW_RADIUS must be a positive integer or empty"
+      ;;
+  esac
+  if [ "$SHADOW_RADIUS" -lt 1 ]; then
+    fail "RUMPELMC_COMPACT_PROXY_BENCH_SHADOW_RADIUS=0 is reserved for the shadow-disabled control"
+  fi
+}
+
+shadow_radius_label() {
+  if [ -n "$SHADOW_RADIUS" ]; then
+    printf '%s\n' "$SHADOW_RADIUS"
+  else
+    printf '%s\n' "scene"
+  fi
 }
 
 mesh_avg_ms() {
@@ -270,12 +297,12 @@ run_shadow_case() {
 
   rm -f "$screenshot_path" "$marker_path"
 
-  echo "==> GPU terrain compact proxy benchmark: shadow_mesh=$shadow_mesh"
+  echo "==> GPU terrain compact proxy benchmark: shadow_mesh=$shadow_mesh shadow_radius=$(shadow_radius_label)"
   (
     cd "$ROOT_DIR"
     "$TIMEOUT_BIN" "$GODOT_TIMEOUT_SEC" /usr/bin/env \
       RUMPELMC_GPU_TERRAIN_RENDER=1 \
-      RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE= \
+      RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE="$SHADOW_RADIUS" \
       RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE=conservative \
       RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH="$shadow_mesh" \
       RUMPELMC_VISUAL_SMOKE_POSE="$SMOKE_POSE" \
@@ -366,6 +393,8 @@ print_row() {
     "$(metric "terrain_samples" "$marker_path")"
 }
 
+validate_shadow_radius
+
 if [ "$CAPTURE" = "1" ]; then
   prepare_godot_rust_ext_profile "$ROOT_DIR"
   run_shadow_case full
@@ -442,6 +471,7 @@ summary_path="$OUT_DIR/compact-proxy-benchmark-summary.txt"
 tmp_summary_path="$summary_path.tmp"
 {
   echo "Compact proxy benchmark summary:"
+  echo "capture=$CAPTURE reuse_server=$REUSE_SERVER shadow_radius_override=$(shadow_radius_label)"
   print_row full "$full_marker"
   print_row compact "$compact_marker"
   print_row shadow_disabled "$shadow_disabled_marker"
@@ -454,7 +484,11 @@ tmp_summary_path="$summary_path.tmp"
       BEGIN {
         saved = full - compact
         pct = saved * 100.0 / full
-        printf("shadow_normal_total_delta=%d shadow_normal_total_reduction=%.1f%%\n", saved, pct)
+        status = "reduced"
+        if (saved < 0) {
+          status = "increased"
+        }
+        printf("shadow_normal_total_delta=%d shadow_normal_total_reduction=%.1f%% shadow_normal_total_status=%s\n", saved, pct, status)
       }
     '
   fi
