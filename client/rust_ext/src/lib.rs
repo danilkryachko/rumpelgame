@@ -122,9 +122,13 @@ impl INode for GameClient {
             Ok(client) => {
                 self.emit_debug_log("Connected to server successfully");
 
-                let stream_clone = client
-                    .try_clone_stream()
-                    .expect("Failed to clone TCP stream");
+                let stream_clone = match client.try_clone_stream() {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        self.emit_debug_log(&format!("Failed to clone TCP stream: {err}"));
+                        return;
+                    }
+                };
                 let mut reader_client = network::NetworkClient {
                     stream: stream_clone,
                 };
