@@ -90,6 +90,8 @@ mkdir -p "$(dirname -- "$OUT_PATH")"
 summary_line="$(required_line "$PACK_PATH" "summary transparent_fixture_pack_status=")"
 steps_line="$(required_line "$PACK_PATH" "steps=plan/harness/check/report/report_check")"
 scene_steps_line="$(required_line "$PACK_PATH" "scene_steps=smoke_plan/scene_checklist/scene_harness/scene_harness_check")"
+acceptance_steps_line="$(grep -F -- "acceptance_steps=" "$PACK_PATH" || true)"
+acceptance_steps_line="$(printf '%s\n' "$acceptance_steps_line" | sed -n '1p')"
 runtime_line="$(required_line "$PACK_PATH" "runtime_behavior=unchanged")"
 ordinary_line="$(required_line "$PACK_PATH" "ordinary_world_visibility=absent")"
 tokens_line="$(required_line "$PACK_PATH" "contract_tokens=")"
@@ -112,6 +114,9 @@ test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_h
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
 test "${steps_line#steps=}" = "plan/harness/check/report/report_check" || fail "unexpected steps: $steps_line"
 test "${scene_steps_line#scene_steps=}" = "smoke_plan/scene_checklist/scene_harness/scene_harness_check" || fail "unexpected scene steps: $scene_steps_line"
+if [ -n "$acceptance_steps_line" ]; then
+  test "${acceptance_steps_line#acceptance_steps=}" = "acceptance_check/report_refresh" || fail "unexpected acceptance steps: $acceptance_steps_line"
+fi
 test "${runtime_line#runtime_behavior=}" = "unchanged" || fail "unexpected runtime line: $runtime_line"
 test "${ordinary_line#ordinary_world_visibility=}" = "absent" || fail "unexpected ordinary-world line: $ordinary_line"
 case "$contract_tokens" in
@@ -152,6 +157,11 @@ required_line "$scene_checklist_path" "summary transparent_fixture_scene_checkli
 required_line "$scene_harness_path" "summary transparent_fixture_scene_harness_status=placeholder" >/dev/null
 required_line "$scene_harness_check_path" "summary transparent_fixture_scene_harness_check_status=pass" >/dev/null
 required_line "$report_check_path" "summary transparent_fixture_report_check_status=pass" >/dev/null
+if [ -n "$acceptance_steps_line" ]; then
+  acceptance_check_path="$(resolve_pack_path "$(required_value "$PACK_PATH" "acceptance_check")")"
+  required_line "$report_path" "## Selected Transparent Fixture Acceptance Check" >/dev/null
+  required_line "$report_path" "Source: \`$acceptance_check_path\`" >/dev/null
+fi
 
 report_check_sections_line="$(required_line "$report_check_path" "report_sections=plan/harness/check/scene_checklist/scene_harness/scene_harness_check")"
 report_future_active_line="$(required_line "$report_check_path" "future_active_expected=1/0/0")"

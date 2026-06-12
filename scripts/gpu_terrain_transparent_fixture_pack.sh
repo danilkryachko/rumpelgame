@@ -26,6 +26,7 @@ SMOKE_PLAN_PATH="$PACK_DIR/transparent-fixture-smoke-plan.txt"
 SCENE_CHECKLIST_PATH="$PACK_DIR/transparent-fixture-scene-checklist.txt"
 SCENE_HARNESS_PATH="$PACK_DIR/transparent-fixture-scene-harness.txt"
 SCENE_HARNESS_CHECK_PATH="$PACK_DIR/transparent-fixture-scene-harness-check.txt"
+ACCEPTANCE_CHECK_PATH="$PACK_DIR/transparent-fixture-acceptance-check.txt"
 REPORT_PATH="$PACK_DIR/gpu-terrain-transparent-fixture-report.txt"
 REPORT_CHECK_PATH="$PACK_DIR/transparent-fixture-report-check.txt"
 
@@ -210,6 +211,7 @@ test "$report_check_env_expected" = "$harness_env_expected" || fail "report-chec
   printf 'scene_checklist=%s\n' "$(relative_path "$SCENE_CHECKLIST_PATH")"
   printf 'scene_harness=%s\n' "$(relative_path "$SCENE_HARNESS_PATH")"
   printf 'scene_harness_check=%s\n' "$(relative_path "$SCENE_HARNESS_CHECK_PATH")"
+  printf 'acceptance_check=%s\n' "$(relative_path "$ACCEPTANCE_CHECK_PATH")"
   printf 'report=%s\n' "$(relative_path "$REPORT_PATH")"
   printf 'report_check=%s\n' "$(relative_path "$REPORT_CHECK_PATH")"
   printf 'steps=plan/harness/check/report/report_check\n'
@@ -224,6 +226,74 @@ test "$report_check_env_expected" = "$harness_env_expected" || fail "report-chec
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
   printf 'summary transparent_fixture_pack_status=pass transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+    "$report_check_status" \
+    "$check_status" \
+    "$scene_harness_check_status" \
+    "$plan_status" \
+    "$harness_status" \
+    "$harness_env_expected"
+} > "$tmp_pack"
+
+mv "$tmp_pack" "$OUT_PATH"
+
+sh "$ROOT_DIR/scripts/gpu_terrain_transparent_fixture_acceptance_check.sh" \
+  "$OUT_PATH" \
+  "$ACCEPTANCE_CHECK_PATH" >/dev/null
+
+acceptance_summary_line="$(required_line "$ACCEPTANCE_CHECK_PATH" "summary transparent_fixture_acceptance_status=")"
+acceptance_status="$(required_token "transparent_fixture_acceptance_status" "$acceptance_summary_line" "acceptance-check summary")"
+acceptance_pack_status="$(required_token "transparent_fixture_pack_status" "$acceptance_summary_line" "acceptance-check summary")"
+acceptance_report_check_status="$(required_token "transparent_fixture_report_check_status" "$acceptance_summary_line" "acceptance-check summary")"
+acceptance_check_status="$(required_token "transparent_fixture_check_status" "$acceptance_summary_line" "acceptance-check summary")"
+acceptance_scene_harness_check_status="$(required_token "transparent_fixture_scene_harness_check_status" "$acceptance_summary_line" "acceptance-check summary")"
+acceptance_plan_status="$(required_token "fixture_plan_status" "$acceptance_summary_line" "acceptance-check summary")"
+acceptance_harness_status="$(required_token "transparent_fixture_harness_status" "$acceptance_summary_line" "acceptance-check summary")"
+acceptance_env_expected="$(required_token "env_on_expected" "$acceptance_summary_line" "acceptance-check summary")"
+
+test "$acceptance_status" = "pass" || fail "unexpected transparent_fixture_acceptance_status=$acceptance_status"
+test "$acceptance_pack_status" = "pass" || fail "unexpected acceptance pack status=$acceptance_pack_status"
+test "$acceptance_report_check_status" = "$report_check_status" || fail "acceptance report-check status does not match"
+test "$acceptance_check_status" = "$check_status" || fail "acceptance check status does not match"
+test "$acceptance_scene_harness_check_status" = "$scene_harness_check_status" || fail "acceptance scene harness-check status does not match"
+test "$acceptance_plan_status" = "$plan_status" || fail "acceptance fixture_plan_status does not match plan"
+test "$acceptance_harness_status" = "$harness_status" || fail "acceptance harness status does not match harness"
+test "$acceptance_env_expected" = "$harness_env_expected" || fail "acceptance env_on_expected does not match harness"
+
+sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
+  "$LOG_DIR" \
+  "$REPORT_PATH" >/dev/null
+required_line "$REPORT_PATH" "## Selected Transparent Fixture Acceptance Check" >/dev/null
+required_line "$REPORT_PATH" "Source: \`$ACCEPTANCE_CHECK_PATH\`" >/dev/null
+
+{
+  printf 'GPU terrain transparent fixture pack\n'
+  printf 'pack_dir=%s\n' "$(relative_path "$PACK_DIR")"
+  printf 'log_dir=%s\n' "$(relative_path "$LOG_DIR")"
+  printf 'plan=%s\n' "$(relative_path "$PLAN_PATH")"
+  printf 'harness=%s\n' "$(relative_path "$HARNESS_PATH")"
+  printf 'check=%s\n' "$(relative_path "$CHECK_PATH")"
+  printf 'smoke_plan=%s\n' "$(relative_path "$SMOKE_PLAN_PATH")"
+  printf 'scene_checklist=%s\n' "$(relative_path "$SCENE_CHECKLIST_PATH")"
+  printf 'scene_harness=%s\n' "$(relative_path "$SCENE_HARNESS_PATH")"
+  printf 'scene_harness_check=%s\n' "$(relative_path "$SCENE_HARNESS_CHECK_PATH")"
+  printf 'acceptance_check=%s\n' "$(relative_path "$ACCEPTANCE_CHECK_PATH")"
+  printf 'report=%s\n' "$(relative_path "$REPORT_PATH")"
+  printf 'report_check=%s\n' "$(relative_path "$REPORT_CHECK_PATH")"
+  printf 'steps=plan/harness/check/report/report_check\n'
+  printf 'scene_steps=smoke_plan/scene_checklist/scene_harness/scene_harness_check\n'
+  printf 'acceptance_steps=acceptance_check/report_refresh\n'
+  printf 'fixture_plan_status=%s\n' "$plan_status"
+  printf 'transparent_fixture_harness_status=%s\n' "$harness_status"
+  printf 'transparent_fixture_check_status=%s\n' "$check_status"
+  printf 'transparent_fixture_scene_harness_check_status=%s\n' "$scene_harness_check_status"
+  printf 'transparent_fixture_acceptance_status=%s\n' "$acceptance_status"
+  printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
+  printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'contract_tokens=%s\n' "$contract_tokens"
+  printf 'runtime_behavior=unchanged\n'
+  printf 'ordinary_world_visibility=absent\n'
+  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+    "$acceptance_status" \
     "$report_check_status" \
     "$check_status" \
     "$scene_harness_check_status" \
