@@ -35,6 +35,7 @@ pub struct GameClient {
     chunk_material: Option<Gd<godot::classes::Material>>,
     chunk_blocks: HashMap<(i32, i32), Vec<u8>>,
     chunk_non_empty_subchunks: HashMap<(i32, i32), u32>,
+    chunk_last_seen_sec: HashMap<(i32, i32), f64>,
     mesh_queue: VecDeque<SubchunkKey>,
     queued_subchunks: HashMap<SubchunkKey, MeshQueueReason>,
     collision_refresh_queue: VecDeque<SubchunkKey>,
@@ -43,6 +44,7 @@ pub struct GameClient {
     terrain_collision_faces: HashMap<SubchunkKey, PackedVector3Array>,
     subchunk_node_counts: HashMap<SubchunkKey, NodePerfCounts>,
     position_send_timer: f64,
+    client_runtime_sec: f64,
     current_player_chunk: Option<(i32, i32)>,
     last_block_action: String,
     last_chunk_event: String,
@@ -66,6 +68,7 @@ impl INode for GameClient {
             chunk_material: None,
             chunk_blocks: HashMap::new(),
             chunk_non_empty_subchunks: HashMap::new(),
+            chunk_last_seen_sec: HashMap::new(),
             mesh_queue: VecDeque::new(),
             queued_subchunks: HashMap::new(),
             collision_refresh_queue: VecDeque::new(),
@@ -74,6 +77,7 @@ impl INode for GameClient {
             terrain_collision_faces: HashMap::new(),
             subchunk_node_counts: HashMap::new(),
             position_send_timer: 0.0,
+            client_runtime_sec: 0.0,
             current_player_chunk: None,
             last_block_action: "n/a".to_string(),
             last_chunk_event: "n/a".to_string(),
@@ -162,6 +166,9 @@ impl INode for GameClient {
     }
 
     fn process(&mut self, delta: f64) {
+        if delta.is_finite() && delta > 0.0 {
+            self.client_runtime_sec += delta;
+        }
         self.position_send_timer -= delta;
         if self.position_send_timer <= 0.0 {
             self.position_send_timer = 0.5;
@@ -276,38 +283,44 @@ impl GameClient {
         self.chunk_blocks.insert((chunk_x, chunk_z), chunk.blocks);
         self.chunk_non_empty_subchunks
             .insert((chunk_x, chunk_z), non_empty_subchunks);
+        self.chunk_last_seen_sec
+            .insert((chunk_x, chunk_z), self.client_runtime_sec);
         self.perf.chunk_bytes_loaded = self.total_chunk_bytes_loaded();
 
-        if let Some(update) = dirty_update.filter(|update| {
-            gpu_terrain_partial_dirty_upload_enabled() && update.changed_blocks > 0
-        }) {
-            self.enqueue_dirty_chunk_subchunks(chunk_x, chunk_z, update.rebuild_subchunk_mask);
-            self.perf.record_partial_dirty_enqueue(
-                dirty_partial_subchunk_count(
-                    previous_non_empty_subchunks,
-                    non_empty_subchunks,
-                    update.rebuild_subchunk_mask,
-                ),
-                dirty_partial_saved_subchunks(
-                    previous_non_empty_subchunks,
-                    non_empty_subchunks,
-                    update.rebuild_subchunk_mask,
-                ),
-            );
+        if chunk_update_needs_geometry_refresh(dirty_update) {
+            if let Some(update) = dirty_update.filter(|update| {
+                gpu_terrain_partial_dirty_upload_enabled() && update.changed_blocks > 0
+            }) {
+                self.enqueue_dirty_chunk_subchunks(chunk_x, chunk_z, update.rebuild_subchunk_mask);
+                self.perf.record_partial_dirty_enqueue(
+                    dirty_partial_subchunk_count(
+                        previous_non_empty_subchunks,
+                        non_empty_subchunks,
+                        update.rebuild_subchunk_mask,
+                    ),
+                    dirty_partial_saved_subchunks(
+                        previous_non_empty_subchunks,
+                        non_empty_subchunks,
+                        update.rebuild_subchunk_mask,
+                    ),
+                );
 
-            for (x, z) in dirty_edge_neighbors(chunk_x, chunk_z, update.edge_mask) {
-                if self.chunk_blocks.contains_key(&(x, z)) {
-                    self.enqueue_chunk_subchunks_for_mask(x, z, update.rebuild_subchunk_mask);
+                for (x, z) in dirty_edge_neighbors(chunk_x, chunk_z, update.edge_mask) {
+                    if self.chunk_blocks.contains_key(&(x, z)) {
+                        self.enqueue_chunk_subchunks_for_mask(x, z, update.rebuild_subchunk_mask);
+                    }
                 }
-            }
-        } else {
-            self.enqueue_chunk_subchunks(chunk_x, chunk_z);
+            } else {
+                self.enqueue_chunk_subchunks(chunk_x, chunk_z);
 
-            let neighbor_refresh_mask =
-                neighbor_geometry_refresh_mask(previous_non_empty_subchunks, non_empty_subchunks);
-            for (x, z) in chunk_neighbors(chunk_x, chunk_z) {
-                if self.chunk_blocks.contains_key(&(x, z)) {
-                    self.enqueue_chunk_subchunks_for_mask(x, z, neighbor_refresh_mask);
+                let neighbor_refresh_mask = neighbor_geometry_refresh_mask(
+                    previous_non_empty_subchunks,
+                    non_empty_subchunks,
+                );
+                for (x, z) in chunk_neighbors(chunk_x, chunk_z) {
+                    if self.chunk_blocks.contains_key(&(x, z)) {
+                        self.enqueue_chunk_subchunks_for_mask(x, z, neighbor_refresh_mask);
+                    }
                 }
             }
         }
@@ -1271,11 +1284,29 @@ impl GameClient {
     }
 
     fn unload_far_chunks(&mut self, center: (i32, i32)) {
+        let now_sec = self.client_runtime_sec;
+        let keep_distance = client_keep_chunk_distance();
+        for coord in self.chunk_blocks.keys().copied() {
+            if chunk_within_radius(coord, center, keep_distance) {
+                self.chunk_last_seen_sec.insert(coord, now_sec);
+            }
+        }
+
+        let grace_sec = client_chunk_unload_grace_sec();
         let to_unload: Vec<(i32, i32)> = self
             .chunk_blocks
             .keys()
             .copied()
-            .filter(|coord| !chunk_within_radius(*coord, center, client_keep_chunk_distance()))
+            .filter(|coord| {
+                should_unload_chunk(
+                    *coord,
+                    center,
+                    keep_distance,
+                    self.chunk_last_seen_sec.get(coord).copied(),
+                    now_sec,
+                    grace_sec,
+                )
+            })
             .collect();
         if to_unload.is_empty() {
             return;
@@ -1285,6 +1316,7 @@ impl GameClient {
         for coord in to_unload {
             self.chunk_blocks.remove(&coord);
             self.chunk_non_empty_subchunks.remove(&coord);
+            self.chunk_last_seen_sec.remove(&coord);
             self.remove_chunk_meshes(coord.0, coord.1);
             self.last_chunk_event = format!("unloaded {},{}", coord.0, coord.1);
             self.emit_debug_log(&format!("Chunk unloaded {},{}", coord.0, coord.1));
@@ -2391,6 +2423,8 @@ const BLOCK_BYTES: usize = 2;
 const PADDED_BLOCK_BYTES: usize = PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES;
 const CLIENT_KEEP_CHUNK_DISTANCE: i32 = 10;
 const MAX_CLIENT_KEEP_CHUNK_DISTANCE: i32 = 16;
+const CLIENT_CHUNK_UNLOAD_GRACE_SEC: f64 = 20.0;
+const MAX_CLIENT_CHUNK_UNLOAD_GRACE_SEC: f64 = 120.0;
 const COLLISION_CHUNK_DISTANCE: i32 = 1;
 const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_DISTANCE: f32 = 160.0;
 const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE: i32 = 5;
@@ -2409,6 +2443,7 @@ const GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD_ENV: &str = "RUMPELMC_GPU_TERRAIN_PARTIAL
 const CPU_ARRAY_MESH_PACKED_FACES_ENV: &str = "RUMPELMC_CPU_ARRAY_MESH_PACKED_FACES";
 const CPU_ARRAY_MESH_PACKED_FACES_DEFAULT_ENABLED: bool = true;
 const CLIENT_KEEP_CHUNK_DISTANCE_ENV: &str = "RUMPELMC_CLIENT_KEEP_CHUNK_DISTANCE";
+const CLIENT_CHUNK_UNLOAD_GRACE_SEC_ENV: &str = "RUMPELMC_CLIENT_CHUNK_UNLOAD_GRACE_SEC";
 const GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE";
 const GPU_TERRAIN_SHADOW_PROXY_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE";
@@ -2477,6 +2512,40 @@ fn client_keep_chunk_distance() -> i32 {
             .map(|radius| radius.clamp(1, MAX_CLIENT_KEEP_CHUNK_DISTANCE))
             .unwrap_or(CLIENT_KEEP_CHUNK_DISTANCE)
     })
+}
+
+fn client_chunk_unload_grace_sec() -> f64 {
+    static UNLOAD_GRACE: OnceLock<f64> = OnceLock::new();
+    *UNLOAD_GRACE.get_or_init(|| {
+        std::env::var(CLIENT_CHUNK_UNLOAD_GRACE_SEC_ENV)
+            .ok()
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+            .map(|seconds| seconds.clamp(0.0, MAX_CLIENT_CHUNK_UNLOAD_GRACE_SEC))
+            .unwrap_or(CLIENT_CHUNK_UNLOAD_GRACE_SEC)
+    })
+}
+
+fn should_unload_chunk(
+    coord: (i32, i32),
+    center: (i32, i32),
+    keep_distance: i32,
+    last_seen_sec: Option<f64>,
+    now_sec: f64,
+    grace_sec: f64,
+) -> bool {
+    if chunk_within_radius(coord, center, keep_distance) {
+        return false;
+    }
+    if grace_sec <= 0.0 {
+        return true;
+    }
+
+    let Some(last_seen_sec) = last_seen_sec else {
+        return true;
+    };
+    let elapsed_sec = now_sec - last_seen_sec;
+    elapsed_sec.is_finite() && elapsed_sec >= grace_sec
 }
 
 fn subchunk_needs_collision(key: SubchunkKey, current_player_chunk: Option<(i32, i32)>) -> bool {
@@ -2997,6 +3066,13 @@ fn dirty_edge_neighbors(chunk_x: i32, chunk_z: i32, edge_mask: u8) -> Vec<(i32, 
         neighbors.push((chunk_x, chunk_z + 1));
     }
     neighbors
+}
+
+fn chunk_update_needs_geometry_refresh(dirty_update: Option<ChunkDirtyUpdate>) -> bool {
+    match dirty_update {
+        Some(update) => update.changed_blocks > 0,
+        None => true,
+    }
 }
 
 fn chunk_dirty_update(previous: &[u8], current: &[u8]) -> ChunkDirtyUpdate {
@@ -3873,6 +3949,43 @@ mod tests {
     }
 
     #[test]
+    fn chunk_unload_grace_keeps_recently_seen_far_chunks() {
+        assert!(!should_unload_chunk(
+            (3, 0),
+            (0, 0),
+            4,
+            Some(0.0),
+            100.0,
+            20.0
+        ));
+        assert!(!should_unload_chunk(
+            (5, 0),
+            (0, 0),
+            4,
+            Some(85.0),
+            100.0,
+            20.0
+        ));
+        assert!(should_unload_chunk(
+            (5, 0),
+            (0, 0),
+            4,
+            Some(79.0),
+            100.0,
+            20.0
+        ));
+        assert!(should_unload_chunk((5, 0), (0, 0), 4, None, 100.0, 20.0));
+        assert!(should_unload_chunk(
+            (5, 0),
+            (0, 0),
+            4,
+            Some(99.0),
+            100.0,
+            0.0
+        ));
+    }
+
+    #[test]
     fn shadow_proxy_mode_parses_supported_values() {
         assert_eq!(
             GpuTerrainShadowProxyMode::from_env_value(""),
@@ -4688,6 +4801,20 @@ mod tests {
             vec![(3, 5), (4, 6)]
         );
         assert!(dirty_edge_neighbors(4, 5, 0).is_empty());
+    }
+
+    #[test]
+    fn identical_chunk_update_skips_geometry_refresh() {
+        assert!(chunk_update_needs_geometry_refresh(None));
+        assert!(!chunk_update_needs_geometry_refresh(Some(
+            ChunkDirtyUpdate::default()
+        )));
+        assert!(chunk_update_needs_geometry_refresh(Some(
+            ChunkDirtyUpdate {
+                changed_blocks: 1,
+                ..ChunkDirtyUpdate::default()
+            }
+        )));
     }
 
     #[test]
