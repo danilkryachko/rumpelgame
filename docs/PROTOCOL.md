@@ -44,7 +44,7 @@
 - Block index order is `x + y * width * depth + z * width`.
 - A full chunk payload currently contains `32 * 32 * 512 * 2` block bytes.
 - RLE chunk payloads are a sequence of runs. Each run is a 2-byte little-endian block ID followed by an unsigned protobuf-style varint run length in blocks.
-- `RUMPELMC_SERVER_CHUNK_ENCODING=rle` enables server RLE chunk payloads. The default and rollback path is raw.
+- RLE chunk payloads are the server default. `RUMPELMC_SERVER_CHUNK_ENCODING=raw` enables the raw full-chunk rollback path.
 
 ## Block Actions
 

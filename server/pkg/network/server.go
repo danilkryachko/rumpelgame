@@ -87,7 +87,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 	log.Printf("Started progressive chunk stream radius=%d batch=%d to %s", s.viewDistance, s.chunksPerUpdate, conn.RemoteAddr())
 
-	// Чтение пакетов в цикле
+	// Read client packets until the connection closes.
 	for {
 		clientPacket, err := s.receivePacket(conn)
 		if err != nil {
@@ -218,13 +218,13 @@ func chunkStreamMetricsEnabled() bool {
 func configuredChunkEncoding() api.ChunkEncoding {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv(chunkEncodingEnv)))
 	switch value {
-	case "", "raw":
-		return api.ChunkEncoding_CHUNK_ENCODING_RAW
-	case "rle":
+	case "", "rle":
 		return api.ChunkEncoding_CHUNK_ENCODING_RLE
-	default:
-		log.Printf("Ignoring invalid %s=%q; using raw", chunkEncodingEnv, value)
+	case "raw":
 		return api.ChunkEncoding_CHUNK_ENCODING_RAW
+	default:
+		log.Printf("Ignoring invalid %s=%q; using rle", chunkEncodingEnv, value)
+		return api.ChunkEncoding_CHUNK_ENCODING_RLE
 	}
 }
 

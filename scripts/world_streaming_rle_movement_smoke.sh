@@ -20,6 +20,12 @@ fail() {
   exit 1
 }
 
+sign_server_binary_if_possible() {
+  if command -v codesign >/dev/null 2>&1; then
+    codesign -s - --force ./server >/dev/null 2>&1 || true
+  fi
+}
+
 listener_pid() {
   if command -v lsof >/dev/null 2>&1; then
     lsof -tiTCP:25565 -sTCP:LISTEN 2>/dev/null | sed -n '1p'
@@ -59,6 +65,7 @@ case "$BUILD_SERVER" in
     (
       cd "$ROOT_DIR/server"
       go build -o ./server ./cmd/server
+      sign_server_binary_if_possible
     )
     ;;
   *)

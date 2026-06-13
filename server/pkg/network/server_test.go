@@ -85,8 +85,8 @@ func TestChunkStreamMetricsEnabledParsesSupportedValues(t *testing.T) {
 
 func TestConfiguredChunkEncodingParsesSupportedValues(t *testing.T) {
 	t.Setenv(chunkEncodingEnv, "")
-	if got := configuredChunkEncoding(); got != api.ChunkEncoding_CHUNK_ENCODING_RAW {
-		t.Fatalf("configuredChunkEncoding() = %v, want raw", got)
+	if got := configuredChunkEncoding(); got != api.ChunkEncoding_CHUNK_ENCODING_RLE {
+		t.Fatalf("configuredChunkEncoding() = %v, want default rle", got)
 	}
 
 	t.Setenv(chunkEncodingEnv, "rle")
@@ -94,9 +94,14 @@ func TestConfiguredChunkEncodingParsesSupportedValues(t *testing.T) {
 		t.Fatalf("configuredChunkEncoding() = %v, want rle", got)
 	}
 
-	t.Setenv(chunkEncodingEnv, "invalid")
+	t.Setenv(chunkEncodingEnv, "raw")
 	if got := configuredChunkEncoding(); got != api.ChunkEncoding_CHUNK_ENCODING_RAW {
-		t.Fatalf("configuredChunkEncoding() = %v, want raw fallback", got)
+		t.Fatalf("configuredChunkEncoding() = %v, want raw rollback", got)
+	}
+
+	t.Setenv(chunkEncodingEnv, "invalid")
+	if got := configuredChunkEncoding(); got != api.ChunkEncoding_CHUNK_ENCODING_RLE {
+		t.Fatalf("configuredChunkEncoding() = %v, want default rle fallback", got)
 	}
 }
 

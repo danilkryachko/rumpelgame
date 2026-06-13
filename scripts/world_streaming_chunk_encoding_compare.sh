@@ -23,6 +23,12 @@ fail() {
   exit 1
 }
 
+sign_server_binary_if_possible() {
+  if command -v codesign >/dev/null 2>&1; then
+    codesign -s - --force ./server >/dev/null 2>&1 || true
+  fi
+}
+
 listener_pid() {
   if command -v lsof >/dev/null 2>&1; then
     lsof -tiTCP:25565 -sTCP:LISTEN 2>/dev/null | sed -n '1p'
@@ -126,6 +132,7 @@ case "$BUILD_SERVER" in
     (
       cd "$ROOT_DIR/server"
       go build -o ./server ./cmd/server
+      sign_server_binary_if_possible
     )
     ;;
   *)
@@ -167,32 +174,27 @@ rle_wire_bytes="$(metric wire_bytes "$RLE_SUMMARY")"
 
 test -n "$raw_chunks" || fail "missing raw chunks in $RAW_SUMMARY"
 test -n "$rle_chunks" || fail "missing rle chunks in $RLE_SUMMARY"
-if [ "$raw_chunks" -ne "$rle_chunks" ]; then
-  fail "raw/rle chunk totals differ: raw=$raw_chunks rle=$rle_chunks"
-fi
-if [ "$raw_raw_bytes" -ne "$rle_raw_bytes" ]; then
-  fail "raw/rle raw byte totals differ: raw=$raw_raw_bytes rle=$rle_raw_bytes"
-fi
-
 awk \
   -v raw_chunks="$raw_chunks" \
   -v raw_raw="$raw_raw_bytes" \
   -v raw_payload="$raw_payload_bytes" \
   -v raw_wire="$raw_wire_bytes" \
+  -v rle_chunks="$rle_chunks" \
+  -v rle_raw="$rle_raw_bytes" \
   -v rle_payload="$rle_payload_bytes" \
   -v rle_wire="$rle_wire_bytes" \
   -v raw_summary="$RAW_SUMMARY" \
   -v rle_summary="$RLE_SUMMARY" '
   BEGIN {
-    if (rle_payload >= raw_payload) {
-      printf("rle payload did not shrink compared with raw payload raw=%d rle=%d\n", raw_payload, rle_payload) > "/dev/stderr"
+    if (rle_payload * raw_raw >= raw_payload * rle_raw) {
+      printf("rle normalized payload did not shrink raw_payload/raw=%d/%d rle_payload/raw=%d/%d\n", raw_payload, raw_raw, rle_payload, rle_raw) > "/dev/stderr"
       exit 1
     }
-    if (rle_wire >= raw_wire) {
-      printf("rle wire did not shrink compared with raw wire raw=%d rle=%d\n", raw_wire, rle_wire) > "/dev/stderr"
+    if (rle_wire * raw_raw >= raw_wire * rle_raw) {
+      printf("rle normalized wire did not shrink raw_wire/raw=%d/%d rle_wire/raw=%d/%d\n", raw_wire, raw_raw, rle_wire, rle_raw) > "/dev/stderr"
       exit 1
     }
-    printf("world_streaming_encoding_compare status=pass chunks=%d raw_bytes=%d raw_payload_bytes=%d rle_payload_bytes=%d raw_wire_bytes=%d rle_wire_bytes=%d payload_pct_of_raw=%.6f wire_pct_of_raw=%.6f raw_summary=%s rle_summary=%s\n", raw_chunks, raw_raw, raw_payload, rle_payload, raw_wire, rle_wire, rle_payload * 100.0 / raw_payload, rle_wire * 100.0 / raw_wire, raw_summary, rle_summary)
+    printf("world_streaming_encoding_compare status=pass raw_chunks=%d rle_chunks=%d raw_raw_bytes=%d rle_raw_bytes=%d raw_payload_bytes=%d rle_payload_bytes=%d raw_wire_bytes=%d rle_wire_bytes=%d raw_payload_pct=%.6f rle_payload_pct=%.6f raw_wire_pct=%.6f rle_wire_pct=%.6f raw_summary=%s rle_summary=%s\n", raw_chunks, rle_chunks, raw_raw, rle_raw, raw_payload, rle_payload, raw_wire, rle_wire, raw_payload * 100.0 / raw_raw, rle_payload * 100.0 / rle_raw, raw_wire * 100.0 / raw_raw, rle_wire * 100.0 / rle_raw, raw_summary, rle_summary)
   }
 ' > "$COMPARE_SUMMARY"
 

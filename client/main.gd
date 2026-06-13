@@ -4,6 +4,8 @@ const MANAGE_SERVER_LIFECYCLE_SETTING = "rumpelmc/server/manage_lifecycle"
 const SERVER_HOST = "127.0.0.1"
 const SERVER_PORT = 25565
 const SERVER_CONNECT_TIMEOUT_MS = 250
+const SERVER_START_TIMEOUT_MS = 5000
+const SERVER_START_POLL_SEC = 0.1
 const VISUAL_SMOKE_PATH_ENV = "RUMPELMC_VISUAL_SMOKE_PATH"
 const VISUAL_SMOKE_DELAY_ENV = "RUMPELMC_VISUAL_SMOKE_DELAY_SEC"
 const VISUAL_SMOKE_HIDE_HUD_ENV = "RUMPELMC_VISUAL_SMOKE_HIDE_HUD"
@@ -66,6 +68,7 @@ func _ready():
 	else:
 		log_event("Starting local Go server...")
 		start_local_server()
+		await wait_for_server_listening()
 
 	await get_tree().create_timer(1.0).timeout
 
@@ -152,6 +155,17 @@ func start_local_server():
 			log_event("Failed to start local Go server! Is it executable?")
 		else:
 			log_event("Go server started with PID: %d" % server_pid)
+
+func wait_for_server_listening() -> bool:
+	var deadline = Time.get_ticks_msec() + SERVER_START_TIMEOUT_MS
+	while Time.get_ticks_msec() < deadline:
+		if is_server_listening():
+			log_event("Go server is listening on %s:%d" % [SERVER_HOST, SERVER_PORT])
+			return true
+		await get_tree().create_timer(SERVER_START_POLL_SEC).timeout
+
+	log_event("Go server did not become ready on %s:%d" % [SERVER_HOST, SERVER_PORT])
+	return false
 
 func _exit_tree():
 	if manage_server_lifecycle and server_pid != -1:

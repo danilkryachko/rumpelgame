@@ -7,23 +7,23 @@ This document tracks the chunk-loading path and planned optimizations for faster
 - Server chunks are `32 x 32 x 512`.
 - `world.Chunk.Serialize()` emits a full little-endian `u16` block array.
 - A full raw chunk payload is `1,048,576` bytes before protobuf and TCP framing.
-- `server/pkg/network` sends raw `ChunkData.blocks` by default.
-- `RUMPELMC_SERVER_CHUNK_ENCODING=rle` switches chunk payloads to a compatible RLE protocol path after the Rust client decodes them back to the same raw block bytes.
+- `server/pkg/network` sends RLE `ChunkData.blocks` by default after the Rust client decodes them back to the same raw block bytes.
+- `RUMPELMC_SERVER_CHUNK_ENCODING=raw` switches chunk payloads back to the raw full chunk rollback path.
 - The default server stream sends up to `6` chunks per update, ordered nearest-first by chunk distance.
 
 ## First Optimization Path
 
 Use a compatible staged rollout:
 
-1. Keep the existing raw chunk format as the default and rollback path.
+1. Keep the existing raw chunk format as an explicit rollback path.
 2. Add a deterministic block-run RLE codec over the existing serialized chunk bytes.
 3. Benchmark raw serialize, RLE encode, and RLE decode on representative chunks.
 4. Use the new compatible `ChunkData.encoding` and `ChunkData.uncompressed_size` fields for encoded chunks.
-5. Gate encoded chunk streaming behind `RUMPELMC_SERVER_CHUNK_ENCODING=rle` until visual smoke and movement streaming evidence pass.
+5. Make encoded chunk streaming the default only after visual smoke and movement streaming evidence pass, while preserving `RUMPELMC_SERVER_CHUNK_ENCODING=raw` rollback.
 
 ## Current RLE Evidence
 
-The first server-side codec slice adds `EncodeSerializedChunkRLE` and `DecodeSerializedChunkRLE` without changing storage behavior. The follow-up protocol slice keeps raw packets as the default and adds an opt-in RLE path.
+The first server-side codec slice added `EncodeSerializedChunkRLE` and `DecodeSerializedChunkRLE` without changing storage behavior. The follow-up protocol slice added an opt-in RLE path, and the validated default-on slice makes RLE the server default while keeping `RUMPELMC_SERVER_CHUNK_ENCODING=raw` as rollback.
 
 On the current flat generated chunk, the raw payload is `1,048,576` bytes and the RLE payload is below `64` bytes because the chunk contains long vertical strata and air runs.
 
@@ -82,22 +82,32 @@ Fresh wrapper result:
 - Raw/payload/wire bytes: `138,412,032` / `2,646` / `5,640`.
 - Payload/wire percent of raw: `0.001912%` / `0.004075%`.
 
+Fresh default-on result with `RUMPELMC_SERVER_CHUNK_ENCODING` unset:
+
+- Summary: `logs/world_streaming_default_rle_20260613/world-streaming-default-rle-summary.txt`.
+- Status: `pass`.
+- Batches/chunks: `22` / `132`.
+- Raw/payload/wire bytes: `138,412,032` / `2,646` / `5,640`.
+- Payload/wire percent of raw: `0.001912%` / `0.004075%`.
+
 The RAW-vs-RLE comparison gate is:
 
 ```sh
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release scripts/world_streaming_chunk_encoding_compare.sh logs/world_streaming_encoding_compare_20260613
 ```
 
-It runs the same movement stress twice, first with `RUMPELMC_SERVER_CHUNK_ENCODING=raw` and then with `rle`, requires both runs to stream the same chunk count and raw byte total, and writes `world-streaming-encoding-compare-summary.txt`.
+It runs the same movement stress twice, first with `RUMPELMC_SERVER_CHUNK_ENCODING=raw` and then with `rle`, compares normalized payload and wire bytes per raw streamed byte, and writes `world-streaming-encoding-compare-summary.txt`. The RLE run may legitimately stream more chunks in the same smoke window when the transport is faster, so this gate does not require identical chunk counts.
 
-Fresh comparison result:
+Fresh default-on comparison result:
 
-- Summary: `logs/world_streaming_encoding_compare_20260613/world-streaming-encoding-compare-summary.txt`.
+- Summary: `logs/world_streaming_encoding_compare_default_final2_20260613/world-streaming-encoding-compare-summary.txt`.
 - Status: `pass`.
-- Chunks/raw bytes: `132` / `138,412,032`.
-- RAW payload/wire bytes: `138,412,032` / `138,414,760`.
-- RLE payload/wire bytes: `2,646` / `5,640`.
-- RLE payload/wire percent of RAW: `0.001912%` / `0.004075%`.
+- RAW chunks/raw bytes: `138` / `144,703,488`.
+- RLE chunks/raw bytes: `138` / `144,703,488`.
+- RAW payload/wire bytes: `144,703,488` / `144,706,330`.
+- RLE payload/wire bytes: `2,754` / `5,874`.
+- RAW payload/wire percent of raw: `100.000000%` / `100.001964%`.
+- RLE payload/wire percent of raw: `0.001903%` / `0.004059%`.
 
 ## Stream Metrics
 
@@ -107,23 +117,23 @@ Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty
 Chunk stream batch center=0,0 chunks=6 raw_bytes=6291456 payload_bytes=... wire_bytes=... elapsed_ms=... chunks_per_sec=...
 ```
 
-The metric is off by default and does not change packet payloads. Use it with the default raw stream and with `RUMPELMC_SERVER_CHUNK_ENCODING=rle` to compare payload shrinkage and batch throughput with the same log shape.
+The metric is off by default and does not change packet payloads. Use it with the default RLE stream and with `RUMPELMC_SERVER_CHUNK_ENCODING=raw` rollback to compare payload shrinkage and batch throughput with the same log shape.
 
-## Opt-in RLE Protocol Path
+## RLE Protocol Path
 
-Set `RUMPELMC_SERVER_CHUNK_ENCODING=rle` on the server to send RLE chunk payloads:
+RLE is now the default server chunk encoding. Leave `RUMPELMC_SERVER_CHUNK_ENCODING` unset or set it to `rle` to send RLE chunk payloads:
 
 ```sh
-RUMPELMC_SERVER_CHUNK_ENCODING=rle RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1
+RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1
 ```
 
 The server encodes `ChunkData.blocks` as block runs, sets `ChunkData.encoding=CHUNK_ENCODING_RLE`, and sets `ChunkData.uncompressed_size` to `1,048,576`. The Rust client validates the encoded size, decodes RLE back into the full raw block array, and then uses the existing dirty-update, meshing, collision, and GPU upload paths.
 
-Leave `RUMPELMC_SERVER_CHUNK_ENCODING` unset or set it to `raw` for the rollback/default path.
+Set `RUMPELMC_SERVER_CHUNK_ENCODING=raw` for the rollback path.
 
 ## Guardrails
 
-- Keep raw chunk streaming as the default rollback path.
+- Keep raw chunk streaming available as an explicit rollback path.
 - Do not hand-edit generated protocol files.
 - Protocol changes must preserve raw chunk compatibility until the client and server both support the encoded path.
 - Storage still persists the exact output of `world.Chunk.Serialize()` unless a separate migration is explicitly planned.
