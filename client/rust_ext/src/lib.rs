@@ -981,7 +981,7 @@ impl GameClient {
         let node_counts = self.perf.node_counts;
         let node_counts_ms = node_counts_start.elapsed().as_secs_f64() * 1000.0;
         let mesh_ms = elapsed_ms(work_start);
-        self.perf.record_mesh(MeshRecord {
+        let mesh_record = MeshRecord {
             vertices: mesh_data.vertices.len(),
             normals: mesh_data.normals.len(),
             reported_vertices: mesh_data.reported_vertices,
@@ -1004,10 +1004,12 @@ impl GameClient {
             direct_collision_faces,
             collision_bodies,
             node_counts,
-        });
+        };
         if reason == MeshQueueReason::GeometryChanged {
-            self.perf.record_startup_first_mesh(self.client_runtime_sec);
+            self.perf
+                .record_startup_first_mesh(self.client_runtime_sec, &mesh_record);
         }
+        self.perf.record_mesh(mesh_record);
         MeshJobResult::new(elapsed_ms(work_start), gpu_upload.uploads, gpu_upload.bytes)
     }
 
@@ -2076,6 +2078,9 @@ struct PerfStats {
     startup_chunk_loaded_ms: f64,
     startup_mesh_queued_ms: f64,
     startup_first_mesh_ms: f64,
+    startup_first_mesh_work_ms: f64,
+    startup_first_mesh_phase: TerrainMeshPhaseTiming,
+    startup_first_mesh_collision_work_ms: f64,
     startup_collision_ms: f64,
     startup_player_spawn_ms: f64,
     dirty_chunk_updates: u64,
@@ -2345,9 +2350,12 @@ impl PerfStats {
         }
     }
 
-    fn record_startup_first_mesh(&mut self, runtime_sec: f64) {
+    fn record_startup_first_mesh(&mut self, runtime_sec: f64, record: &MeshRecord) {
         if self.startup_first_mesh_ms == 0.0 {
             self.startup_first_mesh_ms = runtime_sec.max(0.0) * 1000.0;
+            self.startup_first_mesh_work_ms = record.mesh_ms;
+            self.startup_first_mesh_phase = record.phase_timing;
+            self.startup_first_mesh_collision_work_ms = record.collision_ms;
         }
     }
 
@@ -4211,7 +4219,7 @@ impl GameClient {
         let dirty_bounds = dirty_bounds_label(self.perf.last_dirty_bounds);
         let dirty_edges = dirty_edge_label(self.perf.last_dirty_edge_mask);
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_first_mesh_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -4291,6 +4299,14 @@ impl GameClient {
             self.perf.startup_chunk_loaded_ms,
             self.perf.startup_mesh_queued_ms,
             self.perf.startup_first_mesh_ms,
+            self.perf.startup_first_mesh_work_ms,
+            self.perf.startup_first_mesh_phase.padded_ms,
+            self.perf.startup_first_mesh_phase.packed_faces_ms,
+            self.perf.startup_first_mesh_phase.gpu_upload_ms,
+            self.perf.startup_first_mesh_phase.cpu_mesh_ms,
+            self.perf.startup_first_mesh_phase.array_mesh_ms,
+            self.perf.startup_first_mesh_phase.node_counts_ms,
+            self.perf.startup_first_mesh_collision_work_ms,
             self.perf.startup_collision_ms,
             self.perf.startup_player_spawn_ms,
             self.perf.dirty_chunk_updates,
@@ -5423,13 +5439,51 @@ mod tests {
             total_collision_bodies: 2,
             ..NodePerfCounts::default()
         };
+        let startup_mesh_record = test_mesh_record(
+            4,
+            4,
+            4,
+            MeshQueueReason::GeometryChanged,
+            false,
+            false,
+            false,
+            1.75,
+            TerrainMeshPhaseTiming {
+                padded_ms: 0.10,
+                packed_faces_ms: 0.20,
+                gpu_upload_ms: 0.30,
+                cpu_mesh_ms: 0.40,
+                array_mesh_ms: 0.50,
+                node_counts_ms: 0.60,
+            },
+            1,
+        );
+        let later_mesh_record = test_mesh_record(
+            8,
+            8,
+            8,
+            MeshQueueReason::GeometryChanged,
+            false,
+            false,
+            false,
+            9.0,
+            TerrainMeshPhaseTiming {
+                padded_ms: 9.0,
+                packed_faces_ms: 9.0,
+                gpu_upload_ms: 9.0,
+                cpu_mesh_ms: 9.0,
+                array_mesh_ms: 9.0,
+                node_counts_ms: 9.0,
+            },
+            1,
+        );
 
         perf.record_startup_chunk_loaded(0.125);
         perf.record_startup_chunk_loaded(0.250);
         perf.record_startup_mesh_queued(0.200);
         perf.record_startup_mesh_queued(0.225);
-        perf.record_startup_first_mesh(0.300);
-        perf.record_startup_first_mesh(0.325);
+        perf.record_startup_first_mesh(0.300, &startup_mesh_record);
+        perf.record_startup_first_mesh(0.325, &later_mesh_record);
         perf.record_startup_collision_ready(0.300, empty_counts);
         perf.record_startup_collision_ready(0.375, collision_counts);
         perf.record_startup_collision_ready(0.500, collision_counts);
@@ -5439,6 +5493,14 @@ mod tests {
         assert_eq!(perf.startup_chunk_loaded_ms, 125.0);
         assert_eq!(perf.startup_mesh_queued_ms, 200.0);
         assert_eq!(perf.startup_first_mesh_ms, 300.0);
+        assert_eq!(perf.startup_first_mesh_work_ms, 1.75);
+        assert_eq!(perf.startup_first_mesh_phase.padded_ms, 0.10);
+        assert_eq!(perf.startup_first_mesh_phase.packed_faces_ms, 0.20);
+        assert_eq!(perf.startup_first_mesh_phase.gpu_upload_ms, 0.30);
+        assert_eq!(perf.startup_first_mesh_phase.cpu_mesh_ms, 0.40);
+        assert_eq!(perf.startup_first_mesh_phase.array_mesh_ms, 0.50);
+        assert_eq!(perf.startup_first_mesh_phase.node_counts_ms, 0.60);
+        assert_eq!(perf.startup_first_mesh_collision_work_ms, 0.0);
         assert_eq!(perf.startup_collision_ms, 375.0);
         assert_eq!(perf.startup_player_spawn_ms, 625.0);
     }

@@ -291,6 +291,18 @@ Fresh startup phase telemetry result:
 - Encoding RLE: `394` chunks, wire percent `0.004168%`, startup first mesh/player spawn `93.806ms / 93.806ms`.
 - Standalone RLE: `394` chunks, wire percent `0.004168%`, startup first mesh/player spawn `90.329ms / 90.329ms`.
 
+Fresh startup first-mesh work breakdown result:
+
+- Summary: `logs/world_streaming_startup_work_breakdown_20260613_frames_retry/world-streaming-regression-summary.txt`.
+- Status: `pass`.
+- The Rust client marker now separates first startup mesh work duration from the wall-clock startup timestamp: `startup_first_mesh_work_ms` records the first geometry-changed mesh job duration, `startup_first_mesh_phase_ms` records the phase split, and `startup_first_mesh_collision_work_ms` records collision work for that first mesh job.
+- Movement, bootstrap, batch, RAW-vs-RLE encoding, standalone RLE, and the combined regression pack summaries surface the numeric first-mesh work fields where relevant.
+- Two earlier runtime attempts reached the expected movement chunk but exited before the PNG marker was saved; the passing run used `GODOT_QUIT_AFTER_FRAMES=30000` to avoid early Godot exit during screenshot capture.
+- Bootstrap candidate radius `0`: first stream `1` chunk, startup first mesh/work/collision work `63.932ms / 4.308ms / 3.530ms`.
+- Batch candidate `64`: streamed `394` chunks over `9` batches, startup first mesh/work/collision work `88.853ms / 4.143ms / 3.418ms`.
+- Encoding RLE: `394` chunks, wire percent `0.004168%`, startup first mesh/work/collision work `78.148ms / 4.729ms / 3.940ms`.
+- Standalone RLE: `394` chunks, wire percent `0.004168%`, startup first mesh/work/collision work `78.337ms / 4.223ms / 3.527ms`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:

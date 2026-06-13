@@ -112,11 +112,14 @@ summarize_stream_metrics() {
   startup_chunk_loaded_ms="$(summary_metric movement_startup chunk_loaded_ms "$movement_summary")"
   startup_mesh_queued_ms="$(summary_metric movement_startup mesh_queued_ms "$movement_summary")"
   startup_first_mesh_ms="$(summary_metric movement_startup first_mesh_ms "$movement_summary")"
+  startup_first_mesh_work_ms="$(summary_metric movement_startup first_mesh_work_ms "$movement_summary")"
+  startup_first_mesh_collision_work_ms="$(summary_metric movement_startup first_mesh_collision_work_ms "$movement_summary")"
   startup_collision_ms="$(summary_metric movement_startup collision_ms "$movement_summary")"
   startup_player_spawn_ms="$(summary_metric movement_startup player_spawn_ms "$movement_summary")"
   test -n "$startup_chunk_loaded_ms" || fail "missing $encoding startup chunk timing in $movement_summary"
   test -n "$startup_mesh_queued_ms" || fail "missing $encoding startup mesh queued timing in $movement_summary"
   test -n "$startup_first_mesh_ms" || fail "missing $encoding startup first mesh timing in $movement_summary"
+  test -n "$startup_first_mesh_work_ms" || fail "missing $encoding startup first mesh work timing in $movement_summary"
   test -n "$startup_collision_ms" || fail "missing $encoding startup collision timing in $movement_summary"
   test -n "$startup_player_spawn_ms" || fail "missing $encoding startup player spawn timing in $movement_summary"
 
@@ -127,6 +130,8 @@ summarize_stream_metrics() {
     -v startup_chunk_loaded_ms="$startup_chunk_loaded_ms" \
     -v startup_mesh_queued_ms="$startup_mesh_queued_ms" \
     -v startup_first_mesh_ms="$startup_first_mesh_ms" \
+    -v startup_first_mesh_work_ms="$startup_first_mesh_work_ms" \
+    -v startup_first_mesh_collision_work_ms="${startup_first_mesh_collision_work_ms:-0}" \
     -v startup_collision_ms="$startup_collision_ms" \
     -v startup_player_spawn_ms="$startup_player_spawn_ms" '
     /Chunk stream batch/ {
@@ -156,7 +161,7 @@ summarize_stream_metrics() {
         printf("rle wire is not below 1%% of raw raw=%d wire=%d\n", raw, wire) > "/dev/stderr"
         exit 1
       }
-      printf("world_streaming_%s_movement status=pass batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f startup_chunk_loaded_ms=%.3f startup_mesh_queued_ms=%.3f startup_first_mesh_ms=%.3f startup_collision_ms=%.3f startup_player_spawn_ms=%.3f marker=%s run_log=%s\n", encoding, batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_first_mesh_ms, startup_collision_ms, startup_player_spawn_ms, marker_path, run_log)
+      printf("world_streaming_%s_movement status=pass batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f startup_chunk_loaded_ms=%.3f startup_mesh_queued_ms=%.3f startup_first_mesh_ms=%.3f startup_first_mesh_work_ms=%.3f startup_first_mesh_collision_work_ms=%.3f startup_collision_ms=%.3f startup_player_spawn_ms=%.3f marker=%s run_log=%s\n", encoding, batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms, marker_path, run_log)
     }
   ' "$run_log" > "$summary_path"
 }
@@ -211,6 +216,8 @@ raw_wire_bytes="$(metric wire_bytes "$RAW_SUMMARY")"
 raw_startup_chunk_loaded="$(metric startup_chunk_loaded_ms "$RAW_SUMMARY")"
 raw_startup_mesh_queued="$(metric startup_mesh_queued_ms "$RAW_SUMMARY")"
 raw_startup_first_mesh="$(metric startup_first_mesh_ms "$RAW_SUMMARY")"
+raw_startup_first_mesh_work="$(metric startup_first_mesh_work_ms "$RAW_SUMMARY")"
+raw_startup_first_mesh_collision_work="$(metric startup_first_mesh_collision_work_ms "$RAW_SUMMARY")"
 raw_startup_collision="$(metric startup_collision_ms "$RAW_SUMMARY")"
 raw_startup_player_spawn="$(metric startup_player_spawn_ms "$RAW_SUMMARY")"
 rle_chunks="$(metric chunks "$RLE_SUMMARY")"
@@ -220,6 +227,8 @@ rle_wire_bytes="$(metric wire_bytes "$RLE_SUMMARY")"
 rle_startup_chunk_loaded="$(metric startup_chunk_loaded_ms "$RLE_SUMMARY")"
 rle_startup_mesh_queued="$(metric startup_mesh_queued_ms "$RLE_SUMMARY")"
 rle_startup_first_mesh="$(metric startup_first_mesh_ms "$RLE_SUMMARY")"
+rle_startup_first_mesh_work="$(metric startup_first_mesh_work_ms "$RLE_SUMMARY")"
+rle_startup_first_mesh_collision_work="$(metric startup_first_mesh_collision_work_ms "$RLE_SUMMARY")"
 rle_startup_collision="$(metric startup_collision_ms "$RLE_SUMMARY")"
 rle_startup_player_spawn="$(metric startup_player_spawn_ms "$RLE_SUMMARY")"
 
@@ -233,6 +242,8 @@ awk \
   -v raw_startup_chunk_loaded="$raw_startup_chunk_loaded" \
   -v raw_startup_mesh_queued="$raw_startup_mesh_queued" \
   -v raw_startup_first_mesh="$raw_startup_first_mesh" \
+  -v raw_startup_first_mesh_work="$raw_startup_first_mesh_work" \
+  -v raw_startup_first_mesh_collision_work="$raw_startup_first_mesh_collision_work" \
   -v raw_startup_collision="$raw_startup_collision" \
   -v raw_startup_player_spawn="$raw_startup_player_spawn" \
   -v rle_chunks="$rle_chunks" \
@@ -242,6 +253,8 @@ awk \
   -v rle_startup_chunk_loaded="$rle_startup_chunk_loaded" \
   -v rle_startup_mesh_queued="$rle_startup_mesh_queued" \
   -v rle_startup_first_mesh="$rle_startup_first_mesh" \
+  -v rle_startup_first_mesh_work="$rle_startup_first_mesh_work" \
+  -v rle_startup_first_mesh_collision_work="$rle_startup_first_mesh_collision_work" \
   -v rle_startup_collision="$rle_startup_collision" \
   -v rle_startup_player_spawn="$rle_startup_player_spawn" \
   -v raw_summary="$RAW_SUMMARY" \
@@ -255,7 +268,7 @@ awk \
       printf("rle normalized wire did not shrink raw_wire/raw=%d/%d rle_wire/raw=%d/%d\n", raw_wire, raw_raw, rle_wire, rle_raw) > "/dev/stderr"
       exit 1
     }
-    printf("world_streaming_encoding_compare status=pass raw_chunks=%d rle_chunks=%d raw_raw_bytes=%d rle_raw_bytes=%d raw_payload_bytes=%d rle_payload_bytes=%d raw_wire_bytes=%d rle_wire_bytes=%d raw_payload_pct=%.6f rle_payload_pct=%.6f raw_wire_pct=%.6f rle_wire_pct=%.6f raw_startup_chunk_loaded_ms=%.3f rle_startup_chunk_loaded_ms=%.3f raw_startup_mesh_queued_ms=%.3f rle_startup_mesh_queued_ms=%.3f raw_startup_first_mesh_ms=%.3f rle_startup_first_mesh_ms=%.3f raw_startup_collision_ms=%.3f rle_startup_collision_ms=%.3f raw_startup_player_spawn_ms=%.3f rle_startup_player_spawn_ms=%.3f raw_summary=%s rle_summary=%s\n", raw_chunks, rle_chunks, raw_raw, rle_raw, raw_payload, rle_payload, raw_wire, rle_wire, raw_payload * 100.0 / raw_raw, rle_payload * 100.0 / rle_raw, raw_wire * 100.0 / raw_raw, rle_wire * 100.0 / rle_raw, raw_startup_chunk_loaded, rle_startup_chunk_loaded, raw_startup_mesh_queued, rle_startup_mesh_queued, raw_startup_first_mesh, rle_startup_first_mesh, raw_startup_collision, rle_startup_collision, raw_startup_player_spawn, rle_startup_player_spawn, raw_summary, rle_summary)
+    printf("world_streaming_encoding_compare status=pass raw_chunks=%d rle_chunks=%d raw_raw_bytes=%d rle_raw_bytes=%d raw_payload_bytes=%d rle_payload_bytes=%d raw_wire_bytes=%d rle_wire_bytes=%d raw_payload_pct=%.6f rle_payload_pct=%.6f raw_wire_pct=%.6f rle_wire_pct=%.6f raw_startup_chunk_loaded_ms=%.3f rle_startup_chunk_loaded_ms=%.3f raw_startup_mesh_queued_ms=%.3f rle_startup_mesh_queued_ms=%.3f raw_startup_first_mesh_ms=%.3f rle_startup_first_mesh_ms=%.3f raw_startup_first_mesh_work_ms=%.3f rle_startup_first_mesh_work_ms=%.3f raw_startup_first_mesh_collision_work_ms=%.3f rle_startup_first_mesh_collision_work_ms=%.3f raw_startup_collision_ms=%.3f rle_startup_collision_ms=%.3f raw_startup_player_spawn_ms=%.3f rle_startup_player_spawn_ms=%.3f raw_summary=%s rle_summary=%s\n", raw_chunks, rle_chunks, raw_raw, rle_raw, raw_payload, rle_payload, raw_wire, rle_wire, raw_payload * 100.0 / raw_raw, rle_payload * 100.0 / rle_raw, raw_wire * 100.0 / raw_raw, rle_wire * 100.0 / rle_raw, raw_startup_chunk_loaded, rle_startup_chunk_loaded, raw_startup_mesh_queued, rle_startup_mesh_queued, raw_startup_first_mesh, rle_startup_first_mesh, raw_startup_first_mesh_work, rle_startup_first_mesh_work, raw_startup_first_mesh_collision_work, rle_startup_first_mesh_collision_work, raw_startup_collision, rle_startup_collision, raw_startup_player_spawn, rle_startup_player_spawn, raw_summary, rle_summary)
   }
 ' > "$COMPARE_SUMMARY"
 
