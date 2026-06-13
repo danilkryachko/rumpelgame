@@ -123,8 +123,14 @@ summarize_run() {
   grep -q "Chunk stream batch" "$run_log" || fail "missing chunk stream batch metrics in $run_log"
 
   terrain_queue_max_ms="$(summary_metric movement_terrain_queue max_ms "$movement_summary")"
+  startup_chunk_packet_ms="$(summary_metric movement_startup packet_ms "$movement_summary")"
+  startup_packet_read_work_ms="$(summary_metric movement_startup packet_read_work_ms "$movement_summary")"
+  startup_packet_decode_work_ms="$(summary_metric movement_startup packet_decode_work_ms "$movement_summary")"
+  startup_chunk_decode_work_ms="$(summary_metric movement_startup chunk_decode_work_ms "$movement_summary")"
+  startup_chunk_inserted_ms="$(summary_metric movement_startup chunk_inserted_ms "$movement_summary")"
   startup_chunk_loaded_ms="$(summary_metric movement_startup chunk_loaded_ms "$movement_summary")"
   startup_mesh_queued_ms="$(summary_metric movement_startup mesh_queued_ms "$movement_summary")"
+  startup_mesh_dispatched_ms="$(summary_metric movement_startup mesh_dispatched_ms "$movement_summary")"
   startup_first_mesh_ms="$(summary_metric movement_startup first_mesh_ms "$movement_summary")"
   startup_first_mesh_work_ms="$(summary_metric movement_startup first_mesh_work_ms "$movement_summary")"
   startup_first_mesh_collision_work_ms="$(summary_metric movement_startup first_mesh_collision_work_ms "$movement_summary")"
@@ -143,8 +149,14 @@ summarize_run() {
     -v marker_path="$marker_path" \
     -v run_log="$run_log" \
     -v terrain_queue_max_ms="${terrain_queue_max_ms:-0}" \
+    -v startup_chunk_packet_ms="${startup_chunk_packet_ms:-0}" \
+    -v startup_packet_read_work_ms="${startup_packet_read_work_ms:-0}" \
+    -v startup_packet_decode_work_ms="${startup_packet_decode_work_ms:-0}" \
+    -v startup_chunk_decode_work_ms="${startup_chunk_decode_work_ms:-0}" \
+    -v startup_chunk_inserted_ms="${startup_chunk_inserted_ms:-0}" \
     -v startup_chunk_loaded_ms="${startup_chunk_loaded_ms:-0}" \
     -v startup_mesh_queued_ms="${startup_mesh_queued_ms:-0}" \
+    -v startup_mesh_dispatched_ms="${startup_mesh_dispatched_ms:-0}" \
     -v startup_first_mesh_ms="${startup_first_mesh_ms:-0}" \
     -v startup_first_mesh_work_ms="${startup_first_mesh_work_ms:-0}" \
     -v startup_first_mesh_collision_work_ms="${startup_first_mesh_collision_work_ms:-0}" \
@@ -184,7 +196,7 @@ summarize_run() {
         printf("batch=%s wire is not below 1%% of raw raw=%d wire=%d\n", batch, raw, wire) > "/dev/stderr"
         exit 1
       }
-      printf("world_streaming_batch status=pass batch=%s batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f elapsed_avg_ms=%.3f elapsed_max_ms=%.3f chunk_initial=%d current_chunk_loaded=%d current_chunk_collision=%d ground_hits=%d gpu_upload_fail=%d startup_chunk_loaded_ms=%.3f startup_mesh_queued_ms=%.3f startup_first_mesh_ms=%.3f startup_first_mesh_work_ms=%.3f startup_first_mesh_collision_work_ms=%.3f startup_collision_ms=%.3f startup_player_spawn_ms=%.3f terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_max_ms=%.3f marker=%s run_log=%s\n", batch, batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, elapsed / batches, elapsed_max, chunk_initial, current_chunk_loaded, current_chunk_collision, ground_hits, gpu_upload_fail, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms, terrain_queue_max_ms, process_wall_p95_ms, gpu_compositor_submit_max_ms, marker_path, run_log)
+      printf("world_streaming_batch status=pass batch=%s batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f elapsed_avg_ms=%.3f elapsed_max_ms=%.3f chunk_initial=%d current_chunk_loaded=%d current_chunk_collision=%d ground_hits=%d gpu_upload_fail=%d startup_chunk_packet_ms=%.3f startup_packet_read_work_ms=%.3f startup_packet_decode_work_ms=%.3f startup_chunk_decode_work_ms=%.3f startup_chunk_inserted_ms=%.3f startup_chunk_loaded_ms=%.3f startup_mesh_queued_ms=%.3f startup_mesh_dispatched_ms=%.3f startup_first_mesh_ms=%.3f startup_first_mesh_work_ms=%.3f startup_first_mesh_collision_work_ms=%.3f startup_collision_ms=%.3f startup_player_spawn_ms=%.3f terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_max_ms=%.3f marker=%s run_log=%s\n", batch, batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, elapsed / batches, elapsed_max, chunk_initial, current_chunk_loaded, current_chunk_collision, ground_hits, gpu_upload_fail, startup_chunk_packet_ms, startup_packet_read_work_ms, startup_packet_decode_work_ms, startup_chunk_decode_work_ms, startup_chunk_inserted_ms, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_mesh_dispatched_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms, terrain_queue_max_ms, process_wall_p95_ms, gpu_compositor_submit_max_ms, marker_path, run_log)
     }
   ' "$run_log" > "$summary_path"
 }
@@ -259,10 +271,22 @@ base_payload_pct="$(metric payload_pct "$BASE_SUMMARY")"
 candidate_payload_pct="$(metric payload_pct "$CANDIDATE_SUMMARY")"
 base_wire_pct="$(metric wire_pct "$BASE_SUMMARY")"
 candidate_wire_pct="$(metric wire_pct "$CANDIDATE_SUMMARY")"
+base_startup_chunk_packet="$(metric startup_chunk_packet_ms "$BASE_SUMMARY")"
+candidate_startup_chunk_packet="$(metric startup_chunk_packet_ms "$CANDIDATE_SUMMARY")"
+base_startup_packet_read_work="$(metric startup_packet_read_work_ms "$BASE_SUMMARY")"
+candidate_startup_packet_read_work="$(metric startup_packet_read_work_ms "$CANDIDATE_SUMMARY")"
+base_startup_packet_decode_work="$(metric startup_packet_decode_work_ms "$BASE_SUMMARY")"
+candidate_startup_packet_decode_work="$(metric startup_packet_decode_work_ms "$CANDIDATE_SUMMARY")"
+base_startup_chunk_decode_work="$(metric startup_chunk_decode_work_ms "$BASE_SUMMARY")"
+candidate_startup_chunk_decode_work="$(metric startup_chunk_decode_work_ms "$CANDIDATE_SUMMARY")"
+base_startup_chunk_inserted="$(metric startup_chunk_inserted_ms "$BASE_SUMMARY")"
+candidate_startup_chunk_inserted="$(metric startup_chunk_inserted_ms "$CANDIDATE_SUMMARY")"
 base_startup_chunk_loaded="$(metric startup_chunk_loaded_ms "$BASE_SUMMARY")"
 candidate_startup_chunk_loaded="$(metric startup_chunk_loaded_ms "$CANDIDATE_SUMMARY")"
 base_startup_mesh_queued="$(metric startup_mesh_queued_ms "$BASE_SUMMARY")"
 candidate_startup_mesh_queued="$(metric startup_mesh_queued_ms "$CANDIDATE_SUMMARY")"
+base_startup_mesh_dispatched="$(metric startup_mesh_dispatched_ms "$BASE_SUMMARY")"
+candidate_startup_mesh_dispatched="$(metric startup_mesh_dispatched_ms "$CANDIDATE_SUMMARY")"
 base_startup_first_mesh="$(metric startup_first_mesh_ms "$BASE_SUMMARY")"
 candidate_startup_first_mesh="$(metric startup_first_mesh_ms "$CANDIDATE_SUMMARY")"
 base_startup_first_mesh_work="$(metric startup_first_mesh_work_ms "$BASE_SUMMARY")"
@@ -291,10 +315,22 @@ awk \
   -v candidate_payload_pct="$candidate_payload_pct" \
   -v base_wire_pct="$base_wire_pct" \
   -v candidate_wire_pct="$candidate_wire_pct" \
+  -v base_startup_chunk_packet="$base_startup_chunk_packet" \
+  -v candidate_startup_chunk_packet="$candidate_startup_chunk_packet" \
+  -v base_startup_packet_read_work="$base_startup_packet_read_work" \
+  -v candidate_startup_packet_read_work="$candidate_startup_packet_read_work" \
+  -v base_startup_packet_decode_work="$base_startup_packet_decode_work" \
+  -v candidate_startup_packet_decode_work="$candidate_startup_packet_decode_work" \
+  -v base_startup_chunk_decode_work="$base_startup_chunk_decode_work" \
+  -v candidate_startup_chunk_decode_work="$candidate_startup_chunk_decode_work" \
+  -v base_startup_chunk_inserted="$base_startup_chunk_inserted" \
+  -v candidate_startup_chunk_inserted="$candidate_startup_chunk_inserted" \
   -v base_startup_chunk_loaded="$base_startup_chunk_loaded" \
   -v candidate_startup_chunk_loaded="$candidate_startup_chunk_loaded" \
   -v base_startup_mesh_queued="$base_startup_mesh_queued" \
   -v candidate_startup_mesh_queued="$candidate_startup_mesh_queued" \
+  -v base_startup_mesh_dispatched="$base_startup_mesh_dispatched" \
+  -v candidate_startup_mesh_dispatched="$candidate_startup_mesh_dispatched" \
   -v base_startup_first_mesh="$base_startup_first_mesh" \
   -v candidate_startup_first_mesh="$candidate_startup_first_mesh" \
   -v base_startup_first_mesh_work="$base_startup_first_mesh_work" \
@@ -318,7 +354,7 @@ awk \
       printf("candidate batch streamed fewer chunks than base base=%d candidate=%d\n", base_chunks, candidate_chunks) > "/dev/stderr"
       exit 1
     }
-    printf("world_streaming_batch_compare status=pass base_batch=%s candidate_batch=%s base_chunks=%d candidate_chunks=%d base_batches=%d candidate_batches=%d base_payload_pct=%.6f candidate_payload_pct=%.6f base_wire_pct=%.6f candidate_wire_pct=%.6f base_startup_chunk_loaded_ms=%.3f candidate_startup_chunk_loaded_ms=%.3f base_startup_mesh_queued_ms=%.3f candidate_startup_mesh_queued_ms=%.3f base_startup_first_mesh_ms=%.3f candidate_startup_first_mesh_ms=%.3f base_startup_first_mesh_work_ms=%.3f candidate_startup_first_mesh_work_ms=%.3f base_startup_first_mesh_collision_work_ms=%.3f candidate_startup_first_mesh_collision_work_ms=%.3f base_startup_collision_ms=%.3f candidate_startup_collision_ms=%.3f base_startup_player_spawn_ms=%.3f candidate_startup_player_spawn_ms=%.3f base_terrain_queue_max_ms=%.3f candidate_terrain_queue_max_ms=%.3f base_process_wall_p95_ms=%.3f candidate_process_wall_p95_ms=%.3f base_gpu_compositor_submit_max_ms=%.3f candidate_gpu_compositor_submit_max_ms=%.3f base_summary=%s candidate_summary=%s\n", base_batch, candidate_batch, base_chunks, candidate_chunks, base_batches, candidate_batches, base_payload_pct, candidate_payload_pct, base_wire_pct, candidate_wire_pct, base_startup_chunk_loaded, candidate_startup_chunk_loaded, base_startup_mesh_queued, candidate_startup_mesh_queued, base_startup_first_mesh, candidate_startup_first_mesh, base_startup_first_mesh_work, candidate_startup_first_mesh_work, base_startup_first_mesh_collision_work, candidate_startup_first_mesh_collision_work, base_startup_collision, candidate_startup_collision, base_startup_player_spawn, candidate_startup_player_spawn, base_terrain_queue_max, candidate_terrain_queue_max, base_process_wall_p95, candidate_process_wall_p95, base_submit_max, candidate_submit_max, base_summary, candidate_summary)
+    printf("world_streaming_batch_compare status=pass base_batch=%s candidate_batch=%s base_chunks=%d candidate_chunks=%d base_batches=%d candidate_batches=%d base_payload_pct=%.6f candidate_payload_pct=%.6f base_wire_pct=%.6f candidate_wire_pct=%.6f base_startup_chunk_packet_ms=%.3f candidate_startup_chunk_packet_ms=%.3f base_startup_packet_read_work_ms=%.3f candidate_startup_packet_read_work_ms=%.3f base_startup_packet_decode_work_ms=%.3f candidate_startup_packet_decode_work_ms=%.3f base_startup_chunk_decode_work_ms=%.3f candidate_startup_chunk_decode_work_ms=%.3f base_startup_chunk_inserted_ms=%.3f candidate_startup_chunk_inserted_ms=%.3f base_startup_chunk_loaded_ms=%.3f candidate_startup_chunk_loaded_ms=%.3f base_startup_mesh_queued_ms=%.3f candidate_startup_mesh_queued_ms=%.3f base_startup_mesh_dispatched_ms=%.3f candidate_startup_mesh_dispatched_ms=%.3f base_startup_first_mesh_ms=%.3f candidate_startup_first_mesh_ms=%.3f base_startup_first_mesh_work_ms=%.3f candidate_startup_first_mesh_work_ms=%.3f base_startup_first_mesh_collision_work_ms=%.3f candidate_startup_first_mesh_collision_work_ms=%.3f base_startup_collision_ms=%.3f candidate_startup_collision_ms=%.3f base_startup_player_spawn_ms=%.3f candidate_startup_player_spawn_ms=%.3f base_terrain_queue_max_ms=%.3f candidate_terrain_queue_max_ms=%.3f base_process_wall_p95_ms=%.3f candidate_process_wall_p95_ms=%.3f base_gpu_compositor_submit_max_ms=%.3f candidate_gpu_compositor_submit_max_ms=%.3f base_summary=%s candidate_summary=%s\n", base_batch, candidate_batch, base_chunks, candidate_chunks, base_batches, candidate_batches, base_payload_pct, candidate_payload_pct, base_wire_pct, candidate_wire_pct, base_startup_chunk_packet, candidate_startup_chunk_packet, base_startup_packet_read_work, candidate_startup_packet_read_work, base_startup_packet_decode_work, candidate_startup_packet_decode_work, base_startup_chunk_decode_work, candidate_startup_chunk_decode_work, base_startup_chunk_inserted, candidate_startup_chunk_inserted, base_startup_chunk_loaded, candidate_startup_chunk_loaded, base_startup_mesh_queued, candidate_startup_mesh_queued, base_startup_mesh_dispatched, candidate_startup_mesh_dispatched, base_startup_first_mesh, candidate_startup_first_mesh, base_startup_first_mesh_work, candidate_startup_first_mesh_work, base_startup_first_mesh_collision_work, candidate_startup_first_mesh_collision_work, base_startup_collision, candidate_startup_collision, base_startup_player_spawn, candidate_startup_player_spawn, base_terrain_queue_max, candidate_terrain_queue_max, base_process_wall_p95, candidate_process_wall_p95, base_submit_max, candidate_submit_max, base_summary, candidate_summary)
   }
 ' > "$COMPARE_SUMMARY"
 

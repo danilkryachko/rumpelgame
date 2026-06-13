@@ -2,11 +2,22 @@ use crate::api::Packet;
 use prost::Message;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::time::Instant;
 
 const MAX_PACKET_LENGTH: usize = 16 * 1024 * 1024;
 
 pub struct NetworkClient {
     pub stream: TcpStream,
+}
+
+pub struct PacketReadTiming {
+    pub read_ms: f64,
+    pub decode_ms: f64,
+}
+
+pub struct PacketReadRecord {
+    pub packet: Packet,
+    pub timing: PacketReadTiming,
 }
 
 impl NetworkClient {
@@ -19,7 +30,14 @@ impl NetworkClient {
         self.stream.try_clone()
     }
 
+    #[allow(dead_code)]
     pub fn receive_packet(&mut self) -> Result<Packet, std::io::Error> {
+        self.receive_packet_with_timing()
+            .map(|record| record.packet)
+    }
+
+    pub fn receive_packet_with_timing(&mut self) -> Result<PacketReadRecord, std::io::Error> {
+        let read_start = Instant::now();
         let mut len_buf = [0u8; 4];
         self.stream.read_exact(&mut len_buf)?;
 
@@ -33,11 +51,17 @@ impl NetworkClient {
 
         let mut data_buf = vec![0u8; length];
         self.stream.read_exact(&mut data_buf)?;
+        let read_ms = read_start.elapsed().as_secs_f64() * 1000.0;
 
+        let decode_start = Instant::now();
         let packet = Packet::decode(&data_buf[..])
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let decode_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
 
-        Ok(packet)
+        Ok(PacketReadRecord {
+            packet,
+            timing: PacketReadTiming { read_ms, decode_ms },
+        })
     }
 
     pub fn send_packet(&mut self, packet: &Packet) -> Result<(), std::io::Error> {

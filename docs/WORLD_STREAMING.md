@@ -303,6 +303,17 @@ Fresh startup first-mesh work breakdown result:
 - Encoding RLE: `394` chunks, wire percent `0.004168%`, startup first mesh/work/collision work `78.148ms / 4.729ms / 3.940ms`.
 - Standalone RLE: `394` chunks, wire percent `0.004168%`, startup first mesh/work/collision work `78.337ms / 4.223ms / 3.527ms`.
 
+Fresh startup receive/decode breakdown result:
+
+- Summary: `logs/world_streaming_startup_receive_breakdown_20260613/world-streaming-regression-summary.txt`.
+- Status: `pass`.
+- The Rust client marker now separates startup packet arrival, packet read/decode work, chunk block decode work, chunk insertion, mesh dispatch, first mesh work, collision work, and player spawn. Movement, bootstrap, batch, RAW-vs-RLE encoding, standalone RLE, and the combined regression pack summaries surface the new packet/decode/dispatch fields where relevant.
+- `scripts/gpu_terrain_movement_stress.sh` now requires startup timings to be ordered as `packet_ms <= chunk_inserted_ms <= chunk_loaded_ms <= mesh_queued_ms <= mesh_dispatched_ms <= first_mesh_ms <= collision_ms <= player_spawn_ms`; the default quit-after frame budget is `30000` so the smoke-owned marker save has time to complete.
+- Bootstrap candidate radius `0`: first stream `1` chunk, startup packet/chunk decode/mesh dispatch/first mesh/work `89.553ms / 0.403ms / 89.553ms / 89.553ms / 5.876ms`.
+- Batch candidate `64`: streamed `394` chunks over `9` batches, startup packet/chunk decode/mesh dispatch/first mesh/work `84.343ms / 0.397ms / 84.343ms / 84.343ms / 5.201ms`.
+- Encoding RLE: `394` chunks, wire percent `0.004168%`, startup packet/chunk decode/mesh dispatch/first mesh/work `71.415ms / 0.441ms / 71.415ms / 71.415ms / 6.327ms`.
+- Standalone RLE: `394` chunks, wire percent `0.004168%`, startup packet/chunk decode/mesh dispatch/first mesh/work `91.099ms / 0.499ms / 91.099ms / 91.099ms / 5.790ms`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:
