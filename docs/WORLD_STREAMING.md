@@ -11,8 +11,8 @@ This document tracks the chunk-loading path and planned optimizations for faster
 - `RUMPELMC_SERVER_CHUNK_ENCODING=raw` switches chunk payloads back to the raw full chunk rollback path.
 - The default server stream sends up to `64` chunks per update, ordered nearest-first by chunk distance.
 - `RUMPELMC_SERVER_CHUNKS_PER_UPDATE=6` restores the previous conservative stream batch.
-- The default first post-connect stream uses bootstrap radius `2`; normal position updates then continue with the full view distance.
-- `RUMPELMC_SERVER_BOOTSTRAP_RADIUS=full` restores full view-distance startup streaming.
+- The default first post-connect stream uses bootstrap radius `1`; normal position updates then continue with the full view distance.
+- `RUMPELMC_SERVER_BOOTSTRAP_RADIUS=2` restores the previous default startup stream; `RUMPELMC_SERVER_BOOTSTRAP_RADIUS=full` restores full view-distance startup streaming.
 
 ## First Optimization Path
 
@@ -145,12 +145,12 @@ Fresh post-default batch comparison result:
 
 ## Bootstrap Radius
 
-The server sends a smaller first stream around the initial client position before normal `RUMPELMC_SERVER_VIEW_DISTANCE` updates take over. Leaving `RUMPELMC_SERVER_BOOTSTRAP_RADIUS` unset uses the default radius `2`; set it to `full` to restore full-radius startup streaming.
+The server sends a smaller first stream around the initial client position before normal `RUMPELMC_SERVER_VIEW_DISTANCE` updates take over. Leaving `RUMPELMC_SERVER_BOOTSTRAP_RADIUS` unset uses the default radius `1`; set it to `2` to restore the previous default startup stream, or `full` to restore full-radius startup streaming.
 
 Use it to tune faster time-to-current-chunk without changing chunk encoding, batch size, protocol, storage, world generation, or client decode behavior:
 
 ```sh
-RUMPELMC_SERVER_BOOTSTRAP_RADIUS=2 RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1
+RUMPELMC_SERVER_BOOTSTRAP_RADIUS=1 RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1
 ```
 
 The bootstrap-radius comparison gate is:
@@ -159,7 +159,7 @@ The bootstrap-radius comparison gate is:
 /bin/sh scripts/world_streaming_bootstrap_compare.sh logs/world_streaming_bootstrap_compare_20260613
 ```
 
-It runs the same movement stress twice with default RLE encoding and batch `64`: first with rollback full-radius startup, then with candidate/default bootstrap radius `2`. It validates movement/collision/ground/upload markers, requires the candidate first stream to be smaller than the full startup stream, and writes `world-streaming-bootstrap-compare-summary.txt`.
+It runs the same movement stress twice with default RLE encoding and batch `64`: first with rollback full-radius startup, then with candidate/default bootstrap radius `1`. It validates movement/collision/ground/upload markers, requires the candidate first stream to be smaller than the full startup stream, and writes `world-streaming-bootstrap-compare-summary.txt`.
 
 Fresh opt-in bootstrap radius result:
 
@@ -189,6 +189,13 @@ Fresh next-candidate bootstrap comparison result:
 - Status: `pass`.
 - Rollback full startup: first stream `radius=10`, `64` chunks, total `394` chunks over `8` batches, `terrain_queue_max_ms=1.995`, `process_wall_p95_ms=0.039`, `gpu_compositor_submit_max_ms=0.251`.
 - Candidate bootstrap radius `1`: first stream `radius=1`, `5` chunks, total `394` chunks over `9` batches, `terrain_queue_max_ms=1.758`, `process_wall_p95_ms=0.045`, `gpu_compositor_submit_max_ms=0.109`.
+
+Fresh post-default radius `1` comparison result:
+
+- Summary: `logs/world_streaming_bootstrap_default1_compare_20260613/world-streaming-bootstrap-compare-summary.txt`.
+- Status: `pass`.
+- Rollback full startup: first stream `radius=10`, `64` chunks, total `394` chunks over `8` batches, `terrain_queue_max_ms=1.276`, `process_wall_p95_ms=0.036`, `gpu_compositor_submit_max_ms=0.162`.
+- Default bootstrap radius `1`: first stream `radius=1`, `5` chunks, total `394` chunks over `9` batches, `terrain_queue_max_ms=1.508`, `process_wall_p95_ms=0.039`, `gpu_compositor_submit_max_ms=0.129`.
 
 ## Stream Metrics
 
