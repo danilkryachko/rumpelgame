@@ -109,6 +109,21 @@ Fresh default-on comparison result:
 - RAW payload/wire percent of raw: `100.000000%` / `100.001964%`.
 - RLE payload/wire percent of raw: `0.001903%` / `0.004059%`.
 
+The RLE batch-size comparison gate is:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release /bin/sh scripts/world_streaming_batch_compare.sh logs/world_streaming_batch_compare_20260613_retry
+```
+
+It runs the same movement stress twice with the default RLE encoding, first with the current default `RUMPELMC_SERVER_CHUNKS_PER_UPDATE=6` and then with candidate batch `64`, validates movement/collision/ground/upload markers, records chunk stream metrics, and writes `world-streaming-batch-compare-summary.txt`. This gate is evidence-only; it does not change the default batch size.
+
+Fresh batch comparison result:
+
+- Summary: `logs/world_streaming_batch_compare_20260613_retry/world-streaming-batch-compare-summary.txt`.
+- Status: `pass`.
+- Batch `6`: `22` stream batches, `132` chunks, payload/wire percent of raw `0.001912%` / `0.004075%`, `terrain_queue_max_ms=2.065`, `process_wall_p95_ms=0.035`, `gpu_compositor_submit_max_ms=0.109`.
+- Batch `64`: `8` stream batches, `394` chunks, payload/wire percent of raw `0.001782%` / `0.004168%`, `terrain_queue_max_ms=1.560`, `process_wall_p95_ms=0.036`, `gpu_compositor_submit_max_ms=0.109`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:
