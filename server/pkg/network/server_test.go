@@ -72,11 +72,11 @@ func TestConfiguredBootstrapRadiusUsesDefault(t *testing.T) {
 	}
 }
 
-func TestConfiguredBootstrapRadiusDefaultDoesNotExceedViewDistance(t *testing.T) {
+func TestConfiguredBootstrapRadiusDefaultCanUseCurrentChunkOnly(t *testing.T) {
 	t.Setenv(bootstrapRadiusEnv, "")
 
-	if got := configuredBootstrapRadius(1); got != 1 {
-		t.Fatalf("configuredBootstrapRadius() = %d, want 1", got)
+	if got := configuredBootstrapRadius(1); got != defaultBootstrapRadius {
+		t.Fatalf("configuredBootstrapRadius() = %d, want %d", got, defaultBootstrapRadius)
 	}
 }
 
