@@ -379,9 +379,10 @@ impl GameClient {
         let mut missing_chunk_drops = 0;
         let mut frame = MeshQueueFrame::default();
         while processed < MAX_MESH_JOBS_PER_FRAME && drained < MAX_MESH_QUEUE_DRAINS_PER_FRAME {
-            let Some(key) =
-                pop_next_mesh_queue_key(&mut self.mesh_queue, self.current_player_chunk)
-            else {
+            let Some(key) = pop_next_mesh_queue_key(
+                &mut self.mesh_queue,
+                player_chunk_queue_hint(self.current_player_chunk),
+            ) else {
                 break;
             };
             drained += 1;
@@ -432,7 +433,7 @@ impl GameClient {
         {
             let Some(key) = pop_next_mesh_queue_key(
                 &mut self.collision_refresh_queue,
-                self.current_player_chunk,
+                player_chunk_queue_hint(self.current_player_chunk),
             ) else {
                 break;
             };
@@ -2750,6 +2751,10 @@ fn initial_spawn_mesh_subchunks() -> [SubchunkKey; 2] {
     ]
 }
 
+fn player_chunk_queue_hint(current_player_chunk: Option<(i32, i32)>) -> Option<(i32, i32)> {
+    current_player_chunk.or_else(|| Some(initial_player_chunk()))
+}
+
 fn client_chunk_unload_grace_sec() -> f64 {
     static UNLOAD_GRACE: OnceLock<f64> = OnceLock::new();
     *UNLOAD_GRACE.get_or_init(|| {
@@ -2786,7 +2791,8 @@ fn should_unload_chunk(
 
 fn subchunk_needs_collision(key: SubchunkKey, current_player_chunk: Option<(i32, i32)>) -> bool {
     let Some(center) = current_player_chunk else {
-        return key.chunk_x == 0 && key.chunk_z == 0;
+        let center = initial_player_chunk();
+        return (key.chunk_x, key.chunk_z) == center;
     };
     chunk_within_radius((key.chunk_x, key.chunk_z), center, COLLISION_CHUNK_DISTANCE)
 }
@@ -2802,7 +2808,8 @@ fn subchunk_needs_shadow_proxy(
     }
 
     let Some(center) = current_player_chunk else {
-        return key.chunk_x == 0 && key.chunk_z == 0;
+        let center = initial_player_chunk();
+        return (key.chunk_x, key.chunk_z) == center;
     };
     chunk_within_radius((key.chunk_x, key.chunk_z), center, radius)
 }
@@ -4813,10 +4820,18 @@ mod tests {
             chunk_coord_for_position(INITIAL_PLAYER_X, INITIAL_PLAYER_Z),
             spawn_chunk
         );
+        assert_eq!(player_chunk_queue_hint(None), Some(spawn_chunk));
+        assert_eq!(player_chunk_queue_hint(Some((3, -4))), Some((3, -4)));
 
         for key in initial_spawn_mesh_subchunks() {
             assert_eq!((key.chunk_x, key.chunk_z), spawn_chunk);
             assert!(subchunk_needs_collision(key, None));
+            assert!(subchunk_needs_shadow_proxy(
+                key,
+                None,
+                GpuTerrainShadowProxyMode::Conservative,
+                5
+            ));
         }
     }
 
@@ -5436,6 +5451,30 @@ mod tests {
         assert!(pop_next_mesh_queue_key(&mut queue, None).is_some_and(|key| key == far));
         assert!(pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_some_and(|key| key == tie_b));
         assert!(pop_next_mesh_queue_key(&mut queue, Some((0, 0))).is_none());
+    }
+
+    #[test]
+    fn mesh_queue_uses_initial_chunk_hint_before_player_chunk_updates() {
+        let (chunk_x, chunk_z) = initial_player_chunk();
+        let current = SubchunkKey {
+            chunk_x,
+            sub_y: 0,
+            chunk_z,
+        };
+        let far = SubchunkKey {
+            chunk_x: chunk_x + 5,
+            sub_y: 0,
+            chunk_z,
+        };
+        let mut queue = VecDeque::new();
+        queue.push_back(far);
+        queue.push_back(current);
+
+        assert!(
+            pop_next_mesh_queue_key(&mut queue, player_chunk_queue_hint(None))
+                .is_some_and(|key| key == current)
+        );
+        assert!(pop_next_mesh_queue_key(&mut queue, None).is_some_and(|key| key == far));
     }
 
     #[test]
