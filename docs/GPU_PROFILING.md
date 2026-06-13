@@ -27,6 +27,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 - GPU terrain face corners now use branchless `FACE_CORNER_BASES`, `FACE_CORNER_EXTENT_X_FACTORS`, and `FACE_CORNER_EXTENT_Y_FACTORS` tables. Rows `6` and `7` intentionally preserve the previous front-face fallback, and the geometry-affecting change was checked with full CPU/GPU terrain parity in `logs/gpu_shader_branchless_corners_parity`.
 - `scripts/gpu_terrain_parity_smoke.sh` writes `parity-summary.txt` after a passing full or validate-only parity run. Use it as the compact evidence for atlas/depth, lighting/shadow, compact-shadow, and texture-stand visual deltas before deciding whether another shader change needs fresh captures.
 - The render shader lighting contract is guarded in Rust tests: vertex code computes lighting from `face_normal(face_idx)` and lighting push constants, passes it through `lighting_out`/`lighting_in`, and fragment code only applies that lighting to the sampled atlas texel with opaque alpha. Scene depth remains guarded separately as reverse-Z `GREATER_OR_EQUAL`.
+- Runtime markers expose the sanitized lighting push block as `gpu_light_dir`, `gpu_light_color`, `gpu_light_energy`, and `gpu_light_ambient`. Use these fields to prove which scene light values were rendered before comparing lighting variants or shadow paths.
 
 ## Report-Only Or Untrusted Local Signals
 

@@ -961,6 +961,7 @@ pub struct GpuTerrainStats {
     pub push_constant_camera_bytes: usize,
     pub push_constant_lighting_bytes: usize,
     pub push_constant_atlas_bytes: usize,
+    pub lighting: GpuTerrainLighting,
     pub upload_count: u64,
     pub upload_bytes: usize,
     pub last_upload_bytes: usize,
@@ -1463,6 +1464,7 @@ impl GpuTerrainBufferPool {
             push_constant_camera_bytes: CLIP_FROM_WORLD_PUSH_CONSTANT_BYTES,
             push_constant_lighting_bytes: TERRAIN_LIGHTING_PUSH_CONSTANT_BYTES,
             push_constant_atlas_bytes: TERRAIN_ATLAS_PUSH_CONSTANT_BYTES,
+            lighting: self.lighting.sanitized(),
             upload_count: self.upload_count,
             upload_bytes: self.upload_bytes,
             last_upload_bytes: self.last_upload_bytes,
@@ -3776,6 +3778,27 @@ mod tests {
         assert_eq!(read_f32(&bytes, 100), 1.0);
         assert_eq!(read_f32(&bytes, 104), 10.0);
         assert_eq!(read_f32(&bytes, 108), 1.0);
+    }
+
+    #[test]
+    fn terrain_lighting_sanitizes_marker_and_push_constant_values() {
+        let lighting = GpuTerrainLighting {
+            direction_to_light: Vector3::ZERO,
+            color: Color::from_rgb(f32::NAN, -1.0, 0.25),
+            energy: f32::INFINITY,
+            ambient: 1.5,
+        }
+        .sanitized();
+
+        assert_eq!(
+            lighting.direction_to_light,
+            default_light_direction_to_light()
+        );
+        assert_eq!(lighting.color.r, 1.0);
+        assert_eq!(lighting.color.g, 1.0);
+        assert_eq!(lighting.color.b, 0.25);
+        assert_eq!(lighting.energy, DEFAULT_TERRAIN_LIGHT_ENERGY);
+        assert_eq!(lighting.ambient, 1.0);
     }
 
     #[test]

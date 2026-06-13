@@ -411,6 +411,8 @@ error_scan() {
   printf -- '- max `gpu_push_constant_camera_bytes`: `%s`\n' "$(metric_max gpu_push_constant_camera_bytes)"
   printf -- '- max `gpu_push_constant_lighting_bytes`: `%s`\n' "$(metric_max gpu_push_constant_lighting_bytes)"
   printf -- '- max `gpu_push_constant_atlas_bytes`: `%s`\n' "$(metric_max gpu_push_constant_atlas_bytes)"
+  printf -- '- max `gpu_light_energy`: `%s`\n' "$(metric_max gpu_light_energy)"
+  printf -- '- max `gpu_light_ambient`: `%s`\n' "$(metric_max gpu_light_ambient)"
   printf -- '- max `gpu_faces`: `%s`\n' "$(metric_max gpu_faces)"
   printf -- '- sum `gpu_upload_fail`: `%s`\n' "$(metric_sum gpu_upload_fail)"
   printf -- '- max `gpu_upload_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_ms)"
@@ -480,6 +482,8 @@ error_scan() {
   metric_max_source gpu_push_constant_updates | sed 's/^/- /'
   metric_max_source gpu_push_constant_total_bytes | sed 's/^/- /'
   metric_max_source gpu_push_constant_atlas_bytes | sed 's/^/- /'
+  metric_max_source gpu_light_energy | sed 's/^/- /'
+  metric_max_source gpu_light_ambient | sed 's/^/- /'
   metric_max_source gpu_faces | sed 's/^/- /'
   metric_max_source dirty_blocks | sed 's/^/- /'
   metric_max_source dirty_last_blocks | sed 's/^/- /'
