@@ -1,9 +1,13 @@
 package network
 
 import (
+	"bytes"
+	"net"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
 	"rumpelmc/server/pkg/api"
+	"rumpelmc/server/pkg/world"
 )
 
 func TestConfiguredChunksPerUpdateUsesDefault(t *testing.T) {
@@ -77,6 +81,23 @@ func TestChunkStreamMetricsEnabledParsesSupportedValues(t *testing.T) {
 	}
 }
 
+func TestConfiguredChunkEncodingParsesSupportedValues(t *testing.T) {
+	t.Setenv(chunkEncodingEnv, "")
+	if got := configuredChunkEncoding(); got != api.ChunkEncoding_CHUNK_ENCODING_RAW {
+		t.Fatalf("configuredChunkEncoding() = %v, want raw", got)
+	}
+
+	t.Setenv(chunkEncodingEnv, "rle")
+	if got := configuredChunkEncoding(); got != api.ChunkEncoding_CHUNK_ENCODING_RLE {
+		t.Fatalf("configuredChunkEncoding() = %v, want rle", got)
+	}
+
+	t.Setenv(chunkEncodingEnv, "invalid")
+	if got := configuredChunkEncoding(); got != api.ChunkEncoding_CHUNK_ENCODING_RAW {
+		t.Fatalf("configuredChunkEncoding() = %v, want raw fallback", got)
+	}
+}
+
 func TestFramedPacketSizeIncludesLengthPrefix(t *testing.T) {
 	packet := &api.Packet{
 		Payload: &api.Packet_Chunk{
@@ -96,10 +117,68 @@ func TestFramedPacketSizeIncludesLengthPrefix(t *testing.T) {
 func TestChunkStreamBatchStatsAggregatesSentChunks(t *testing.T) {
 	var batch chunkStreamBatchStats
 
-	batch.add(chunkSendStats{rawBytes: 10, wireBytes: 12})
-	batch.add(chunkSendStats{rawBytes: 20, wireBytes: 24})
+	batch.add(chunkSendStats{rawBytes: 10, payloadBytes: 5, wireBytes: 12})
+	batch.add(chunkSendStats{rawBytes: 20, payloadBytes: 7, wireBytes: 24})
 
-	if batch.chunks != 2 || batch.rawBytes != 30 || batch.wireBytes != 36 {
-		t.Fatalf("batch stats = chunks:%d raw:%d wire:%d, want chunks:2 raw:30 wire:36", batch.chunks, batch.rawBytes, batch.wireBytes)
+	if batch.chunks != 2 || batch.rawBytes != 30 || batch.payloadBytes != 12 || batch.wireBytes != 36 {
+		t.Fatalf("batch stats = chunks:%d raw:%d payload:%d wire:%d, want chunks:2 raw:30 payload:12 wire:36", batch.chunks, batch.rawBytes, batch.payloadBytes, batch.wireBytes)
+	}
+}
+
+func TestSendChunkCanUseRLEPayload(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	chunk := world.NewChunk(0, 0)
+	chunk.GenerateFlat()
+	raw := chunk.Serialize()
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RLE
+
+	errCh := make(chan error, 1)
+	var stats chunkSendStats
+	go func() {
+		var err error
+		stats, err = server.sendChunk(serverConn, world.ChunkSnapshot{
+			X:      chunk.X,
+			Z:      chunk.Z,
+			Blocks: raw,
+		})
+		errCh <- err
+	}()
+
+	dataBuf := readFrame(t, clientConn)
+	if err := <-errCh; err != nil {
+		t.Fatalf("sendChunk() error = %v", err)
+	}
+
+	packet := &api.Packet{}
+	if err := proto.Unmarshal(dataBuf, packet); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	chunkData := packet.GetChunk()
+	if chunkData == nil {
+		t.Fatal("packet chunk = nil")
+	}
+	if got := chunkData.GetEncoding(); got != api.ChunkEncoding_CHUNK_ENCODING_RLE {
+		t.Fatalf("chunk encoding = %v, want RLE", got)
+	}
+	if got := chunkData.GetUncompressedSize(); got != uint32(world.SerializedChunkSize) {
+		t.Fatalf("uncompressed size = %d, want %d", got, world.SerializedChunkSize)
+	}
+	if len(chunkData.GetBlocks()) >= 64 {
+		t.Fatalf("RLE payload length = %d, want less than 64", len(chunkData.GetBlocks()))
+	}
+
+	decoded, err := world.DecodeSerializedChunkRLE(chunkData.GetBlocks())
+	if err != nil {
+		t.Fatalf("DecodeSerializedChunkRLE() error = %v", err)
+	}
+	if !bytes.Equal(decoded, raw) {
+		t.Fatal("decoded RLE payload differs from raw chunk")
+	}
+	if stats.rawBytes != len(raw) || stats.payloadBytes != len(chunkData.GetBlocks()) || stats.wireBytes != len(dataBuf)+4 {
+		t.Fatalf("stats = raw:%d payload:%d wire:%d, want raw:%d payload:%d wire:%d", stats.rawBytes, stats.payloadBytes, stats.wireBytes, len(raw), len(chunkData.GetBlocks()), len(dataBuf)+4)
 	}
 }

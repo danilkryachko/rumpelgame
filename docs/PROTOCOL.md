@@ -36,11 +36,15 @@
 ## Chunk Data
 
 - `ChunkData.x` and `ChunkData.z` are chunk coordinates, not block coordinates.
-- `ChunkData.blocks` is a full serialized chunk for the current implementation.
+- `ChunkData.blocks` is the chunk block payload. With `CHUNK_ENCODING_RAW`, it is the full serialized chunk. With `CHUNK_ENCODING_RLE`, it is a block-run payload over the same serialized chunk bytes.
+- `ChunkData.encoding` uses tag `4`. Omitted or `CHUNK_ENCODING_RAW = 0` means raw full chunk bytes for compatibility with older packets.
+- `ChunkData.uncompressed_size` uses tag `5`. It is set for `CHUNK_ENCODING_RLE` and must match the full serialized chunk byte size.
 - Chunk dimensions are `32 x 32 x 512`, defined by the server world package as width, depth, and height.
 - Block IDs are serialized as unsigned 16-bit little-endian values.
 - Block index order is `x + y * width * depth + z * width`.
 - A full chunk payload currently contains `32 * 32 * 512 * 2` block bytes.
+- RLE chunk payloads are a sequence of runs. Each run is a 2-byte little-endian block ID followed by an unsigned protobuf-style varint run length in blocks.
+- `RUMPELMC_SERVER_CHUNK_ENCODING=rle` enables server RLE chunk payloads. The default and rollback path is raw.
 
 ## Block Actions
 

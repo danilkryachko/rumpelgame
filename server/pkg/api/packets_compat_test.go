@@ -71,6 +71,28 @@ func TestPacketWireCompatibility(t *testing.T) {
 				0x28, 0x04,
 			},
 		},
+		{
+			name: "encoded chunk fields use tags 4 and 5",
+			packet: &Packet{
+				Payload: &Packet_Chunk{
+					Chunk: &ChunkData{
+						X:                1,
+						Z:                2,
+						Blocks:           []byte{0xaa},
+						Encoding:         ChunkEncoding_CHUNK_ENCODING_RLE,
+						UncompressedSize: 4,
+					},
+				},
+			},
+			expected: []byte{
+				0x0a, 0x0b,
+				0x08, 0x01,
+				0x10, 0x02,
+				0x1a, 0x01, 0xaa,
+				0x20, 0x01,
+				0x28, 0x04,
+			},
+		},
 	}
 
 	for _, tc := range tests {

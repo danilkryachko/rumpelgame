@@ -8,6 +8,12 @@ Date: 2026-06-13
 
 Fresh 2026-06-13 status:
 
+- Current world streaming protocol slice adds an opt-in RLE chunk payload path while keeping raw chunks as the default rollback behavior. `api/schema/packets.proto` now has `ChunkEncoding`, `ChunkData.encoding` tag `4`, and `ChunkData.uncompressed_size` tag `5`; Go protocol code was regenerated with `protoc-gen-go` v1.34.2. Do not hand-edit `server/pkg/api/packets.pb.go`.
+- `server/pkg/network` now reads `RUMPELMC_SERVER_CHUNK_ENCODING`: unset/`raw` sends the existing full raw `ChunkData.blocks`, and `rle` sends `world.EncodeSerializedChunkRLE` output with `CHUNK_ENCODING_RLE` plus the raw byte size. Stream metrics include both `raw_bytes` and `payload_bytes`, so raw and RLE batches can be compared without changing the log shape.
+- `client/rust_ext/src/lib.rs` now validates and decodes both raw and RLE `ChunkData` payloads before dirty-update, meshing, collision, and GPU upload logic. Malformed raw/RLE chunks are rejected with a debug log instead of being inserted into `chunk_blocks`.
+- Checks passed for this protocol slice so far: `cargo fmt --manifest-path client/rust_ext/Cargo.toml`; `gofmt` on changed Go tests/server files; `cargo check --manifest-path client/rust_ext/Cargo.toml`; `cargo test --manifest-path client/rust_ext/Cargo.toml chunk -- --nocapture`; `go test ./pkg/api ./pkg/network ./pkg/world`.
+- Next useful world-loading step: run a real movement/visual smoke with default raw, then with `RUMPELMC_SERVER_CHUNK_ENCODING=rle RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1`, compare `payload_bytes`, `wire_bytes`, startup latency, and terrain/collision markers before considering RLE default-on.
+
 - Current world streaming metrics slice is wire-behavior-preserving. `server/pkg/network` now has opt-in batch logging behind `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1`, reporting chunks, raw bytes, framed protobuf wire bytes, elapsed milliseconds, and chunks/sec for non-empty `sendChunksAround` batches. The default is off, and `ChunkData.blocks` remains raw.
 - Tests added/updated for stream metric env parsing, framed packet size accounting, and batch stat aggregation. `docs/WORLD_STREAMING.md` documents the metric line and keeps raw chunk behavior as the rollback/default path.
 - Checks passed for this metrics slice so far: `gofmt` on `pkg/network/server.go` and `pkg/network/server_test.go`; `go test ./pkg/network ./pkg/world`.

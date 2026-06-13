@@ -260,11 +260,21 @@ impl GameClient {
     fn update_chunk(&mut self, chunk: crate::api::ChunkData) {
         let chunk_x = chunk.x;
         let chunk_z = chunk.z;
+        let raw_blocks = match decode_chunk_blocks(&chunk) {
+            Ok(blocks) => blocks,
+            Err(err) => {
+                self.emit_debug_log(&format!(
+                    "Chunk decode failed x={} z={}: {}",
+                    chunk_x, chunk_z, err
+                ));
+                return;
+            }
+        };
         self.emit_debug_log(&format!(
             "Chunk received x={} z={} blocks={}",
             chunk_x,
             chunk_z,
-            chunk.blocks.len()
+            raw_blocks.len()
         ));
         self.last_chunk_event = format!("received {chunk_x},{chunk_z}");
         self.last_save_event = format!("chunk {chunk_x},{chunk_z} updated");
@@ -277,10 +287,10 @@ impl GameClient {
         let dirty_update = self
             .chunk_blocks
             .get(&(chunk_x, chunk_z))
-            .map(|previous_blocks| chunk_dirty_update(previous_blocks, &chunk.blocks));
-        let non_empty_subchunks = compute_chunk_non_empty_subchunks(&chunk.blocks);
+            .map(|previous_blocks| chunk_dirty_update(previous_blocks, &raw_blocks));
+        let non_empty_subchunks = compute_chunk_non_empty_subchunks(&raw_blocks);
         self.perf.record_chunk_update(dirty_update);
-        self.chunk_blocks.insert((chunk_x, chunk_z), chunk.blocks);
+        self.chunk_blocks.insert((chunk_x, chunk_z), raw_blocks);
         self.chunk_non_empty_subchunks
             .insert((chunk_x, chunk_z), non_empty_subchunks);
         self.chunk_last_seen_sec
@@ -2589,6 +2599,7 @@ const PADDED_W: usize = 34;
 const PADDED_H: usize = 34;
 const PADDED_D: usize = 34;
 const BLOCK_BYTES: usize = 2;
+const SERIALIZED_CHUNK_BYTES: usize = CHUNK_W * CHUNK_H * CHUNK_D * BLOCK_BYTES;
 const PADDED_BLOCK_BYTES: usize = PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES;
 const CLIENT_KEEP_CHUNK_DISTANCE: i32 = 10;
 const MAX_CLIENT_KEEP_CHUNK_DISTANCE: i32 = 16;
@@ -3392,6 +3403,100 @@ fn chunk_update_needs_geometry_refresh(dirty_update: Option<ChunkDirtyUpdate>) -
         Some(update) => update.changed_blocks > 0,
         None => true,
     }
+}
+
+fn decode_chunk_blocks(chunk: &crate::api::ChunkData) -> Result<Vec<u8>, String> {
+    match crate::api::ChunkEncoding::try_from(chunk.encoding) {
+        Ok(crate::api::ChunkEncoding::Raw) => {
+            if chunk.blocks.len() != SERIALIZED_CHUNK_BYTES {
+                return Err(format!(
+                    "raw chunk has {} bytes, expected {}",
+                    chunk.blocks.len(),
+                    SERIALIZED_CHUNK_BYTES
+                ));
+            }
+            Ok(chunk.blocks.clone())
+        }
+        Ok(crate::api::ChunkEncoding::Rle) => {
+            let uncompressed_size = chunk.uncompressed_size as usize;
+            if uncompressed_size != SERIALIZED_CHUNK_BYTES {
+                return Err(format!(
+                    "RLE chunk uncompressed_size={} expected {}",
+                    uncompressed_size, SERIALIZED_CHUNK_BYTES
+                ));
+            }
+            decode_serialized_chunk_rle(&chunk.blocks, uncompressed_size)
+        }
+        Err(_) => Err(format!("unsupported chunk encoding {}", chunk.encoding)),
+    }
+}
+
+fn decode_serialized_chunk_rle(encoded: &[u8], expected_size: usize) -> Result<Vec<u8>, String> {
+    let expected_blocks = expected_size / BLOCK_BYTES;
+    let mut decoded = Vec::with_capacity(expected_size);
+    let mut offset = 0;
+
+    while offset < encoded.len() {
+        if offset + BLOCK_BYTES > encoded.len() {
+            return Err("truncated RLE block id".to_string());
+        }
+        let block_id = u16::from_le_bytes([encoded[offset], encoded[offset + 1]]);
+        offset += BLOCK_BYTES;
+
+        let run_length = read_uvarint(encoded, &mut offset)?;
+        if run_length == 0 {
+            return Err("RLE run length is zero".to_string());
+        }
+        if run_length > expected_blocks as u64 {
+            return Err(format!("RLE run length {} exceeds chunk size", run_length));
+        }
+
+        let run_bytes = run_length as usize * BLOCK_BYTES;
+        if decoded.len() + run_bytes > expected_size {
+            return Err(format!(
+                "RLE decoded size would exceed {} bytes",
+                expected_size
+            ));
+        }
+
+        let block_bytes = block_id.to_le_bytes();
+        for _ in 0..run_length {
+            decoded.extend_from_slice(&block_bytes);
+        }
+    }
+
+    if decoded.len() != expected_size {
+        return Err(format!(
+            "RLE decoded {} bytes, expected {}",
+            decoded.len(),
+            expected_size
+        ));
+    }
+    Ok(decoded)
+}
+
+fn read_uvarint(encoded: &[u8], offset: &mut usize) -> Result<u64, String> {
+    let mut value = 0u64;
+    let mut shift = 0u32;
+
+    while *offset < encoded.len() {
+        let byte = encoded[*offset];
+        *offset += 1;
+
+        if shift == 63 && byte > 1 {
+            return Err("RLE varint overflows u64".to_string());
+        }
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte < 0x80 {
+            return Ok(value);
+        }
+        shift += 7;
+        if shift >= 64 {
+            return Err("RLE varint overflows u64".to_string());
+        }
+    }
+
+    Err("truncated RLE run length".to_string())
 }
 
 fn chunk_dirty_update(previous: &[u8], current: &[u8]) -> ChunkDirtyUpdate {
@@ -4292,6 +4397,28 @@ impl GameClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_chunk_data(
+        blocks: Vec<u8>,
+        encoding: crate::api::ChunkEncoding,
+        uncompressed_size: u32,
+    ) -> crate::api::ChunkData {
+        crate::api::ChunkData {
+            x: 0,
+            z: 0,
+            blocks,
+            encoding: encoding as i32,
+            uncompressed_size,
+        }
+    }
+
+    fn push_test_uvarint(encoded: &mut Vec<u8>, mut value: u64) {
+        while value >= 0x80 {
+            encoded.push((value as u8) | 0x80);
+            value >>= 7;
+        }
+        encoded.push(value as u8);
+    }
 
     #[test]
     fn subchunk_key_from_mesh_name_parses_expected_format() {
@@ -5271,6 +5398,84 @@ mod tests {
         assert!(should_process_mesh_queue_after_collision_refresh(0));
         assert!(!should_process_mesh_queue_after_collision_refresh(1));
         assert!(!should_process_mesh_queue_after_collision_refresh(2));
+    }
+
+    #[test]
+    fn decode_chunk_blocks_accepts_raw_full_chunk() {
+        let mut blocks = vec![0u8; SERIALIZED_CHUNK_BYTES];
+        let idx = chunk_byte_index(3, 4, 5);
+        blocks[idx..idx + BLOCK_BYTES].copy_from_slice(&7u16.to_le_bytes());
+        let chunk = test_chunk_data(blocks.clone(), crate::api::ChunkEncoding::Raw, 0);
+
+        assert_eq!(
+            decode_chunk_blocks(&chunk).expect("raw chunk decodes"),
+            blocks
+        );
+    }
+
+    #[test]
+    fn decode_chunk_blocks_rejects_short_raw_chunk() {
+        let chunk = test_chunk_data(vec![0; 8], crate::api::ChunkEncoding::Raw, 0);
+
+        let err = decode_chunk_blocks(&chunk).expect_err("short raw chunk must fail");
+
+        assert!(err.contains("raw chunk has 8 bytes"));
+    }
+
+    #[test]
+    fn decode_chunk_blocks_accepts_rle_full_chunk() {
+        let mut encoded = 9u16.to_le_bytes().to_vec();
+        push_test_uvarint(&mut encoded, (SERIALIZED_CHUNK_BYTES / BLOCK_BYTES) as u64);
+        let chunk = test_chunk_data(
+            encoded,
+            crate::api::ChunkEncoding::Rle,
+            SERIALIZED_CHUNK_BYTES as u32,
+        );
+
+        let decoded = decode_chunk_blocks(&chunk).expect("RLE chunk decodes");
+
+        assert_eq!(decoded.len(), SERIALIZED_CHUNK_BYTES);
+        assert!(
+            decoded
+                .chunks_exact(BLOCK_BYTES)
+                .all(|bytes| { u16::from_le_bytes([bytes[0], bytes[1]]) == 9 })
+        );
+    }
+
+    #[test]
+    fn decode_chunk_blocks_rejects_rle_wrong_uncompressed_size() {
+        let chunk = test_chunk_data(vec![], crate::api::ChunkEncoding::Rle, 12);
+
+        let err = decode_chunk_blocks(&chunk).expect_err("bad RLE size must fail");
+
+        assert!(err.contains("uncompressed_size=12"));
+    }
+
+    #[test]
+    fn decode_serialized_chunk_rle_rejects_malformed_runs() {
+        assert!(decode_serialized_chunk_rle(&[1], SERIALIZED_CHUNK_BYTES).is_err());
+
+        let mut zero_run = 1u16.to_le_bytes().to_vec();
+        zero_run.push(0);
+        assert!(decode_serialized_chunk_rle(&zero_run, SERIALIZED_CHUNK_BYTES).is_err());
+
+        let truncated_varint = vec![1, 0, 0x80];
+        assert!(decode_serialized_chunk_rle(&truncated_varint, SERIALIZED_CHUNK_BYTES).is_err());
+    }
+
+    #[test]
+    fn decode_chunk_blocks_rejects_unknown_encoding() {
+        let chunk = crate::api::ChunkData {
+            x: 0,
+            z: 0,
+            blocks: vec![0; SERIALIZED_CHUNK_BYTES],
+            encoding: 99,
+            uncompressed_size: 0,
+        };
+
+        let err = decode_chunk_blocks(&chunk).expect_err("unknown encoding must fail");
+
+        assert!(err.contains("unsupported chunk encoding 99"));
     }
 
     #[test]

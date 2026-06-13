@@ -23,12 +23,14 @@ const defaultChunksPerUpdate = 6
 const viewDistanceEnv = "RUMPELMC_SERVER_VIEW_DISTANCE"
 const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
 const chunkStreamMetricsEnv = "RUMPELMC_SERVER_CHUNK_STREAM_METRICS"
+const chunkEncodingEnv = "RUMPELMC_SERVER_CHUNK_ENCODING"
 
 type Server struct {
 	address         string
 	world           *world.World
 	viewDistance    int32
 	chunksPerUpdate int
+	chunkEncoding   api.ChunkEncoding
 }
 
 func NewServer(address string, gameWorld *world.World) *Server {
@@ -37,6 +39,7 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		world:           gameWorld,
 		viewDistance:    configuredViewDistance(),
 		chunksPerUpdate: configuredChunksPerUpdate(),
+		chunkEncoding:   configuredChunkEncoding(),
 	}
 }
 
@@ -145,11 +148,12 @@ func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChu
 	if chunkStreamMetricsEnabled() && batch.chunks > 0 {
 		elapsed := time.Since(started)
 		log.Printf(
-			"Chunk stream batch center=%d,%d chunks=%d raw_bytes=%d wire_bytes=%d elapsed_ms=%.3f chunks_per_sec=%.2f",
+			"Chunk stream batch center=%d,%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d elapsed_ms=%.3f chunks_per_sec=%.2f",
 			centerX,
 			centerZ,
 			batch.chunks,
 			batch.rawBytes,
+			batch.payloadBytes,
 			batch.wireBytes,
 			float64(elapsed.Microseconds())/1000.0,
 			float64(batch.chunks)/elapsed.Seconds(),
@@ -193,30 +197,61 @@ func chunkStreamMetricsEnabled() bool {
 	return value == "1" || value == "true" || value == "yes" || value == "on"
 }
 
+func configuredChunkEncoding() api.ChunkEncoding {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(chunkEncodingEnv)))
+	switch value {
+	case "", "raw":
+		return api.ChunkEncoding_CHUNK_ENCODING_RAW
+	case "rle":
+		return api.ChunkEncoding_CHUNK_ENCODING_RLE
+	default:
+		log.Printf("Ignoring invalid %s=%q; using raw", chunkEncodingEnv, value)
+		return api.ChunkEncoding_CHUNK_ENCODING_RAW
+	}
+}
+
 type chunkSendStats struct {
-	rawBytes  int
-	wireBytes int
+	rawBytes     int
+	payloadBytes int
+	wireBytes    int
 }
 
 type chunkStreamBatchStats struct {
-	chunks    int
-	rawBytes  int
-	wireBytes int
+	chunks       int
+	rawBytes     int
+	payloadBytes int
+	wireBytes    int
 }
 
 func (s *Server) sendChunk(conn net.Conn, chunk world.ChunkSnapshot) (chunkSendStats, error) {
+	blocks := chunk.Blocks
+	encoding := api.ChunkEncoding_CHUNK_ENCODING_RAW
+	var uncompressedSize uint32
+	if s.chunkEncoding == api.ChunkEncoding_CHUNK_ENCODING_RLE {
+		encoded, err := world.EncodeSerializedChunkRLE(chunk.Blocks)
+		if err != nil {
+			return chunkSendStats{}, err
+		}
+		blocks = encoded
+		encoding = api.ChunkEncoding_CHUNK_ENCODING_RLE
+		uncompressedSize = uint32(len(chunk.Blocks))
+	}
+
 	packet := &api.Packet{
 		Payload: &api.Packet_Chunk{
 			Chunk: &api.ChunkData{
-				X:      chunk.X,
-				Z:      chunk.Z,
-				Blocks: chunk.Blocks,
+				X:                chunk.X,
+				Z:                chunk.Z,
+				Blocks:           blocks,
+				Encoding:         encoding,
+				UncompressedSize: uncompressedSize,
 			},
 		},
 	}
 	stats := chunkSendStats{
-		rawBytes:  len(chunk.Blocks),
-		wireBytes: framedPacketSize(packet),
+		rawBytes:     len(chunk.Blocks),
+		payloadBytes: len(blocks),
+		wireBytes:    framedPacketSize(packet),
 	}
 	return stats, s.sendPacket(conn, packet)
 }
@@ -224,6 +259,7 @@ func (s *Server) sendChunk(conn net.Conn, chunk world.ChunkSnapshot) (chunkSendS
 func (s *chunkStreamBatchStats) add(stats chunkSendStats) {
 	s.chunks++
 	s.rawBytes += stats.rawBytes
+	s.payloadBytes += stats.payloadBytes
 	s.wireBytes += stats.wireBytes
 }
 
