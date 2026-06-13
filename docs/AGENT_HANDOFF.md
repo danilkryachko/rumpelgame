@@ -977,6 +977,10 @@ Checks:
   - `scripts/gpu_terrain_movement_stress.sh` now passes through `RUMPELMC_VISUAL_SMOKE_POSE`, validates the requested pose marker, and surfaces `smoke_pose` plus `lighting_variant` in `movement-stress-summary.txt`.
   - Fresh release smoke passed in `logs/gpu_lighting_low_angle_smoke_20260613_retry/movement-stress-summary.txt` with `lighting_variant="low_angle"`, `gpu_light_dir=-0.775/0.407/0.484`, `gpu_light_energy=0.700`, `gpu_light_ambient=0.550`, `terrain_queue_max_ms=1.200`, `gpu_compositor_submit_max_ms=0.174`, `gpu_upload_fail=0`, and `terrain_samples=509`.
   - First attempt hit a stale local server listener and failed before chunk load; the clean retry started its own server and passed.
+- Latest low-angle lighting parity gate slice passed:
+  - `scripts/gpu_terrain_parity_smoke.sh` now includes CPU/GPU `lighting_low_angle` captures, requires `lighting_variant="low_angle"` on both markers, and writes the pair into `parity-summary.txt`.
+  - Fresh full parity passed in `logs/gpu_lighting_low_angle_parity_20260613/parity-summary.txt` with `case_count=16`, low-angle pair `avg_luma=0.2865/0.2671 delta=0.0194`, `terrain_luma_range=0.3664/0.3357 delta=0.0307`, `terrain_samples=498/498`, and `terrain_color_buckets=8/9`.
+  - The GPU low-angle marker reported `gpu_light_dir=-0.775/0.407/0.484`, `gpu_light_energy=0.700`, `gpu_upload_fail=0`, `smoke_err=0`, and `gpu_frames=235`.
 
 Useful log lines:
 
@@ -1005,6 +1009,7 @@ Useful log lines:
 - `Visual smoke screenshot saved ... parity/gpu-terrain-lighting-shadow-parity.png pose="lighting_shadow" ... terrain_samples=453 terrain_color_buckets=10 terrain_luma_range=0.3570 ...`
 - `Visual smoke screenshot saved ... parity/gpu-terrain-compact-lighting-shadow-parity.png pose="lighting_shadow" ... shadow_mesh=compact compact_shadow_proxy=97 compact_shadow_normals_saved=1320960 ...`
 - `Visual smoke screenshot saved ... pose="lighting_low_angle" lighting_variant="low_angle" ... terrain_samples=509 terrain_color_buckets=9 terrain_luma_range=0.3357 ... gpu_light_dir=-0.775/0.407/0.484 gpu_light_energy=0.700 ...`
+- `pair=lighting_low_angle left=cpu-arraymesh right=gpu-terrain avg_luma=0.2865/0.2671 delta=0.0194 terrain_luma_range=0.3664/0.3357 delta=0.0307 terrain_samples=498/498 delta=0 ...`
 
 Known limitations:
 
@@ -1034,6 +1039,6 @@ Next steps:
 2. Keep compact shadow-only proxy meshes as the default unless fresh parity or visual shadow checks show a regression; use `RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=full` for comparison runs.
 3. Decide the production shadow path next: either build a dedicated lower-cost shadow proxy beyond ArrayMesh, or make the RD terrain participate in Godot shadow maps. The new `collision_only` mode is useful for measurement, not a production default.
 4. Do not make `collision_only` default or remove conservative shadow proxies until multi-pose parity and visible shadow behavior are explicitly verified.
-5. Use `RUMPELMC_VISUAL_SMOKE_POSE=lighting_low_angle` as the current controlled lighting comparison pose before changing shader lighting or native shadow behavior.
+5. Treat `lighting_low_angle` parity as the current controlled lighting gate before changing shader lighting or native shadow behavior.
 6. Continue reducing CPU ArrayMesh generation for distant chunks while preserving nearby collision meshes, shadow proxy requirements, and the fallback path.
 7. Run `RUMPELMC_USE_SCCACHE=0 ./scripts/check.sh full`, parity visual smoke validation, and `./scripts/diff_guard.sh` before handing off again.

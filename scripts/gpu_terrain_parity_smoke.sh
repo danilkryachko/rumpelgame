@@ -114,6 +114,17 @@ require_metric_absent() {
   fi
 }
 
+require_text_metric_eq() {
+  marker_path="$1"
+  key="$2"
+  expected="$3"
+  value="$(text_metric "$key" "$marker_path")"
+  test -n "$value" || fail "missing $key in $marker_path"
+  if [ "$value" != "$expected" ]; then
+    fail "$key=$value, expected $expected in $marker_path"
+  fi
+}
+
 require_float_metric_ge() {
   marker_path="$1"
   key="$2"
@@ -287,6 +298,8 @@ validate_parity_markers() {
   compact_shadow_marker="$OUT_DIR/gpu-terrain-compact-shadow-parity.png.txt"
   native_fallback_marker="$OUT_DIR/gpu-terrain-native-shadow-fallback-parity.png.txt"
   compact_lighting_shadow_marker="$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
+  low_angle_cpu_marker="$OUT_DIR/cpu-arraymesh-lighting-low-angle-parity.png.txt"
+  low_angle_gpu_marker="$OUT_DIR/gpu-terrain-lighting-low-angle-parity.png.txt"
   texture_stand_cpu_marker="$OUT_DIR/cpu-arraymesh-texture-stand-parity.png.txt"
   texture_stand_gpu_marker="$OUT_DIR/gpu-terrain-texture-stand-parity.png.txt"
 
@@ -409,6 +422,10 @@ validate_parity_markers() {
     "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" \
     "$compact_lighting_shadow_marker" \
     "lighting_shadow"
+
+  validate_pose_pair "$low_angle_cpu_marker" "$low_angle_gpu_marker" "lighting_low_angle"
+  require_text_metric_eq "$low_angle_cpu_marker" "lighting_variant" "low_angle"
+  require_text_metric_eq "$low_angle_gpu_marker" "lighting_variant" "low_angle"
 
   validate_pose_pair "$texture_stand_cpu_marker" "$texture_stand_gpu_marker" "texture_stand"
   require_metric_eq "$texture_stand_cpu_marker" "texture_stand" 1
@@ -598,9 +615,9 @@ write_parity_summary() {
   parity_summary_path="$OUT_DIR/parity-summary.txt"
   parity_summary_tmp_path="$parity_summary_path.tmp"
   native_fallback_marker="$OUT_DIR/gpu-terrain-native-shadow-fallback-parity.png.txt"
-  case_count=13
+  case_count=15
   if [ -s "$native_fallback_marker" ]; then
-    case_count=14
+    case_count=16
   fi
 
   {
@@ -627,6 +644,8 @@ write_parity_summary() {
   append_case_summary "$parity_summary_tmp_path" "cpu-arraymesh-lighting-shadow-parity" "$OUT_DIR/cpu-arraymesh-lighting-shadow-parity.png.txt"
   append_case_summary "$parity_summary_tmp_path" "gpu-terrain-lighting-shadow-parity" "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt"
   append_case_summary "$parity_summary_tmp_path" "gpu-terrain-compact-lighting-shadow-parity" "$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "cpu-arraymesh-lighting-low-angle-parity" "$OUT_DIR/cpu-arraymesh-lighting-low-angle-parity.png.txt"
+  append_case_summary "$parity_summary_tmp_path" "gpu-terrain-lighting-low-angle-parity" "$OUT_DIR/gpu-terrain-lighting-low-angle-parity.png.txt"
   append_case_summary "$parity_summary_tmp_path" "cpu-arraymesh-texture-stand-parity" "$OUT_DIR/cpu-arraymesh-texture-stand-parity.png.txt"
   append_case_summary "$parity_summary_tmp_path" "gpu-terrain-texture-stand-parity" "$OUT_DIR/gpu-terrain-texture-stand-parity.png.txt"
 
@@ -638,6 +657,7 @@ write_parity_summary() {
   append_visual_pair_summary "$parity_summary_tmp_path" "atlas_depth" "$OUT_DIR/cpu-arraymesh-atlas-depth-parity.png.txt" "$OUT_DIR/gpu-terrain-atlas-depth-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
   append_visual_pair_summary "$parity_summary_tmp_path" "lighting_shadow" "$OUT_DIR/cpu-arraymesh-lighting-shadow-parity.png.txt" "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
   append_visual_pair_summary "$parity_summary_tmp_path" "lighting_shadow_compact" "$OUT_DIR/gpu-terrain-lighting-shadow-parity.png.txt" "$OUT_DIR/gpu-terrain-compact-lighting-shadow-parity.png.txt" "gpu-full-shadow" "gpu-compact-shadow"
+  append_visual_pair_summary "$parity_summary_tmp_path" "lighting_low_angle" "$OUT_DIR/cpu-arraymesh-lighting-low-angle-parity.png.txt" "$OUT_DIR/gpu-terrain-lighting-low-angle-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
   append_visual_pair_summary "$parity_summary_tmp_path" "texture_stand" "$OUT_DIR/cpu-arraymesh-texture-stand-parity.png.txt" "$OUT_DIR/gpu-terrain-texture-stand-parity.png.txt" "cpu-arraymesh" "gpu-terrain"
 
   mv "$parity_summary_tmp_path" "$parity_summary_path"
@@ -693,6 +713,8 @@ if [ "$VALIDATE_ONLY" != "1" ]; then
   run_case "cpu-arraymesh-lighting-shadow-parity" "0" "" "lighting_shadow" "conservative" "full"
   run_case "gpu-terrain-lighting-shadow-parity" "1" "" "lighting_shadow" "conservative" "full"
   run_case "gpu-terrain-compact-lighting-shadow-parity" "1" "" "lighting_shadow" "conservative" "compact"
+  run_case "cpu-arraymesh-lighting-low-angle-parity" "0" "" "lighting_low_angle" "conservative" "full"
+  run_case "gpu-terrain-lighting-low-angle-parity" "1" "" "lighting_low_angle" "conservative" "full"
   run_case "cpu-arraymesh-texture-stand-parity" "0" "" "texture_stand" "conservative" "full"
   run_case "gpu-terrain-texture-stand-parity" "1" "" "texture_stand" "conservative" "full"
 fi
