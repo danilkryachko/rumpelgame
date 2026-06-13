@@ -8,6 +8,12 @@ Date: 2026-06-13
 
 Fresh 2026-06-13 status:
 
+- Current world streaming metrics slice is wire-behavior-preserving. `server/pkg/network` now has opt-in batch logging behind `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1`, reporting chunks, raw bytes, framed protobuf wire bytes, elapsed milliseconds, and chunks/sec for non-empty `sendChunksAround` batches. The default is off, and `ChunkData.blocks` remains raw.
+- Tests added/updated for stream metric env parsing, framed packet size accounting, and batch stat aggregation. `docs/WORLD_STREAMING.md` documents the metric line and keeps raw chunk behavior as the rollback/default path.
+- Checks passed for this metrics slice so far: `gofmt` on `pkg/network/server.go` and `pkg/network/server_test.go`; `go test ./pkg/network ./pkg/world`.
+- Protocol generator block: `/Users/daniil/go/bin/protoc-gen-go` installed successfully but hung when invoked directly and through `protoc`, so the schema change for encoded chunks was not committed. Do not hand-edit `server/pkg/api/packets.pb.go`; fix or replace the generator before adding encoded chunk protocol fields.
+- Next useful world-loading step: repair protobuf generation, then add an env-gated encoded chunk protocol path using new field numbers or a new packet variant, plus Rust decode and raw/RLE integration tests.
+
 - Current world streaming RLE foundation slice is storage/wire-behavior-preserving. `server/pkg/world` now has `EncodeSerializedChunkRLE` and `DecodeSerializedChunkRLE` over the existing serialized chunk bytes, with tests for flat chunk round-trip, edited chunk preservation, wrong-length rejection, malformed run rejection, and benchmarks for raw serialize/RLE encode/RLE decode. `world.Chunk.Serialize()` and persisted chunk payloads remain unchanged, and `server/pkg/network` still sends raw `ChunkData.blocks`.
 - Current RLE evidence for the flat generated world: raw chunk payload is `1,048,576` bytes; the RLE test requires the encoded flat chunk to be below `64` bytes. Local Apple M4 benchmark evidence: raw serialize about `431597 ns/op`, RLE encode about `421359 ns/op`, and RLE decode about `268477 ns/op`.
 - `docs/WORLD_STREAMING.md` now records the staged rollout: keep raw as default/rollback, benchmark RLE, add a compatible protocol field or packet variant only with client/server tests, then gate encoded chunk streaming behind an explicit env flag.

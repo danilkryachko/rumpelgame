@@ -39,6 +39,16 @@ Latest local result on Apple M4:
 - `BenchmarkEncodeSerializedChunkRLEFlat`: about `421359 ns/op`, `7,662 B/op`.
 - `BenchmarkDecodeSerializedChunkRLEFlat`: about `268477 ns/op`, `1,053,090 B/op`.
 
+## Stream Metrics
+
+Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:
+
+```text
+Chunk stream batch center=0,0 chunks=6 raw_bytes=6291456 wire_bytes=6291534 elapsed_ms=... chunks_per_sec=...
+```
+
+The metric is off by default and does not change packet payloads. It exists to compare raw and future encoded chunk streaming with the same log shape.
+
 ## Guardrails
 
 - Do not change `ChunkData.blocks` semantics in place.

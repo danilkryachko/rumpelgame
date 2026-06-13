@@ -8,6 +8,8 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	"rumpelmc/server/pkg/api"
@@ -20,6 +22,7 @@ const maxViewDistance int32 = 16
 const defaultChunksPerUpdate = 6
 const viewDistanceEnv = "RUMPELMC_SERVER_VIEW_DISTANCE"
 const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
+const chunkStreamMetricsEnv = "RUMPELMC_SERVER_CHUNK_STREAM_METRICS"
 
 type Server struct {
 	address         string
@@ -106,7 +109,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 				return
 			}
 
-			if err := s.sendChunk(conn, snapshot); err != nil {
+			if _, err := s.sendChunk(conn, snapshot); err != nil {
 				log.Printf("Failed to send updated chunk %d,%d: %v", snapshot.X, snapshot.Z, err)
 				return
 			}
@@ -126,14 +129,31 @@ func forgetFarSentChunks(sentChunks map[world.ChunkCoord]bool, centerX, centerZ,
 }
 
 func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChunks map[world.ChunkCoord]bool) error {
+	started := time.Now()
 	chunks, err := s.world.ChunksAround(centerX, centerZ, s.viewDistance, sentChunks, s.chunksPerUpdate)
 	if err != nil {
 		return err
 	}
+	var batch chunkStreamBatchStats
 	for _, chunk := range chunks {
-		if err := s.sendChunk(conn, chunk); err != nil {
+		stats, err := s.sendChunk(conn, chunk)
+		if err != nil {
 			return err
 		}
+		batch.add(stats)
+	}
+	if chunkStreamMetricsEnabled() && batch.chunks > 0 {
+		elapsed := time.Since(started)
+		log.Printf(
+			"Chunk stream batch center=%d,%d chunks=%d raw_bytes=%d wire_bytes=%d elapsed_ms=%.3f chunks_per_sec=%.2f",
+			centerX,
+			centerZ,
+			batch.chunks,
+			batch.rawBytes,
+			batch.wireBytes,
+			float64(elapsed.Microseconds())/1000.0,
+			float64(batch.chunks)/elapsed.Seconds(),
+		)
 	}
 	return nil
 }
@@ -168,7 +188,23 @@ func configuredChunksPerUpdate() int {
 	return parsed
 }
 
-func (s *Server) sendChunk(conn net.Conn, chunk world.ChunkSnapshot) error {
+func chunkStreamMetricsEnabled() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(chunkStreamMetricsEnv)))
+	return value == "1" || value == "true" || value == "yes" || value == "on"
+}
+
+type chunkSendStats struct {
+	rawBytes  int
+	wireBytes int
+}
+
+type chunkStreamBatchStats struct {
+	chunks    int
+	rawBytes  int
+	wireBytes int
+}
+
+func (s *Server) sendChunk(conn net.Conn, chunk world.ChunkSnapshot) (chunkSendStats, error) {
 	packet := &api.Packet{
 		Payload: &api.Packet_Chunk{
 			Chunk: &api.ChunkData{
@@ -178,7 +214,21 @@ func (s *Server) sendChunk(conn net.Conn, chunk world.ChunkSnapshot) error {
 			},
 		},
 	}
-	return s.sendPacket(conn, packet)
+	stats := chunkSendStats{
+		rawBytes:  len(chunk.Blocks),
+		wireBytes: framedPacketSize(packet),
+	}
+	return stats, s.sendPacket(conn, packet)
+}
+
+func (s *chunkStreamBatchStats) add(stats chunkSendStats) {
+	s.chunks++
+	s.rawBytes += stats.rawBytes
+	s.wireBytes += stats.wireBytes
+}
+
+func framedPacketSize(packet *api.Packet) int {
+	return 4 + proto.Size(packet)
 }
 
 func (s *Server) receivePacket(conn net.Conn) (*api.Packet, error) {
