@@ -197,6 +197,13 @@ Fresh post-default radius `1` comparison result:
 - Rollback full startup: first stream `radius=10`, `64` chunks, total `394` chunks over `8` batches, `terrain_queue_max_ms=1.276`, `process_wall_p95_ms=0.036`, `gpu_compositor_submit_max_ms=0.162`.
 - Default bootstrap radius `1`: first stream `radius=1`, `5` chunks, total `394` chunks over `9` batches, `terrain_queue_max_ms=1.508`, `process_wall_p95_ms=0.039`, `gpu_compositor_submit_max_ms=0.129`.
 
+Fresh current-chunk bootstrap candidate result:
+
+- Summary: `logs/world_streaming_bootstrap_radius0_compare_20260613/world-streaming-bootstrap-compare-summary.txt`.
+- Status: `pass`.
+- Rollback full startup: first stream `radius=10`, `64` chunks, total `394` chunks over `8` batches, `terrain_queue_max_ms=2.367`, `process_wall_p95_ms=0.050`, `gpu_compositor_submit_max_ms=0.128`.
+- Candidate bootstrap radius `0`: first stream `radius=0`, `1` chunk, total `394` chunks over `9` batches, `terrain_queue_max_ms=2.107`, `process_wall_p95_ms=0.053`, `gpu_compositor_submit_max_ms=0.155`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:
