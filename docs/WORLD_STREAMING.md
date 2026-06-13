@@ -152,6 +152,14 @@ Use it to test faster time-to-current-chunk without changing chunk encoding, bat
 RUMPELMC_SERVER_BOOTSTRAP_RADIUS=2 RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1
 ```
 
+The bootstrap-radius comparison gate is:
+
+```sh
+/bin/sh scripts/world_streaming_bootstrap_compare.sh logs/world_streaming_bootstrap_compare_20260613
+```
+
+It runs the same movement stress twice with default RLE encoding and batch `64`: first with full-radius startup, then with candidate bootstrap radius `2`. It validates movement/collision/ground/upload markers, requires the candidate first stream to be smaller than the full startup stream, and writes `world-streaming-bootstrap-compare-summary.txt`.
+
 Fresh opt-in bootstrap radius result:
 
 - Summary: `logs/world_streaming_bootstrap_radius2_20260613/world-streaming-bootstrap-radius-summary.txt`.
@@ -159,6 +167,13 @@ Fresh opt-in bootstrap radius result:
 - First stream: `radius=2`, `13` chunks, raw/payload/wire bytes `13,631,488` / `413` / `701`, elapsed `39.793ms`.
 - Full run: `9` stream batches, `394` chunks, raw/payload/wire bytes `413,138,944` / `7,362` / `17,219`.
 - Client markers: `current_chunk_loaded=1`, `current_chunk_collision=2`, `ground_hits=9`, `gpu_upload_fail=0`, and `chunk_initial=394`.
+
+Fresh bootstrap comparison result:
+
+- Summary: `logs/world_streaming_bootstrap_compare_20260613/world-streaming-bootstrap-compare-summary.txt`.
+- Status: `pass`.
+- Full startup: first stream `radius=10`, `64` chunks, total `394` chunks over `8` batches, `terrain_queue_max_ms=1.183`, `process_wall_p95_ms=0.037`, `gpu_compositor_submit_max_ms=0.126`.
+- Bootstrap radius `2`: first stream `radius=2`, `13` chunks, total `394` chunks over `9` batches, `terrain_queue_max_ms=1.577`, `process_wall_p95_ms=0.034`, `gpu_compositor_submit_max_ms=0.105`.
 
 ## Stream Metrics
 
