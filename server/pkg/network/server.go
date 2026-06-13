@@ -20,6 +20,7 @@ const maxPacketSize = 16 * 1024 * 1024
 const defaultViewDistance int32 = 10
 const maxViewDistance int32 = 16
 const defaultChunksPerUpdate = 64
+const defaultBootstrapRadius int32 = 2
 const viewDistanceEnv = "RUMPELMC_SERVER_VIEW_DISTANCE"
 const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
 const bootstrapRadiusEnv = "RUMPELMC_SERVER_BOOTSTRAP_RADIUS"
@@ -236,18 +237,29 @@ func configuredChunksPerUpdate() int {
 func configuredBootstrapRadius(viewDistance int32) int32 {
 	value := os.Getenv(bootstrapRadiusEnv)
 	if value == "" {
+		return minInt32(defaultBootstrapRadius, viewDistance)
+	}
+	if strings.EqualFold(strings.TrimSpace(value), "full") {
 		return viewDistance
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed < 0 {
-		log.Printf("Ignoring invalid %s=%q; using %d", bootstrapRadiusEnv, value, viewDistance)
-		return viewDistance
+		fallback := minInt32(defaultBootstrapRadius, viewDistance)
+		log.Printf("Ignoring invalid %s=%q; using %d", bootstrapRadiusEnv, value, fallback)
+		return fallback
 	}
 	if parsed > int(viewDistance) {
 		log.Printf("Clamping %s=%d to %d", bootstrapRadiusEnv, parsed, viewDistance)
 		return viewDistance
 	}
 	return int32(parsed)
+}
+
+func minInt32(a, b int32) int32 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func chunkStreamMetricsEnabled() bool {

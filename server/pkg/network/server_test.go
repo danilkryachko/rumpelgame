@@ -64,8 +64,24 @@ func TestConfiguredViewDistanceClampsStressRadius(t *testing.T) {
 	}
 }
 
-func TestConfiguredBootstrapRadiusDefaultsToViewDistance(t *testing.T) {
+func TestConfiguredBootstrapRadiusUsesDefault(t *testing.T) {
 	t.Setenv(bootstrapRadiusEnv, "")
+
+	if got := configuredBootstrapRadius(10); got != defaultBootstrapRadius {
+		t.Fatalf("configuredBootstrapRadius() = %d, want %d", got, defaultBootstrapRadius)
+	}
+}
+
+func TestConfiguredBootstrapRadiusDefaultDoesNotExceedViewDistance(t *testing.T) {
+	t.Setenv(bootstrapRadiusEnv, "")
+
+	if got := configuredBootstrapRadius(1); got != 1 {
+		t.Fatalf("configuredBootstrapRadius() = %d, want 1", got)
+	}
+}
+
+func TestConfiguredBootstrapRadiusFullUsesViewDistance(t *testing.T) {
+	t.Setenv(bootstrapRadiusEnv, "full")
 
 	if got := configuredBootstrapRadius(10); got != 10 {
 		t.Fatalf("configuredBootstrapRadius() = %d, want 10", got)
@@ -101,8 +117,8 @@ func TestConfiguredBootstrapRadiusIgnoresInvalidEnv(t *testing.T) {
 		t.Run(value, func(t *testing.T) {
 			t.Setenv(bootstrapRadiusEnv, value)
 
-			if got := configuredBootstrapRadius(10); got != 10 {
-				t.Fatalf("configuredBootstrapRadius() = %d, want 10", got)
+			if got := configuredBootstrapRadius(10); got != defaultBootstrapRadius {
+				t.Fatalf("configuredBootstrapRadius() = %d, want %d", got, defaultBootstrapRadius)
 			}
 		})
 	}
