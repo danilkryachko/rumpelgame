@@ -40,6 +40,21 @@ Latest local result on Apple M4:
 - `BenchmarkEncodeSerializedChunkRLEFlat`: about `421359 ns/op`, `7,662 B/op`.
 - `BenchmarkDecodeSerializedChunkRLEFlat`: about `268477 ns/op`, `1,053,090 B/op`.
 
+Latest protocol-level batch guard for three generated flat chunks:
+
+```sh
+cd server
+go test ./pkg/network -run 'TestRLEChunkBatchShrinksPayloadAndWireBytes|TestSendChunkCanUseRLEPayload' -v
+```
+
+- RAW payload bytes: `3,145,728`.
+- RLE payload bytes: `54`.
+- RAW framed wire bytes: `3,145,786`.
+- RLE framed wire bytes: `118`.
+- RLE stayed below `1%` of RAW for both payload and framed wire bytes in this guard.
+
+Visual movement smoke still needs a stable local harness pass before making RLE default. The 2026-06-13 local attempt timed out before producing a marker file; the controlled server log showed an early connect/probe followed by `Failed to send initial chunks: ... broken pipe`, so it is not valid visual evidence.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:

@@ -2,8 +2,10 @@ package network
 
 import (
 	"bytes"
+	"io"
 	"net"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	"rumpelmc/server/pkg/api"
@@ -125,6 +127,45 @@ func TestChunkStreamBatchStatsAggregatesSentChunks(t *testing.T) {
 	}
 }
 
+func TestRLEChunkBatchShrinksPayloadAndWireBytes(t *testing.T) {
+	gameWorld := world.NewWorld(nil)
+	chunks, err := gameWorld.ChunksAround(0, 0, 1, map[world.ChunkCoord]bool{}, 3)
+	if err != nil {
+		t.Fatalf("ChunksAround() error = %v", err)
+	}
+	if len(chunks) != 3 {
+		t.Fatalf("ChunksAround() returned %d chunks, want 3", len(chunks))
+	}
+
+	rawServer := NewServer(":0", gameWorld)
+	rawServer.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	rawStats := sendChunkBatchForTest(t, rawServer, chunks)
+
+	rleServer := NewServer(":0", gameWorld)
+	rleServer.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RLE
+	rleStats := sendChunkBatchForTest(t, rleServer, chunks)
+	t.Logf(
+		"raw_payload=%d rle_payload=%d raw_wire=%d rle_wire=%d",
+		rawStats.payloadBytes,
+		rleStats.payloadBytes,
+		rawStats.wireBytes,
+		rleStats.wireBytes,
+	)
+
+	if rleStats.chunks != rawStats.chunks {
+		t.Fatalf("RLE chunks = %d, want %d", rleStats.chunks, rawStats.chunks)
+	}
+	if rleStats.rawBytes != rawStats.rawBytes {
+		t.Fatalf("RLE raw bytes = %d, want %d", rleStats.rawBytes, rawStats.rawBytes)
+	}
+	if rleStats.payloadBytes >= rawStats.payloadBytes/100 {
+		t.Fatalf("RLE payload bytes = %d, want less than 1%% of raw payload bytes %d", rleStats.payloadBytes, rawStats.payloadBytes)
+	}
+	if rleStats.wireBytes >= rawStats.wireBytes/100 {
+		t.Fatalf("RLE wire bytes = %d, want less than 1%% of raw wire bytes %d", rleStats.wireBytes, rawStats.wireBytes)
+	}
+}
+
 func TestSendChunkCanUseRLEPayload(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()
@@ -181,4 +222,69 @@ func TestSendChunkCanUseRLEPayload(t *testing.T) {
 	if stats.rawBytes != len(raw) || stats.payloadBytes != len(chunkData.GetBlocks()) || stats.wireBytes != len(dataBuf)+4 {
 		t.Fatalf("stats = raw:%d payload:%d wire:%d, want raw:%d payload:%d wire:%d", stats.rawBytes, stats.payloadBytes, stats.wireBytes, len(raw), len(chunkData.GetBlocks()), len(dataBuf)+4)
 	}
+}
+
+func sendChunkBatchForTest(t *testing.T, server *Server, chunks []world.ChunkSnapshot) chunkStreamBatchStats {
+	t.Helper()
+
+	conn := &recordingConn{}
+	var batch chunkStreamBatchStats
+	for _, chunk := range chunks {
+		stats, err := server.sendChunk(conn, chunk)
+		if err != nil {
+			t.Fatalf("sendChunk() error = %v", err)
+		}
+		batch.add(stats)
+	}
+	if conn.written != batch.wireBytes {
+		t.Fatalf("connection wrote %d bytes, stats wire bytes = %d", conn.written, batch.wireBytes)
+	}
+	return batch
+}
+
+type recordingConn struct {
+	written int
+}
+
+func (c *recordingConn) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (c *recordingConn) Write(data []byte) (int, error) {
+	c.written += len(data)
+	return len(data), nil
+}
+
+func (c *recordingConn) Close() error {
+	return nil
+}
+
+func (c *recordingConn) LocalAddr() net.Addr {
+	return testAddr("local")
+}
+
+func (c *recordingConn) RemoteAddr() net.Addr {
+	return testAddr("remote")
+}
+
+func (c *recordingConn) SetDeadline(time.Time) error {
+	return nil
+}
+
+func (c *recordingConn) SetReadDeadline(time.Time) error {
+	return nil
+}
+
+func (c *recordingConn) SetWriteDeadline(time.Time) error {
+	return nil
+}
+
+type testAddr string
+
+func (a testAddr) Network() string {
+	return "test"
+}
+
+func (a testAddr) String() string {
+	return string(a)
 }
