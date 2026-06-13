@@ -82,6 +82,23 @@ Fresh wrapper result:
 - Raw/payload/wire bytes: `138,412,032` / `2,646` / `5,640`.
 - Payload/wire percent of raw: `0.001912%` / `0.004075%`.
 
+The RAW-vs-RLE comparison gate is:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release scripts/world_streaming_chunk_encoding_compare.sh logs/world_streaming_encoding_compare_20260613
+```
+
+It runs the same movement stress twice, first with `RUMPELMC_SERVER_CHUNK_ENCODING=raw` and then with `rle`, requires both runs to stream the same chunk count and raw byte total, and writes `world-streaming-encoding-compare-summary.txt`.
+
+Fresh comparison result:
+
+- Summary: `logs/world_streaming_encoding_compare_20260613/world-streaming-encoding-compare-summary.txt`.
+- Status: `pass`.
+- Chunks/raw bytes: `132` / `138,412,032`.
+- RAW payload/wire bytes: `138,412,032` / `138,414,760`.
+- RLE payload/wire bytes: `2,646` / `5,640`.
+- RLE payload/wire percent of RAW: `0.001912%` / `0.004075%`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:
