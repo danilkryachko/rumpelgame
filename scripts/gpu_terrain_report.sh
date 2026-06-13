@@ -21,6 +21,18 @@ fail() {
 test -d "$LOG_DIR" || fail "missing log dir $LOG_DIR"
 mkdir -p "$(dirname -- "$OUT_PATH")"
 
+summary_list_path="$OUT_PATH.summary-files.tmp"
+summary_index_path="$OUT_PATH.summary-index.tmp"
+tmp_path="$OUT_PATH.tmp"
+trap 'rm -f "$summary_list_path" "$summary_index_path" "$tmp_path"' EXIT HUP INT TERM
+
+find "$LOG_DIR" \( -name '*summary.txt' -o -name '*.png.txt' \) -type f -print | sort > "$summary_list_path"
+if [ -s "$summary_list_path" ]; then
+  xargs awk '{ print FILENAME ":" $0 }' < "$summary_list_path" > "$summary_index_path"
+else
+  : > "$summary_index_path"
+fi
+
 latest_file() {
   name="$1"
   latest_path=""
@@ -36,12 +48,23 @@ latest_file() {
 }
 
 summary_files() {
-  find "$LOG_DIR" \( -name '*summary.txt' -o -name '*.png.txt' \) -type f -print | sort
+  cat "$summary_list_path"
+}
+
+summary_grep() {
+  pattern="$1"
+  test -s "$summary_index_path" || return 0
+  grep "$pattern" "$summary_index_path" 2>/dev/null || true
+}
+
+summary_grep_with_path() {
+  pattern="$1"
+  summary_grep "$pattern"
 }
 
 metric_max() {
   key="$1"
-  summary_files | xargs grep -h "$key=" 2>/dev/null \
+  summary_grep "$key=" \
     | sed -n "s/.*$key=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p" \
     | awk '
       BEGIN { found = 0; max = 0.0 }
@@ -64,9 +87,9 @@ metric_max() {
 
 metric_max_terrain_queue() {
   {
-    summary_files | xargs grep -h 'terrain_queue_max_ms=' 2>/dev/null \
+    summary_grep 'terrain_queue_max_ms=' \
       | sed -n 's/.*terrain_queue_max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
-    summary_files | xargs grep -h '^movement_terrain_queue ' 2>/dev/null \
+    summary_grep '^movement_terrain_queue ' \
       | sed -n 's/.* max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
   } | awk '
     BEGIN { found = 0; max = 0.0 }
@@ -89,7 +112,7 @@ metric_max_terrain_queue() {
 
 metric_sum() {
   key="$1"
-  summary_files | xargs grep -h "$key=" 2>/dev/null \
+  summary_grep "$key=" \
     | sed -n "s/.*$key=\([0-9][0-9]*\).*/\1/p" \
     | awk '
       BEGIN { found = 0; sum = 0 }
@@ -109,7 +132,7 @@ metric_sum() {
 
 metric_triplet_max() {
   key="$1"
-  summary_files | xargs grep -h "$key=" 2>/dev/null \
+  summary_grep "$key=" \
     | awk -v key="$key" '
       BEGIN {
         found = 0
@@ -142,30 +165,40 @@ metric_triplet_max() {
 
 metric_max_source() {
   key="$1"
-  best_value=""
-  best_path=""
-  for path in $(summary_files); do
-    values="$(grep "$key=" "$path" 2>/dev/null \
-      | sed -n "s/.*$key=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p")"
-    for value in $values; do
-      if [ -z "$best_value" ] || awk -v value="$value" -v best="$best_value" 'BEGIN { exit !(value > best) }'; then
-        best_value="$value"
-        best_path="$path"
-      fi
-    done
-  done
-
-  if [ -n "$best_value" ]; then
-    printf '%s `%s` from `%s`\n' "$key" "$best_value" "$best_path"
-  else
-    printf '%s `n/a`\n' "$key"
-  fi
+  summary_grep_with_path "$key=" | awk -v key="$key" '
+    BEGIN { prefix = key "=" }
+    {
+      path = $0
+      sub(/:.*/, "", path)
+      for (i = 1; i <= NF; i++) {
+        if (index($i, prefix) == 1) {
+          raw = substr($i, length(prefix) + 1)
+          if (match(raw, /^[0-9]+(\.[0-9]+)?/)) {
+            value = substr(raw, RSTART, RLENGTH) + 0.0
+            if (!found || value > best) {
+              best = value
+              best_path = path
+              best_text = substr(raw, RSTART, RLENGTH)
+              found = 1
+            }
+          }
+        }
+      }
+    }
+    END {
+      if (found) {
+        printf("%s `%s` from `%s`\n", key, best_text, best_path)
+      } else {
+        printf("%s `n/a`\n", key)
+      }
+    }
+  '
 }
 
 metric_pair_ratio_max_percent() {
   numerator_key="$1"
   denominator_key="$2"
-  summary_files | xargs grep -h "$numerator_key=" 2>/dev/null \
+  summary_grep "$numerator_key=" \
     | awk -v numerator_key="$numerator_key" -v denominator_key="$denominator_key" '
       BEGIN {
         found = 0
@@ -205,7 +238,7 @@ metric_pair_ratio_max_percent() {
 metric_pair_headroom_min() {
   used_key="$1"
   capacity_key="$2"
-  summary_files | xargs grep -h "$used_key=" 2>/dev/null \
+  summary_grep "$used_key=" \
     | awk -v used_key="$used_key" -v capacity_key="$capacity_key" '
       BEGIN {
         found = 0
@@ -246,16 +279,15 @@ metric_pair_ratio_max_source() {
   label="$1"
   numerator_key="$2"
   denominator_key="$3"
-  best_value=""
-  best_path=""
-  for path in $(summary_files); do
-    values="$(grep "$numerator_key=" "$path" 2>/dev/null \
-      | awk -v numerator_key="$numerator_key" -v denominator_key="$denominator_key" '
+  summary_grep_with_path "$numerator_key=" \
+    | awk -v label="$label" -v numerator_key="$numerator_key" -v denominator_key="$denominator_key" '
         BEGIN {
           numerator_prefix = numerator_key "="
           denominator_prefix = denominator_key "="
         }
         {
+          path = $0
+          sub(/:.*/, "", path)
           numerator = ""
           denominator = ""
           for (i = 1; i <= NF; i++) {
@@ -267,54 +299,52 @@ metric_pair_ratio_max_source() {
             }
           }
           if (denominator > 0.0) {
-            printf("%.3f\n", numerator * 100.0 / denominator)
+            value = numerator * 100.0 / denominator
+            if (!found || value > best) {
+              best = value
+              best_path = path
+              found = 1
+            }
           }
         }
-      ')"
-    for value in $values; do
-      if [ -z "$best_value" ] || awk -v value="$value" -v best="$best_value" 'BEGIN { exit !(value > best) }'; then
-        best_value="$value"
-        best_path="$path"
-      fi
-    done
-  done
-
-  if [ -n "$best_value" ]; then
-    printf '%s `%s` from `%s`\n' "$label" "$best_value" "$best_path"
-  else
-    printf '%s `n/a`\n' "$label"
-  fi
+        END {
+          if (found) {
+            printf("%s `%.3f` from `%s`\n", label, best, best_path)
+          } else {
+            printf("%s `n/a`\n", label)
+          }
+        }
+      '
 }
 
 metric_max_source_terrain_queue() {
-  best_value=""
-  best_path=""
-  for path in $(summary_files); do
-    values="$(
-      {
-        grep 'terrain_queue_max_ms=' "$path" 2>/dev/null \
-          | sed -n 's/.*terrain_queue_max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
-        grep '^movement_terrain_queue ' "$path" 2>/dev/null \
-          | sed -n 's/.* max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
-      } || true
-    )"
-    for value in $values; do
-      if [ -z "$best_value" ] || awk -v value="$value" -v best="$best_value" 'BEGIN { exit !(value > best) }'; then
-        best_value="$value"
-        best_path="$path"
-      fi
-    done
-  done
-
-  if [ -n "$best_value" ]; then
-    printf 'terrain_queue_max_ms `%s` from `%s`\n' "$best_value" "$best_path"
-  else
-    printf 'terrain_queue_max_ms `n/a`\n'
-  fi
+  {
+    summary_grep_with_path 'terrain_queue_max_ms=' \
+      | sed -n 's/^\([^:]*\):.*terrain_queue_max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\2 \1/p'
+    summary_grep_with_path '^movement_terrain_queue ' \
+      | sed -n 's/^\([^:]*\):.* max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\2 \1/p'
+  } | awk '
+    NF >= 2 {
+      value = $1 + 0.0
+      path = substr($0, index($0, $2))
+      if (!found || value > best) {
+        best = value
+        best_path = path
+        found = 1
+      }
+    }
+    END {
+      if (found) {
+        printf("terrain_queue_max_ms `%s` from `%s`\n", best, best_path)
+      } else {
+        printf("terrain_queue_max_ms `n/a`\n")
+      }
+    }
+  '
 }
 
 rasterization_states() {
-  summary_files | xargs grep -h 'gpu_cull=' 2>/dev/null \
+  summary_grep 'gpu_cull=' \
     | sed -n 's/.*gpu_cull=\([^ ]*\).*gpu_front_face=\([^ ]*\).*/gpu_cull=\1 gpu_front_face=\2/p' \
     | sort -u
 }
@@ -346,11 +376,11 @@ print_optional_artifact() {
 }
 
 error_scan() {
-  summary_files | xargs grep -nE 'ERROR|SCRIPT ERROR|panic|ObjectDB|leaked|exceeds|gpu_upload_fail=[1-9]' 2>/dev/null \
+  test -s "$summary_index_path" || return 0
+  grep -nE 'ERROR|SCRIPT ERROR|panic|ObjectDB|leaked|exceeds|gpu_upload_fail=[1-9]' "$summary_index_path" 2>/dev/null \
     | sed -n '1,80p'
 }
 
-tmp_path="$OUT_PATH.tmp"
 {
   printf '# GPU Terrain Report\n\n'
   printf 'Log dir: `%s`\n' "$LOG_DIR"
