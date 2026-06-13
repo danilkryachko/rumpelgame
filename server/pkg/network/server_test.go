@@ -64,6 +64,50 @@ func TestConfiguredViewDistanceClampsStressRadius(t *testing.T) {
 	}
 }
 
+func TestConfiguredBootstrapRadiusDefaultsToViewDistance(t *testing.T) {
+	t.Setenv(bootstrapRadiusEnv, "")
+
+	if got := configuredBootstrapRadius(10); got != 10 {
+		t.Fatalf("configuredBootstrapRadius() = %d, want 10", got)
+	}
+}
+
+func TestConfiguredBootstrapRadiusUsesEnvOverride(t *testing.T) {
+	t.Setenv(bootstrapRadiusEnv, "2")
+
+	if got := configuredBootstrapRadius(10); got != 2 {
+		t.Fatalf("configuredBootstrapRadius() = %d, want 2", got)
+	}
+}
+
+func TestConfiguredBootstrapRadiusAllowsCurrentChunkOnly(t *testing.T) {
+	t.Setenv(bootstrapRadiusEnv, "0")
+
+	if got := configuredBootstrapRadius(10); got != 0 {
+		t.Fatalf("configuredBootstrapRadius() = %d, want 0", got)
+	}
+}
+
+func TestConfiguredBootstrapRadiusClampsToViewDistance(t *testing.T) {
+	t.Setenv(bootstrapRadiusEnv, "32")
+
+	if got := configuredBootstrapRadius(10); got != 10 {
+		t.Fatalf("configuredBootstrapRadius() = %d, want 10", got)
+	}
+}
+
+func TestConfiguredBootstrapRadiusIgnoresInvalidEnv(t *testing.T) {
+	for _, value := range []string{"-1", "nope"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(bootstrapRadiusEnv, value)
+
+			if got := configuredBootstrapRadius(10); got != 10 {
+				t.Fatalf("configuredBootstrapRadius() = %d, want 10", got)
+			}
+		})
+	}
+}
+
 func TestChunkStreamMetricsEnabledParsesSupportedValues(t *testing.T) {
 	for _, value := range []string{"1", "true", "yes", "on", " TRUE "} {
 		t.Run(value, func(t *testing.T) {
@@ -168,6 +212,62 @@ func TestRLEChunkBatchShrinksPayloadAndWireBytes(t *testing.T) {
 	}
 	if rleStats.wireBytes >= rawStats.wireBytes/100 {
 		t.Fatalf("RLE wire bytes = %d, want less than 1%% of raw wire bytes %d", rleStats.wireBytes, rawStats.wireBytes)
+	}
+}
+
+func TestSendChunksAroundWithRadiusLimitsBootstrapArea(t *testing.T) {
+	gameWorld := world.NewWorld(nil)
+	server := NewServer(":0", gameWorld)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RLE
+	server.chunksPerUpdate = 64
+	sentChunks := map[world.ChunkCoord]bool{}
+	conn := &recordingConn{}
+
+	if err := server.sendChunksAroundWithRadius(conn, 0, 0, 1, sentChunks); err != nil {
+		t.Fatalf("sendChunksAroundWithRadius() error = %v", err)
+	}
+
+	if len(sentChunks) != 5 {
+		t.Fatalf("sent chunks = %d, want 5 for radius 1", len(sentChunks))
+	}
+	for coord := range sentChunks {
+		if !world.ChunkWithinRadius(coord, 0, 0, 1) {
+			t.Fatalf("sent out-of-bootstrap-radius chunk %+v", coord)
+		}
+	}
+}
+
+func TestHandleInitialClientPacketUsesBootstrapRadius(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RLE
+	server.chunksPerUpdate = 64
+	server.bootstrapRadius = 0
+	sentChunks := map[world.ChunkCoord]bool{}
+
+	errCh := make(chan error, 1)
+	go func() {
+		packet := &api.Packet{
+			Payload: &api.Packet_Position{
+				Position: &api.ClientPosition{X: 48, Y: 68, Z: 80},
+			},
+		}
+		errCh <- server.handleInitialClientPacket(serverConn, packet, sentChunks)
+	}()
+
+	readFrame(t, clientConn)
+	if err := <-errCh; err != nil {
+		t.Fatalf("handleInitialClientPacket() error = %v", err)
+	}
+
+	if len(sentChunks) != 1 {
+		t.Fatalf("sent chunks = %d, want 1 for bootstrap radius 0", len(sentChunks))
+	}
+	if !sentChunks[world.ChunkCoord{X: 1, Z: 2}] {
+		t.Fatalf("missing current bootstrap chunk 1,2 in sent map: %+v", sentChunks)
 	}
 }
 

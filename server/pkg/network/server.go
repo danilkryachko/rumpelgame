@@ -22,6 +22,7 @@ const maxViewDistance int32 = 16
 const defaultChunksPerUpdate = 64
 const viewDistanceEnv = "RUMPELMC_SERVER_VIEW_DISTANCE"
 const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
+const bootstrapRadiusEnv = "RUMPELMC_SERVER_BOOTSTRAP_RADIUS"
 const chunkStreamMetricsEnv = "RUMPELMC_SERVER_CHUNK_STREAM_METRICS"
 const chunkEncodingEnv = "RUMPELMC_SERVER_CHUNK_ENCODING"
 const initialClientPacketTimeout = 250 * time.Millisecond
@@ -30,15 +31,18 @@ type Server struct {
 	address         string
 	world           *world.World
 	viewDistance    int32
+	bootstrapRadius int32
 	chunksPerUpdate int
 	chunkEncoding   api.ChunkEncoding
 }
 
 func NewServer(address string, gameWorld *world.World) *Server {
+	viewDistance := configuredViewDistance()
 	return &Server{
 		address:         address,
 		world:           gameWorld,
-		viewDistance:    configuredViewDistance(),
+		viewDistance:    viewDistance,
+		bootstrapRadius: configuredBootstrapRadius(viewDistance),
 		chunksPerUpdate: configuredChunksPerUpdate(),
 		chunkEncoding:   configuredChunkEncoding(),
 	}
@@ -75,17 +79,17 @@ func (s *Server) handleConnection(conn net.Conn) {
 		return
 	}
 	if hasFirstPacket {
-		if err := s.handleClientPacket(conn, firstPacket, sentChunks); err != nil {
+		if err := s.handleInitialClientPacket(conn, firstPacket, sentChunks); err != nil {
 			log.Printf("Failed to handle initial client packet: %v", err)
 			return
 		}
 	} else {
-		if err := s.sendChunksAround(conn, 0, 0, sentChunks); err != nil {
+		if err := s.sendChunksAroundWithRadius(conn, 0, 0, s.bootstrapRadius, sentChunks); err != nil {
 			log.Printf("Failed to send initial chunks: %v", err)
 			return
 		}
 	}
-	log.Printf("Started progressive chunk stream radius=%d batch=%d to %s", s.viewDistance, s.chunksPerUpdate, conn.RemoteAddr())
+	log.Printf("Started progressive chunk stream radius=%d bootstrap_radius=%d batch=%d to %s", s.viewDistance, s.bootstrapRadius, s.chunksPerUpdate, conn.RemoteAddr())
 
 	// Read client packets until the connection closes.
 	for {
@@ -99,6 +103,20 @@ func (s *Server) handleConnection(conn net.Conn) {
 			log.Printf("Failed to handle client packet: %v", err)
 			return
 		}
+	}
+}
+
+func (s *Server) handleInitialClientPacket(conn net.Conn, clientPacket *api.Packet, sentChunks map[world.ChunkCoord]bool) error {
+	switch p := clientPacket.Payload.(type) {
+	case *api.Packet_Position:
+		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
+		forgetFarSentChunks(sentChunks, center.X, center.Z, s.viewDistance+1)
+		if err := s.sendChunksAroundWithRadius(conn, center.X, center.Z, s.bootstrapRadius, sentChunks); err != nil {
+			return fmt.Errorf("send bootstrap chunks around %d,%d: %w", center.X, center.Z, err)
+		}
+		return nil
+	default:
+		return s.handleClientPacket(conn, clientPacket, sentChunks)
 	}
 }
 
@@ -150,8 +168,12 @@ func forgetFarSentChunks(sentChunks map[world.ChunkCoord]bool, centerX, centerZ,
 }
 
 func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChunks map[world.ChunkCoord]bool) error {
+	return s.sendChunksAroundWithRadius(conn, centerX, centerZ, s.viewDistance, sentChunks)
+}
+
+func (s *Server) sendChunksAroundWithRadius(conn net.Conn, centerX, centerZ, radius int32, sentChunks map[world.ChunkCoord]bool) error {
 	started := time.Now()
-	chunks, err := s.world.ChunksAround(centerX, centerZ, s.viewDistance, sentChunks, s.chunksPerUpdate)
+	chunks, err := s.world.ChunksAround(centerX, centerZ, radius, sentChunks, s.chunksPerUpdate)
 	if err != nil {
 		return err
 	}
@@ -166,9 +188,10 @@ func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChu
 	if chunkStreamMetricsEnabled() && batch.chunks > 0 {
 		elapsed := time.Since(started)
 		log.Printf(
-			"Chunk stream batch center=%d,%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d elapsed_ms=%.3f chunks_per_sec=%.2f",
+			"Chunk stream batch center=%d,%d radius=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d elapsed_ms=%.3f chunks_per_sec=%.2f",
 			centerX,
 			centerZ,
+			radius,
 			batch.chunks,
 			batch.rawBytes,
 			batch.payloadBytes,
@@ -208,6 +231,23 @@ func configuredChunksPerUpdate() int {
 		return defaultChunksPerUpdate
 	}
 	return parsed
+}
+
+func configuredBootstrapRadius(viewDistance int32) int32 {
+	value := os.Getenv(bootstrapRadiusEnv)
+	if value == "" {
+		return viewDistance
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		log.Printf("Ignoring invalid %s=%q; using %d", bootstrapRadiusEnv, value, viewDistance)
+		return viewDistance
+	}
+	if parsed > int(viewDistance) {
+		log.Printf("Clamping %s=%d to %d", bootstrapRadiusEnv, parsed, viewDistance)
+		return viewDistance
+	}
+	return int32(parsed)
 }
 
 func chunkStreamMetricsEnabled() bool {

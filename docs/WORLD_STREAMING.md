@@ -11,6 +11,7 @@ This document tracks the chunk-loading path and planned optimizations for faster
 - `RUMPELMC_SERVER_CHUNK_ENCODING=raw` switches chunk payloads back to the raw full chunk rollback path.
 - The default server stream sends up to `64` chunks per update, ordered nearest-first by chunk distance.
 - `RUMPELMC_SERVER_CHUNKS_PER_UPDATE=6` restores the previous conservative stream batch.
+- `RUMPELMC_SERVER_BOOTSTRAP_RADIUS` can limit only the first post-connect stream radius; unset keeps the full view-distance startup behavior.
 
 ## First Optimization Path
 
@@ -141,12 +142,30 @@ Fresh post-default batch comparison result:
 - Rollback batch `6`: `22` stream batches, `132` chunks, `terrain_queue_max_ms=1.648`, `process_wall_p95_ms=0.038`, `gpu_compositor_submit_max_ms=0.138`.
 - Default batch `64`: `8` stream batches, `394` chunks, `terrain_queue_max_ms=1.903`, `process_wall_p95_ms=0.038`, `gpu_compositor_submit_max_ms=0.159`.
 
+## Bootstrap Radius
+
+Set `RUMPELMC_SERVER_BOOTSTRAP_RADIUS` to send a smaller first stream around the initial client position before normal `RUMPELMC_SERVER_VIEW_DISTANCE` updates take over. This is an opt-in startup scheduling guard; leaving it unset preserves full-radius startup streaming.
+
+Use it to test faster time-to-current-chunk without changing chunk encoding, batch size, protocol, storage, world generation, or client decode behavior:
+
+```sh
+RUMPELMC_SERVER_BOOTSTRAP_RADIUS=2 RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1
+```
+
+Fresh opt-in bootstrap radius result:
+
+- Summary: `logs/world_streaming_bootstrap_radius2_20260613/world-streaming-bootstrap-radius-summary.txt`.
+- Status: `pass`.
+- First stream: `radius=2`, `13` chunks, raw/payload/wire bytes `13,631,488` / `413` / `701`, elapsed `39.793ms`.
+- Full run: `9` stream batches, `394` chunks, raw/payload/wire bytes `413,138,944` / `7,362` / `17,219`.
+- Client markers: `current_chunk_loaded=1`, `current_chunk_collision=2`, `ground_hits=9`, `gpu_upload_fail=0`, and `chunk_initial=394`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:
 
 ```text
-Chunk stream batch center=0,0 chunks=64 raw_bytes=67108864 payload_bytes=... wire_bytes=... elapsed_ms=... chunks_per_sec=...
+Chunk stream batch center=0,0 radius=10 chunks=64 raw_bytes=67108864 payload_bytes=... wire_bytes=... elapsed_ms=... chunks_per_sec=...
 ```
 
 The metric is off by default and does not change packet payloads. Use it with the default RLE stream and with `RUMPELMC_SERVER_CHUNK_ENCODING=raw` rollback to compare payload shrinkage and batch throughput with the same log shape.
