@@ -110,6 +110,23 @@ require_positive_float() {
   '
 }
 
+require_startup_timing_order() {
+  chunk_loaded_ms="$1"
+  collision_ms="$2"
+  player_spawn_ms="$3"
+  awk \
+    -v chunk_loaded_ms="$chunk_loaded_ms" \
+    -v collision_ms="$collision_ms" \
+    -v player_spawn_ms="$player_spawn_ms" '
+    BEGIN {
+      if (chunk_loaded_ms > collision_ms || collision_ms > player_spawn_ms) {
+        printf("gpu_terrain_movement_stress: startup timings out of order chunk_loaded_ms=%.3f collision_ms=%.3f player_spawn_ms=%.3f\n", chunk_loaded_ms, collision_ms, player_spawn_ms) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
 mesh_triplet_value() {
   marker_path="$1"
   index="$2"
@@ -196,6 +213,7 @@ write_summary() {
   require_positive_float startup_chunk_loaded_ms "$startup_chunk_loaded_ms"
   require_positive_float startup_collision_ms "$startup_collision_ms"
   require_positive_float startup_player_spawn_ms "$startup_player_spawn_ms"
+  require_startup_timing_order "$startup_chunk_loaded_ms" "$startup_collision_ms" "$startup_player_spawn_ms"
   awk \
     -v budget="$budget_ms" \
     -v terrain_queue_avg="$terrain_queue_avg" \
