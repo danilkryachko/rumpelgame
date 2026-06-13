@@ -493,6 +493,7 @@ tmp_path="$OUT_PATH.tmp"
   print_optional_artifact "Selected Transparent Fixture Final Report Check" "$(latest_file transparent-fixture-final-report-check.txt)"
   print_optional_artifact "Selected Transparent Fixture Scene Implementation Checklist" "$(latest_file transparent-fixture-scene-implementation-checklist.txt)"
   print_optional_artifact "Selected Transparent Fixture Scene Implementation Gate Check" "$(latest_file transparent-fixture-scene-implementation-gate-check.txt)"
+  print_optional_artifact "Selected Transparent Fixture Overlay Design" "$(latest_file transparent-fixture-overlay-design.txt)"
   print_optional_file "Selected Transparent Fixture Scene Smoke Summary" "$(latest_file transparent-fixture-scene-smoke-summary.txt)"
 
   printf '\n## Recent Summary Files\n\n'

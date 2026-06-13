@@ -231,6 +231,48 @@ Current blocker for step 5:
 - The current runtime receives serialized `u16` block IDs from the server and resolves solid/texture behavior through client/server block definitions. Adding `transparent_test_glass` directly as a block would therefore cross protocol/storage/worldgen compatibility boundaries.
 - Next safe implementation should first design a client-only fixture overlay or explicitly approve a production block ID path.
 
+## Client-Only Fixture Overlay Design
+
+The client-only fixture overlay is the next safe path for `transparent_test_glass`. It is a smoke-only overlay contract, not chunk data, not a production block, and not a default gameplay feature.
+
+Overlay ownership and lifetime:
+
+- The overlay is owned by the client visual smoke harness.
+- The overlay is created only when an explicit fixture env flag is enabled.
+- The overlay lifetime is one visual smoke run and must be cleared on runtime shutdown.
+- The overlay must not be serialized, sent to the server, stored in RocksDB/PostgreSQL, or included in world generation.
+- The overlay must not use a production block ID until a separate protocol/storage/worldgen change is approved.
+
+Overlay identity:
+
+- Use `overlay_id=transparent_test_glass`.
+- Use `fixture=gpu-transparent-depth-collision`.
+- Keep `render_class=transparent` separate from `solid=true`.
+- Treat the fixture overlay as client-only geometry metadata until a renderer implementation consumes it.
+
+Runtime gates:
+
+- Keep `RUMPELMC_GPU_TERRAIN_TRANSPARENT` as the opt-in request flag.
+- Add a future overlay request flag before the overlay becomes active, for example `RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1`.
+- While `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, overlay-enabled captures must still report `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, and zero transparent workload markers.
+- Default gameplay and ordinary visual smoke captures must keep `overlay_active=0`.
+
+Allowed first implementation shape:
+
+- A client-side fixture metadata list with fixed coordinates and roles.
+- Marker-only validation for overlay requested/active/fallback state.
+- No `ChunkData` mutation and no `BlockAction` packet.
+- No atlas asset, shader alpha, blending, sorting, or transparent pass.
+- No `.tscn`, `.import`, or generated file edits.
+
+Required future markers:
+
+- `transparent_fixture_overlay_requested`
+- `transparent_fixture_overlay_active`
+- `transparent_fixture_overlay_fallback`
+- `transparent_fixture_overlay_roles`
+- `transparent_fixture_overlay_blocks`
+
 Still out of scope for the first runtime slice:
 
 - No shader alpha, blending, transparent pass, sorting, production block ID, atlas asset, protocol field, storage record, worldgen rule, or default behavior change.
