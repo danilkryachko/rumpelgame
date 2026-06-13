@@ -120,6 +120,23 @@ Fresh encoding startup timing comparison result:
 - RAW: `394` chunks, payload/wire percent of raw `100.000000%` / `100.002195%`, startup chunk/collision/player spawn `91.070ms / 91.070ms / 91.070ms`.
 - RLE: `394` chunks, payload/wire percent of raw `0.001782%` / `0.004168%`, startup chunk/collision/player spawn `84.197ms / 84.197ms / 84.197ms`.
 
+The combined world-loading regression pack is:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release /bin/sh scripts/world_streaming_regression_pack.sh logs/world_streaming_regression_pack_20260613
+```
+
+It builds and signs `server/server` once, then runs bootstrap, batch-size, RAW-vs-RLE encoding, and standalone RLE movement gates through the existing wrappers with nested server rebuilds disabled. It writes `world-streaming-regression-summary.txt` as a single top-level pass/fail artifact.
+
+Fresh regression pack result:
+
+- Summary: `logs/world_streaming_regression_pack_20260613/world-streaming-regression-summary.txt`.
+- Status: `pass`.
+- Bootstrap default radius `0`: first stream `1` chunk, startup player spawn `93.318ms`.
+- Batch `64`: `394` chunks over `9` batches, startup player spawn `83.367ms`.
+- Encoding compare RLE: `394` chunks, wire percent of raw `0.004168%`, startup player spawn `95.459ms`.
+- Standalone RLE movement: `394` chunks, wire percent of raw `0.004168%`, startup player spawn `87.231ms`.
+
 The RLE batch-size comparison gate is:
 
 ```sh
