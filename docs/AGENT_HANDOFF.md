@@ -981,6 +981,10 @@ Checks:
   - `scripts/gpu_terrain_parity_smoke.sh` now includes CPU/GPU `lighting_low_angle` captures, requires `lighting_variant="low_angle"` on both markers, and writes the pair into `parity-summary.txt`.
   - Fresh full parity passed in `logs/gpu_lighting_low_angle_parity_20260613/parity-summary.txt` with `case_count=16`, low-angle pair `avg_luma=0.2865/0.2671 delta=0.0194`, `terrain_luma_range=0.3664/0.3357 delta=0.0307`, `terrain_samples=498/498`, and `terrain_color_buckets=8/9`.
   - The GPU low-angle marker reported `gpu_light_dir=-0.775/0.407/0.484`, `gpu_light_energy=0.700`, `gpu_upload_fail=0`, `smoke_err=0`, and `gpu_frames=235`.
+- Latest low-angle compact shadow parity gate slice passed:
+  - `scripts/gpu_terrain_parity_smoke.sh` now includes `gpu-terrain-compact-lighting-low-angle-parity`, requires `lighting_variant="low_angle"` on the compact marker, and validates compact-vs-full shadow proxy parity for the low-angle pose.
+  - Fresh full parity passed in `logs/gpu_lighting_low_angle_compact_parity_20260613/parity-summary.txt` with `case_count=17`, `lighting_low_angle_compact` pair `avg_luma=0.2671/0.2671 delta=0.0000`, `terrain_luma_range=0.3357/0.3357 delta=0.0000`, `terrain_samples=498/498`, and `terrain_color_buckets=9/9`.
+  - The compact low-angle marker reported `shadow_mesh=compact`, `shadow_path=godot_proxy`, `gpu_light_energy=0.700`, `gpu_upload_fail=0`, `smoke_err=0`, and `gpu_frames=234`.
 
 Useful log lines:
 
