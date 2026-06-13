@@ -127,6 +127,14 @@ Fresh batch comparison result:
 - Batch `6`: `22` stream batches, `132` chunks, payload/wire percent of raw `0.001912%` / `0.004075%`, `terrain_queue_max_ms=2.065`, `process_wall_p95_ms=0.035`, `gpu_compositor_submit_max_ms=0.109`.
 - Batch `64`: `8` stream batches, `394` chunks, payload/wire percent of raw `0.001782%` / `0.004168%`, `terrain_queue_max_ms=1.560`, `process_wall_p95_ms=0.036`, `gpu_compositor_submit_max_ms=0.109`.
 
+Fresh batch startup timing comparison result:
+
+- Summary: `logs/world_streaming_batch_startup_timing_20260613/world-streaming-batch-compare-summary.txt`.
+- Status: `pass`.
+- Batch compare summaries now include startup chunk-loaded, collision-ready, and player-spawn timings for each run and in the top-level compare artifact.
+- Batch `6`: `23` stream batches, `133` chunks, startup chunk/collision/player spawn `97.389ms / 97.389ms / 97.389ms`, `terrain_queue_max_ms=2.225`, `process_wall_p95_ms=0.050`, `gpu_compositor_submit_max_ms=0.225`.
+- Batch `64`: `9` stream batches, `394` chunks, startup chunk/collision/player spawn `76.650ms / 76.650ms / 76.650ms`, `terrain_queue_max_ms=2.052`, `process_wall_p95_ms=0.054`, `gpu_compositor_submit_max_ms=0.140`.
+
 Fresh default batch `64` result with `RUMPELMC_SERVER_CHUNKS_PER_UPDATE` unset:
 
 - Summary: `logs/world_streaming_default_batch64_20260613/world-streaming-default-batch64-summary.txt`.
