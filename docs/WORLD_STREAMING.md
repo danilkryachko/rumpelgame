@@ -66,6 +66,22 @@ Latest visual movement smoke evidence from 2026-06-13 used the release Rust exte
 - RLE movement totals: `132` chunks, raw bytes `138,412,032`, payload bytes `2,646`, framed wire bytes `5,640`.
 - In this generated-world movement smoke, RLE framed wire bytes were about `0.0041%` of RAW framed wire bytes.
 
+The reproducible wrapper gate for the same path is:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release scripts/world_streaming_rle_movement_smoke.sh logs/world_streaming_rle_wrapper_20260613
+```
+
+It rebuilds `server/server`, requires port `25565` to be free, starts the normal movement stress with `RUMPELMC_SERVER_CHUNK_ENCODING=rle` and `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1`, validates the movement marker, validates that the client decoded RLE chunks to `blocks=1048576`, requires RLE payload and framed wire bytes to stay below `1%` of raw bytes, writes `world-streaming-rle-summary.txt`, and cleans up the local server.
+
+Fresh wrapper result:
+
+- Summary: `logs/world_streaming_rle_wrapper_20260613/world-streaming-rle-summary.txt`.
+- Status: `pass`.
+- Batches/chunks: `22` / `132`.
+- Raw/payload/wire bytes: `138,412,032` / `2,646` / `5,640`.
+- Payload/wire percent of raw: `0.001912%` / `0.004075%`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:
