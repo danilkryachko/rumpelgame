@@ -340,6 +340,12 @@ require_transparent_fallback_marker_if_requested() {
   require_metric_eq "$marker_path" "transparent_faces" 0
   require_metric_eq "$marker_path" "transparent_draws" 0
   require_metric_eq "$marker_path" "transparent_subchunks" 0
+
+  if env_flag_is_true "${RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY:-}"; then
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_requested" 1
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_active" 0
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_fallback" 1
+  fi
 }
 
 screenshot_path="$OUT_DIR/gpu-terrain-movement-stress.png"

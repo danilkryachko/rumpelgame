@@ -152,6 +152,8 @@ required_line "$scene_harness_check_path" "workload_gates=blocked_until_fixture"
 required_line "$scene_harness_check_path" "non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no" >/dev/null
 
 required_line "$RUST_SOURCE" "const GPU_TERRAIN_TRANSPARENT_ENV: &str = \"RUMPELMC_GPU_TERRAIN_TRANSPARENT\";" >/dev/null
+required_line "$RUST_SOURCE" "const GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY_ENV: &str =" >/dev/null
+required_line "$RUST_SOURCE" "\"RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY\";" >/dev/null
 required_line "$RUST_SOURCE" "const GPU_TERRAIN_TRANSPARENT_IMPLEMENTED: bool = false;" >/dev/null
 required_line "$RUST_SOURCE" "gpu_terrain_transparent_active_decision(" >/dev/null
 required_line "$RUST_SOURCE" "GPU_TERRAIN_TRANSPARENT_IMPLEMENTED," >/dev/null
@@ -163,14 +165,27 @@ required_line "$RUST_SOURCE" "requested && !active" >/dev/null
 required_line "$RUST_SOURCE" "fn gpu_transparent_gate_stays_disabled_until_implemented()" >/dev/null
 required_line "$RUST_SOURCE" "assert!(!gpu_terrain_transparent_active_decision(true, false));" >/dev/null
 required_line "$RUST_SOURCE" "assert!(gpu_terrain_transparent_fallback_decision(true, false));" >/dev/null
+required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_fixture_overlay_requested_decision(env_state: Option<bool>) -> bool {" >/dev/null
+required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_fixture_overlay_active_decision(" >/dev/null
+required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_fixture_overlay_fallback_decision(" >/dev/null
+required_line "$RUST_SOURCE" "assert!(!gpu_terrain_transparent_fixture_overlay_active_decision(" >/dev/null
+required_line "$RUST_SOURCE" "assert!(gpu_terrain_transparent_fixture_overlay_fallback_decision(" >/dev/null
+required_line "$RUST_SOURCE" "true, false" >/dev/null
 
 required_line "$MOVEMENT_STRESS" "require_transparent_fallback_marker_if_requested()" >/dev/null
 required_line "$MOVEMENT_STRESS" "RUMPELMC_GPU_TERRAIN_TRANSPARENT" >/dev/null
+required_line "$MOVEMENT_STRESS" "RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY" >/dev/null
 required_line "$MOVEMENT_STRESS" 'require_metric_eq "$marker_path" "transparent_requested" 1' >/dev/null
 required_line "$MOVEMENT_STRESS" 'require_metric_eq "$marker_path" "transparent_active" 0' >/dev/null
 required_line "$MOVEMENT_STRESS" 'require_metric_eq "$marker_path" "transparent_fallback" 1' >/dev/null
+required_line "$MOVEMENT_STRESS" 'require_metric_eq "$marker_path" "transparent_fixture_overlay_requested" 1' >/dev/null
+required_line "$MOVEMENT_STRESS" 'require_metric_eq "$marker_path" "transparent_fixture_overlay_active" 0' >/dev/null
+required_line "$MOVEMENT_STRESS" 'require_metric_eq "$marker_path" "transparent_fixture_overlay_fallback" 1' >/dev/null
 
 required_line "$CONTRACT_PATH" "While \`GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false\`, the env-on fixture must still report requested-but-fallback markers" >/dev/null
+required_line "$CONTRACT_PATH" "transparent_fixture_overlay_requested=1" >/dev/null
+required_line "$CONTRACT_PATH" "transparent_fixture_overlay_active=0" >/dev/null
+required_line "$CONTRACT_PATH" "transparent_fixture_overlay_fallback=1" >/dev/null
 required_line "$CONTRACT_PATH" "No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented." >/dev/null
 
 tmp_check="$OUT_PATH.tmp"
@@ -187,12 +202,14 @@ trap 'rm -f "$tmp_check"' EXIT
   printf 'transparent_implementation_gate=false\n'
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
+  printf 'transparent_fixture_overlay_default=0/0/0\n'
   printf 'env_on_expected=%s\n' "$env_expected"
+  printf 'overlay_env_on_expected=1/0/1\n'
   printf 'future_active_expected=1/0/0\n'
   printf 'future_gates=blocked_until_implementation\n'
   printf 'workload_gates=blocked_until_fixture\n'
   printf 'non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
-  printf 'summary transparent_fixture_default_off_status=pass transparent_fixture_acceptance_status=%s transparent_implementation_gate=false env_on_expected=%s future_active_expected=1/0/0\n' \
+  printf 'summary transparent_fixture_default_off_status=pass transparent_fixture_acceptance_status=%s transparent_implementation_gate=false env_on_expected=%s overlay_env_on_expected=1/0/1 future_active_expected=1/0/0\n' \
     "$acceptance_status" \
     "$env_expected"
 } > "$tmp_check"

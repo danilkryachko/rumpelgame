@@ -254,8 +254,8 @@ Runtime gates:
 
 - Keep `RUMPELMC_GPU_TERRAIN_TRANSPARENT` as the opt-in request flag.
 - Add a future overlay request flag before the overlay becomes active, for example `RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1`.
-- While `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, overlay-enabled captures must still report `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, and zero transparent workload markers.
-- Default gameplay and ordinary visual smoke captures must keep `overlay_active=0`.
+- While `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, overlay-enabled captures must still report `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `transparent_fixture_overlay_requested=1`, `transparent_fixture_overlay_active=0`, `transparent_fixture_overlay_fallback=1`, and zero transparent workload markers.
+- Default gameplay and ordinary visual smoke captures must keep `transparent_fixture_overlay_active=0`.
 
 Allowed first implementation shape:
 
@@ -264,6 +264,13 @@ Allowed first implementation shape:
 - No `ChunkData` mutation and no `BlockAction` packet.
 - No atlas asset, shader alpha, blending, sorting, or transparent pass.
 - No `.tscn`, `.import`, or generated file edits.
+
+Current marker-only scaffold:
+
+- `RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1` is parsed by the Rust extension and emitted as `transparent_fixture_overlay_requested=1`.
+- `transparent_fixture_overlay_active` is gated by `transparent_active`, so it remains `0` while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
+- `transparent_fixture_overlay_fallback=1` identifies overlay requests that are intentionally blocked by the transparent implementation gate.
+- The scaffold emits markers only; it does not create overlay geometry, mutate chunk data, send packets, allocate block IDs, change assets, or change render behavior.
 
 Required future markers:
 
