@@ -41,6 +41,7 @@ const VISUAL_SMOKE_MIN_TERRAIN_LUMA_RANGE = 0.06
 const VISUAL_SMOKE_COLOR_BUCKET_LEVELS = 6
 const VISUAL_SMOKE_CHROMA_THRESHOLD = 0.05
 const VISUAL_SMOKE_DEFAULT_POSE = "default"
+const VISUAL_SMOKE_DEFAULT_LIGHTING_VARIANT = "default"
 const VISUAL_SMOKE_CHUNK_SIZE = 32.0
 
 var server_pid: int = -1
@@ -56,6 +57,7 @@ var visual_smoke_motion_steps: int = 0
 var visual_smoke_motion_chunks = {}
 var visual_smoke_block_edit_name: String = "none"
 var visual_smoke_block_edit_dirty_observed: int = 0
+var visual_smoke_lighting_variant: String = VISUAL_SMOKE_DEFAULT_LIGHTING_VARIANT
 
 func _ready():
 	configure_window_stretch()
@@ -136,14 +138,17 @@ func configure_world_lighting():
 	environment.adjustment_enabled = false
 	environment.sky = null
 
+	configure_sun_light(0.45, Vector3(-48, -32, 0))
+
+func configure_sun_light(light_energy: float, light_rotation_degrees: Vector3):
 	var sun = get_node_or_null("SunLight")
 	if not sun:
 		sun = DirectionalLight3D.new()
 		sun.name = "SunLight"
 		add_child(sun)
-	sun.light_energy = 0.45
+	sun.light_energy = light_energy
 	sun.shadow_enabled = true
-	sun.rotation_degrees = Vector3(-48, -32, 0)
+	sun.rotation_degrees = light_rotation_degrees
 
 func start_local_server():
 	var exe_path = find_server_executable()
@@ -304,9 +309,10 @@ func capture_visual_smoke(screenshot_path: String):
 	var frame_metrics = visual_smoke_frame_metrics()
 	var process_metrics = visual_smoke_process_wall_metrics()
 	var runtime_metrics = visual_smoke_runtime_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f ground_samples=%d ground_hits=%d ground_misses=%d ground_max_distance=%.3f ground_min_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" lighting_variant=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f ground_samples=%d ground_hits=%d ground_misses=%d ground_max_distance=%.3f ground_min_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
+		visual_smoke_lighting_variant,
 		visual_smoke_motion_name,
 		visual_smoke_motion_steps,
 		visual_smoke_motion_chunks.size(),
@@ -586,6 +592,12 @@ func normalized_visual_smoke_motion() -> String:
 	return motion
 
 func apply_visual_smoke_pose(pose_name: String):
+	match pose_name:
+		"lighting_low_angle":
+			apply_visual_smoke_lighting_variant("low_angle")
+		_:
+			apply_visual_smoke_lighting_variant(VISUAL_SMOKE_DEFAULT_LIGHTING_VARIANT)
+
 	var player = get_tree().root.find_child("Player", true, false) as Node3D
 	if not player:
 		return
@@ -601,6 +613,8 @@ func apply_visual_smoke_pose(pose_name: String):
 			apply_visual_smoke_look_at(player, camera, Vector3(16.0, 76.0, 24.0), Vector3(16.0, 62.0, 3.0))
 		"lighting_shadow":
 			apply_visual_smoke_look_at(player, camera, Vector3(7.0, 78.0, 25.0), Vector3(25.0, 61.0, 5.0))
+		"lighting_low_angle":
+			apply_visual_smoke_look_at(player, camera, Vector3(7.0, 78.0, 25.0), Vector3(25.0, 61.0, 5.0))
 		"transparent_fixture":
 			apply_visual_smoke_look_at(player, camera, Vector3(24.0, 78.0, 40.0), Vector3(32.0, 63.0, 18.0))
 		"texture_stand":
@@ -609,6 +623,18 @@ func apply_visual_smoke_pose(pose_name: String):
 			show_visual_smoke_texture_stand()
 		_:
 			log_event("Unknown visual smoke pose: %s" % pose_name)
+
+func apply_visual_smoke_lighting_variant(variant: String):
+	visual_smoke_lighting_variant = variant
+	match variant:
+		VISUAL_SMOKE_DEFAULT_LIGHTING_VARIANT:
+			configure_sun_light(0.45, Vector3(-48, -32, 0))
+		"low_angle":
+			configure_sun_light(0.70, Vector3(-24, -58, 0))
+		_:
+			visual_smoke_lighting_variant = VISUAL_SMOKE_DEFAULT_LIGHTING_VARIANT
+			configure_sun_light(0.45, Vector3(-48, -32, 0))
+			log_event("Unknown visual smoke lighting variant: %s" % variant)
 
 func visual_smoke_player_camera(player: Node) -> Camera3D:
 	for child in player.get_children():

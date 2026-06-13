@@ -28,6 +28,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 - `scripts/gpu_terrain_parity_smoke.sh` writes `parity-summary.txt` after a passing full or validate-only parity run. Use it as the compact evidence for atlas/depth, lighting/shadow, compact-shadow, and texture-stand visual deltas before deciding whether another shader change needs fresh captures.
 - The render shader lighting contract is guarded in Rust tests: vertex code computes lighting from `face_normal(face_idx)` and lighting push constants, passes it through `lighting_out`/`lighting_in`, and fragment code only applies that lighting to the sampled atlas texel with opaque alpha. Scene depth remains guarded separately as reverse-Z `GREATER_OR_EQUAL`.
 - Runtime markers expose the sanitized lighting push block as `gpu_light_dir`, `gpu_light_color`, `gpu_light_energy`, and `gpu_light_ambient`. Use these fields to prove which scene light values were rendered before comparing lighting variants or shadow paths.
+- `RUMPELMC_VISUAL_SMOKE_POSE=lighting_low_angle` is a smoke-only controlled lighting variant. It keeps the existing visual smoke path and Godot shadow proxy but changes the `SunLight` rotation/energy for comparison captures, and the marker records `lighting_variant="low_angle"`.
 
 ## Report-Only Or Untrusted Local Signals
 
@@ -59,6 +60,15 @@ Use release builds for terrain performance comparisons:
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
 RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 ./scripts/gpu_terrain_movement_stress.sh logs/gpu_terrain_profile_movement
+```
+
+Use the low-angle lighting pose when comparing directional-light behavior without changing the default scene:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+RUMPELMC_VISUAL_SMOKE_POSE=lighting_low_angle \
+./scripts/gpu_terrain_movement_stress.sh logs/gpu_lighting_low_angle_smoke
 ```
 
 Use fill stress to increase draw/fill pressure without reducing visible quality:
