@@ -126,6 +126,8 @@ require_pass_summary rle "$RLE_SUMMARY"
 
 bootstrap_candidate_first_chunks="$(metric candidate_first_chunks "$BOOTSTRAP_SUMMARY")"
 bootstrap_candidate_startup_chunk_packet="$(metric candidate_startup_chunk_packet_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_packet_reader_elapsed="$(metric candidate_startup_packet_reader_elapsed_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_packet_queue_lag="$(metric candidate_startup_packet_queue_lag_ms "$BOOTSTRAP_SUMMARY")"
 bootstrap_candidate_startup_chunk_decode_work="$(metric candidate_startup_chunk_decode_work_ms "$BOOTSTRAP_SUMMARY")"
 bootstrap_candidate_startup_mesh_dispatched="$(metric candidate_startup_mesh_dispatched_ms "$BOOTSTRAP_SUMMARY")"
 bootstrap_candidate_startup_player_spawn="$(metric candidate_startup_player_spawn_ms "$BOOTSTRAP_SUMMARY")"
@@ -134,6 +136,8 @@ bootstrap_candidate_startup_first_mesh_work="$(metric candidate_startup_first_me
 batch_candidate_chunks="$(metric candidate_chunks "$BATCH_SUMMARY")"
 batch_candidate_batches="$(metric candidate_batches "$BATCH_SUMMARY")"
 batch_candidate_startup_chunk_packet="$(metric candidate_startup_chunk_packet_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_packet_reader_elapsed="$(metric candidate_startup_packet_reader_elapsed_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_packet_queue_lag="$(metric candidate_startup_packet_queue_lag_ms "$BATCH_SUMMARY")"
 batch_candidate_startup_chunk_decode_work="$(metric candidate_startup_chunk_decode_work_ms "$BATCH_SUMMARY")"
 batch_candidate_startup_mesh_dispatched="$(metric candidate_startup_mesh_dispatched_ms "$BATCH_SUMMARY")"
 batch_candidate_startup_player_spawn="$(metric candidate_startup_player_spawn_ms "$BATCH_SUMMARY")"
@@ -142,6 +146,8 @@ batch_candidate_startup_first_mesh_work="$(metric candidate_startup_first_mesh_w
 encoding_rle_chunks="$(metric rle_chunks "$ENCODING_SUMMARY")"
 encoding_rle_wire_pct="$(metric rle_wire_pct "$ENCODING_SUMMARY")"
 encoding_rle_startup_chunk_packet="$(metric rle_startup_chunk_packet_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_packet_reader_elapsed="$(metric rle_startup_packet_reader_elapsed_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_packet_queue_lag="$(metric rle_startup_packet_queue_lag_ms "$ENCODING_SUMMARY")"
 encoding_rle_startup_chunk_decode_work="$(metric rle_startup_chunk_decode_work_ms "$ENCODING_SUMMARY")"
 encoding_rle_startup_mesh_dispatched="$(metric rle_startup_mesh_dispatched_ms "$ENCODING_SUMMARY")"
 encoding_rle_startup_player_spawn="$(metric rle_startup_player_spawn_ms "$ENCODING_SUMMARY")"
@@ -150,6 +156,8 @@ encoding_rle_startup_first_mesh_work="$(metric rle_startup_first_mesh_work_ms "$
 rle_chunks="$(metric chunks "$RLE_SUMMARY")"
 rle_wire_pct="$(metric wire_pct "$RLE_SUMMARY")"
 rle_startup_chunk_packet="$(metric startup_chunk_packet_ms "$RLE_SUMMARY")"
+rle_startup_packet_reader_elapsed="$(metric startup_packet_reader_elapsed_ms "$RLE_SUMMARY")"
+rle_startup_packet_queue_lag="$(metric startup_packet_queue_lag_ms "$RLE_SUMMARY")"
 rle_startup_chunk_decode_work="$(metric startup_chunk_decode_work_ms "$RLE_SUMMARY")"
 rle_startup_mesh_dispatched="$(metric startup_mesh_dispatched_ms "$RLE_SUMMARY")"
 rle_startup_player_spawn="$(metric startup_player_spawn_ms "$RLE_SUMMARY")"
@@ -164,6 +172,8 @@ test -n "$rle_chunks" || fail "missing rle chunks"
 awk \
   -v bootstrap_candidate_first_chunks="$bootstrap_candidate_first_chunks" \
   -v bootstrap_candidate_startup_chunk_packet="$bootstrap_candidate_startup_chunk_packet" \
+  -v bootstrap_candidate_startup_packet_reader_elapsed="$bootstrap_candidate_startup_packet_reader_elapsed" \
+  -v bootstrap_candidate_startup_packet_queue_lag="$bootstrap_candidate_startup_packet_queue_lag" \
   -v bootstrap_candidate_startup_chunk_decode_work="$bootstrap_candidate_startup_chunk_decode_work" \
   -v bootstrap_candidate_startup_mesh_dispatched="$bootstrap_candidate_startup_mesh_dispatched" \
   -v bootstrap_candidate_startup_first_mesh="$bootstrap_candidate_startup_first_mesh" \
@@ -172,6 +182,8 @@ awk \
   -v batch_candidate_chunks="$batch_candidate_chunks" \
   -v batch_candidate_batches="$batch_candidate_batches" \
   -v batch_candidate_startup_chunk_packet="$batch_candidate_startup_chunk_packet" \
+  -v batch_candidate_startup_packet_reader_elapsed="$batch_candidate_startup_packet_reader_elapsed" \
+  -v batch_candidate_startup_packet_queue_lag="$batch_candidate_startup_packet_queue_lag" \
   -v batch_candidate_startup_chunk_decode_work="$batch_candidate_startup_chunk_decode_work" \
   -v batch_candidate_startup_mesh_dispatched="$batch_candidate_startup_mesh_dispatched" \
   -v batch_candidate_startup_first_mesh="$batch_candidate_startup_first_mesh" \
@@ -180,6 +192,8 @@ awk \
   -v encoding_rle_chunks="$encoding_rle_chunks" \
   -v encoding_rle_wire_pct="$encoding_rle_wire_pct" \
   -v encoding_rle_startup_chunk_packet="$encoding_rle_startup_chunk_packet" \
+  -v encoding_rle_startup_packet_reader_elapsed="$encoding_rle_startup_packet_reader_elapsed" \
+  -v encoding_rle_startup_packet_queue_lag="$encoding_rle_startup_packet_queue_lag" \
   -v encoding_rle_startup_chunk_decode_work="$encoding_rle_startup_chunk_decode_work" \
   -v encoding_rle_startup_mesh_dispatched="$encoding_rle_startup_mesh_dispatched" \
   -v encoding_rle_startup_first_mesh="$encoding_rle_startup_first_mesh" \
@@ -188,6 +202,8 @@ awk \
   -v rle_chunks="$rle_chunks" \
   -v rle_wire_pct="$rle_wire_pct" \
   -v rle_startup_chunk_packet="$rle_startup_chunk_packet" \
+  -v rle_startup_packet_reader_elapsed="$rle_startup_packet_reader_elapsed" \
+  -v rle_startup_packet_queue_lag="$rle_startup_packet_queue_lag" \
   -v rle_startup_chunk_decode_work="$rle_startup_chunk_decode_work" \
   -v rle_startup_mesh_dispatched="$rle_startup_mesh_dispatched" \
   -v rle_startup_first_mesh="$rle_startup_first_mesh" \
@@ -198,7 +214,7 @@ awk \
   -v encoding_summary="$ENCODING_SUMMARY" \
   -v rle_summary="$RLE_SUMMARY" '
   BEGIN {
-    printf("world_streaming_regression status=pass bootstrap_candidate_first_chunks=%d bootstrap_candidate_startup_chunk_packet_ms=%.3f bootstrap_candidate_startup_chunk_decode_work_ms=%.3f bootstrap_candidate_startup_mesh_dispatched_ms=%.3f bootstrap_candidate_startup_first_mesh_ms=%.3f bootstrap_candidate_startup_first_mesh_work_ms=%.3f bootstrap_candidate_startup_player_spawn_ms=%.3f batch_candidate_chunks=%d batch_candidate_batches=%d batch_candidate_startup_chunk_packet_ms=%.3f batch_candidate_startup_chunk_decode_work_ms=%.3f batch_candidate_startup_mesh_dispatched_ms=%.3f batch_candidate_startup_first_mesh_ms=%.3f batch_candidate_startup_first_mesh_work_ms=%.3f batch_candidate_startup_player_spawn_ms=%.3f encoding_rle_chunks=%d encoding_rle_wire_pct=%.6f encoding_rle_startup_chunk_packet_ms=%.3f encoding_rle_startup_chunk_decode_work_ms=%.3f encoding_rle_startup_mesh_dispatched_ms=%.3f encoding_rle_startup_first_mesh_ms=%.3f encoding_rle_startup_first_mesh_work_ms=%.3f encoding_rle_startup_player_spawn_ms=%.3f rle_chunks=%d rle_wire_pct=%.6f rle_startup_chunk_packet_ms=%.3f rle_startup_chunk_decode_work_ms=%.3f rle_startup_mesh_dispatched_ms=%.3f rle_startup_first_mesh_ms=%.3f rle_startup_first_mesh_work_ms=%.3f rle_startup_player_spawn_ms=%.3f bootstrap_summary=%s batch_summary=%s encoding_summary=%s rle_summary=%s\n", bootstrap_candidate_first_chunks, bootstrap_candidate_startup_chunk_packet, bootstrap_candidate_startup_chunk_decode_work, bootstrap_candidate_startup_mesh_dispatched, bootstrap_candidate_startup_first_mesh, bootstrap_candidate_startup_first_mesh_work, bootstrap_candidate_startup_player_spawn, batch_candidate_chunks, batch_candidate_batches, batch_candidate_startup_chunk_packet, batch_candidate_startup_chunk_decode_work, batch_candidate_startup_mesh_dispatched, batch_candidate_startup_first_mesh, batch_candidate_startup_first_mesh_work, batch_candidate_startup_player_spawn, encoding_rle_chunks, encoding_rle_wire_pct, encoding_rle_startup_chunk_packet, encoding_rle_startup_chunk_decode_work, encoding_rle_startup_mesh_dispatched, encoding_rle_startup_first_mesh, encoding_rle_startup_first_mesh_work, encoding_rle_startup_player_spawn, rle_chunks, rle_wire_pct, rle_startup_chunk_packet, rle_startup_chunk_decode_work, rle_startup_mesh_dispatched, rle_startup_first_mesh, rle_startup_first_mesh_work, rle_startup_player_spawn, bootstrap_summary, batch_summary, encoding_summary, rle_summary)
+    printf("world_streaming_regression status=pass bootstrap_candidate_first_chunks=%d bootstrap_candidate_startup_chunk_packet_ms=%.3f bootstrap_candidate_startup_packet_reader_elapsed_ms=%.3f bootstrap_candidate_startup_packet_queue_lag_ms=%.3f bootstrap_candidate_startup_chunk_decode_work_ms=%.3f bootstrap_candidate_startup_mesh_dispatched_ms=%.3f bootstrap_candidate_startup_first_mesh_ms=%.3f bootstrap_candidate_startup_first_mesh_work_ms=%.3f bootstrap_candidate_startup_player_spawn_ms=%.3f batch_candidate_chunks=%d batch_candidate_batches=%d batch_candidate_startup_chunk_packet_ms=%.3f batch_candidate_startup_packet_reader_elapsed_ms=%.3f batch_candidate_startup_packet_queue_lag_ms=%.3f batch_candidate_startup_chunk_decode_work_ms=%.3f batch_candidate_startup_mesh_dispatched_ms=%.3f batch_candidate_startup_first_mesh_ms=%.3f batch_candidate_startup_first_mesh_work_ms=%.3f batch_candidate_startup_player_spawn_ms=%.3f encoding_rle_chunks=%d encoding_rle_wire_pct=%.6f encoding_rle_startup_chunk_packet_ms=%.3f encoding_rle_startup_packet_reader_elapsed_ms=%.3f encoding_rle_startup_packet_queue_lag_ms=%.3f encoding_rle_startup_chunk_decode_work_ms=%.3f encoding_rle_startup_mesh_dispatched_ms=%.3f encoding_rle_startup_first_mesh_ms=%.3f encoding_rle_startup_first_mesh_work_ms=%.3f encoding_rle_startup_player_spawn_ms=%.3f rle_chunks=%d rle_wire_pct=%.6f rle_startup_chunk_packet_ms=%.3f rle_startup_packet_reader_elapsed_ms=%.3f rle_startup_packet_queue_lag_ms=%.3f rle_startup_chunk_decode_work_ms=%.3f rle_startup_mesh_dispatched_ms=%.3f rle_startup_first_mesh_ms=%.3f rle_startup_first_mesh_work_ms=%.3f rle_startup_player_spawn_ms=%.3f bootstrap_summary=%s batch_summary=%s encoding_summary=%s rle_summary=%s\n", bootstrap_candidate_first_chunks, bootstrap_candidate_startup_chunk_packet, bootstrap_candidate_startup_packet_reader_elapsed, bootstrap_candidate_startup_packet_queue_lag, bootstrap_candidate_startup_chunk_decode_work, bootstrap_candidate_startup_mesh_dispatched, bootstrap_candidate_startup_first_mesh, bootstrap_candidate_startup_first_mesh_work, bootstrap_candidate_startup_player_spawn, batch_candidate_chunks, batch_candidate_batches, batch_candidate_startup_chunk_packet, batch_candidate_startup_packet_reader_elapsed, batch_candidate_startup_packet_queue_lag, batch_candidate_startup_chunk_decode_work, batch_candidate_startup_mesh_dispatched, batch_candidate_startup_first_mesh, batch_candidate_startup_first_mesh_work, batch_candidate_startup_player_spawn, encoding_rle_chunks, encoding_rle_wire_pct, encoding_rle_startup_chunk_packet, encoding_rle_startup_packet_reader_elapsed, encoding_rle_startup_packet_queue_lag, encoding_rle_startup_chunk_decode_work, encoding_rle_startup_mesh_dispatched, encoding_rle_startup_first_mesh, encoding_rle_startup_first_mesh_work, encoding_rle_startup_player_spawn, rle_chunks, rle_wire_pct, rle_startup_chunk_packet, rle_startup_packet_reader_elapsed, rle_startup_packet_queue_lag, rle_startup_chunk_decode_work, rle_startup_mesh_dispatched, rle_startup_first_mesh, rle_startup_first_mesh_work, rle_startup_player_spawn, bootstrap_summary, batch_summary, encoding_summary, rle_summary)
   }
 ' > "$SUMMARY_PATH"
 

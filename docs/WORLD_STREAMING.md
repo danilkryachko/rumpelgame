@@ -314,6 +314,17 @@ Fresh startup receive/decode breakdown result:
 - Encoding RLE: `394` chunks, wire percent `0.004168%`, startup packet/chunk decode/mesh dispatch/first mesh/work `71.415ms / 0.441ms / 71.415ms / 71.415ms / 6.327ms`.
 - Standalone RLE: `394` chunks, wire percent `0.004168%`, startup packet/chunk decode/mesh dispatch/first mesh/work `91.099ms / 0.499ms / 91.099ms / 91.099ms / 5.790ms`.
 
+Fresh startup reader/main-thread lag telemetry result:
+
+- Regression-pack attempt: `logs/world_streaming_startup_reader_lag_20260613_retry/world-streaming-regression-summary.txt` was not written because the final standalone RLE smoke exceeded the terrain queue budget by `0.099ms`, but its bootstrap, batch, and RAW-vs-RLE encoding legs passed and produced valid startup lag summaries.
+- Passing standalone RLE summary: `logs/world_streaming_startup_reader_lag_rle_20260613_retry/world-streaming-rle-summary.txt`.
+- The Rust client marker now separates packet reader elapsed time from main-thread packet queue lag. Movement, bootstrap, batch, RAW-vs-RLE encoding, standalone RLE, and the combined regression pack summaries surface `startup_packet_reader_elapsed_ms` and `startup_packet_queue_lag_ms`.
+- Bootstrap candidate radius `0`: first stream `1` chunk, startup packet/reader elapsed/queue lag/chunk decode/first mesh work `72.365ms / 3.172ms / 13.247ms / 0.245ms / 5.228ms`.
+- Batch candidate `64`: streamed `394` chunks over `9` batches, startup packet/reader elapsed/queue lag/chunk decode/first mesh work `89.889ms / 2.176ms / 12.178ms / 0.355ms / 3.563ms`.
+- Encoding RLE: `394` chunks, wire percent `0.004168%`, startup packet/reader elapsed/queue lag/chunk decode/first mesh work `85.763ms / 1.945ms / 15.751ms / 0.242ms / 4.430ms`.
+- Standalone RLE retry: `394` chunks, wire percent `0.004168%`, startup packet/reader elapsed/queue lag/chunk decode/first mesh work `70.480ms / 2.891ms / 10.885ms / 0.233ms / 3.965ms`.
+- Current evidence points away from server first-stream send, packet decode, and chunk decode as the remaining startup wall-clock bottleneck for default RLE radius `0`; the next useful optimization target is earlier client connection/reader startup or Godot main-thread scheduling before packet processing.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:

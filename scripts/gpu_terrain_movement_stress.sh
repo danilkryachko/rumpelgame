@@ -213,6 +213,8 @@ write_summary() {
   startup_chunk_packet_ms="$(float_metric startup_chunk_packet_ms "$marker_path")"
   startup_packet_read_work_ms="$(float_metric startup_packet_read_work_ms "$marker_path")"
   startup_packet_decode_work_ms="$(float_metric startup_packet_decode_work_ms "$marker_path")"
+  startup_packet_reader_elapsed_ms="$(float_metric startup_packet_reader_elapsed_ms "$marker_path")"
+  startup_packet_queue_lag_ms="$(float_metric startup_packet_queue_lag_ms "$marker_path")"
   startup_chunk_decode_work_ms="$(float_metric startup_chunk_decode_work_ms "$marker_path")"
   startup_chunk_inserted_ms="$(float_metric startup_chunk_inserted_ms "$marker_path")"
   startup_chunk_loaded_ms="$(float_metric startup_chunk_loaded_ms "$marker_path")"
@@ -234,6 +236,8 @@ write_summary() {
   require_positive_float startup_chunk_packet_ms "$startup_chunk_packet_ms"
   test -n "$startup_packet_read_work_ms" || fail "missing startup_packet_read_work_ms in $marker_path"
   test -n "$startup_packet_decode_work_ms" || fail "missing startup_packet_decode_work_ms in $marker_path"
+  test -n "$startup_packet_reader_elapsed_ms" || fail "missing startup_packet_reader_elapsed_ms in $marker_path"
+  test -n "$startup_packet_queue_lag_ms" || fail "missing startup_packet_queue_lag_ms in $marker_path"
   test -n "$startup_chunk_decode_work_ms" || fail "missing startup_chunk_decode_work_ms in $marker_path"
   require_positive_float startup_chunk_inserted_ms "$startup_chunk_inserted_ms"
   require_positive_float startup_chunk_loaded_ms "$startup_chunk_loaded_ms"
@@ -293,6 +297,8 @@ write_summary() {
     -v startup_chunk_packet_ms="$startup_chunk_packet_ms" \
     -v startup_packet_read_work_ms="${startup_packet_read_work_ms:-0}" \
     -v startup_packet_decode_work_ms="${startup_packet_decode_work_ms:-0}" \
+    -v startup_packet_reader_elapsed_ms="${startup_packet_reader_elapsed_ms:-0}" \
+    -v startup_packet_queue_lag_ms="${startup_packet_queue_lag_ms:-0}" \
     -v startup_chunk_decode_work_ms="${startup_chunk_decode_work_ms:-0}" \
     -v startup_chunk_inserted_ms="$startup_chunk_inserted_ms" \
     -v startup_chunk_loaded_ms="$startup_chunk_loaded_ms" \
@@ -315,7 +321,7 @@ write_summary() {
         }
         printf("GPU terrain movement stress summary target_fps=%.0f budget_ms=%.3f\n", 1000.0 / budget, budget)
         printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f queue_uploads_avg=%.2f queue_uploads_max=%.0f queue_upload_kb_avg=%.1f queue_upload_kb_max=%.1f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_effective_draws=%d gpu_draw_repeat=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_scene_target_create=%d gpu_scene_target_reuse=%d gpu_scene_target_replace=%d gpu_uniform_set_create=%d gpu_atlas_texture_create=%d gpu_atlas_sampler_create=%d gpu_push_constant_bytes=%d gpu_push_constant_updates=%d gpu_push_constant_total_bytes=%d gpu_push_constant_avg_bytes=%.1f gpu_push_constant_camera_bytes=%d gpu_push_constant_lighting_bytes=%d gpu_push_constant_atlas_bytes=%d gpu_cull=%s gpu_front_face=%s gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, terrain_queue_uploads_avg, terrain_queue_uploads_max, terrain_queue_upload_kb_avg, terrain_queue_upload_kb_max, mesh_avg, mesh_max, coll_avg, coll_max, gpu_effective_draws, gpu_draw_repeat, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_scene_target_create, gpu_scene_target_reuse, gpu_scene_target_replace, gpu_uniform_set_create, gpu_atlas_texture_create, gpu_atlas_sampler_create, gpu_push_constant_bytes, gpu_push_constant_updates, gpu_push_constant_total_bytes, gpu_push_constant_avg_bytes, gpu_push_constant_camera_bytes, gpu_push_constant_lighting_bytes, gpu_push_constant_atlas_bytes, gpu_cull, gpu_front_face, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
-        printf("movement_startup packet_ms=%.3f packet_read_work_ms=%.3f packet_decode_work_ms=%.3f chunk_decode_work_ms=%.3f chunk_inserted_ms=%.3f chunk_loaded_ms=%.3f mesh_queued_ms=%.3f mesh_dispatched_ms=%.3f first_mesh_ms=%.3f first_mesh_work_ms=%.3f first_mesh_phase_ms=%s first_mesh_collision_work_ms=%.3f collision_ms=%.3f player_spawn_ms=%.3f\n", startup_chunk_packet_ms, startup_packet_read_work_ms, startup_packet_decode_work_ms, startup_chunk_decode_work_ms, startup_chunk_inserted_ms, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_mesh_dispatched_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_phase_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms)
+        printf("movement_startup packet_ms=%.3f packet_read_work_ms=%.3f packet_decode_work_ms=%.3f packet_reader_elapsed_ms=%.3f packet_queue_lag_ms=%.3f chunk_decode_work_ms=%.3f chunk_inserted_ms=%.3f chunk_loaded_ms=%.3f mesh_queued_ms=%.3f mesh_dispatched_ms=%.3f first_mesh_ms=%.3f first_mesh_work_ms=%.3f first_mesh_phase_ms=%s first_mesh_collision_work_ms=%.3f collision_ms=%.3f player_spawn_ms=%.3f\n", startup_chunk_packet_ms, startup_packet_read_work_ms, startup_packet_decode_work_ms, startup_packet_reader_elapsed_ms, startup_packet_queue_lag_ms, startup_chunk_decode_work_ms, startup_chunk_inserted_ms, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_mesh_dispatched_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_phase_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms)
       }
     ' > "$summary_path"
   cat "$summary_path"

@@ -13,11 +13,14 @@ pub struct NetworkClient {
 pub struct PacketReadTiming {
     pub read_ms: f64,
     pub decode_ms: f64,
+    pub reader_elapsed_ms: f64,
+    pub queue_lag_ms: f64,
 }
 
 pub struct PacketReadRecord {
     pub packet: Packet,
     pub timing: PacketReadTiming,
+    pub received_at: Instant,
 }
 
 impl NetworkClient {
@@ -37,6 +40,13 @@ impl NetworkClient {
     }
 
     pub fn receive_packet_with_timing(&mut self) -> Result<PacketReadRecord, std::io::Error> {
+        self.receive_packet_with_timing_since(Instant::now())
+    }
+
+    pub fn receive_packet_with_timing_since(
+        &mut self,
+        reader_start: Instant,
+    ) -> Result<PacketReadRecord, std::io::Error> {
         let read_start = Instant::now();
         let mut len_buf = [0u8; 4];
         self.stream.read_exact(&mut len_buf)?;
@@ -57,10 +67,18 @@ impl NetworkClient {
         let packet = Packet::decode(&data_buf[..])
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let decode_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
+        let received_at = Instant::now();
+        let reader_elapsed_ms = reader_start.elapsed().as_secs_f64() * 1000.0;
 
         Ok(PacketReadRecord {
             packet,
-            timing: PacketReadTiming { read_ms, decode_ms },
+            timing: PacketReadTiming {
+                read_ms,
+                decode_ms,
+                reader_elapsed_ms,
+                queue_lag_ms: 0.0,
+            },
+            received_at,
         })
     }
 

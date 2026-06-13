@@ -120,6 +120,8 @@ grep -q "Chunk stream batch" "$RUN_LOG" || fail "missing chunk stream batch metr
 startup_chunk_packet_ms="$(summary_metric movement_startup packet_ms "$MOVEMENT_SUMMARY")"
 startup_packet_read_work_ms="$(summary_metric movement_startup packet_read_work_ms "$MOVEMENT_SUMMARY")"
 startup_packet_decode_work_ms="$(summary_metric movement_startup packet_decode_work_ms "$MOVEMENT_SUMMARY")"
+startup_packet_reader_elapsed_ms="$(summary_metric movement_startup packet_reader_elapsed_ms "$MOVEMENT_SUMMARY")"
+startup_packet_queue_lag_ms="$(summary_metric movement_startup packet_queue_lag_ms "$MOVEMENT_SUMMARY")"
 startup_chunk_decode_work_ms="$(summary_metric movement_startup chunk_decode_work_ms "$MOVEMENT_SUMMARY")"
 startup_chunk_inserted_ms="$(summary_metric movement_startup chunk_inserted_ms "$MOVEMENT_SUMMARY")"
 startup_chunk_loaded_ms="$(summary_metric movement_startup chunk_loaded_ms "$MOVEMENT_SUMMARY")"
@@ -144,6 +146,8 @@ awk \
   -v startup_chunk_packet_ms="$startup_chunk_packet_ms" \
   -v startup_packet_read_work_ms="${startup_packet_read_work_ms:-0}" \
   -v startup_packet_decode_work_ms="${startup_packet_decode_work_ms:-0}" \
+  -v startup_packet_reader_elapsed_ms="${startup_packet_reader_elapsed_ms:-0}" \
+  -v startup_packet_queue_lag_ms="${startup_packet_queue_lag_ms:-0}" \
   -v startup_chunk_decode_work_ms="${startup_chunk_decode_work_ms:-0}" \
   -v startup_chunk_inserted_ms="$startup_chunk_inserted_ms" \
   -v startup_chunk_loaded_ms="$startup_chunk_loaded_ms" \
@@ -185,7 +189,7 @@ awk \
       printf("wire is not below 1%% of raw raw=%d wire=%d\n", raw, wire) > "/dev/stderr"
       exit 1
     }
-    printf("world_streaming_rle_movement status=pass batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f startup_chunk_packet_ms=%.3f startup_packet_read_work_ms=%.3f startup_packet_decode_work_ms=%.3f startup_chunk_decode_work_ms=%.3f startup_chunk_inserted_ms=%.3f startup_chunk_loaded_ms=%.3f startup_mesh_queued_ms=%.3f startup_mesh_dispatched_ms=%.3f startup_first_mesh_ms=%.3f startup_first_mesh_work_ms=%.3f startup_first_mesh_collision_work_ms=%.3f startup_collision_ms=%.3f startup_player_spawn_ms=%.3f marker=%s run_log=%s\n", batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, startup_chunk_packet_ms, startup_packet_read_work_ms, startup_packet_decode_work_ms, startup_chunk_decode_work_ms, startup_chunk_inserted_ms, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_mesh_dispatched_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms, marker_path, run_log)
+    printf("world_streaming_rle_movement status=pass batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f startup_chunk_packet_ms=%.3f startup_packet_read_work_ms=%.3f startup_packet_decode_work_ms=%.3f startup_packet_reader_elapsed_ms=%.3f startup_packet_queue_lag_ms=%.3f startup_chunk_decode_work_ms=%.3f startup_chunk_inserted_ms=%.3f startup_chunk_loaded_ms=%.3f startup_mesh_queued_ms=%.3f startup_mesh_dispatched_ms=%.3f startup_first_mesh_ms=%.3f startup_first_mesh_work_ms=%.3f startup_first_mesh_collision_work_ms=%.3f startup_collision_ms=%.3f startup_player_spawn_ms=%.3f marker=%s run_log=%s\n", batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, startup_chunk_packet_ms, startup_packet_read_work_ms, startup_packet_decode_work_ms, startup_packet_reader_elapsed_ms, startup_packet_queue_lag_ms, startup_chunk_decode_work_ms, startup_chunk_inserted_ms, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_mesh_dispatched_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms, marker_path, run_log)
   }
 ' marker_path="$MARKER_PATH" run_log="$RUN_LOG" "$RUN_LOG" > "$SUMMARY_PATH"
 
