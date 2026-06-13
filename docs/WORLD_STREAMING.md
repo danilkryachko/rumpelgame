@@ -9,7 +9,8 @@ This document tracks the chunk-loading path and planned optimizations for faster
 - A full raw chunk payload is `1,048,576` bytes before protobuf and TCP framing.
 - `server/pkg/network` sends RLE `ChunkData.blocks` by default after the Rust client decodes them back to the same raw block bytes.
 - `RUMPELMC_SERVER_CHUNK_ENCODING=raw` switches chunk payloads back to the raw full chunk rollback path.
-- The default server stream sends up to `6` chunks per update, ordered nearest-first by chunk distance.
+- The default server stream sends up to `64` chunks per update, ordered nearest-first by chunk distance.
+- `RUMPELMC_SERVER_CHUNKS_PER_UPDATE=6` restores the previous conservative stream batch.
 
 ## First Optimization Path
 
@@ -115,7 +116,7 @@ The RLE batch-size comparison gate is:
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release /bin/sh scripts/world_streaming_batch_compare.sh logs/world_streaming_batch_compare_20260613_retry
 ```
 
-It runs the same movement stress twice with the default RLE encoding, first with the current default `RUMPELMC_SERVER_CHUNKS_PER_UPDATE=6` and then with candidate batch `64`, validates movement/collision/ground/upload markers, records chunk stream metrics, and writes `world-streaming-batch-compare-summary.txt`. This gate is evidence-only; it does not change the default batch size.
+It runs the same movement stress twice with the default RLE encoding, first with rollback batch `RUMPELMC_SERVER_CHUNKS_PER_UPDATE=6` and then with candidate/default batch `64`, validates movement/collision/ground/upload markers, records chunk stream metrics, and writes `world-streaming-batch-compare-summary.txt`.
 
 Fresh batch comparison result:
 
@@ -124,12 +125,28 @@ Fresh batch comparison result:
 - Batch `6`: `22` stream batches, `132` chunks, payload/wire percent of raw `0.001912%` / `0.004075%`, `terrain_queue_max_ms=2.065`, `process_wall_p95_ms=0.035`, `gpu_compositor_submit_max_ms=0.109`.
 - Batch `64`: `8` stream batches, `394` chunks, payload/wire percent of raw `0.001782%` / `0.004168%`, `terrain_queue_max_ms=1.560`, `process_wall_p95_ms=0.036`, `gpu_compositor_submit_max_ms=0.109`.
 
+Fresh default batch `64` result with `RUMPELMC_SERVER_CHUNKS_PER_UPDATE` unset:
+
+- Summary: `logs/world_streaming_default_batch64_20260613/world-streaming-default-batch64-summary.txt`.
+- Status: `pass`.
+- Batches/chunks: `8` / `394`.
+- Raw/payload/wire bytes: `413,138,944` / `7,362` / `17,219`.
+- Payload/wire percent of raw: `0.001782%` / `0.004168%`.
+- Client markers: `current_chunk_loaded=1`, `current_chunk_collision=2`, `ground_hits=9`, `gpu_upload_fail=0`, and `chunk_initial=394`.
+
+Fresh post-default batch comparison result:
+
+- Summary: `logs/world_streaming_batch_default64_compare_20260613/world-streaming-batch-compare-summary.txt`.
+- Status: `pass`.
+- Rollback batch `6`: `22` stream batches, `132` chunks, `terrain_queue_max_ms=1.648`, `process_wall_p95_ms=0.038`, `gpu_compositor_submit_max_ms=0.138`.
+- Default batch `64`: `8` stream batches, `394` chunks, `terrain_queue_max_ms=1.903`, `process_wall_p95_ms=0.038`, `gpu_compositor_submit_max_ms=0.159`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:
 
 ```text
-Chunk stream batch center=0,0 chunks=6 raw_bytes=6291456 payload_bytes=... wire_bytes=... elapsed_ms=... chunks_per_sec=...
+Chunk stream batch center=0,0 chunks=64 raw_bytes=67108864 payload_bytes=... wire_bytes=... elapsed_ms=... chunks_per_sec=...
 ```
 
 The metric is off by default and does not change packet payloads. Use it with the default RLE stream and with `RUMPELMC_SERVER_CHUNK_ENCODING=raw` rollback to compare payload shrinkage and batch throughput with the same log shape.

@@ -19,7 +19,7 @@ import (
 const maxPacketSize = 16 * 1024 * 1024
 const defaultViewDistance int32 = 10
 const maxViewDistance int32 = 16
-const defaultChunksPerUpdate = 6
+const defaultChunksPerUpdate = 64
 const viewDistanceEnv = "RUMPELMC_SERVER_VIEW_DISTANCE"
 const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
 const chunkStreamMetricsEnv = "RUMPELMC_SERVER_CHUNK_STREAM_METRICS"
