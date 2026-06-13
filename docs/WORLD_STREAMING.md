@@ -211,6 +211,14 @@ Fresh post-default radius `0` comparison result:
 - Rollback full startup: first stream `radius=10`, `64` chunks, total `394` chunks over `8` batches, `terrain_queue_max_ms=1.989`, `process_wall_p95_ms=0.033`, `gpu_compositor_submit_max_ms=0.224`.
 - Default bootstrap radius `0`: first stream `radius=0`, `1` chunk, total `394` chunks over `9` batches, `terrain_queue_max_ms=1.728`, `process_wall_p95_ms=0.044`, `gpu_compositor_submit_max_ms=0.102`.
 
+Fresh initial player startup contract result:
+
+- Summary: `logs/world_streaming_initial_contract_default0_20260613/world-streaming-bootstrap-compare-summary.txt`.
+- Status: `pass`.
+- The Rust client now derives the initial position packet, spawn position, and pre-spawn mesh subchunks from one startup contract.
+- Rollback full startup: first stream `radius=10`, `64` chunks, total `394` chunks over `8` batches, `terrain_queue_max_ms=1.008`, `process_wall_p95_ms=0.022`, `gpu_compositor_submit_max_ms=0.339`.
+- Default bootstrap radius `0`: first stream `radius=0`, `1` chunk, total `394` chunks over `9` batches, `terrain_queue_max_ms=1.340`, `process_wall_p95_ms=0.020`, `gpu_compositor_submit_max_ms=0.195`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:

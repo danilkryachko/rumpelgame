@@ -128,9 +128,9 @@ impl INode for GameClient {
                 let initial_position = crate::api::Packet {
                     payload: Some(crate::api::packet::Payload::Position(
                         crate::api::ClientPosition {
-                            x: 16.0,
-                            y: 68.0,
-                            z: 16.0,
+                            x: INITIAL_PLAYER_X,
+                            y: INITIAL_PLAYER_Y,
+                            z: INITIAL_PLAYER_Z,
                         },
                     )),
                 };
@@ -260,7 +260,7 @@ impl GameClient {
 
         let mut player_node = player.upcast::<godot::classes::Node3D>();
         player_node.set_name(&StringName::from("Player"));
-        player_node.set_position(Vector3::new(16.0, 68.0, 16.0));
+        player_node.set_position(initial_player_position());
 
         self.base_mut()
             .add_child(&player_node.upcast::<godot::classes::Node>());
@@ -361,21 +361,11 @@ impl GameClient {
             self.unload_far_chunks(center);
         }
 
-        if chunk_x == 0 && chunk_z == 0 {
-            let spawn_lower = SubchunkKey {
-                chunk_x: 0,
-                sub_y: 0,
-                chunk_z: 0,
-            };
-            let spawn_upper = SubchunkKey {
-                chunk_x: 0,
-                sub_y: 1,
-                chunk_z: 0,
-            };
-            self.queued_subchunks.remove(&spawn_lower);
-            self.queued_subchunks.remove(&spawn_upper);
-            self.render_subchunk_mesh(spawn_lower, MeshQueueReason::GeometryChanged);
-            self.render_subchunk_mesh(spawn_upper, MeshQueueReason::GeometryChanged);
+        if (chunk_x, chunk_z) == initial_player_chunk() {
+            for key in initial_spawn_mesh_subchunks() {
+                self.queued_subchunks.remove(&key);
+                self.render_subchunk_mesh(key, MeshQueueReason::GeometryChanged);
+            }
             self.spawn_player();
         }
     }
@@ -2604,6 +2594,9 @@ const CHUNK_H: usize = 512;
 const CHUNK_D: usize = 32;
 const SUBCHUNK_H: usize = 32;
 const SUBCHUNKS_PER_CHUNK: i32 = (CHUNK_H / SUBCHUNK_H) as i32;
+const INITIAL_PLAYER_X: f32 = 16.0;
+const INITIAL_PLAYER_Y: f32 = 68.0;
+const INITIAL_PLAYER_Z: f32 = 16.0;
 const DIRTY_EDGE_NEG_X: u8 = 1 << 0;
 const DIRTY_EDGE_POS_X: u8 = 1 << 1;
 const DIRTY_EDGE_NEG_Z: u8 = 1 << 2;
@@ -2731,6 +2724,30 @@ fn client_keep_chunk_distance() -> i32 {
             .map(|radius| radius.clamp(1, MAX_CLIENT_KEEP_CHUNK_DISTANCE))
             .unwrap_or(CLIENT_KEEP_CHUNK_DISTANCE)
     })
+}
+
+fn initial_player_position() -> Vector3 {
+    Vector3::new(INITIAL_PLAYER_X, INITIAL_PLAYER_Y, INITIAL_PLAYER_Z)
+}
+
+fn initial_player_chunk() -> (i32, i32) {
+    chunk_coord_for_position(INITIAL_PLAYER_X, INITIAL_PLAYER_Z)
+}
+
+fn initial_spawn_mesh_subchunks() -> [SubchunkKey; 2] {
+    let (chunk_x, chunk_z) = initial_player_chunk();
+    [
+        SubchunkKey {
+            chunk_x,
+            sub_y: 0,
+            chunk_z,
+        },
+        SubchunkKey {
+            chunk_x,
+            sub_y: 1,
+            chunk_z,
+        },
+    ]
 }
 
 fn client_chunk_unload_grace_sec() -> f64 {
@@ -4786,6 +4803,21 @@ mod tests {
         assert!(!subchunk_needs_collision(near, None));
         assert!(subchunk_needs_collision(near, Some((5, -7))));
         assert!(!subchunk_needs_collision(far, Some((5, -7))));
+    }
+
+    #[test]
+    fn initial_player_startup_contract_targets_current_chunk() {
+        let spawn_chunk = initial_player_chunk();
+        assert_eq!(spawn_chunk, (0, 0));
+        assert_eq!(
+            chunk_coord_for_position(INITIAL_PLAYER_X, INITIAL_PLAYER_Z),
+            spawn_chunk
+        );
+
+        for key in initial_spawn_mesh_subchunks() {
+            assert_eq!((key.chunk_x, key.chunk_z), spawn_chunk);
+            assert!(subchunk_needs_collision(key, None));
+        }
     }
 
     #[test]
