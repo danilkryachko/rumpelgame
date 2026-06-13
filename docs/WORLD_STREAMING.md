@@ -279,6 +279,18 @@ Fresh startup timing gate result:
 - Rollback full startup: first stream `radius=10`, `64` chunks, startup chunk/collision/player spawn `120.459ms / 120.459ms / 120.459ms`, total `394` chunks over `8` batches, `terrain_queue_max_ms=2.151`, `process_wall_p95_ms=0.052`, `gpu_compositor_submit_max_ms=0.208`.
 - Default bootstrap radius `0`: first stream `radius=0`, `1` chunk, startup chunk/collision/player spawn `78.157ms / 78.157ms / 78.157ms`, total `394` chunks over `9` batches, `terrain_queue_max_ms=4.510`, `process_wall_p95_ms=0.053`, `gpu_compositor_submit_max_ms=0.132`.
 
+Fresh startup phase telemetry result:
+
+- Summary: `logs/world_streaming_startup_phase_regression_20260613_retry/world-streaming-regression-summary.txt`.
+- Status: `pass`.
+- The Rust client marker now splits startup readiness into `startup_chunk_loaded_ms`, `startup_mesh_queued_ms`, `startup_first_mesh_ms`, `startup_collision_ms`, and `startup_player_spawn_ms`; movement, bootstrap, batch, RAW-vs-RLE encoding, standalone RLE, and the combined regression pack summaries surface the same fields where relevant.
+- `scripts/gpu_terrain_movement_stress.sh` now requires startup timings to be ordered as `chunk_loaded_ms <= mesh_queued_ms <= first_mesh_ms <= collision_ms <= player_spawn_ms`.
+- The first runtime attempt in `logs/world_streaming_startup_phase_regression_20260613` hit the known screenshot-capture timeout after movement reached chunk `3,2`; retrying with `GODOT_TIMEOUT_SEC=240` passed.
+- Bootstrap candidate radius `0`: first stream `1` chunk, startup first mesh/player spawn `94.706ms / 94.706ms`.
+- Batch candidate `64`: streamed `394` chunks over `9` batches, startup first mesh/player spawn `87.334ms / 87.334ms`.
+- Encoding RLE: `394` chunks, wire percent `0.004168%`, startup first mesh/player spawn `93.806ms / 93.806ms`.
+- Standalone RLE: `394` chunks, wire percent `0.004168%`, startup first mesh/player spawn `90.329ms / 90.329ms`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:

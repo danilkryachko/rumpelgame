@@ -126,15 +126,19 @@ require_pass_summary rle "$RLE_SUMMARY"
 
 bootstrap_candidate_first_chunks="$(metric candidate_first_chunks "$BOOTSTRAP_SUMMARY")"
 bootstrap_candidate_startup_player_spawn="$(metric candidate_startup_player_spawn_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_first_mesh="$(metric candidate_startup_first_mesh_ms "$BOOTSTRAP_SUMMARY")"
 batch_candidate_chunks="$(metric candidate_chunks "$BATCH_SUMMARY")"
 batch_candidate_batches="$(metric candidate_batches "$BATCH_SUMMARY")"
 batch_candidate_startup_player_spawn="$(metric candidate_startup_player_spawn_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_first_mesh="$(metric candidate_startup_first_mesh_ms "$BATCH_SUMMARY")"
 encoding_rle_chunks="$(metric rle_chunks "$ENCODING_SUMMARY")"
 encoding_rle_wire_pct="$(metric rle_wire_pct "$ENCODING_SUMMARY")"
 encoding_rle_startup_player_spawn="$(metric rle_startup_player_spawn_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_first_mesh="$(metric rle_startup_first_mesh_ms "$ENCODING_SUMMARY")"
 rle_chunks="$(metric chunks "$RLE_SUMMARY")"
 rle_wire_pct="$(metric wire_pct "$RLE_SUMMARY")"
 rle_startup_player_spawn="$(metric startup_player_spawn_ms "$RLE_SUMMARY")"
+rle_startup_first_mesh="$(metric startup_first_mesh_ms "$RLE_SUMMARY")"
 
 test -n "$bootstrap_candidate_first_chunks" || fail "missing bootstrap candidate_first_chunks"
 test -n "$batch_candidate_chunks" || fail "missing batch candidate_chunks"
@@ -143,22 +147,26 @@ test -n "$rle_chunks" || fail "missing rle chunks"
 
 awk \
   -v bootstrap_candidate_first_chunks="$bootstrap_candidate_first_chunks" \
+  -v bootstrap_candidate_startup_first_mesh="$bootstrap_candidate_startup_first_mesh" \
   -v bootstrap_candidate_startup_player_spawn="$bootstrap_candidate_startup_player_spawn" \
   -v batch_candidate_chunks="$batch_candidate_chunks" \
   -v batch_candidate_batches="$batch_candidate_batches" \
+  -v batch_candidate_startup_first_mesh="$batch_candidate_startup_first_mesh" \
   -v batch_candidate_startup_player_spawn="$batch_candidate_startup_player_spawn" \
   -v encoding_rle_chunks="$encoding_rle_chunks" \
   -v encoding_rle_wire_pct="$encoding_rle_wire_pct" \
+  -v encoding_rle_startup_first_mesh="$encoding_rle_startup_first_mesh" \
   -v encoding_rle_startup_player_spawn="$encoding_rle_startup_player_spawn" \
   -v rle_chunks="$rle_chunks" \
   -v rle_wire_pct="$rle_wire_pct" \
+  -v rle_startup_first_mesh="$rle_startup_first_mesh" \
   -v rle_startup_player_spawn="$rle_startup_player_spawn" \
   -v bootstrap_summary="$BOOTSTRAP_SUMMARY" \
   -v batch_summary="$BATCH_SUMMARY" \
   -v encoding_summary="$ENCODING_SUMMARY" \
   -v rle_summary="$RLE_SUMMARY" '
   BEGIN {
-    printf("world_streaming_regression status=pass bootstrap_candidate_first_chunks=%d bootstrap_candidate_startup_player_spawn_ms=%.3f batch_candidate_chunks=%d batch_candidate_batches=%d batch_candidate_startup_player_spawn_ms=%.3f encoding_rle_chunks=%d encoding_rle_wire_pct=%.6f encoding_rle_startup_player_spawn_ms=%.3f rle_chunks=%d rle_wire_pct=%.6f rle_startup_player_spawn_ms=%.3f bootstrap_summary=%s batch_summary=%s encoding_summary=%s rle_summary=%s\n", bootstrap_candidate_first_chunks, bootstrap_candidate_startup_player_spawn, batch_candidate_chunks, batch_candidate_batches, batch_candidate_startup_player_spawn, encoding_rle_chunks, encoding_rle_wire_pct, encoding_rle_startup_player_spawn, rle_chunks, rle_wire_pct, rle_startup_player_spawn, bootstrap_summary, batch_summary, encoding_summary, rle_summary)
+    printf("world_streaming_regression status=pass bootstrap_candidate_first_chunks=%d bootstrap_candidate_startup_first_mesh_ms=%.3f bootstrap_candidate_startup_player_spawn_ms=%.3f batch_candidate_chunks=%d batch_candidate_batches=%d batch_candidate_startup_first_mesh_ms=%.3f batch_candidate_startup_player_spawn_ms=%.3f encoding_rle_chunks=%d encoding_rle_wire_pct=%.6f encoding_rle_startup_first_mesh_ms=%.3f encoding_rle_startup_player_spawn_ms=%.3f rle_chunks=%d rle_wire_pct=%.6f rle_startup_first_mesh_ms=%.3f rle_startup_player_spawn_ms=%.3f bootstrap_summary=%s batch_summary=%s encoding_summary=%s rle_summary=%s\n", bootstrap_candidate_first_chunks, bootstrap_candidate_startup_first_mesh, bootstrap_candidate_startup_player_spawn, batch_candidate_chunks, batch_candidate_batches, batch_candidate_startup_first_mesh, batch_candidate_startup_player_spawn, encoding_rle_chunks, encoding_rle_wire_pct, encoding_rle_startup_first_mesh, encoding_rle_startup_player_spawn, rle_chunks, rle_wire_pct, rle_startup_first_mesh, rle_startup_player_spawn, bootstrap_summary, batch_summary, encoding_summary, rle_summary)
   }
 ' > "$SUMMARY_PATH"
 
