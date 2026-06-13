@@ -96,6 +96,20 @@ default_float() {
   fi
 }
 
+require_positive_float() {
+  key="$1"
+  value="$2"
+  test -n "$value" || fail "missing $key in $marker_path"
+  awk -v key="$key" -v value="$value" '
+    BEGIN {
+      if (value <= 0.0) {
+        printf("gpu_terrain_movement_stress: %s %.3f must be positive\n", key, value) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
 mesh_triplet_value() {
   marker_path="$1"
   index="$2"
@@ -169,9 +183,9 @@ write_summary() {
   gpu_push_constant_atlas_bytes="$(metric gpu_push_constant_atlas_bytes "$marker_path")"
   gpu_cull="$(text_metric gpu_cull "$marker_path")"
   gpu_front_face="$(text_metric gpu_front_face "$marker_path")"
-  startup_chunk_loaded_ms="$(default_float "$(float_metric startup_chunk_loaded_ms "$marker_path")")"
-  startup_collision_ms="$(default_float "$(float_metric startup_collision_ms "$marker_path")")"
-  startup_player_spawn_ms="$(default_float "$(float_metric startup_player_spawn_ms "$marker_path")")"
+  startup_chunk_loaded_ms="$(float_metric startup_chunk_loaded_ms "$marker_path")"
+  startup_collision_ms="$(float_metric startup_collision_ms "$marker_path")"
+  startup_player_spawn_ms="$(float_metric startup_player_spawn_ms "$marker_path")"
   frame_p95="$(float_metric frame_p95_ms "$marker_path")"
   fps_p05="$(float_metric fps_p05 "$marker_path")"
   process_wall_p95="$(float_metric process_wall_p95_ms "$marker_path")"
@@ -179,6 +193,9 @@ write_summary() {
   test -n "$mesh_avg" || fail "missing mesh triplet in $marker_path"
   test -n "$coll_avg" || fail "missing coll triplet in $marker_path"
   test -n "$process_wall_p95" || fail "missing process_wall_p95_ms in $marker_path"
+  require_positive_float startup_chunk_loaded_ms "$startup_chunk_loaded_ms"
+  require_positive_float startup_collision_ms "$startup_collision_ms"
+  require_positive_float startup_player_spawn_ms "$startup_player_spawn_ms"
   awk \
     -v budget="$budget_ms" \
     -v terrain_queue_avg="$terrain_queue_avg" \

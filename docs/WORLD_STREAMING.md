@@ -236,6 +236,15 @@ Fresh startup timing telemetry result:
 - Rollback full startup: first stream `radius=10`, `64` chunks, startup player spawn `105.392ms`, total `394` chunks over `8` batches, `terrain_queue_max_ms=2.139`, `process_wall_p95_ms=0.050`, `gpu_compositor_submit_max_ms=0.140`.
 - Default bootstrap radius `0`: first stream `radius=0`, `1` chunk, startup player spawn `70.746ms`, total `394` chunks over `9` batches, `terrain_queue_max_ms=2.151`, `process_wall_p95_ms=0.051`, `gpu_compositor_submit_max_ms=0.159`.
 
+Fresh startup timing gate result:
+
+- Summary: `logs/world_streaming_startup_metric_gate_20260613/world-streaming-bootstrap-compare-summary.txt`.
+- Status: `pass`.
+- `scripts/gpu_terrain_movement_stress.sh` now fails if `startup_chunk_loaded_ms`, `startup_collision_ms`, or `startup_player_spawn_ms` is missing or non-positive, and `scripts/world_streaming_bootstrap_compare.sh` enforces the same requirement before writing per-run summaries.
+- The final bootstrap compare summary now includes base/candidate `startup_chunk_loaded_ms`, `startup_collision_ms`, and `startup_player_spawn_ms` so startup readiness regressions are visible in the top-level artifact.
+- Rollback full startup: first stream `radius=10`, `64` chunks, startup chunk/collision/player spawn `120.459ms / 120.459ms / 120.459ms`, total `394` chunks over `8` batches, `terrain_queue_max_ms=2.151`, `process_wall_p95_ms=0.052`, `gpu_compositor_submit_max_ms=0.208`.
+- Default bootstrap radius `0`: first stream `radius=0`, `1` chunk, startup chunk/collision/player spawn `78.157ms / 78.157ms / 78.157ms`, total `394` chunks over `9` batches, `terrain_queue_max_ms=4.510`, `process_wall_p95_ms=0.053`, `gpu_compositor_submit_max_ms=0.132`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:
