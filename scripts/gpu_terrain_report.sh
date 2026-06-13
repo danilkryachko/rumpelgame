@@ -443,6 +443,8 @@ error_scan() {
   printf -- '- max `transparent_fixture_overlay_requested`: `%s`\n' "$(metric_max transparent_fixture_overlay_requested)"
   printf -- '- max `transparent_fixture_overlay_active`: `%s`\n' "$(metric_max transparent_fixture_overlay_active)"
   printf -- '- max `transparent_fixture_overlay_fallback`: `%s`\n' "$(metric_max transparent_fixture_overlay_fallback)"
+  printf -- '- max `transparent_fixture_overlay_roles`: `%s`\n' "$(metric_max transparent_fixture_overlay_roles)"
+  printf -- '- max `transparent_fixture_overlay_blocks`: `%s`\n' "$(metric_max transparent_fixture_overlay_blocks)"
   printf -- '- max `compact_shadow_proxy`: `%s`\n' "$(metric_max compact_shadow_proxy)"
   printf -- '- max `compact_shadow_normals_saved`: `%s`\n' "$(metric_max compact_shadow_normals_saved)"
   printf -- '- max `compact_collision_proxy`: `%s`\n' "$(metric_max compact_collision_proxy)"
@@ -497,6 +499,8 @@ error_scan() {
   metric_max_source transparent_fixture_overlay_requested | sed 's/^/- /'
   metric_max_source transparent_fixture_overlay_active | sed 's/^/- /'
   metric_max_source transparent_fixture_overlay_fallback | sed 's/^/- /'
+  metric_max_source transparent_fixture_overlay_roles | sed 's/^/- /'
+  metric_max_source transparent_fixture_overlay_blocks | sed 's/^/- /'
   metric_max_source transparent_blocks | sed 's/^/- /'
   metric_max_source transparent_faces | sed 's/^/- /'
   metric_max_source transparent_draws | sed 's/^/- /'

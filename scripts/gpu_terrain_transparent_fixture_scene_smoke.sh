@@ -100,6 +100,8 @@ require_metric_eq "$marker_path" "transparent_subchunks" 0
 require_metric_eq "$marker_path" "transparent_fixture_overlay_requested" 1
 require_metric_eq "$marker_path" "transparent_fixture_overlay_active" 0
 require_metric_eq "$marker_path" "transparent_fixture_overlay_fallback" 1
+require_metric_eq "$marker_path" "transparent_fixture_overlay_roles" 5
+require_metric_eq "$marker_path" "transparent_fixture_overlay_blocks" 5
 
 {
   printf 'GPU transparent fixture scene smoke summary\n'
@@ -107,7 +109,7 @@ require_metric_eq "$marker_path" "transparent_fixture_overlay_fallback" 1
   printf 'pose=transparent_fixture\n'
   printf 'screenshot=%s\n' "$screenshot_path"
   printf 'marker=%s\n' "$marker_path"
-  printf 'summary transparent_fixture_scene_smoke_status=pass transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 gpu_upload_fail=0\n'
+  printf 'summary transparent_fixture_scene_smoke_status=pass transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 gpu_upload_fail=0\n'
 } > "$OUT_DIR/transparent-fixture-scene-smoke-summary.txt"
 
 cat "$OUT_DIR/transparent-fixture-scene-smoke-summary.txt"

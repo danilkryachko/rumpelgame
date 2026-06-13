@@ -345,6 +345,8 @@ require_transparent_fallback_marker_if_requested() {
     require_metric_eq "$marker_path" "transparent_fixture_overlay_requested" 1
     require_metric_eq "$marker_path" "transparent_fixture_overlay_active" 0
     require_metric_eq "$marker_path" "transparent_fixture_overlay_fallback" 1
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_roles" 5
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_blocks" 5
   fi
 }
 
