@@ -147,7 +147,7 @@ RUMPELMC_SERVER_CHUNK_ENCODING=raw \
   RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1 \
   RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
   RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
-  "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$RAW_DIR" > "$RAW_LOG" 2>&1
+  /bin/sh "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$RAW_DIR" > "$RAW_LOG" 2>&1
 rc=$?
 set -e
 if [ "$rc" -ne 0 ]; then
@@ -159,7 +159,7 @@ cleanup_server
 RUMPELMC_WORLD_STREAMING_SMOKE_BUILD_SERVER=0 \
   RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
   RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
-  "$ROOT_DIR/scripts/world_streaming_rle_movement_smoke.sh" "$RLE_DIR"
+  /bin/sh "$ROOT_DIR/scripts/world_streaming_rle_movement_smoke.sh" "$RLE_DIR"
 
 summarize_stream_metrics raw "$RAW_LOG" "$RAW_DIR/gpu-terrain-movement-stress.png.txt" "$RAW_SUMMARY"
 

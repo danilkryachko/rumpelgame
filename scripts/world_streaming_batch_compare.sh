@@ -186,7 +186,7 @@ run_batch() {
     RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1 \
     RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
     RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
-    "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$run_dir" > "$run_log" 2>&1
+    /bin/sh "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$run_dir" > "$run_log" 2>&1
 }
 
 require_positive_int RUMPELMC_WORLD_STREAMING_BATCH_COMPARE_BASE "$BASE_BATCH"

@@ -80,7 +80,7 @@ RUMPELMC_SERVER_CHUNK_ENCODING=rle \
   RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1 \
   RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
   RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
-  "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$OUT_DIR" > "$RUN_LOG" 2>&1
+  /bin/sh "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$OUT_DIR" > "$RUN_LOG" 2>&1
 rc=$?
 set -e
 
