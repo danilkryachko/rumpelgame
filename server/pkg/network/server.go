@@ -24,6 +24,7 @@ const viewDistanceEnv = "RUMPELMC_SERVER_VIEW_DISTANCE"
 const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
 const chunkStreamMetricsEnv = "RUMPELMC_SERVER_CHUNK_STREAM_METRICS"
 const chunkEncodingEnv = "RUMPELMC_SERVER_CHUNK_ENCODING"
+const initialClientPacketTimeout = 250 * time.Millisecond
 
 type Server struct {
 	address         string
@@ -68,9 +69,21 @@ func (s *Server) handleConnection(conn net.Conn) {
 	log.Printf("Client connected: %s", conn.RemoteAddr())
 
 	sentChunks := make(map[world.ChunkCoord]bool)
-	if err := s.sendChunksAround(conn, 0, 0, sentChunks); err != nil {
-		log.Printf("Failed to send initial chunks: %v", err)
+	firstPacket, hasFirstPacket, err := s.receiveInitialClientPacket(conn)
+	if err != nil {
+		log.Printf("Client disconnected before initial chunk stream: %v", err)
 		return
+	}
+	if hasFirstPacket {
+		if err := s.handleClientPacket(conn, firstPacket, sentChunks); err != nil {
+			log.Printf("Failed to handle initial client packet: %v", err)
+			return
+		}
+	} else {
+		if err := s.sendChunksAround(conn, 0, 0, sentChunks); err != nil {
+			log.Printf("Failed to send initial chunks: %v", err)
+			return
+		}
 	}
 	log.Printf("Started progressive chunk stream radius=%d batch=%d to %s", s.viewDistance, s.chunksPerUpdate, conn.RemoteAddr())
 
@@ -82,45 +95,50 @@ func (s *Server) handleConnection(conn net.Conn) {
 			return
 		}
 
-		switch p := clientPacket.Payload.(type) {
-		case *api.Packet_Position:
-			center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
-			forgetFarSentChunks(sentChunks, center.X, center.Z, s.viewDistance+1)
-			if err := s.sendChunksAround(conn, center.X, center.Z, sentChunks); err != nil {
-				log.Printf("Failed to send chunks around %d,%d: %v", center.X, center.Z, err)
-				return
-			}
-
-		case *api.Packet_BlockAction:
-			action := p.BlockAction
-			log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
-
-			block := world.Air
-			if action.Action == api.BlockAction_DESTROY {
-				block = world.Air
-			} else if action.Action == api.BlockAction_PLACE {
-				block = world.BlockID(action.BlockId)
-				if !world.IsPlaceable(block) {
-					log.Printf("Ignored invalid place block id=%d", action.BlockId)
-					continue
-				}
-			}
-
-			snapshot, err := s.world.SetBlockGlobal(action.X, action.Y, action.Z, block)
-			if err != nil {
-				log.Printf("Failed to update block: %v", err)
-				return
-			}
-
-			if _, err := s.sendChunk(conn, snapshot); err != nil {
-				log.Printf("Failed to send updated chunk %d,%d: %v", snapshot.X, snapshot.Z, err)
-				return
-			}
-
-		default:
-			log.Printf("Unknown packet received")
+		if err := s.handleClientPacket(conn, clientPacket, sentChunks); err != nil {
+			log.Printf("Failed to handle client packet: %v", err)
+			return
 		}
 	}
+}
+
+func (s *Server) handleClientPacket(conn net.Conn, clientPacket *api.Packet, sentChunks map[world.ChunkCoord]bool) error {
+	switch p := clientPacket.Payload.(type) {
+	case *api.Packet_Position:
+		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
+		forgetFarSentChunks(sentChunks, center.X, center.Z, s.viewDistance+1)
+		if err := s.sendChunksAround(conn, center.X, center.Z, sentChunks); err != nil {
+			return fmt.Errorf("send chunks around %d,%d: %w", center.X, center.Z, err)
+		}
+
+	case *api.Packet_BlockAction:
+		action := p.BlockAction
+		log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
+
+		block := world.Air
+		if action.Action == api.BlockAction_DESTROY {
+			block = world.Air
+		} else if action.Action == api.BlockAction_PLACE {
+			block = world.BlockID(action.BlockId)
+			if !world.IsPlaceable(block) {
+				log.Printf("Ignored invalid place block id=%d", action.BlockId)
+				return nil
+			}
+		}
+
+		snapshot, err := s.world.SetBlockGlobal(action.X, action.Y, action.Z, block)
+		if err != nil {
+			return fmt.Errorf("update block: %w", err)
+		}
+
+		if _, err := s.sendChunk(conn, snapshot); err != nil {
+			return fmt.Errorf("send updated chunk %d,%d: %w", snapshot.X, snapshot.Z, err)
+		}
+
+	default:
+		log.Printf("Unknown packet received")
+	}
+	return nil
 }
 
 func forgetFarSentChunks(sentChunks map[world.ChunkCoord]bool, centerX, centerZ, distance int32) {
@@ -265,6 +283,27 @@ func (s *chunkStreamBatchStats) add(stats chunkSendStats) {
 
 func framedPacketSize(packet *api.Packet) int {
 	return 4 + proto.Size(packet)
+}
+
+func (s *Server) receiveInitialClientPacket(conn net.Conn) (*api.Packet, bool, error) {
+	if err := conn.SetReadDeadline(time.Now().Add(initialClientPacketTimeout)); err != nil {
+		return nil, false, err
+	}
+	packet, err := s.receivePacket(conn)
+	clearErr := conn.SetReadDeadline(time.Time{})
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return nil, false, clearErr
+		}
+		if clearErr != nil {
+			return nil, false, clearErr
+		}
+		return nil, false, err
+	}
+	if clearErr != nil {
+		return nil, false, clearErr
+	}
+	return packet, true, nil
 }
 
 func (s *Server) receivePacket(conn net.Conn) (*api.Packet, error) {

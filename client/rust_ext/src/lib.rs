@@ -123,8 +123,21 @@ impl INode for GameClient {
         self.emit_debug_log("Connecting to server");
 
         match network::NetworkClient::connect("127.0.0.1:25565") {
-            Ok(client) => {
+            Ok(mut client) => {
                 self.emit_debug_log("Connected to server successfully");
+                let initial_position = crate::api::Packet {
+                    payload: Some(crate::api::packet::Payload::Position(
+                        crate::api::ClientPosition {
+                            x: 16.0,
+                            y: 68.0,
+                            z: 16.0,
+                        },
+                    )),
+                };
+                if let Err(err) = client.send_packet(&initial_position) {
+                    self.emit_debug_log(&format!("Failed to send initial position: {err}"));
+                    return;
+                }
 
                 let stream_clone = match client.try_clone_stream() {
                     Ok(stream) => stream,

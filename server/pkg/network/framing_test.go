@@ -99,6 +99,50 @@ func TestReceivePacketRejectsMalformedPayload(t *testing.T) {
 	}
 }
 
+func TestReceiveInitialClientPacketIgnoresClosedProbe(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+
+	resultCh := receiveInitialClientPacketAsync(serverConn)
+	if err := clientConn.Close(); err != nil {
+		t.Fatalf("close probe connection: %v", err)
+	}
+
+	result := waitReceivePacket(t, resultCh)
+	if result.err == nil {
+		t.Fatal("receiveInitialClientPacket() error = nil, want closed probe error")
+	}
+	if result.packet != nil {
+		t.Fatalf("receiveInitialClientPacket() packet = %v, want nil", result.packet)
+	}
+}
+
+func TestReceiveInitialClientPacketReadsHandshakePosition(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	resultCh := receiveInitialClientPacketAsync(serverConn)
+	packet := &api.Packet{
+		Payload: &api.Packet_Position{
+			Position: &api.ClientPosition{X: 16, Y: 68, Z: 16},
+		},
+	}
+	go func() {
+		if err := NewServer(":0", world.NewWorld(nil)).sendPacket(clientConn, packet); err != nil {
+			t.Errorf("send handshake packet: %v", err)
+		}
+	}()
+
+	result := waitReceivePacket(t, resultCh)
+	if result.err != nil {
+		t.Fatalf("receiveInitialClientPacket() error = %v", result.err)
+	}
+	if result.packet == nil || !proto.Equal(result.packet, packet) {
+		t.Fatalf("receiveInitialClientPacket() packet = %v, want %v", result.packet, packet)
+	}
+}
+
 type receivePacketResult struct {
 	packet *api.Packet
 	err    error
@@ -108,6 +152,18 @@ func receivePacketAsync(conn net.Conn) <-chan receivePacketResult {
 	resultCh := make(chan receivePacketResult, 1)
 	go func() {
 		packet, err := NewServer(":0", world.NewWorld(nil)).receivePacket(conn)
+		resultCh <- receivePacketResult{packet: packet, err: err}
+	}()
+	return resultCh
+}
+
+func receiveInitialClientPacketAsync(conn net.Conn) <-chan receivePacketResult {
+	resultCh := make(chan receivePacketResult, 1)
+	go func() {
+		packet, hasPacket, err := NewServer(":0", world.NewWorld(nil)).receiveInitialClientPacket(conn)
+		if !hasPacket {
+			packet = nil
+		}
 		resultCh <- receivePacketResult{packet: packet, err: err}
 	}()
 	return resultCh

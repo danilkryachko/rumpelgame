@@ -53,7 +53,18 @@ go test ./pkg/network -run 'TestRLEChunkBatchShrinksPayloadAndWireBytes|TestSend
 - RLE framed wire bytes: `118`.
 - RLE stayed below `1%` of RAW for both payload and framed wire bytes in this guard.
 
-Visual movement smoke still needs a stable local harness pass before making RLE default. The 2026-06-13 local attempt timed out before producing a marker file; the controlled server log showed an early connect/probe followed by `Failed to send initial chunks: ... broken pipe`, so it is not valid visual evidence.
+The 2026-06-13 handshake fix makes the Rust client send an initial `ClientPosition` packet immediately after connecting. The server waits briefly for that packet before starting the initial stream, treats a closed probe as a closed probe instead of sending initial chunks into it, and keeps the old `(0,0)` initial stream fallback when no packet arrives before the timeout.
+
+Latest visual movement smoke evidence from 2026-06-13 used the release Rust extension profile and direct Godot launch because earlier wrapper attempts were invalid when the profile shim was not active in the same shell:
+
+- RAW movement log: `logs/world_streaming_raw_visual_20260613/movement.godot.log`.
+- RLE movement marker: `logs/world_streaming_rle_visual_20260613/movement.godot.log`.
+- RLE server metrics for that movement run: `logs/world_streaming_rle_visual_20260613/godot.log`.
+- Both runs passed `smoke_err=0`, `motion_steps=4`, `motion_chunks=4`, `current_chunk_loaded=1`, `current_chunk_collision=2`, `ground_hits=9`, and ended at `current_chunk="3,2"`.
+- The RLE client decoded streamed chunks back to `blocks=1048576` before the normal terrain path consumed them.
+- RAW movement totals: `132` chunks, raw bytes `138,412,032`, payload bytes `138,412,032`, framed wire bytes `138,414,760`.
+- RLE movement totals: `132` chunks, raw bytes `138,412,032`, payload bytes `2,646`, framed wire bytes `5,640`.
+- In this generated-world movement smoke, RLE framed wire bytes were about `0.0041%` of RAW framed wire bytes.
 
 ## Stream Metrics
 
