@@ -272,7 +272,8 @@ Current marker-only scaffold:
 - `RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1` is parsed by the Rust extension and emitted as `transparent_fixture_overlay_requested=1`.
 - `transparent_fixture_overlay_active` is gated by `transparent_active`, so it remains `0` while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
 - `transparent_fixture_overlay_fallback=1` identifies overlay requests that are intentionally blocked by the transparent implementation gate.
-- Runtime perf markers and the no-render pack/check chain now record the client-only metadata scaffold as `transparent_fixture_overlay_roles=5` and `transparent_fixture_overlay_blocks=5` when the overlay is requested, while keeping `geometry_active=0` and `chunk_data_mutation=no`.
+- The Rust extension now carries a fixed client-only fixture metadata list with five role/offset entries: front transparent, behind-wall transparent, opaque depth occluder, adjacent same-material pair, and collision probe.
+- Runtime perf markers and the no-render pack/check chain now record that metadata as `transparent_fixture_overlay_roles=5` and `transparent_fixture_overlay_blocks=5` when the overlay is requested, while keeping `geometry_active=0` and `chunk_data_mutation=no`.
 - The scaffold emits markers only; it does not create overlay geometry, mutate chunk data, send packets, allocate block IDs, change assets, or change render behavior.
 
 Required future markers:

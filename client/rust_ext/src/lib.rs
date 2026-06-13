@@ -2624,12 +2624,12 @@ const GPU_TERRAIN_TRANSPARENT_ENV: &str = "RUMPELMC_GPU_TERRAIN_TRANSPARENT";
 const GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY";
 const GPU_TERRAIN_TRANSPARENT_IMPLEMENTED: bool = false;
-const TRANSPARENT_FIXTURE_OVERLAY_ROLES: [&str; 5] = [
-    "front_transparent",
-    "behind_wall_transparent",
-    "opaque_depth_occluder",
-    "adjacent_same_material_pair",
-    "collision_probe",
+const TRANSPARENT_FIXTURE_OVERLAY_ENTRIES: [TransparentFixtureOverlayEntry; 5] = [
+    TransparentFixtureOverlayEntry::new("front_transparent", (0, 2, 0)),
+    TransparentFixtureOverlayEntry::new("behind_wall_transparent", (0, 2, -2)),
+    TransparentFixtureOverlayEntry::new("opaque_depth_occluder", (0, 2, -1)),
+    TransparentFixtureOverlayEntry::new("adjacent_same_material_pair", (1, 2, 0)),
+    TransparentFixtureOverlayEntry::new("collision_probe", (0, 1, 1)),
 ];
 const FACE_LEFT: u32 = 0;
 const FACE_RIGHT: u32 = 1;
@@ -2637,6 +2637,18 @@ const FACE_BOTTOM: u32 = 2;
 const FACE_TOP: u32 = 3;
 const FACE_BACK: u32 = 4;
 const FACE_FRONT: u32 = 5;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TransparentFixtureOverlayEntry {
+    role: &'static str,
+    block_offset: (i32, i32, i32),
+}
+
+impl TransparentFixtureOverlayEntry {
+    const fn new(role: &'static str, block_offset: (i32, i32, i32)) -> Self {
+        Self { role, block_offset }
+    }
+}
 
 fn subchunk_mesh_name(key: SubchunkKey) -> String {
     format!("SubchunkMesh_{}_{}_{}", key.chunk_x, key.sub_y, key.chunk_z)
@@ -3041,7 +3053,7 @@ fn gpu_terrain_transparent_fixture_overlay_fallback_decision(
 
 fn gpu_terrain_transparent_fixture_overlay_metadata_counts(requested: bool) -> (u32, u32) {
     if requested {
-        let count = TRANSPARENT_FIXTURE_OVERLAY_ROLES.len() as u32;
+        let count = TRANSPARENT_FIXTURE_OVERLAY_ENTRIES.len() as u32;
         (count, count)
     } else {
         (0, 0)
@@ -4495,6 +4507,51 @@ mod tests {
             gpu_terrain_transparent_fixture_overlay_metadata_counts(true),
             (5, 5)
         );
+    }
+
+    #[test]
+    fn transparent_fixture_overlay_metadata_is_client_only_and_fixed() {
+        let roles: Vec<&str> = TRANSPARENT_FIXTURE_OVERLAY_ENTRIES
+            .iter()
+            .map(|entry| entry.role)
+            .collect();
+        assert_eq!(
+            roles,
+            vec![
+                "front_transparent",
+                "behind_wall_transparent",
+                "opaque_depth_occluder",
+                "adjacent_same_material_pair",
+                "collision_probe"
+            ]
+        );
+
+        let block_offsets: std::collections::BTreeSet<(i32, i32, i32)> =
+            TRANSPARENT_FIXTURE_OVERLAY_ENTRIES
+                .iter()
+                .map(|entry| entry.block_offset)
+                .collect();
+        assert_eq!(
+            block_offsets.len(),
+            TRANSPARENT_FIXTURE_OVERLAY_ENTRIES.len()
+        );
+        assert!(block_offsets.contains(&(0, 2, 0)));
+        assert!(block_offsets.contains(&(0, 2, -2)));
+        assert!(block_offsets.contains(&(0, 2, -1)));
+        assert!(block_offsets.contains(&(1, 2, 0)));
+        assert!(block_offsets.contains(&(0, 1, 1)));
+
+        assert_eq!(
+            gpu_terrain_transparent_fixture_overlay_metadata_counts(true),
+            (
+                TRANSPARENT_FIXTURE_OVERLAY_ENTRIES.len() as u32,
+                TRANSPARENT_FIXTURE_OVERLAY_ENTRIES.len() as u32
+            )
+        );
+        assert!(!gpu_terrain_transparent_fixture_overlay_active_decision(
+            true,
+            GPU_TERRAIN_TRANSPARENT_IMPLEMENTED
+        ));
     }
 
     #[test]
