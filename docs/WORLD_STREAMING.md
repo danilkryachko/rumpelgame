@@ -112,6 +112,14 @@ Fresh default-on comparison result:
 - RAW payload/wire percent of raw: `100.000000%` / `100.001964%`.
 - RLE payload/wire percent of raw: `0.001903%` / `0.004059%`.
 
+Fresh encoding startup timing comparison result:
+
+- Summary: `logs/world_streaming_encoding_startup_timing_20260613/world-streaming-encoding-compare-summary.txt`.
+- Status: `pass`.
+- RAW/RLE encoding summaries now include startup chunk-loaded, collision-ready, and player-spawn timings for each run and in the top-level compare artifact.
+- RAW: `394` chunks, payload/wire percent of raw `100.000000%` / `100.002195%`, startup chunk/collision/player spawn `91.070ms / 91.070ms / 91.070ms`.
+- RLE: `394` chunks, payload/wire percent of raw `0.001782%` / `0.004168%`, startup chunk/collision/player spawn `84.197ms / 84.197ms / 84.197ms`.
+
 The RLE batch-size comparison gate is:
 
 ```sh

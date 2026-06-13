@@ -11,6 +11,7 @@ esac
 RUN_LOG="$OUT_DIR/run.log"
 SUMMARY_PATH="$OUT_DIR/world-streaming-rle-summary.txt"
 MARKER_PATH="$OUT_DIR/gpu-terrain-movement-stress.png.txt"
+MOVEMENT_SUMMARY="$OUT_DIR/movement-stress-summary.txt"
 BUILD_SERVER="${RUMPELMC_WORLD_STREAMING_SMOKE_BUILD_SERVER:-1}"
 
 mkdir -p "$OUT_DIR"
@@ -53,6 +54,25 @@ cleanup_server() {
   fi
 }
 
+summary_metric() {
+  label="$1"
+  key="$2"
+  path="$3"
+  awk -v label="$label" -v key="$key" '
+    $1 == label {
+      prefix = key "="
+      for (i = 2; i <= NF; i++) {
+        if (index($i, prefix) == 1) {
+          value = substr($i, length(prefix) + 1)
+          gsub(/[^0-9.].*/, "", value)
+          print value
+          exit
+        }
+      }
+    }
+  ' "$path"
+}
+
 listener="$(listener_pid || true)"
 if [ -n "$listener" ]; then
   fail "port 25565 is already in use; stop the existing server before RLE movement smoke"
@@ -90,13 +110,24 @@ if [ "$rc" -ne 0 ]; then
 fi
 
 test -s "$MARKER_PATH" || fail "missing movement marker $MARKER_PATH"
+test -s "$MOVEMENT_SUMMARY" || fail "missing movement summary $MOVEMENT_SUMMARY"
 grep -q "smoke_err=0" "$MARKER_PATH" || fail "smoke_err is not 0 in $MARKER_PATH"
 grep -q 'motion="chunk_walk"' "$MARKER_PATH" || fail "movement marker did not run chunk_walk"
 grep -q 'current_chunk="3,2"' "$MARKER_PATH" || fail "movement did not finish at chunk 3,2"
 grep -q "Chunk received .* blocks=1048576" "$RUN_LOG" || fail "RLE chunks were not decoded to full block payloads"
 grep -q "Chunk stream batch" "$RUN_LOG" || fail "missing chunk stream batch metrics in $RUN_LOG"
 
-awk '
+startup_chunk_loaded_ms="$(summary_metric movement_startup chunk_loaded_ms "$MOVEMENT_SUMMARY")"
+startup_collision_ms="$(summary_metric movement_startup collision_ms "$MOVEMENT_SUMMARY")"
+startup_player_spawn_ms="$(summary_metric movement_startup player_spawn_ms "$MOVEMENT_SUMMARY")"
+test -n "$startup_chunk_loaded_ms" || fail "missing startup chunk timing in $MOVEMENT_SUMMARY"
+test -n "$startup_collision_ms" || fail "missing startup collision timing in $MOVEMENT_SUMMARY"
+test -n "$startup_player_spawn_ms" || fail "missing startup player spawn timing in $MOVEMENT_SUMMARY"
+
+awk \
+  -v startup_chunk_loaded_ms="$startup_chunk_loaded_ms" \
+  -v startup_collision_ms="$startup_collision_ms" \
+  -v startup_player_spawn_ms="$startup_player_spawn_ms" '
   /Chunk stream batch/ {
     for (i = 1; i <= NF; i++) {
       split($i, a, "=")
@@ -128,7 +159,7 @@ awk '
       printf("wire is not below 1%% of raw raw=%d wire=%d\n", raw, wire) > "/dev/stderr"
       exit 1
     }
-    printf("world_streaming_rle_movement status=pass batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f marker=%s run_log=%s\n", batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, marker_path, run_log)
+    printf("world_streaming_rle_movement status=pass batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f startup_chunk_loaded_ms=%.3f startup_collision_ms=%.3f startup_player_spawn_ms=%.3f marker=%s run_log=%s\n", batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, startup_chunk_loaded_ms, startup_collision_ms, startup_player_spawn_ms, marker_path, run_log)
   }
 ' marker_path="$MARKER_PATH" run_log="$RUN_LOG" "$RUN_LOG" > "$SUMMARY_PATH"
 
