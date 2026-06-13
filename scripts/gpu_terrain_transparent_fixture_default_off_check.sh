@@ -107,6 +107,8 @@ scene_check_status="$(required_token "transparent_fixture_scene_harness_check_st
 plan_status="$(required_token "fixture_plan_status" "$summary_line" "pack summary")"
 harness_status="$(required_token "transparent_fixture_harness_status" "$summary_line" "pack summary")"
 env_expected="$(required_token "env_on_expected" "$summary_line" "pack summary")"
+overlay_env_expected="$(required_token "overlay_env_on_expected" "$summary_line" "pack summary")"
+overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$summary_line" "pack summary")"
 
 test "$pack_status" = "pass" || fail "unexpected transparent_fixture_pack_status=$pack_status"
 test "$acceptance_status" = "pass" || fail "unexpected transparent_fixture_acceptance_status=$acceptance_status"
@@ -116,6 +118,8 @@ test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scen
 test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
 test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
+test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
+test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
 test "${acceptance_steps_line#acceptance_steps=}" = "acceptance_check/report_refresh" || fail "unexpected acceptance steps"
 test "${runtime_line#runtime_behavior=}" = "unchanged" || fail "unexpected runtime behavior"
 test "${ordinary_line#ordinary_world_visibility=}" = "absent" || fail "unexpected ordinary-world visibility"
@@ -131,14 +135,22 @@ test -s "$scene_harness_check_path" || fail "missing scene harness check $(relat
 acceptance_summary_line="$(required_line "$acceptance_check_path" "summary transparent_fixture_acceptance_status=")"
 acceptance_summary_status="$(required_token "transparent_fixture_acceptance_status" "$acceptance_summary_line" "acceptance summary")"
 acceptance_env_expected="$(required_token "env_on_expected" "$acceptance_summary_line" "acceptance summary")"
+acceptance_overlay_env_expected="$(required_token "overlay_env_on_expected" "$acceptance_summary_line" "acceptance summary")"
+acceptance_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$acceptance_summary_line" "acceptance summary")"
 test "$acceptance_summary_status" = "pass" || fail "unexpected acceptance summary status=$acceptance_summary_status"
 test "$acceptance_env_expected" = "$env_expected" || fail "acceptance env_on_expected does not match pack"
+test "$acceptance_overlay_env_expected" = "$overlay_env_expected" || fail "acceptance overlay_env_on_expected does not match pack"
+test "$acceptance_overlay_metadata_expected" = "$overlay_metadata_expected" || fail "acceptance overlay_metadata_expected does not match pack"
 
 smoke_env_on_line="$(required_line "$smoke_plan_path" "step=env_on_fallback_current status=required")"
+smoke_overlay_metadata_line="$(required_line "$smoke_plan_path" "step=client_overlay_metadata status=required")"
 smoke_future_workload_line="$(required_line "$smoke_plan_path" "step=future_workload_markers status=blocked_until_fixture")"
 smoke_future_active_line="$(required_line "$smoke_plan_path" "step=future_active_gate status=blocked_until_implementation")"
-for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
+for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
   require_text "$smoke_env_on_line" "$token" "smoke env-on fallback gate"
+done
+for token in overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no; do
+  require_text "$smoke_overlay_metadata_line" "$token" "smoke overlay metadata gate"
 done
 for token in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
   require_text "$smoke_future_workload_line" "$token" "smoke future workload gate"
@@ -204,14 +216,17 @@ trap 'rm -f "$tmp_check"' EXIT
   printf 'ordinary_world_visibility=absent\n'
   printf 'transparent_fixture_overlay_default=0/0/0\n'
   printf 'env_on_expected=%s\n' "$env_expected"
-  printf 'overlay_env_on_expected=1/0/1\n'
+  printf 'overlay_env_on_expected=%s\n' "$overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$overlay_metadata_expected"
   printf 'future_active_expected=1/0/0\n'
   printf 'future_gates=blocked_until_implementation\n'
   printf 'workload_gates=blocked_until_fixture\n'
   printf 'non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
-  printf 'summary transparent_fixture_default_off_status=pass transparent_fixture_acceptance_status=%s transparent_implementation_gate=false env_on_expected=%s overlay_env_on_expected=1/0/1 future_active_expected=1/0/0\n' \
+  printf 'summary transparent_fixture_default_off_status=pass transparent_fixture_acceptance_status=%s transparent_implementation_gate=false env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s future_active_expected=1/0/0\n' \
     "$acceptance_status" \
-    "$env_expected"
+    "$env_expected" \
+    "$overlay_env_expected" \
+    "$overlay_metadata_expected"
 } > "$tmp_check"
 
 mv "$tmp_check" "$OUT_PATH"

@@ -95,6 +95,8 @@ scene_check_status="$(required_token "transparent_fixture_scene_harness_check_st
 plan_status="$(required_token "fixture_plan_status" "$summary_line" "pack summary")"
 harness_status="$(required_token "transparent_fixture_harness_status" "$summary_line" "pack summary")"
 env_expected="$(required_token "env_on_expected" "$summary_line" "pack summary")"
+overlay_env_expected="$(required_token "overlay_env_on_expected" "$summary_line" "pack summary")"
+overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$summary_line" "pack summary")"
 
 test "$pack_status" = "pass" || fail "unexpected transparent_fixture_pack_status=$pack_status"
 test "$acceptance_status" = "pass" || fail "unexpected transparent_fixture_acceptance_status=$acceptance_status"
@@ -105,6 +107,8 @@ test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scen
 test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
 test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
+test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
+test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
 test "${acceptance_steps_line#acceptance_steps=}" = "acceptance_check/report_refresh" || fail "unexpected acceptance steps"
 test "${default_off_steps_line#default_off_steps=}" = "default_off_check/report_refresh" || fail "unexpected default-off steps"
 test "${runtime_line#runtime_behavior=}" = "unchanged" || fail "unexpected runtime behavior"
@@ -128,21 +132,33 @@ acceptance_summary_line="$(required_line "$acceptance_check_path" "summary trans
 default_off_summary_line="$(required_line "$default_off_check_path" "summary transparent_fixture_default_off_status=pass")"
 
 report_check_env="$(required_token "env_on_expected" "$report_check_summary_line" "report-check summary")"
+report_check_overlay_env="$(required_token "overlay_env_on_expected" "$report_check_summary_line" "report-check summary")"
+report_check_overlay_metadata="$(required_token "overlay_metadata_expected" "$report_check_summary_line" "report-check summary")"
 acceptance_pack_status="$(required_token "transparent_fixture_pack_status" "$acceptance_summary_line" "acceptance summary")"
 acceptance_report_check_status="$(required_token "transparent_fixture_report_check_status" "$acceptance_summary_line" "acceptance summary")"
 acceptance_env="$(required_token "env_on_expected" "$acceptance_summary_line" "acceptance summary")"
+acceptance_overlay_env="$(required_token "overlay_env_on_expected" "$acceptance_summary_line" "acceptance summary")"
+acceptance_overlay_metadata="$(required_token "overlay_metadata_expected" "$acceptance_summary_line" "acceptance summary")"
 default_off_acceptance_status="$(required_token "transparent_fixture_acceptance_status" "$default_off_summary_line" "default-off summary")"
 default_off_gate="$(required_token "transparent_implementation_gate" "$default_off_summary_line" "default-off summary")"
 default_off_env="$(required_token "env_on_expected" "$default_off_summary_line" "default-off summary")"
+default_off_overlay_env="$(required_token "overlay_env_on_expected" "$default_off_summary_line" "default-off summary")"
+default_off_overlay_metadata="$(required_token "overlay_metadata_expected" "$default_off_summary_line" "default-off summary")"
 default_off_future_active="$(required_token "future_active_expected" "$default_off_summary_line" "default-off summary")"
 
 test "$report_check_env" = "$env_expected" || fail "report-check env_on_expected does not match pack"
+test "$report_check_overlay_env" = "$overlay_env_expected" || fail "report-check overlay_env_on_expected does not match pack"
+test "$report_check_overlay_metadata" = "$overlay_metadata_expected" || fail "report-check overlay_metadata_expected does not match pack"
 test "$acceptance_pack_status" = "$pack_status" || fail "acceptance pack status does not match pack"
 test "$acceptance_report_check_status" = "$report_check_status" || fail "acceptance report-check status does not match pack"
 test "$acceptance_env" = "$env_expected" || fail "acceptance env_on_expected does not match pack"
+test "$acceptance_overlay_env" = "$overlay_env_expected" || fail "acceptance overlay_env_on_expected does not match pack"
+test "$acceptance_overlay_metadata" = "$overlay_metadata_expected" || fail "acceptance overlay_metadata_expected does not match pack"
 test "$default_off_acceptance_status" = "$acceptance_status" || fail "default-off acceptance status does not match pack"
 test "$default_off_gate" = "false" || fail "unexpected transparent implementation gate=$default_off_gate"
 test "$default_off_env" = "$env_expected" || fail "default-off env_on_expected does not match pack"
+test "$default_off_overlay_env" = "$overlay_env_expected" || fail "default-off overlay_env_on_expected does not match pack"
+test "$default_off_overlay_metadata" = "$overlay_metadata_expected" || fail "default-off overlay_metadata_expected does not match pack"
 test "$default_off_future_active" = "1/0/0" || fail "unexpected future active triplet=$default_off_future_active"
 
 required_line "$report_path" "## Selected Transparent Fixture Acceptance Check" >/dev/null
@@ -168,14 +184,18 @@ trap 'rm -f "$tmp_check"' EXIT
   printf 'transparent_fixture_default_off_status=%s\n' "$default_off_status"
   printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
   printf 'env_on_expected=%s\n' "$env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$overlay_metadata_expected"
   printf 'future_active_expected=1/0/0\n'
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
-  printf 'summary transparent_fixture_final_report_check_status=pass transparent_fixture_pack_status=%s transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_final_report_check_status=pass transparent_fixture_pack_status=%s transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$pack_status" \
     "$acceptance_status" \
     "$default_off_status" \
-    "$env_expected"
+    "$env_expected" \
+    "$overlay_env_expected" \
+    "$overlay_metadata_expected"
 } > "$tmp_check"
 
 mv "$tmp_check" "$OUT_PATH"

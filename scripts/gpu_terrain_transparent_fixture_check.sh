@@ -82,6 +82,7 @@ plan_runtime_line="$(required_line "$PLAN_PATH" "runtime_behavior=unchanged")"
 plan_ordinary_line="$(required_line "$PLAN_PATH" "ordinary_world_visibility=absent")"
 plan_rollback_line="$(required_line "$PLAN_PATH" "opaque_path_rollback=required")"
 plan_env_on_line="$(required_line "$PLAN_PATH" "step=env_on_fallback_gate status=current_expected")"
+plan_overlay_metadata_line="$(required_line "$PLAN_PATH" "step=client_overlay_metadata status=planned")"
 plan_future_markers_line="$(required_line "$PLAN_PATH" "step=future_workload_markers status=required")"
 plan_future_active_line="$(required_line "$PLAN_PATH" "step=future_active_gate status=blocked_until_implementation")"
 plan_non_goals_line="$(required_line "$PLAN_PATH" "step=non_goals status=enforced")"
@@ -98,6 +99,11 @@ fallback_guard="$(required_token "fallback_guard" "$plan_summary_line" "plan sum
 requested="$(required_token "transparent_requested" "$plan_env_on_line" "plan env-on")"
 active="$(required_token "transparent_active" "$plan_env_on_line" "plan env-on")"
 fallback="$(required_token "transparent_fallback" "$plan_env_on_line" "plan env-on")"
+overlay_requested="$(required_token "transparent_fixture_overlay_requested" "$plan_env_on_line" "plan env-on")"
+overlay_active="$(required_token "transparent_fixture_overlay_active" "$plan_env_on_line" "plan env-on")"
+overlay_fallback="$(required_token "transparent_fixture_overlay_fallback" "$plan_env_on_line" "plan env-on")"
+overlay_roles="$(required_token "transparent_fixture_overlay_roles" "$plan_overlay_metadata_line" "plan overlay metadata")"
+overlay_blocks="$(required_token "transparent_fixture_overlay_blocks" "$plan_overlay_metadata_line" "plan overlay metadata")"
 future_active="$(required_token "transparent_active" "$plan_future_active_line" "plan future-active")"
 future_fallback="$(required_token "transparent_fallback" "$plan_future_active_line" "plan future-active")"
 future_upload_fail="$(required_token "gpu_upload_fail" "$plan_future_active_line" "plan future-active")"
@@ -112,16 +118,24 @@ test "$fallback_guard" = "present" || fail "unexpected fallback_guard=$fallback_
 test "$requested" = "1" || fail "unexpected transparent_requested=$requested"
 test "$active" = "0" || fail "unexpected transparent_active=$active"
 test "$fallback" = "1" || fail "unexpected transparent_fallback=$fallback"
+test "$overlay_requested" = "1" || fail "unexpected transparent_fixture_overlay_requested=$overlay_requested"
+test "$overlay_active" = "0" || fail "unexpected transparent_fixture_overlay_active=$overlay_active"
+test "$overlay_fallback" = "1" || fail "unexpected transparent_fixture_overlay_fallback=$overlay_fallback"
+test "$overlay_roles" = "5" || fail "unexpected transparent_fixture_overlay_roles=$overlay_roles"
+test "$overlay_blocks" = "5" || fail "unexpected transparent_fixture_overlay_blocks=$overlay_blocks"
 test "$future_active" = "1" || fail "unexpected future transparent_active=$future_active"
 test "$future_fallback" = "0" || fail "unexpected future transparent_fallback=$future_fallback"
 test "$future_upload_fail" = "0" || fail "unexpected future gpu_upload_fail=$future_upload_fail"
 case "$contract_tokens" in
   ''|*[!0-9]*) fail "contract_tokens must be numeric: $contract_tokens" ;;
 esac
-test "$contract_tokens" -ge 21 || fail "contract_tokens too low: $contract_tokens"
+test "$contract_tokens" -ge 26 || fail "contract_tokens too low: $contract_tokens"
 
 for marker in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
   require_text "$plan_future_markers_line" "$marker" "plan future workload"
+done
+for marker in overlay_id=transparent_test_glass geometry_active=0 chunk_data_mutation=no; do
+  require_text "$plan_overlay_metadata_line" "$marker" "plan overlay metadata"
 done
 non_goals="shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no"
 require_text "$plan_non_goals_line" "$non_goals" "plan non-goals"
@@ -135,6 +149,7 @@ harness_rollback_line="$(required_line "$HARNESS_PATH" "opaque_path_rollback=req
 harness_consume_line="$(required_line "$HARNESS_PATH" "step=consume_plan status=present")"
 harness_env_off_line="$(required_line "$HARNESS_PATH" "step=env_off_gate status=placeholder")"
 harness_env_on_line="$(required_line "$HARNESS_PATH" "step=env_on_fallback_gate status=placeholder")"
+harness_overlay_metadata_line="$(required_line "$HARNESS_PATH" "step=client_overlay_metadata status=placeholder")"
 harness_future_markers_line="$(required_line "$HARNESS_PATH" "step=future_workload_markers status=blocked_until_fixture")"
 harness_future_active_line="$(required_line "$HARNESS_PATH" "step=future_active_gate status=blocked_until_implementation")"
 harness_non_goals_line="$(required_line "$HARNESS_PATH" "step=non_goals status=enforced")"
@@ -153,6 +168,11 @@ harness_fallback_guard="$(required_token "fallback_guard" "$harness_consume_line
 harness_requested="$(required_token "expected_transparent_requested" "$harness_env_on_line" "harness env-on")"
 harness_active="$(required_token "expected_transparent_active" "$harness_env_on_line" "harness env-on")"
 harness_fallback="$(required_token "expected_transparent_fallback" "$harness_env_on_line" "harness env-on")"
+harness_overlay_requested="$(required_token "expected_overlay_requested" "$harness_env_on_line" "harness env-on")"
+harness_overlay_active="$(required_token "expected_overlay_active" "$harness_env_on_line" "harness env-on")"
+harness_overlay_fallback="$(required_token "expected_overlay_fallback" "$harness_env_on_line" "harness env-on")"
+harness_overlay_roles="$(required_token "transparent_fixture_overlay_roles" "$harness_overlay_metadata_line" "harness overlay metadata")"
+harness_overlay_blocks="$(required_token "transparent_fixture_overlay_blocks" "$harness_overlay_metadata_line" "harness overlay metadata")"
 harness_future_active="$(required_token "transparent_active" "$harness_future_active_line" "harness future-active")"
 harness_future_fallback="$(required_token "transparent_fallback" "$harness_future_active_line" "harness future-active")"
 harness_future_upload_fail="$(required_token "gpu_upload_fail" "$harness_future_active_line" "harness future-active")"
@@ -160,6 +180,8 @@ harness_summary_status="$(required_token "transparent_fixture_harness_status" "$
 harness_summary_plan_status="$(required_token "fixture_plan_status" "$harness_summary_line" "harness summary")"
 harness_summary_runtime="$(required_token "runtime_behavior" "$harness_summary_line" "harness summary")"
 harness_env_expected="$(required_token "env_on_expected" "$harness_summary_line" "harness summary")"
+harness_overlay_env_expected="$(required_token "overlay_env_on_expected" "$harness_summary_line" "harness summary")"
+harness_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$harness_summary_line" "harness summary")"
 
 test "$harness_plan_status" = "$plan_status" || fail "harness fixture_plan_status does not match plan"
 test "$harness_tokens" = "$contract_tokens" || fail "harness contract_tokens does not match plan"
@@ -167,6 +189,11 @@ test "$harness_fallback_guard" = "$fallback_guard" || fail "harness fallback_gua
 test "$harness_requested" = "$requested" || fail "harness transparent_requested does not match plan"
 test "$harness_active" = "$active" || fail "harness transparent_active does not match plan"
 test "$harness_fallback" = "$fallback" || fail "harness transparent_fallback does not match plan"
+test "$harness_overlay_requested" = "$overlay_requested" || fail "harness overlay requested does not match plan"
+test "$harness_overlay_active" = "$overlay_active" || fail "harness overlay active does not match plan"
+test "$harness_overlay_fallback" = "$overlay_fallback" || fail "harness overlay fallback does not match plan"
+test "$harness_overlay_roles" = "$overlay_roles" || fail "harness overlay roles does not match plan"
+test "$harness_overlay_blocks" = "$overlay_blocks" || fail "harness overlay blocks does not match plan"
 test "$harness_future_active" = "$future_active" || fail "harness future transparent_active does not match plan"
 test "$harness_future_fallback" = "$future_fallback" || fail "harness future transparent_fallback does not match plan"
 test "$harness_future_upload_fail" = "$future_upload_fail" || fail "harness future gpu_upload_fail does not match plan"
@@ -174,9 +201,14 @@ test "$harness_summary_status" = "placeholder" || fail "unexpected transparent_f
 test "$harness_summary_plan_status" = "$plan_status" || fail "harness summary fixture_plan_status does not match plan"
 test "$harness_summary_runtime" = "$runtime_behavior" || fail "harness summary runtime_behavior does not match plan"
 test "$harness_env_expected" = "$requested/$active/$fallback" || fail "unexpected harness env_on_expected=$harness_env_expected"
+test "$harness_overlay_env_expected" = "$overlay_requested/$overlay_active/$overlay_fallback" || fail "unexpected harness overlay_env_on_expected=$harness_overlay_env_expected"
+test "$harness_overlay_metadata_expected" = "$overlay_roles/$overlay_blocks" || fail "unexpected harness overlay_metadata_expected=$harness_overlay_metadata_expected"
 require_text "$harness_env_off_line" "expected=ordinary_opaque_markers_unchanged" "harness env-off"
 for marker in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
   require_text "$harness_future_markers_line" "$marker" "harness future workload"
+done
+for marker in overlay_id=transparent_test_glass geometry_active=0 chunk_data_mutation=no; do
+  require_text "$harness_overlay_metadata_line" "$marker" "harness overlay metadata"
 done
 require_text "$harness_non_goals_line" "$non_goals" "harness non-goals"
 
@@ -195,15 +227,22 @@ trap 'rm -f "$tmp_check"' EXIT
   printf 'ordinary_world_visibility=%s\n' "$ordinary_visibility"
   printf 'opaque_path_rollback=%s\n' "$rollback_status"
   printf 'env_on_expected=%s/%s/%s\n' "$requested" "$active" "$fallback"
+  printf 'overlay_env_on_expected=%s/%s/%s\n' "$overlay_requested" "$overlay_active" "$overlay_fallback"
+  printf 'overlay_metadata_expected=%s/%s\n' "$overlay_roles" "$overlay_blocks"
   printf 'future_active_expected=%s/%s/%s\n' "$future_active" "$future_fallback" "$future_upload_fail"
   printf 'fallback_guard=%s\n' "$fallback_guard"
   printf 'contract_tokens=%s\n' "$contract_tokens"
-  printf 'summary transparent_fixture_check_status=pass fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s/%s/%s\n' \
+  printf 'summary transparent_fixture_check_status=pass fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s/%s/%s overlay_env_on_expected=%s/%s/%s overlay_metadata_expected=%s/%s\n' \
     "$plan_status" \
     "$harness_summary_status" \
     "$requested" \
     "$active" \
-    "$fallback"
+    "$fallback" \
+    "$overlay_requested" \
+    "$overlay_active" \
+    "$overlay_fallback" \
+    "$overlay_roles" \
+    "$overlay_blocks"
 } > "$tmp_check"
 
 mv "$tmp_check" "$OUT_PATH"

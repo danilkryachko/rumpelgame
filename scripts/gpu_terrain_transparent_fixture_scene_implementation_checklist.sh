@@ -101,6 +101,8 @@ scene_check_status="$(required_token "transparent_fixture_scene_harness_check_st
 plan_status="$(required_token "fixture_plan_status" "$summary_line" "pack summary")"
 harness_status="$(required_token "transparent_fixture_harness_status" "$summary_line" "pack summary")"
 env_expected="$(required_token "env_on_expected" "$summary_line" "pack summary")"
+overlay_env_expected="$(required_token "overlay_env_on_expected" "$summary_line" "pack summary")"
+overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$summary_line" "pack summary")"
 
 test "$pack_status" = "pass" || fail "unexpected transparent_fixture_pack_status=$pack_status"
 test "$acceptance_status" = "pass" || fail "unexpected transparent_fixture_acceptance_status=$acceptance_status"
@@ -111,6 +113,8 @@ test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scen
 test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
 test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
+test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
+test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
 test "${final_report_steps_line#final_report_steps=}" = "final_report_check/report_refresh" || fail "unexpected final-report steps"
 test "${runtime_line#runtime_behavior=}" = "unchanged" || fail "unexpected runtime behavior"
 test "${ordinary_line#ordinary_world_visibility=}" = "absent" || fail "unexpected ordinary-world visibility"
@@ -141,17 +145,33 @@ final_report_summary_line="$(required_line "$final_report_check_path" "summary t
 
 scene_roles="$(required_token "roles" "$scene_summary_line" "scene harness-check summary")"
 scene_env="$(required_token "env_on_expected" "$scene_summary_line" "scene harness-check summary")"
+scene_overlay_env="$(required_token "overlay_env_on_expected" "$scene_summary_line" "scene harness-check summary")"
+scene_overlay_metadata="$(required_token "overlay_metadata_expected" "$scene_summary_line" "scene harness-check summary")"
+scene_overlay_roles="$(required_token "transparent_fixture_overlay_roles" "$scene_summary_line" "scene harness-check summary")"
+scene_overlay_blocks="$(required_token "transparent_fixture_overlay_blocks" "$scene_summary_line" "scene harness-check summary")"
 acceptance_env="$(required_token "env_on_expected" "$acceptance_summary_line" "acceptance summary")"
+acceptance_overlay_env="$(required_token "overlay_env_on_expected" "$acceptance_summary_line" "acceptance summary")"
+acceptance_overlay_metadata="$(required_token "overlay_metadata_expected" "$acceptance_summary_line" "acceptance summary")"
 default_off_gate="$(required_token "transparent_implementation_gate" "$default_off_summary_line" "default-off summary")"
 default_off_future_active="$(required_token "future_active_expected" "$default_off_summary_line" "default-off summary")"
 final_report_env="$(required_token "env_on_expected" "$final_report_summary_line" "final-report summary")"
+final_report_overlay_env="$(required_token "overlay_env_on_expected" "$final_report_summary_line" "final-report summary")"
+final_report_overlay_metadata="$(required_token "overlay_metadata_expected" "$final_report_summary_line" "final-report summary")"
 
 test "$scene_roles" = "5" || fail "unexpected scene role count=$scene_roles"
 test "$scene_env" = "$env_expected" || fail "scene env_on_expected does not match pack"
+test "$scene_overlay_env" = "$overlay_env_expected" || fail "scene overlay_env_on_expected does not match pack"
+test "$scene_overlay_metadata" = "$overlay_metadata_expected" || fail "scene overlay_metadata_expected does not match pack"
+test "$scene_overlay_roles" = "5" || fail "unexpected scene overlay role count=$scene_overlay_roles"
+test "$scene_overlay_blocks" = "5" || fail "unexpected scene overlay block count=$scene_overlay_blocks"
 test "$acceptance_env" = "$env_expected" || fail "acceptance env_on_expected does not match pack"
+test "$acceptance_overlay_env" = "$overlay_env_expected" || fail "acceptance overlay_env_on_expected does not match pack"
+test "$acceptance_overlay_metadata" = "$overlay_metadata_expected" || fail "acceptance overlay_metadata_expected does not match pack"
 test "$default_off_gate" = "false" || fail "unexpected transparent implementation gate=$default_off_gate"
 test "$default_off_future_active" = "1/0/0" || fail "unexpected future active triplet=$default_off_future_active"
 test "$final_report_env" = "$env_expected" || fail "final-report env_on_expected does not match pack"
+test "$final_report_overlay_env" = "$overlay_env_expected" || fail "final-report overlay_env_on_expected does not match pack"
+test "$final_report_overlay_metadata" = "$overlay_metadata_expected" || fail "final-report overlay_metadata_expected does not match pack"
 
 camera_line="$(required_line "$scene_checklist_path" "camera fixed=required")"
 light_line="$(required_line "$scene_checklist_path" "light fixed=required")"
@@ -161,6 +181,7 @@ behind_line="$(required_line "$scene_harness_path" "role_check=behind_wall_trans
 occluder_line="$(required_line "$scene_harness_path" "role_check=opaque_depth_occluder")"
 adjacent_line="$(required_line "$scene_harness_path" "role_check=adjacent_same_material_pair")"
 collision_line="$(required_line "$scene_harness_path" "role_check=collision_probe")"
+overlay_metadata_line="$(required_line "$scene_harness_path" "overlay_metadata status=placeholder overlay_id=transparent_test_glass")"
 env_on_line="$(required_line "$smoke_plan_path" "step=env_on_fallback_current status=required")"
 future_active_line="$(required_line "$smoke_plan_path" "step=future_active_gate status=blocked_until_implementation")"
 
@@ -188,7 +209,10 @@ done
 for token in material=transparent_test_glass expected_collision_solidity=explicit; do
   require_text "$collision_line" "$token" "collision probe role"
 done
-for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
+for token in overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no; do
+  require_text "$overlay_metadata_line" "$token" "overlay metadata"
+done
+for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
   require_text "$env_on_line" "$token" "current env-on fallback"
 done
 for token in transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required; do
@@ -215,6 +239,8 @@ trap 'rm -f "$tmp_checklist"' EXIT
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
   printf 'env_on_expected=%s\n' "$env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$overlay_metadata_expected"
   printf 'future_active_expected=1/0/0\n'
   printf 'required_scene camera=fixture_camera_static light=fixture_sun_static chunk=fixture_chunk_0_0_0\n'
   printf 'required_role front_transparent material=transparent_test_glass visible=required collision=solid\n'
@@ -222,14 +248,17 @@ trap 'rm -f "$tmp_checklist"' EXIT
   printf 'required_role opaque_depth_occluder material=current_opaque_block depth_write=required\n'
   printf 'required_role adjacent_same_material_pair material=transparent_test_glass same_material_seam=hidden_or_explicit\n'
   printf 'required_role collision_probe material=transparent_test_glass collision_solidity=explicit\n'
-  printf 'required_current_guard env_on_fallback transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero\n'
+  printf 'required_overlay_metadata overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no\n'
+  printf 'required_current_guard env_on_fallback transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero\n'
   printf 'required_future_gate active_path transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required\n'
   printf 'non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
-  printf 'summary transparent_fixture_scene_implementation_checklist_status=pending_scene_implementation transparent_fixture_pack_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_default_off_status=%s transparent_implementation_gate=false env_on_expected=%s future_active_expected=1/0/0\n' \
+  printf 'summary transparent_fixture_scene_implementation_checklist_status=pending_scene_implementation transparent_fixture_pack_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_default_off_status=%s transparent_implementation_gate=false env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s future_active_expected=1/0/0\n' \
     "$pack_status" \
     "$final_report_status" \
     "$default_off_status" \
-    "$env_expected"
+    "$env_expected" \
+    "$overlay_env_expected" \
+    "$overlay_metadata_expected"
 } > "$tmp_checklist"
 
 mv "$tmp_checklist" "$OUT_PATH"

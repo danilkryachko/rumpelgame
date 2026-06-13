@@ -85,6 +85,8 @@ steps_line="$(required_line "$PACK_PATH" "steps=plan/harness/check/report/report
 runtime_line="$(required_line "$PACK_PATH" "runtime_behavior=unchanged")"
 ordinary_line="$(required_line "$PACK_PATH" "ordinary_world_visibility=absent")"
 env_line="$(required_line "$PACK_PATH" "env_on_expected=1/0/1")"
+overlay_env_line="$(required_line "$PACK_PATH" "overlay_env_on_expected=1/0/1")"
+overlay_metadata_line="$(required_line "$PACK_PATH" "overlay_metadata_expected=5/5")"
 tokens_line="$(required_line "$PACK_PATH" "contract_tokens=")"
 
 pack_status="$(required_token "transparent_fixture_pack_status" "$summary_line" "pack summary")"
@@ -93,8 +95,12 @@ check_status="$(required_token "transparent_fixture_check_status" "$summary_line
 plan_status="$(required_token "fixture_plan_status" "$summary_line" "pack summary")"
 harness_status="$(required_token "transparent_fixture_harness_status" "$summary_line" "pack summary")"
 summary_env_expected="$(required_token "env_on_expected" "$summary_line" "pack summary")"
+summary_overlay_env_expected="$(required_token "overlay_env_on_expected" "$summary_line" "pack summary")"
+summary_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$summary_line" "pack summary")"
 contract_tokens="${tokens_line#contract_tokens=}"
 env_expected="${env_line#env_on_expected=}"
+overlay_env_expected="${overlay_env_line#overlay_env_on_expected=}"
+overlay_metadata_expected="${overlay_metadata_line#overlay_metadata_expected=}"
 
 test "$pack_status" = "pass" || fail "unexpected transparent_fixture_pack_status=$pack_status"
 test "$report_check_status" = "pass" || fail "unexpected transparent_fixture_report_check_status=$report_check_status"
@@ -102,14 +108,18 @@ test "$check_status" = "pass" || fail "unexpected transparent_fixture_check_stat
 test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
 test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$summary_env_expected" = "1/0/1" || fail "unexpected summary env_on_expected=$summary_env_expected"
+test "$summary_overlay_env_expected" = "1/0/1" || fail "unexpected summary overlay_env_on_expected=$summary_overlay_env_expected"
+test "$summary_overlay_metadata_expected" = "5/5" || fail "unexpected summary overlay_metadata_expected=$summary_overlay_metadata_expected"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
+test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
+test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
 test "${steps_line#steps=}" = "plan/harness/check/report/report_check" || fail "unexpected steps line: $steps_line"
 test "${runtime_line#runtime_behavior=}" = "unchanged" || fail "unexpected runtime line: $runtime_line"
 test "${ordinary_line#ordinary_world_visibility=}" = "absent" || fail "unexpected ordinary line: $ordinary_line"
 case "$contract_tokens" in
   ''|*[!0-9]*) fail "contract_tokens must be numeric: $contract_tokens" ;;
 esac
-test "$contract_tokens" -ge 21 || fail "contract_tokens too low: $contract_tokens"
+test "$contract_tokens" -ge 26 || fail "contract_tokens too low: $contract_tokens"
 
 plan_path="$(resolve_pack_path "$(required_value "$PACK_PATH" "plan")")"
 harness_path="$(resolve_pack_path "$(required_value "$PACK_PATH" "harness")")"
@@ -123,7 +133,8 @@ test -s "$report_check_path" || fail "missing pack report-check $(relative_path 
 
 required_line "$plan_path" "fixture=gpu-transparent-depth-collision" >/dev/null
 required_line "$plan_path" "material=transparent_test_glass" >/dev/null
-required_line "$plan_path" "step=env_on_fallback_gate status=current_expected transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0" >/dev/null
+required_line "$plan_path" "step=env_on_fallback_gate status=current_expected transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0" >/dev/null
+required_line "$plan_path" "step=client_overlay_metadata status=planned overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no" >/dev/null
 required_line "$plan_path" "step=future_workload_markers status=required transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending" >/dev/null
 required_line "$plan_path" "step=future_active_gate status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0" >/dev/null
 required_line "$harness_path" "step=env_off_gate status=placeholder expected=ordinary_opaque_markers_unchanged" >/dev/null
@@ -147,17 +158,22 @@ trap 'rm -f "$tmp_plan"' EXIT
   printf 'ordinary_world_visibility=absent\n'
   printf 'pack_status=%s\n' "$pack_status"
   printf 'env_on_expected=%s\n' "$env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$overlay_metadata_expected"
   printf 'step=env_off_current status=required expected=ordinary_opaque_markers_unchanged command="sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_env_off_capture"\n'
-  printf 'step=env_on_fallback_current status=required transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero command="RUMPELMC_GPU_TERRAIN_TRANSPARENT=1 sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_fallback_capture"\n'
+  printf 'step=env_on_fallback_current status=required transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero command="RUMPELMC_GPU_TERRAIN_TRANSPARENT=1 RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1 sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_fallback_capture"\n'
+  printf 'step=client_overlay_metadata status=required overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no\n'
   printf 'step=future_fixture_scene status=required fixed_camera=required fixed_light=required depth_occluder=required adjacent_same_material_pair=required collision_probe=required\n'
   printf 'step=future_workload_markers status=blocked_until_fixture transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending\n'
   printf 'step=future_active_gate status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required\n'
   printf 'step=non_goals status=enforced shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
-  printf 'summary transparent_fixture_smoke_plan_status=pending_fixture_scene transparent_fixture_pack_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_smoke_plan_status=pending_fixture_scene transparent_fixture_pack_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$pack_status" \
     "$plan_status" \
     "$harness_status" \
-    "$env_expected"
+    "$env_expected" \
+    "$overlay_env_expected" \
+    "$overlay_metadata_expected"
 } > "$tmp_plan"
 
 mv "$tmp_plan" "$OUT_PATH"

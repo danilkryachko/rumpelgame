@@ -82,7 +82,7 @@ trap 'rm -f "$tmp_design"' EXIT
   printf 'block_action_packet=no\n'
   printf 'production_block_id=no\n'
   printf 'future_markers=transparent_fixture_overlay_requested/transparent_fixture_overlay_active/transparent_fixture_overlay_fallback/transparent_fixture_overlay_roles/transparent_fixture_overlay_blocks\n'
-  printf 'current_transparent_gate=transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0\n'
+  printf 'current_transparent_gate=transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0\n'
   printf 'non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no tscn=no generated_files=no\n'
   printf 'summary transparent_fixture_overlay_design_status=pass design_tokens=%s overlay_status=design_only default_overlay_active=0\n' "$token_count"
 } > "$tmp_design"

@@ -117,9 +117,12 @@ runtime_line="$(required_exact_line "$REPORT_PATH" "runtime_behavior=unchanged")
 ordinary_line="$(required_exact_line "$REPORT_PATH" "ordinary_world_visibility=absent")"
 rollback_line="$(required_exact_line "$REPORT_PATH" "opaque_path_rollback=required")"
 env_expected_line="$(required_exact_line "$REPORT_PATH" "env_on_expected=1/0/1")"
+overlay_env_expected_line="$(required_exact_line "$REPORT_PATH" "overlay_env_on_expected=1/0/1")"
+overlay_metadata_expected_line="$(required_exact_line "$REPORT_PATH" "overlay_metadata_expected=5/5")"
 future_active_line="$(required_exact_line "$REPORT_PATH" "future_active_expected=1/0/0")"
 fallback_guard_line="$(required_exact_line "$REPORT_PATH" "fallback_guard=present")"
-contract_tokens_line="$(required_exact_line "$REPORT_PATH" "contract_tokens=21")"
+contract_tokens_line="$(required_line "$REPORT_PATH" "contract_tokens=")"
+contract_tokens_value="$(required_token "contract_tokens" "$contract_tokens_line" "contract token line")"
 
 test "${fixture_line#fixture=}" = "gpu-transparent-depth-collision" || fail "unexpected fixture line: $fixture_line"
 test "${material_line#material=}" = "transparent_test_glass" || fail "unexpected material line: $material_line"
@@ -129,9 +132,14 @@ test "${runtime_line#runtime_behavior=}" = "unchanged" || fail "unexpected runti
 test "${ordinary_line#ordinary_world_visibility=}" = "absent" || fail "unexpected ordinary-world line: $ordinary_line"
 test "${rollback_line#opaque_path_rollback=}" = "required" || fail "unexpected rollback line: $rollback_line"
 test "${env_expected_line#env_on_expected=}" = "1/0/1" || fail "unexpected env-on line: $env_expected_line"
+test "${overlay_env_expected_line#overlay_env_on_expected=}" = "1/0/1" || fail "unexpected overlay env-on line: $overlay_env_expected_line"
+test "${overlay_metadata_expected_line#overlay_metadata_expected=}" = "5/5" || fail "unexpected overlay metadata line: $overlay_metadata_expected_line"
 test "${future_active_line#future_active_expected=}" = "1/0/0" || fail "unexpected future-active line: $future_active_line"
 test "${fallback_guard_line#fallback_guard=}" = "present" || fail "unexpected fallback guard line: $fallback_guard_line"
-test "${contract_tokens_line#contract_tokens=}" = "21" || fail "unexpected contract token line: $contract_tokens_line"
+case "$contract_tokens_value" in
+  ''|*[!0-9]*) fail "contract_tokens must be numeric: $contract_tokens_line" ;;
+esac
+test "$contract_tokens_value" -ge 26 || fail "unexpected contract token line: $contract_tokens_line"
 
 plan_status="$(required_token "fixture_plan_status" "$plan_summary_line" "plan summary")"
 plan_tokens="$(required_token "contract_tokens" "$plan_summary_line" "plan summary")"
@@ -140,32 +148,51 @@ harness_status="$(required_token "transparent_fixture_harness_status" "$harness_
 harness_plan_status="$(required_token "fixture_plan_status" "$harness_summary_line" "harness summary")"
 harness_runtime="$(required_token "runtime_behavior" "$harness_summary_line" "harness summary")"
 harness_env_expected="$(required_token "env_on_expected" "$harness_summary_line" "harness summary")"
+harness_overlay_env_expected="$(required_token "overlay_env_on_expected" "$harness_summary_line" "harness summary")"
+harness_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$harness_summary_line" "harness summary")"
 check_status="$(required_token "transparent_fixture_check_status" "$check_summary_line" "check summary")"
 check_plan_status="$(required_token "fixture_plan_status" "$check_summary_line" "check summary")"
 check_harness_status="$(required_token "transparent_fixture_harness_status" "$check_summary_line" "check summary")"
 check_env_expected="$(required_token "env_on_expected" "$check_summary_line" "check summary")"
+check_overlay_env_expected="$(required_token "overlay_env_on_expected" "$check_summary_line" "check summary")"
+check_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$check_summary_line" "check summary")"
 scene_check_status="$(required_token "transparent_fixture_scene_harness_check_status" "$scene_check_summary_line" "scene harness-check summary")"
 scene_check_harness_status="$(required_token "transparent_fixture_scene_harness_status" "$scene_check_summary_line" "scene harness-check summary")"
 scene_check_scene_status="$(required_token "transparent_fixture_scene_checklist_status" "$scene_check_summary_line" "scene harness-check summary")"
 scene_check_roles="$(required_token "roles" "$scene_check_summary_line" "scene harness-check summary")"
 scene_check_env_expected="$(required_token "env_on_expected" "$scene_check_summary_line" "scene harness-check summary")"
+scene_check_overlay_env_expected="$(required_token "overlay_env_on_expected" "$scene_check_summary_line" "scene harness-check summary")"
+scene_check_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$scene_check_summary_line" "scene harness-check summary")"
+scene_check_overlay_roles="$(required_token "transparent_fixture_overlay_roles" "$scene_check_summary_line" "scene harness-check summary")"
+scene_check_overlay_blocks="$(required_token "transparent_fixture_overlay_blocks" "$scene_check_summary_line" "scene harness-check summary")"
 
 test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
-test "$plan_tokens" = "21" || fail "unexpected contract_tokens=$plan_tokens"
+case "$plan_tokens" in
+  ''|*[!0-9]*) fail "contract_tokens must be numeric: $plan_tokens" ;;
+esac
+test "$plan_tokens" -ge 26 || fail "unexpected contract_tokens=$plan_tokens"
 test "$plan_fallback_guard" = "present" || fail "unexpected fallback_guard=$plan_fallback_guard"
 test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$harness_plan_status" = "$plan_status" || fail "harness fixture_plan_status does not match plan"
 test "$harness_runtime" = "unchanged" || fail "unexpected harness runtime_behavior=$harness_runtime"
 test "$harness_env_expected" = "1/0/1" || fail "unexpected harness env_on_expected=$harness_env_expected"
+test "$harness_overlay_env_expected" = "1/0/1" || fail "unexpected harness overlay_env_on_expected=$harness_overlay_env_expected"
+test "$harness_overlay_metadata_expected" = "5/5" || fail "unexpected harness overlay_metadata_expected=$harness_overlay_metadata_expected"
 test "$check_status" = "pass" || fail "unexpected transparent_fixture_check_status=$check_status"
 test "$check_plan_status" = "$plan_status" || fail "check fixture_plan_status does not match plan"
 test "$check_harness_status" = "$harness_status" || fail "check harness status does not match harness"
 test "$check_env_expected" = "$harness_env_expected" || fail "check env_on_expected does not match harness"
+test "$check_overlay_env_expected" = "$harness_overlay_env_expected" || fail "check overlay_env_on_expected does not match harness"
+test "$check_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "check overlay_metadata_expected does not match harness"
 test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scene_harness_check_status=$scene_check_status"
 test "$scene_check_harness_status" = "$harness_status" || fail "scene harness-check status does not match harness"
 test "$scene_check_scene_status" = "pending_scene_harness" || fail "unexpected scene checklist status=$scene_check_scene_status"
 test "$scene_check_roles" = "5" || fail "unexpected scene roles=$scene_check_roles"
 test "$scene_check_env_expected" = "$harness_env_expected" || fail "scene harness-check env_on_expected does not match harness"
+test "$scene_check_overlay_env_expected" = "$harness_overlay_env_expected" || fail "scene harness-check overlay_env_on_expected does not match harness"
+test "$scene_check_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "scene harness-check overlay_metadata_expected does not match harness"
+test "$scene_check_overlay_roles" = "5" || fail "unexpected scene overlay roles=$scene_check_overlay_roles"
+test "$scene_check_overlay_blocks" = "5" || fail "unexpected scene overlay blocks=$scene_check_overlay_blocks"
 
 tmp_check="$OUT_PATH.tmp"
 trap 'rm -f "$tmp_check"' EXIT
@@ -186,13 +213,17 @@ trap 'rm -f "$tmp_check"' EXIT
   printf 'fixture_plan_status=%s\n' "$plan_status"
   printf 'transparent_fixture_harness_status=%s\n' "$harness_status"
   printf 'env_on_expected=%s\n' "$check_env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$check_overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$check_overlay_metadata_expected"
   printf 'future_active_expected=1/0/0\n'
-  printf 'summary transparent_fixture_report_check_status=pass transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_report_check_status=pass transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$check_status" \
     "$scene_check_status" \
     "$plan_status" \
     "$harness_status" \
-    "$check_env_expected"
+    "$check_env_expected" \
+    "$check_overlay_env_expected" \
+    "$check_overlay_metadata_expected"
 } > "$tmp_check"
 
 mv "$tmp_check" "$OUT_PATH"

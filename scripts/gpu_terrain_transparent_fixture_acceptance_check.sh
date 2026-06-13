@@ -103,6 +103,8 @@ scene_check_status="$(required_token "transparent_fixture_scene_harness_check_st
 plan_status="$(required_token "fixture_plan_status" "$summary_line" "pack summary")"
 harness_status="$(required_token "transparent_fixture_harness_status" "$summary_line" "pack summary")"
 env_expected="$(required_token "env_on_expected" "$summary_line" "pack summary")"
+overlay_env_expected="$(required_token "overlay_env_on_expected" "$summary_line" "pack summary")"
+overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$summary_line" "pack summary")"
 contract_tokens="${tokens_line#contract_tokens=}"
 
 test "$pack_status" = "pass" || fail "unexpected transparent_fixture_pack_status=$pack_status"
@@ -112,6 +114,8 @@ test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scen
 test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
 test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
+test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
+test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
 test "${steps_line#steps=}" = "plan/harness/check/report/report_check" || fail "unexpected steps: $steps_line"
 test "${scene_steps_line#scene_steps=}" = "smoke_plan/scene_checklist/scene_harness/scene_harness_check" || fail "unexpected scene steps: $scene_steps_line"
 if [ -n "$acceptance_steps_line" ]; then
@@ -122,7 +126,7 @@ test "${ordinary_line#ordinary_world_visibility=}" = "absent" || fail "unexpecte
 case "$contract_tokens" in
   ''|*[!0-9]*) fail "contract_tokens must be numeric: $contract_tokens" ;;
 esac
-test "$contract_tokens" -ge 21 || fail "contract_tokens too low: $contract_tokens"
+test "$contract_tokens" -ge 26 || fail "contract_tokens too low: $contract_tokens"
 
 plan_path="$(resolve_pack_path "$(required_value "$PACK_PATH" "plan")")"
 harness_path="$(resolve_pack_path "$(required_value "$PACK_PATH" "harness")")"
@@ -147,7 +151,8 @@ for artifact_path in \
   test -s "$artifact_path" || fail "missing linked artifact $(relative_path "$artifact_path")"
 done
 
-required_line "$plan_path" "step=env_on_fallback_gate status=current_expected transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0" >/dev/null
+required_line "$plan_path" "step=env_on_fallback_gate status=current_expected transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0" >/dev/null
+required_line "$plan_path" "step=client_overlay_metadata status=planned overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no" >/dev/null
 required_line "$plan_path" "step=future_workload_markers status=required transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending" >/dev/null
 required_line "$plan_path" "step=future_active_gate status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0" >/dev/null
 required_line "$harness_path" "summary transparent_fixture_harness_status=placeholder" >/dev/null
@@ -169,6 +174,7 @@ scene_gates_line="$(required_line "$scene_harness_check_path" "future_gates=bloc
 workload_gates_line="$(required_line "$scene_harness_check_path" "workload_gates=blocked_until_fixture")"
 non_goals_line="$(required_line "$scene_harness_check_path" "non_goals ")"
 smoke_env_on_line="$(required_line "$smoke_plan_path" "step=env_on_fallback_current status=required")"
+smoke_overlay_metadata_line="$(required_line "$smoke_plan_path" "step=client_overlay_metadata status=required")"
 smoke_future_scene_line="$(required_line "$smoke_plan_path" "step=future_fixture_scene status=required")"
 smoke_future_workload_line="$(required_line "$smoke_plan_path" "step=future_workload_markers status=blocked_until_fixture")"
 smoke_future_active_line="$(required_line "$smoke_plan_path" "step=future_active_gate status=blocked_until_implementation")"
@@ -177,8 +183,11 @@ test "${report_check_sections_line#report_sections=}" = "plan/harness/check/scen
 test "${report_future_active_line#future_active_expected=}" = "1/0/0" || fail "unexpected future active triplet"
 test "${scene_gates_line#future_gates=}" = "blocked_until_implementation" || fail "unexpected future gates line"
 test "${workload_gates_line#workload_gates=}" = "blocked_until_fixture" || fail "unexpected workload gates line"
-for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
+for token in transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero; do
   require_text "$smoke_env_on_line" "$token" "smoke env-on gate"
+done
+for token in overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no; do
+  require_text "$smoke_overlay_metadata_line" "$token" "smoke overlay metadata gate"
 done
 for token in fixed_camera=required fixed_light=required depth_occluder=required adjacent_same_material_pair=required collision_probe=required; do
   require_text "$smoke_future_scene_line" "$token" "future fixture-scene gate"
@@ -210,18 +219,22 @@ trap 'rm -f "$tmp_check"' EXIT
   printf 'fixture_plan_status=%s\n' "$plan_status"
   printf 'transparent_fixture_harness_status=%s\n' "$harness_status"
   printf 'env_on_expected=%s\n' "$env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$overlay_metadata_expected"
   printf 'future_active_expected=1/0/0\n'
   printf 'contract_tokens=%s\n' "$contract_tokens"
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
-  printf 'summary transparent_fixture_acceptance_status=pass transparent_fixture_pack_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_acceptance_status=pass transparent_fixture_pack_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$pack_status" \
     "$report_check_status" \
     "$check_status" \
     "$scene_check_status" \
     "$plan_status" \
     "$harness_status" \
-    "$env_expected"
+    "$env_expected" \
+    "$overlay_env_expected" \
+    "$overlay_metadata_expected"
 } > "$tmp_check"
 
 mv "$tmp_check" "$OUT_PATH"

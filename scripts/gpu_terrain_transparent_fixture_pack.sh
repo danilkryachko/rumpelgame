@@ -110,10 +110,14 @@ plan_status="$(required_token "fixture_plan_status" "$plan_summary_line" "plan s
 contract_tokens="$(required_token "contract_tokens" "$plan_summary_line" "plan summary")"
 harness_status="$(required_token "transparent_fixture_harness_status" "$harness_summary_line" "harness summary")"
 harness_env_expected="$(required_token "env_on_expected" "$harness_summary_line" "harness summary")"
+harness_overlay_env_expected="$(required_token "overlay_env_on_expected" "$harness_summary_line" "harness summary")"
+harness_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$harness_summary_line" "harness summary")"
 check_status="$(required_token "transparent_fixture_check_status" "$check_summary_line" "check summary")"
 check_plan_status="$(required_token "fixture_plan_status" "$check_summary_line" "check summary")"
 check_harness_status="$(required_token "transparent_fixture_harness_status" "$check_summary_line" "check summary")"
 check_env_expected="$(required_token "env_on_expected" "$check_summary_line" "check summary")"
+check_overlay_env_expected="$(required_token "overlay_env_on_expected" "$check_summary_line" "check summary")"
+check_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$check_summary_line" "check summary")"
 
 test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
 test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
@@ -121,11 +125,15 @@ test "$check_status" = "pass" || fail "unexpected transparent_fixture_check_stat
 test "$check_plan_status" = "$plan_status" || fail "check fixture_plan_status does not match plan"
 test "$check_harness_status" = "$harness_status" || fail "check harness status does not match harness"
 test "$check_env_expected" = "$harness_env_expected" || fail "check env_on_expected does not match harness"
+test "$check_overlay_env_expected" = "$harness_overlay_env_expected" || fail "check overlay_env_on_expected does not match harness"
+test "$check_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "check overlay_metadata_expected does not match harness"
 test "$harness_env_expected" = "1/0/1" || fail "unexpected env_on_expected=$harness_env_expected"
+test "$harness_overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$harness_overlay_env_expected"
+test "$harness_overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$harness_overlay_metadata_expected"
 case "$contract_tokens" in
   ''|*[!0-9]*) fail "contract_tokens must be numeric: $contract_tokens" ;;
 esac
-test "$contract_tokens" -ge 21 || fail "contract_tokens too low: $contract_tokens"
+test "$contract_tokens" -ge 26 || fail "contract_tokens too low: $contract_tokens"
 
 tmp_pack="$OUT_PATH.tmp"
 tmp_smoke="$SMOKE_PLAN_PATH.tmp"
@@ -144,16 +152,21 @@ trap 'rm -f "$tmp_pack" "$tmp_smoke"' EXIT
   printf 'ordinary_world_visibility=absent\n'
   printf 'pack_status=pass\n'
   printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$harness_overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$harness_overlay_metadata_expected"
   printf 'step=env_off_current status=required expected=ordinary_opaque_markers_unchanged command="sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_env_off_capture"\n'
-  printf 'step=env_on_fallback_current status=required transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero command="RUMPELMC_GPU_TERRAIN_TRANSPARENT=1 sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_fallback_capture"\n'
+  printf 'step=env_on_fallback_current status=required transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero command="RUMPELMC_GPU_TERRAIN_TRANSPARENT=1 RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1 sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_fallback_capture"\n'
+  printf 'step=client_overlay_metadata status=required overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no\n'
   printf 'step=future_fixture_scene status=required fixed_camera=required fixed_light=required depth_occluder=required adjacent_same_material_pair=required collision_probe=required\n'
   printf 'step=future_workload_markers status=blocked_until_fixture transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending\n'
   printf 'step=future_active_gate status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required\n'
   printf 'step=non_goals status=enforced shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
-  printf 'summary transparent_fixture_smoke_plan_status=pending_fixture_scene transparent_fixture_pack_status=pass fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_smoke_plan_status=pending_fixture_scene transparent_fixture_pack_status=pass fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$plan_status" \
     "$harness_status" \
-    "$harness_env_expected"
+    "$harness_env_expected" \
+    "$harness_overlay_env_expected" \
+    "$harness_overlay_metadata_expected"
 } > "$tmp_smoke"
 mv "$tmp_smoke" "$SMOKE_PLAN_PATH"
 
@@ -174,12 +187,20 @@ scene_harness_check_harness_status="$(required_token "transparent_fixture_scene_
 scene_harness_check_scene_status="$(required_token "transparent_fixture_scene_checklist_status" "$scene_harness_check_summary_line" "scene harness-check summary")"
 scene_harness_check_roles="$(required_token "roles" "$scene_harness_check_summary_line" "scene harness-check summary")"
 scene_harness_check_env_expected="$(required_token "env_on_expected" "$scene_harness_check_summary_line" "scene harness-check summary")"
+scene_harness_check_overlay_env_expected="$(required_token "overlay_env_on_expected" "$scene_harness_check_summary_line" "scene harness-check summary")"
+scene_harness_check_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$scene_harness_check_summary_line" "scene harness-check summary")"
+scene_harness_check_overlay_roles="$(required_token "transparent_fixture_overlay_roles" "$scene_harness_check_summary_line" "scene harness-check summary")"
+scene_harness_check_overlay_blocks="$(required_token "transparent_fixture_overlay_blocks" "$scene_harness_check_summary_line" "scene harness-check summary")"
 
 test "$scene_harness_check_status" = "pass" || fail "unexpected transparent_fixture_scene_harness_check_status=$scene_harness_check_status"
 test "$scene_harness_check_harness_status" = "placeholder" || fail "unexpected scene harness status=$scene_harness_check_harness_status"
 test "$scene_harness_check_scene_status" = "pending_scene_harness" || fail "unexpected scene checklist status=$scene_harness_check_scene_status"
 test "$scene_harness_check_roles" = "5" || fail "unexpected scene roles=$scene_harness_check_roles"
 test "$scene_harness_check_env_expected" = "$harness_env_expected" || fail "scene env_on_expected does not match harness"
+test "$scene_harness_check_overlay_env_expected" = "$harness_overlay_env_expected" || fail "scene overlay_env_on_expected does not match harness"
+test "$scene_harness_check_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "scene overlay_metadata_expected does not match harness"
+test "$scene_harness_check_overlay_roles" = "5" || fail "unexpected scene overlay roles=$scene_harness_check_overlay_roles"
+test "$scene_harness_check_overlay_blocks" = "5" || fail "unexpected scene overlay blocks=$scene_harness_check_overlay_blocks"
 
 sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
   "$LOG_DIR" \
@@ -196,6 +217,8 @@ report_check_plan_status="$(required_token "fixture_plan_status" "$report_check_
 report_check_harness_status="$(required_token "transparent_fixture_harness_status" "$report_check_summary_line" "report-check summary")"
 report_check_scene_harness_check_status="$(required_token "transparent_fixture_scene_harness_check_status" "$report_check_summary_line" "report-check summary")"
 report_check_env_expected="$(required_token "env_on_expected" "$report_check_summary_line" "report-check summary")"
+report_check_overlay_env_expected="$(required_token "overlay_env_on_expected" "$report_check_summary_line" "report-check summary")"
+report_check_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$report_check_summary_line" "report-check summary")"
 
 test "$report_check_status" = "pass" || fail "unexpected transparent_fixture_report_check_status=$report_check_status"
 test "$report_check_check_status" = "$check_status" || fail "report-check status does not match check"
@@ -203,6 +226,8 @@ test "$report_check_plan_status" = "$plan_status" || fail "report-check fixture_
 test "$report_check_harness_status" = "$harness_status" || fail "report-check harness status does not match harness"
 test "$report_check_scene_harness_check_status" = "$scene_harness_check_status" || fail "report-check scene harness-check status does not match"
 test "$report_check_env_expected" = "$harness_env_expected" || fail "report-check env_on_expected does not match harness"
+test "$report_check_overlay_env_expected" = "$harness_overlay_env_expected" || fail "report-check overlay_env_on_expected does not match harness"
+test "$report_check_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "report-check overlay_metadata_expected does not match harness"
 
 {
   printf 'GPU terrain transparent fixture pack\n'
@@ -226,16 +251,20 @@ test "$report_check_env_expected" = "$harness_env_expected" || fail "report-chec
   printf 'transparent_fixture_scene_harness_check_status=%s\n' "$scene_harness_check_status"
   printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
   printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$harness_overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$harness_overlay_metadata_expected"
   printf 'contract_tokens=%s\n' "$contract_tokens"
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
-  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$report_check_status" \
     "$check_status" \
     "$scene_harness_check_status" \
     "$plan_status" \
     "$harness_status" \
-    "$harness_env_expected"
+    "$harness_env_expected" \
+    "$harness_overlay_env_expected" \
+    "$harness_overlay_metadata_expected"
 } > "$tmp_pack"
 
 mv "$tmp_pack" "$OUT_PATH"
@@ -253,6 +282,8 @@ acceptance_scene_harness_check_status="$(required_token "transparent_fixture_sce
 acceptance_plan_status="$(required_token "fixture_plan_status" "$acceptance_summary_line" "acceptance-check summary")"
 acceptance_harness_status="$(required_token "transparent_fixture_harness_status" "$acceptance_summary_line" "acceptance-check summary")"
 acceptance_env_expected="$(required_token "env_on_expected" "$acceptance_summary_line" "acceptance-check summary")"
+acceptance_overlay_env_expected="$(required_token "overlay_env_on_expected" "$acceptance_summary_line" "acceptance-check summary")"
+acceptance_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$acceptance_summary_line" "acceptance-check summary")"
 
 test "$acceptance_status" = "pass" || fail "unexpected transparent_fixture_acceptance_status=$acceptance_status"
 test "$acceptance_pack_status" = "pass" || fail "unexpected acceptance pack status=$acceptance_pack_status"
@@ -262,6 +293,8 @@ test "$acceptance_scene_harness_check_status" = "$scene_harness_check_status" ||
 test "$acceptance_plan_status" = "$plan_status" || fail "acceptance fixture_plan_status does not match plan"
 test "$acceptance_harness_status" = "$harness_status" || fail "acceptance harness status does not match harness"
 test "$acceptance_env_expected" = "$harness_env_expected" || fail "acceptance env_on_expected does not match harness"
+test "$acceptance_overlay_env_expected" = "$harness_overlay_env_expected" || fail "acceptance overlay_env_on_expected does not match harness"
+test "$acceptance_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "acceptance overlay_metadata_expected does not match harness"
 
 sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
   "$LOG_DIR" \
@@ -293,17 +326,21 @@ required_line "$REPORT_PATH" "Source: \`$ACCEPTANCE_CHECK_PATH\`" >/dev/null
   printf 'transparent_fixture_acceptance_status=%s\n' "$acceptance_status"
   printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
   printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$harness_overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$harness_overlay_metadata_expected"
   printf 'contract_tokens=%s\n' "$contract_tokens"
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
-  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$acceptance_status" \
     "$report_check_status" \
     "$check_status" \
     "$scene_harness_check_status" \
     "$plan_status" \
     "$harness_status" \
-    "$harness_env_expected"
+    "$harness_env_expected" \
+    "$harness_overlay_env_expected" \
+    "$harness_overlay_metadata_expected"
 } > "$tmp_pack"
 mv "$tmp_pack" "$OUT_PATH"
 
@@ -316,12 +353,16 @@ default_off_status="$(required_token "transparent_fixture_default_off_status" "$
 default_off_acceptance_status="$(required_token "transparent_fixture_acceptance_status" "$default_off_summary_line" "default-off check summary")"
 default_off_gate="$(required_token "transparent_implementation_gate" "$default_off_summary_line" "default-off check summary")"
 default_off_env_expected="$(required_token "env_on_expected" "$default_off_summary_line" "default-off check summary")"
+default_off_overlay_env_expected="$(required_token "overlay_env_on_expected" "$default_off_summary_line" "default-off check summary")"
+default_off_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$default_off_summary_line" "default-off check summary")"
 default_off_future_active="$(required_token "future_active_expected" "$default_off_summary_line" "default-off check summary")"
 
 test "$default_off_status" = "pass" || fail "unexpected transparent_fixture_default_off_status=$default_off_status"
 test "$default_off_acceptance_status" = "$acceptance_status" || fail "default-off acceptance status does not match"
 test "$default_off_gate" = "false" || fail "unexpected default-off implementation gate=$default_off_gate"
 test "$default_off_env_expected" = "$harness_env_expected" || fail "default-off env_on_expected does not match harness"
+test "$default_off_overlay_env_expected" = "$harness_overlay_env_expected" || fail "default-off overlay_env_on_expected does not match harness"
+test "$default_off_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "default-off overlay_metadata_expected does not match harness"
 test "$default_off_future_active" = "1/0/0" || fail "unexpected default-off future active triplet=$default_off_future_active"
 
 sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
@@ -358,10 +399,12 @@ required_line "$REPORT_PATH" "Source: \`$DEFAULT_OFF_CHECK_PATH\`" >/dev/null
   printf 'transparent_fixture_default_off_status=%s\n' "$default_off_status"
   printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
   printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$harness_overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$harness_overlay_metadata_expected"
   printf 'contract_tokens=%s\n' "$contract_tokens"
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
-  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$acceptance_status" \
     "$default_off_status" \
     "$report_check_status" \
@@ -369,7 +412,9 @@ required_line "$REPORT_PATH" "Source: \`$DEFAULT_OFF_CHECK_PATH\`" >/dev/null
     "$scene_harness_check_status" \
     "$plan_status" \
     "$harness_status" \
-    "$harness_env_expected"
+    "$harness_env_expected" \
+    "$harness_overlay_env_expected" \
+    "$harness_overlay_metadata_expected"
 } > "$tmp_pack"
 
 mv "$tmp_pack" "$OUT_PATH"
@@ -384,12 +429,16 @@ final_report_pack_status="$(required_token "transparent_fixture_pack_status" "$f
 final_report_acceptance_status="$(required_token "transparent_fixture_acceptance_status" "$final_report_summary_line" "final-report check summary")"
 final_report_default_off_status="$(required_token "transparent_fixture_default_off_status" "$final_report_summary_line" "final-report check summary")"
 final_report_env_expected="$(required_token "env_on_expected" "$final_report_summary_line" "final-report check summary")"
+final_report_overlay_env_expected="$(required_token "overlay_env_on_expected" "$final_report_summary_line" "final-report check summary")"
+final_report_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$final_report_summary_line" "final-report check summary")"
 
 test "$final_report_status" = "pass" || fail "unexpected transparent_fixture_final_report_check_status=$final_report_status"
 test "$final_report_pack_status" = "pass" || fail "final-report pack status does not match"
 test "$final_report_acceptance_status" = "$acceptance_status" || fail "final-report acceptance status does not match"
 test "$final_report_default_off_status" = "$default_off_status" || fail "final-report default-off status does not match"
 test "$final_report_env_expected" = "$harness_env_expected" || fail "final-report env_on_expected does not match harness"
+test "$final_report_overlay_env_expected" = "$harness_overlay_env_expected" || fail "final-report overlay_env_on_expected does not match harness"
+test "$final_report_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "final-report overlay_metadata_expected does not match harness"
 
 sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
   "$LOG_DIR" \
@@ -427,10 +476,12 @@ required_line "$REPORT_PATH" "Source: \`$FINAL_REPORT_CHECK_PATH\`" >/dev/null
   printf 'transparent_fixture_final_report_check_status=%s\n' "$final_report_status"
   printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
   printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$harness_overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$harness_overlay_metadata_expected"
   printf 'contract_tokens=%s\n' "$contract_tokens"
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
-  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$acceptance_status" \
     "$default_off_status" \
     "$final_report_status" \
@@ -439,7 +490,9 @@ required_line "$REPORT_PATH" "Source: \`$FINAL_REPORT_CHECK_PATH\`" >/dev/null
     "$scene_harness_check_status" \
     "$plan_status" \
     "$harness_status" \
-    "$harness_env_expected"
+    "$harness_env_expected" \
+    "$harness_overlay_env_expected" \
+    "$harness_overlay_metadata_expected"
 } > "$tmp_pack"
 
 mv "$tmp_pack" "$OUT_PATH"
@@ -459,6 +512,8 @@ scene_implementation_final_report_status="$(required_token "transparent_fixture_
 scene_implementation_default_off_status="$(required_token "transparent_fixture_default_off_status" "$scene_implementation_summary_line" "scene implementation checklist summary")"
 scene_implementation_gate="$(required_token "transparent_implementation_gate" "$scene_implementation_summary_line" "scene implementation checklist summary")"
 scene_implementation_env_expected="$(required_token "env_on_expected" "$scene_implementation_summary_line" "scene implementation checklist summary")"
+scene_implementation_overlay_env_expected="$(required_token "overlay_env_on_expected" "$scene_implementation_summary_line" "scene implementation checklist summary")"
+scene_implementation_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$scene_implementation_summary_line" "scene implementation checklist summary")"
 scene_implementation_future_active="$(required_token "future_active_expected" "$scene_implementation_summary_line" "scene implementation checklist summary")"
 
 test "$scene_implementation_status" = "pending_scene_implementation" || fail "unexpected transparent_fixture_scene_implementation_checklist_status=$scene_implementation_status"
@@ -467,6 +522,8 @@ test "$scene_implementation_final_report_status" = "$final_report_status" || fai
 test "$scene_implementation_default_off_status" = "$default_off_status" || fail "scene implementation default-off status does not match"
 test "$scene_implementation_gate" = "false" || fail "unexpected scene implementation gate=$scene_implementation_gate"
 test "$scene_implementation_env_expected" = "$harness_env_expected" || fail "scene implementation env_on_expected does not match harness"
+test "$scene_implementation_overlay_env_expected" = "$harness_overlay_env_expected" || fail "scene implementation overlay_env_on_expected does not match harness"
+test "$scene_implementation_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "scene implementation overlay_metadata_expected does not match harness"
 test "$scene_implementation_future_active" = "1/0/0" || fail "unexpected scene implementation future active triplet=$scene_implementation_future_active"
 
 sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
@@ -510,10 +567,12 @@ required_line "$REPORT_PATH" "Source: \`$SCENE_IMPLEMENTATION_CHECKLIST_PATH\`" 
   printf 'transparent_fixture_scene_implementation_checklist_status=%s\n' "$scene_implementation_status"
   printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
   printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$harness_overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$harness_overlay_metadata_expected"
   printf 'contract_tokens=%s\n' "$contract_tokens"
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
-  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_scene_implementation_checklist_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_scene_implementation_checklist_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$acceptance_status" \
     "$default_off_status" \
     "$final_report_status" \
@@ -523,7 +582,9 @@ required_line "$REPORT_PATH" "Source: \`$SCENE_IMPLEMENTATION_CHECKLIST_PATH\`" 
     "$scene_harness_check_status" \
     "$plan_status" \
     "$harness_status" \
-    "$harness_env_expected"
+    "$harness_env_expected" \
+    "$harness_overlay_env_expected" \
+    "$harness_overlay_metadata_expected"
 } > "$tmp_pack"
 
 mv "$tmp_pack" "$OUT_PATH"
@@ -542,6 +603,8 @@ scene_implementation_gate_checklist_status="$(required_token "transparent_fixtur
 scene_implementation_gate_pack_status="$(required_token "transparent_fixture_pack_status" "$scene_implementation_gate_summary_line" "scene implementation gate-check summary")"
 scene_implementation_gate_flag="$(required_token "transparent_implementation_gate" "$scene_implementation_gate_summary_line" "scene implementation gate-check summary")"
 scene_implementation_gate_env_expected="$(required_token "env_on_expected" "$scene_implementation_gate_summary_line" "scene implementation gate-check summary")"
+scene_implementation_gate_overlay_env_expected="$(required_token "overlay_env_on_expected" "$scene_implementation_gate_summary_line" "scene implementation gate-check summary")"
+scene_implementation_gate_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$scene_implementation_gate_summary_line" "scene implementation gate-check summary")"
 scene_implementation_gate_future_active="$(required_token "future_active_expected" "$scene_implementation_gate_summary_line" "scene implementation gate-check summary")"
 
 test "$scene_implementation_gate_status" = "pass" || fail "unexpected transparent_fixture_scene_implementation_gate_check_status=$scene_implementation_gate_status"
@@ -549,6 +612,8 @@ test "$scene_implementation_gate_checklist_status" = "$scene_implementation_stat
 test "$scene_implementation_gate_pack_status" = "pass" || fail "scene implementation gate-check pack status does not match"
 test "$scene_implementation_gate_flag" = "false" || fail "unexpected scene implementation gate-check flag=$scene_implementation_gate_flag"
 test "$scene_implementation_gate_env_expected" = "$harness_env_expected" || fail "scene implementation gate-check env_on_expected does not match harness"
+test "$scene_implementation_gate_overlay_env_expected" = "$harness_overlay_env_expected" || fail "scene implementation gate-check overlay_env_on_expected does not match harness"
+test "$scene_implementation_gate_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "scene implementation gate-check overlay_metadata_expected does not match harness"
 test "$scene_implementation_gate_future_active" = "1/0/0" || fail "unexpected scene implementation gate-check future active triplet=$scene_implementation_gate_future_active"
 
 sh "$ROOT_DIR/scripts/gpu_terrain_report.sh" \
@@ -595,10 +660,12 @@ required_line "$REPORT_PATH" "Source: \`$SCENE_IMPLEMENTATION_GATE_CHECK_PATH\`"
   printf 'transparent_fixture_scene_implementation_gate_check_status=%s\n' "$scene_implementation_gate_status"
   printf 'transparent_fixture_report_check_status=%s\n' "$report_check_status"
   printf 'env_on_expected=%s\n' "$harness_env_expected"
+  printf 'overlay_env_on_expected=%s\n' "$harness_overlay_env_expected"
+  printf 'overlay_metadata_expected=%s\n' "$harness_overlay_metadata_expected"
   printf 'contract_tokens=%s\n' "$contract_tokens"
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
-  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_scene_implementation_checklist_status=%s transparent_fixture_scene_implementation_gate_check_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s\n' \
+  printf 'summary transparent_fixture_pack_status=pass transparent_fixture_acceptance_status=%s transparent_fixture_default_off_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_scene_implementation_checklist_status=%s transparent_fixture_scene_implementation_gate_check_status=%s transparent_fixture_report_check_status=%s transparent_fixture_check_status=%s transparent_fixture_scene_harness_check_status=%s fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$acceptance_status" \
     "$default_off_status" \
     "$final_report_status" \
@@ -609,7 +676,9 @@ required_line "$REPORT_PATH" "Source: \`$SCENE_IMPLEMENTATION_GATE_CHECK_PATH\`"
     "$scene_harness_check_status" \
     "$plan_status" \
     "$harness_status" \
-    "$harness_env_expected"
+    "$harness_env_expected" \
+    "$harness_overlay_env_expected" \
+    "$harness_overlay_metadata_expected"
 } > "$tmp_pack"
 
 mv "$tmp_pack" "$OUT_PATH"
