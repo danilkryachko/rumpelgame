@@ -227,6 +227,15 @@ Fresh pre-spawn startup queue hint result:
 - Rollback full startup: first stream `radius=10`, `64` chunks, total `394` chunks over `8` batches, `terrain_queue_max_ms=0.915`, `process_wall_p95_ms=0.019`, `gpu_compositor_submit_max_ms=0.124`.
 - Default bootstrap radius `0`: first stream `radius=0`, `1` chunk, total `394` chunks over `9` batches, `terrain_queue_max_ms=1.487`, `process_wall_p95_ms=0.022`, `gpu_compositor_submit_max_ms=0.158`.
 
+Fresh startup timing telemetry result:
+
+- Summary: `logs/world_streaming_startup_timing_default0_20260613/world-streaming-bootstrap-compare-summary.txt`.
+- Status: `pass`.
+- The Rust client marker now reports `startup_chunk_loaded_ms`, `startup_collision_ms`, and `startup_player_spawn_ms`; the movement and bootstrap summaries surface the same startup timing fields.
+- `scripts/world_streaming_bootstrap_compare.sh` now invokes the movement stress script through `/bin/sh` to avoid a local macOS `/usr/bin/env` shebang hang observed during redirected harness runs.
+- Rollback full startup: first stream `radius=10`, `64` chunks, startup player spawn `105.392ms`, total `394` chunks over `8` batches, `terrain_queue_max_ms=2.139`, `process_wall_p95_ms=0.050`, `gpu_compositor_submit_max_ms=0.140`.
+- Default bootstrap radius `0`: first stream `radius=0`, `1` chunk, startup player spawn `70.746ms`, total `394` chunks over `9` batches, `terrain_queue_max_ms=2.151`, `process_wall_p95_ms=0.051`, `gpu_compositor_submit_max_ms=0.159`.
+
 ## Stream Metrics
 
 Set `RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1` on the server to log each non-empty chunk stream batch:

@@ -123,6 +123,9 @@ summarize_run() {
   grep -q "Chunk stream batch" "$run_log" || fail "missing chunk stream batch metrics in $run_log"
 
   terrain_queue_max_ms="$(summary_metric movement_terrain_queue max_ms "$movement_summary")"
+  startup_chunk_loaded_ms="$(summary_metric movement_startup chunk_loaded_ms "$movement_summary")"
+  startup_collision_ms="$(summary_metric movement_startup collision_ms "$movement_summary")"
+  startup_player_spawn_ms="$(summary_metric movement_startup player_spawn_ms "$movement_summary")"
   process_wall_p95_ms="$(metric process_wall_p95_ms "$movement_summary")"
   gpu_compositor_submit_max_ms="$(metric gpu_compositor_submit_max_ms "$movement_summary")"
   chunk_initial="$(metric chunk_initial "$marker_path")"
@@ -136,6 +139,9 @@ summarize_run() {
     -v marker_path="$marker_path" \
     -v run_log="$run_log" \
     -v terrain_queue_max_ms="${terrain_queue_max_ms:-0}" \
+    -v startup_chunk_loaded_ms="${startup_chunk_loaded_ms:-0}" \
+    -v startup_collision_ms="${startup_collision_ms:-0}" \
+    -v startup_player_spawn_ms="${startup_player_spawn_ms:-0}" \
     -v process_wall_p95_ms="${process_wall_p95_ms:-0}" \
     -v gpu_compositor_submit_max_ms="${gpu_compositor_submit_max_ms:-0}" \
     -v chunk_initial="${chunk_initial:-0}" \
@@ -188,7 +194,7 @@ summarize_run() {
         printf("label=%s wire is not below 1%% of raw raw=%d wire=%d\n", label, raw, wire) > "/dev/stderr"
         exit 1
       }
-      printf("world_streaming_bootstrap status=pass label=%s first_radius=%s first_chunks=%d first_raw_bytes=%d first_payload_bytes=%d first_wire_bytes=%d first_elapsed_ms=%.3f batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f elapsed_avg_ms=%.3f elapsed_max_ms=%.3f chunk_initial=%d current_chunk_loaded=%d current_chunk_collision=%d ground_hits=%d gpu_upload_fail=%d terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_max_ms=%.3f marker=%s run_log=%s\n", label, first_radius, first_chunks, first_raw, first_payload, first_wire, first_elapsed, batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, elapsed / batches, elapsed_max, chunk_initial, current_chunk_loaded, current_chunk_collision, ground_hits, gpu_upload_fail, terrain_queue_max_ms, process_wall_p95_ms, gpu_compositor_submit_max_ms, marker_path, run_log)
+      printf("world_streaming_bootstrap status=pass label=%s first_radius=%s first_chunks=%d first_raw_bytes=%d first_payload_bytes=%d first_wire_bytes=%d first_elapsed_ms=%.3f batches=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d payload_pct=%.6f wire_pct=%.6f elapsed_avg_ms=%.3f elapsed_max_ms=%.3f chunk_initial=%d current_chunk_loaded=%d current_chunk_collision=%d ground_hits=%d gpu_upload_fail=%d startup_chunk_loaded_ms=%.3f startup_collision_ms=%.3f startup_player_spawn_ms=%.3f terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_max_ms=%.3f marker=%s run_log=%s\n", label, first_radius, first_chunks, first_raw, first_payload, first_wire, first_elapsed, batches, chunks, raw, payload, wire, payload * 100.0 / raw, wire * 100.0 / raw, elapsed / batches, elapsed_max, chunk_initial, current_chunk_loaded, current_chunk_collision, ground_hits, gpu_upload_fail, startup_chunk_loaded_ms, startup_collision_ms, startup_player_spawn_ms, terrain_queue_max_ms, process_wall_p95_ms, gpu_compositor_submit_max_ms, marker_path, run_log)
     }
   ' "$run_log" > "$summary_path"
 }
@@ -206,13 +212,13 @@ run_case() {
       RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1 \
       RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
       RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
-      "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$run_dir" > "$run_log" 2>&1
+      /bin/sh "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$run_dir" > "$run_log" 2>&1
   else
     RUMPELMC_SERVER_BOOTSTRAP_RADIUS="$radius" \
       RUMPELMC_SERVER_CHUNK_STREAM_METRICS=1 \
       RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
       RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
-      "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$run_dir" > "$run_log" 2>&1
+      /bin/sh "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$run_dir" > "$run_log" 2>&1
   fi
 }
 
@@ -274,6 +280,8 @@ base_batches="$(metric batches "$BASE_SUMMARY")"
 candidate_batches="$(metric batches "$CANDIDATE_SUMMARY")"
 base_terrain_queue_max="$(metric terrain_queue_max_ms "$BASE_SUMMARY")"
 candidate_terrain_queue_max="$(metric terrain_queue_max_ms "$CANDIDATE_SUMMARY")"
+base_startup_player_spawn="$(metric startup_player_spawn_ms "$BASE_SUMMARY")"
+candidate_startup_player_spawn="$(metric startup_player_spawn_ms "$CANDIDATE_SUMMARY")"
 base_process_wall_p95="$(metric process_wall_p95_ms "$BASE_SUMMARY")"
 candidate_process_wall_p95="$(metric process_wall_p95_ms "$CANDIDATE_SUMMARY")"
 base_submit_max="$(metric gpu_compositor_submit_max_ms "$BASE_SUMMARY")"
@@ -292,6 +300,8 @@ awk \
   -v candidate_batches="$candidate_batches" \
   -v base_terrain_queue_max="$base_terrain_queue_max" \
   -v candidate_terrain_queue_max="$candidate_terrain_queue_max" \
+  -v base_startup_player_spawn="$base_startup_player_spawn" \
+  -v candidate_startup_player_spawn="$candidate_startup_player_spawn" \
   -v base_process_wall_p95="$base_process_wall_p95" \
   -v candidate_process_wall_p95="$candidate_process_wall_p95" \
   -v base_submit_max="$base_submit_max" \
@@ -307,7 +317,7 @@ awk \
       printf("candidate streamed fewer total chunks than base base=%d candidate=%d\n", base_chunks, candidate_chunks) > "/dev/stderr"
       exit 1
     }
-    printf("world_streaming_bootstrap_compare status=pass base_label=%s candidate_label=%s base_first_radius=%s candidate_first_radius=%s base_first_chunks=%d candidate_first_chunks=%d base_chunks=%d candidate_chunks=%d base_batches=%d candidate_batches=%d base_terrain_queue_max_ms=%.3f candidate_terrain_queue_max_ms=%.3f base_process_wall_p95_ms=%.3f candidate_process_wall_p95_ms=%.3f base_gpu_compositor_submit_max_ms=%.3f candidate_gpu_compositor_submit_max_ms=%.3f base_summary=%s candidate_summary=%s\n", base_label, candidate_label, base_first_radius, candidate_first_radius, base_first_chunks, candidate_first_chunks, base_chunks, candidate_chunks, base_batches, candidate_batches, base_terrain_queue_max, candidate_terrain_queue_max, base_process_wall_p95, candidate_process_wall_p95, base_submit_max, candidate_submit_max, base_summary, candidate_summary)
+    printf("world_streaming_bootstrap_compare status=pass base_label=%s candidate_label=%s base_first_radius=%s candidate_first_radius=%s base_first_chunks=%d candidate_first_chunks=%d base_chunks=%d candidate_chunks=%d base_batches=%d candidate_batches=%d base_startup_player_spawn_ms=%.3f candidate_startup_player_spawn_ms=%.3f base_terrain_queue_max_ms=%.3f candidate_terrain_queue_max_ms=%.3f base_process_wall_p95_ms=%.3f candidate_process_wall_p95_ms=%.3f base_gpu_compositor_submit_max_ms=%.3f candidate_gpu_compositor_submit_max_ms=%.3f base_summary=%s candidate_summary=%s\n", base_label, candidate_label, base_first_radius, candidate_first_radius, base_first_chunks, candidate_first_chunks, base_chunks, candidate_chunks, base_batches, candidate_batches, base_startup_player_spawn, candidate_startup_player_spawn, base_terrain_queue_max, candidate_terrain_queue_max, base_process_wall_p95, candidate_process_wall_p95, base_submit_max, candidate_submit_max, base_summary, candidate_summary)
   }
 ' > "$COMPARE_SUMMARY"
 
