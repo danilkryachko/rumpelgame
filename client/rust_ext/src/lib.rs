@@ -621,40 +621,33 @@ impl GameClient {
 
     fn try_reuse_gpu_proxy_refresh(
         &mut self,
-        key: SubchunkKey,
-        reason: MeshQueueReason,
-        existing_gpu_slot: bool,
-        gpu_visible_render_active: bool,
-        needs_cpu_proxy: bool,
-        should_have_collision: bool,
-        should_have_shadow_proxy: bool,
-        work_start: Instant,
+        request: GpuProxyRefreshReuseRequest,
     ) -> Option<MeshJobResult> {
-        if reason != MeshQueueReason::ProxyRefresh
-            || !gpu_visible_render_active
-            || !existing_gpu_slot
+        if request.reason != MeshQueueReason::ProxyRefresh
+            || !request.gpu_visible_render_active
+            || !request.existing_gpu_slot
         {
             return None;
         }
 
-        if !needs_cpu_proxy {
-            self.remove_cpu_subchunk_mesh_node(key);
-            return Some(MeshJobResult::elapsed(work_start));
+        if !request.needs_cpu_proxy {
+            self.remove_cpu_subchunk_mesh_node(request.key);
+            return Some(MeshJobResult::elapsed(request.work_start));
         }
 
         let desired_payload = terrain_cpu_proxy_mesh_payload(
             gpu_terrain_shadow_proxy_mesh_mode(),
             true,
-            should_have_collision,
-            should_have_shadow_proxy,
+            request.should_have_collision,
+            request.should_have_shadow_proxy,
         );
         if self.refresh_existing_cpu_proxy_mesh_node(
-            key,
+            request.key,
             desired_payload,
-            should_have_collision,
-            should_have_shadow_proxy,
+            request.should_have_collision,
+            request.should_have_shadow_proxy,
         ) {
-            return Some(MeshJobResult::elapsed(work_start));
+            return Some(MeshJobResult::elapsed(request.work_start));
         }
 
         None
@@ -696,21 +689,16 @@ impl GameClient {
 
     fn build_subchunk_mesh_data(
         &mut self,
-        padded_blocks: &[u8],
-        packed_faces: Option<&gpu_terrain::PackedFaceBatch>,
-        mesh_build_plan: TerrainMeshBuildPlan,
-        cpu_proxy_mesh_payload: TerrainCpuProxyMeshPayload,
-        work_start: Instant,
-        gpu_uploads: usize,
-        gpu_upload_bytes: usize,
+        request: SubchunkMeshBuildRequest,
     ) -> Result<SubchunkMeshData, MeshJobResult> {
-        if mesh_build_plan == TerrainMeshBuildPlan::CpuProxyMesh {
-            let packed_faces = packed_faces
+        if request.mesh_build_plan == TerrainMeshBuildPlan::CpuProxyMesh {
+            let packed_faces = request
+                .packed_faces
                 .as_ref()
                 .expect("packed faces are built for uploaded GPU terrain");
-            let proxy_mesh = if cpu_proxy_mesh_payload.uses_indexed_shadow_mesh() {
+            let proxy_mesh = if request.cpu_proxy_mesh_payload.uses_indexed_shadow_mesh() {
                 packed_faces.build_indexed_compact_cpu_proxy_mesh()
-            } else if cpu_proxy_mesh_payload.uses_compact_mesh() {
+            } else if request.cpu_proxy_mesh_payload.uses_compact_mesh() {
                 packed_faces.build_compact_cpu_proxy_mesh()
             } else {
                 packed_faces.build_cpu_proxy_mesh()
@@ -730,7 +718,7 @@ impl GameClient {
             });
         }
 
-        if let Some(packed_faces) = packed_faces {
+        if let Some(packed_faces) = request.packed_faces {
             let mesh = packed_faces.build_cpu_array_mesh();
             return Ok(SubchunkMeshData {
                 vertices: mesh.vertices,
@@ -744,16 +732,16 @@ impl GameClient {
 
         let Some(mesher) = &mut self.mesher else {
             return Err(MeshJobResult::new(
-                elapsed_ms(work_start),
-                gpu_uploads,
-                gpu_upload_bytes,
+                elapsed_ms(request.work_start),
+                request.gpu_uploads,
+                request.gpu_upload_bytes,
             ));
         };
-        let Some(mesh_result) = mesher.mesh_chunk(padded_blocks) else {
+        let Some(mesh_result) = mesher.mesh_chunk(request.padded_blocks) else {
             return Err(MeshJobResult::new(
-                elapsed_ms(work_start),
-                gpu_uploads,
-                gpu_upload_bytes,
+                elapsed_ms(request.work_start),
+                request.gpu_uploads,
+                request.gpu_upload_bytes,
             ));
         };
         Ok(SubchunkMeshData {
@@ -792,36 +780,27 @@ impl GameClient {
         Some(array_mesh.upcast::<godot::classes::Mesh>())
     }
 
-    fn apply_subchunk_mesh_node(
-        &mut self,
-        key: SubchunkKey,
-        chunk_position: Vector3,
-        array_mesh: Option<&Gd<godot::classes::Mesh>>,
-        cpu_proxy_mesh: bool,
-        should_have_shadow_proxy: bool,
-        build_render_surface: bool,
-        collision_faces: Option<&PackedVector3Array>,
-    ) -> i32 {
-        let mesh_name = subchunk_mesh_name(key);
+    fn apply_subchunk_mesh_node(&mut self, request: ApplySubchunkMeshNodeRequest) -> i32 {
+        let mesh_name = subchunk_mesh_name(request.key);
         if let Some(mut mesh_instance) = self
             .base()
             .try_get_node_as::<godot::classes::MeshInstance3D>(&mesh_name)
         {
-            set_mesh_instance_surface(&mut mesh_instance, array_mesh);
-            mesh_instance.set_position(chunk_position);
+            set_mesh_instance_surface(&mut mesh_instance, request.array_mesh);
+            mesh_instance.set_position(request.chunk_position);
             configure_terrain_mesh_render_mode(
                 &mut mesh_instance,
-                cpu_proxy_mesh,
-                should_have_shadow_proxy,
+                request.cpu_proxy_mesh,
+                request.should_have_shadow_proxy,
             );
 
-            if build_render_surface {
+            if request.build_render_surface {
                 let material = self.get_chunk_material();
                 mesh_instance.set_material_override(&material);
             }
 
             clear_mesh_collisions(&mut mesh_instance);
-            if let Some(collision_faces) = collision_faces {
+            if let Some(collision_faces) = request.collision_faces {
                 create_mesh_trimesh_collision(&mut mesh_instance, collision_faces);
             }
             return count_static_body_children(&mesh_instance);
@@ -829,22 +808,22 @@ impl GameClient {
 
         let mut mesh_instance = godot::classes::MeshInstance3D::new_alloc();
         mesh_instance.set_name(&StringName::from(&mesh_name));
-        mesh_instance.set_position(chunk_position);
-        set_mesh_instance_surface(&mut mesh_instance, array_mesh);
+        mesh_instance.set_position(request.chunk_position);
+        set_mesh_instance_surface(&mut mesh_instance, request.array_mesh);
         configure_terrain_mesh_render_mode(
             &mut mesh_instance,
-            cpu_proxy_mesh,
-            should_have_shadow_proxy,
+            request.cpu_proxy_mesh,
+            request.should_have_shadow_proxy,
         );
 
-        if build_render_surface {
+        if request.build_render_surface {
             let material = self.get_chunk_material();
             mesh_instance.set_material_override(&material);
         }
 
         let mesh_node = mesh_instance.clone().upcast::<godot::classes::Node>();
         self.base_mut().add_child(&mesh_node);
-        if let Some(collision_faces) = collision_faces {
+        if let Some(collision_faces) = request.collision_faces {
             create_mesh_trimesh_collision(&mut mesh_instance, collision_faces);
         }
         count_static_body_children(&mesh_instance)
@@ -865,7 +844,7 @@ impl GameClient {
         let should_have_shadow_proxy =
             gpu_visible_render_active && self.subchunk_needs_shadow_proxy(key);
 
-        if let Some(result) = self.try_reuse_gpu_proxy_refresh(
+        if let Some(result) = self.try_reuse_gpu_proxy_refresh(GpuProxyRefreshReuseRequest {
             key,
             reason,
             existing_gpu_slot,
@@ -874,7 +853,7 @@ impl GameClient {
             should_have_collision,
             should_have_shadow_proxy,
             work_start,
-        ) {
+        }) {
             return result;
         }
 
@@ -931,15 +910,15 @@ impl GameClient {
             should_have_shadow_proxy,
         );
         let cpu_mesh_start = Instant::now();
-        let mesh_data = match self.build_subchunk_mesh_data(
-            &padded_blocks,
-            packed_faces.as_ref(),
+        let mesh_data = match self.build_subchunk_mesh_data(SubchunkMeshBuildRequest {
+            padded_blocks: &padded_blocks,
+            packed_faces: packed_faces.as_ref(),
             mesh_build_plan,
             cpu_proxy_mesh_payload,
             work_start,
-            gpu_upload.uploads,
-            gpu_upload.bytes,
-        ) {
+            gpu_uploads: gpu_upload.uploads,
+            gpu_upload_bytes: gpu_upload.bytes,
+        }) {
             Ok(mesh_data) => mesh_data,
             Err(result) => return result,
         };
@@ -973,15 +952,15 @@ impl GameClient {
                 mesh_data.vertices.clone()
             }
         });
-        let collision_bodies = self.apply_subchunk_mesh_node(
+        let collision_bodies = self.apply_subchunk_mesh_node(ApplySubchunkMeshNodeRequest {
             key,
             chunk_position,
-            array_mesh.as_ref(),
+            array_mesh: array_mesh.as_ref(),
             cpu_proxy_mesh,
             should_have_shadow_proxy,
             build_render_surface,
-            collision_faces.as_ref(),
-        );
+            collision_faces: collision_faces.as_ref(),
+        });
 
         let collision_ms = elapsed_ms(collision_start);
         let collision_faces_len = collision_faces.as_ref().map_or(0, |faces| faces.len());
@@ -1903,6 +1882,40 @@ impl MeshJobResult {
     fn elapsed(start: Instant) -> Self {
         Self::new(elapsed_ms(start), 0, 0)
     }
+}
+
+#[derive(Clone, Copy)]
+struct GpuProxyRefreshReuseRequest {
+    key: SubchunkKey,
+    reason: MeshQueueReason,
+    existing_gpu_slot: bool,
+    gpu_visible_render_active: bool,
+    needs_cpu_proxy: bool,
+    should_have_collision: bool,
+    should_have_shadow_proxy: bool,
+    work_start: Instant,
+}
+
+#[derive(Clone, Copy)]
+struct SubchunkMeshBuildRequest<'a> {
+    padded_blocks: &'a [u8],
+    packed_faces: Option<&'a gpu_terrain::PackedFaceBatch>,
+    mesh_build_plan: TerrainMeshBuildPlan,
+    cpu_proxy_mesh_payload: TerrainCpuProxyMeshPayload,
+    work_start: Instant,
+    gpu_uploads: usize,
+    gpu_upload_bytes: usize,
+}
+
+#[derive(Clone, Copy)]
+struct ApplySubchunkMeshNodeRequest<'a> {
+    key: SubchunkKey,
+    chunk_position: Vector3,
+    array_mesh: Option<&'a Gd<godot::classes::Mesh>>,
+    cpu_proxy_mesh: bool,
+    should_have_shadow_proxy: bool,
+    build_render_surface: bool,
+    collision_faces: Option<&'a PackedVector3Array>,
 }
 
 struct SubchunkMeshData {
@@ -4705,7 +4718,7 @@ fn chunk_block_coords(block_index: usize) -> (usize, usize, usize) {
 fn dirty_rebuild_subchunk_mask_for_y(y: usize) -> u32 {
     let sub_y = y / SUBCHUNK_H;
     let mut mask = 1u32 << sub_y;
-    if y % SUBCHUNK_H == 0 && sub_y > 0 {
+    if y.is_multiple_of(SUBCHUNK_H) && sub_y > 0 {
         mask |= 1u32 << (sub_y - 1);
     }
     if y % SUBCHUNK_H == SUBCHUNK_H - 1 && sub_y + 1 < SUBCHUNKS_PER_CHUNK as usize {
