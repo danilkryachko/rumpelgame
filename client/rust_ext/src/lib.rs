@@ -2831,6 +2831,10 @@ const GPU_TERRAIN_NATIVE_SHADOW_SHADER_LANGUAGE: &str = "glsl";
 const GPU_TERRAIN_NATIVE_SHADOW_SHADER_ENTRY: &str = "native_shadow_depth";
 const GPU_TERRAIN_NATIVE_SHADOW_SHADER_DEPTH_OUTPUT: u32 = 1;
 const GPU_TERRAIN_NATIVE_SHADOW_SHADER_COLOR_OUTPUT: u32 = 0;
+const GPU_TERRAIN_NATIVE_SHADOW_LIGHT_SOURCE: &str = "directional_light";
+const GPU_TERRAIN_NATIVE_SHADOW_LIGHT_SPACE: &str = "world_to_shadow";
+const GPU_TERRAIN_NATIVE_SHADOW_CASCADE_COUNT: u32 = 1;
+const GPU_TERRAIN_NATIVE_SHADOW_LIGHT_MATRIX_BYTES: u32 = 64;
 const GPU_TERRAIN_TRANSPARENT_ENV: &str = "RUMPELMC_GPU_TERRAIN_TRANSPARENT";
 const GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY";
@@ -3280,6 +3284,10 @@ struct GpuNativeShadowResourceDescriptor {
     shader_entry: &'static str,
     shader_depth_output_enabled: u32,
     shader_color_output_enabled: u32,
+    light_source: &'static str,
+    light_space: &'static str,
+    cascade_count: u32,
+    light_matrix_bytes: u32,
 }
 
 impl GpuNativeShadowResourceDescriptor {
@@ -3335,6 +3343,10 @@ impl GpuNativeShadowResourceDescriptor {
             shader_entry: GPU_TERRAIN_NATIVE_SHADOW_SHADER_ENTRY,
             shader_depth_output_enabled: GPU_TERRAIN_NATIVE_SHADOW_SHADER_DEPTH_OUTPUT,
             shader_color_output_enabled: GPU_TERRAIN_NATIVE_SHADOW_SHADER_COLOR_OUTPUT,
+            light_source: GPU_TERRAIN_NATIVE_SHADOW_LIGHT_SOURCE,
+            light_space: GPU_TERRAIN_NATIVE_SHADOW_LIGHT_SPACE,
+            cascade_count: GPU_TERRAIN_NATIVE_SHADOW_CASCADE_COUNT,
+            light_matrix_bytes: GPU_TERRAIN_NATIVE_SHADOW_LIGHT_MATRIX_BYTES,
         }
     }
 }
@@ -3661,6 +3673,30 @@ impl GpuNativeShadowResources {
     fn shader_color_output_enabled(&self) -> u32 {
         self.descriptor
             .map(|descriptor| descriptor.shader_color_output_enabled)
+            .unwrap_or(0)
+    }
+
+    fn light_source_label(&self) -> &'static str {
+        self.descriptor
+            .map(|descriptor| descriptor.light_source)
+            .unwrap_or("none")
+    }
+
+    fn light_space_label(&self) -> &'static str {
+        self.descriptor
+            .map(|descriptor| descriptor.light_space)
+            .unwrap_or("none")
+    }
+
+    fn cascade_count(&self) -> u32 {
+        self.descriptor
+            .map(|descriptor| descriptor.cascade_count)
+            .unwrap_or(0)
+    }
+
+    fn light_matrix_bytes(&self) -> u32 {
+        self.descriptor
+            .map(|descriptor| descriptor.light_matrix_bytes)
             .unwrap_or(0)
     }
 
@@ -4867,6 +4903,11 @@ impl GameClient {
         let native_shadow_shader_color_output_enabled = self
             .gpu_native_shadow_resources
             .shader_color_output_enabled();
+        let native_shadow_light_source = self.gpu_native_shadow_resources.light_source_label();
+        let native_shadow_light_space = self.gpu_native_shadow_resources.light_space_label();
+        let native_shadow_cascade_count = self.gpu_native_shadow_resources.cascade_count();
+        let native_shadow_light_matrix_bytes =
+            self.gpu_native_shadow_resources.light_matrix_bytes();
         let (native_shadow_covered_chunks, native_shadow_covered_subchunks) = self
             .gpu_native_shadow_resources
             .coverage_counts(&self.chunk_non_empty_subchunks);
@@ -4896,7 +4937,7 @@ impl GameClient {
         let dirty_bounds = dirty_bounds_label(self.perf.last_dirty_bounds);
         let dirty_edges = dirty_edge_label(self.perf.last_dirty_edge_mask);
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_light_source={} native_shadow_light_space={} native_shadow_cascade_count={} native_shadow_light_matrix_bytes={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -4974,6 +5015,10 @@ impl GameClient {
             native_shadow_shader_entry,
             native_shadow_shader_depth_output_enabled,
             native_shadow_shader_color_output_enabled,
+            native_shadow_light_source,
+            native_shadow_light_space,
+            native_shadow_cascade_count,
+            native_shadow_light_matrix_bytes,
             self.gpu_native_shadow_resources.creates,
             self.gpu_native_shadow_resources.reuses,
             self.gpu_native_shadow_resources.replaces,
@@ -5503,6 +5548,10 @@ mod tests {
                 shader_entry: GPU_TERRAIN_NATIVE_SHADOW_SHADER_ENTRY,
                 shader_depth_output_enabled: GPU_TERRAIN_NATIVE_SHADOW_SHADER_DEPTH_OUTPUT,
                 shader_color_output_enabled: GPU_TERRAIN_NATIVE_SHADOW_SHADER_COLOR_OUTPUT,
+                light_source: GPU_TERRAIN_NATIVE_SHADOW_LIGHT_SOURCE,
+                light_space: GPU_TERRAIN_NATIVE_SHADOW_LIGHT_SPACE,
+                cascade_count: GPU_TERRAIN_NATIVE_SHADOW_CASCADE_COUNT,
+                light_matrix_bytes: GPU_TERRAIN_NATIVE_SHADOW_LIGHT_MATRIX_BYTES,
             })
         );
     }
@@ -5559,6 +5608,10 @@ mod tests {
         assert_eq!(resources.shader_entry_label(), "none");
         assert_eq!(resources.shader_depth_output_enabled(), 0);
         assert_eq!(resources.shader_color_output_enabled(), 0);
+        assert_eq!(resources.light_source_label(), "none");
+        assert_eq!(resources.light_space_label(), "none");
+        assert_eq!(resources.cascade_count(), 0);
+        assert_eq!(resources.light_matrix_bytes(), 0);
 
         assert_eq!(
             resources.sync(true, true, mode, 5),
@@ -5711,6 +5764,22 @@ mod tests {
         assert_eq!(
             resources.shader_color_output_enabled(),
             GPU_TERRAIN_NATIVE_SHADOW_SHADER_COLOR_OUTPUT
+        );
+        assert_eq!(
+            resources.light_source_label(),
+            GPU_TERRAIN_NATIVE_SHADOW_LIGHT_SOURCE
+        );
+        assert_eq!(
+            resources.light_space_label(),
+            GPU_TERRAIN_NATIVE_SHADOW_LIGHT_SPACE
+        );
+        assert_eq!(
+            resources.cascade_count(),
+            GPU_TERRAIN_NATIVE_SHADOW_CASCADE_COUNT
+        );
+        assert_eq!(
+            resources.light_matrix_bytes(),
+            GPU_TERRAIN_NATIVE_SHADOW_LIGHT_MATRIX_BYTES
         );
 
         assert_eq!(
