@@ -45,6 +45,8 @@ const GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT_ENV: &str = "RUMPELMC_GPU_TERRAIN_COMPO
 const MAX_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT: u32 = 64;
 const GPU_TERRAIN_CULL_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_CULL_MODE";
 const GPU_TERRAIN_BUFFER_REPACK_ENV: &str = "RUMPELMC_GPU_TERRAIN_BUFFER_REPACK";
+const GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW_ENV: &str =
+    "RUMPELMC_GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW";
 
 pub const FACE_LEFT: u32 = 0;
 pub const FACE_RIGHT: u32 = 1;
@@ -861,6 +863,7 @@ enum GpuTerrainRepackFailureReason {
     MarkerOnly,
     MissingSource,
     SourceSizeMismatch,
+    UploadError,
 }
 
 impl GpuTerrainRepackFailureReason {
@@ -871,6 +874,7 @@ impl GpuTerrainRepackFailureReason {
             Self::MarkerOnly => "marker_only",
             Self::MissingSource => "missing_source",
             Self::SourceSizeMismatch => "source_size_mismatch",
+            Self::UploadError => "upload_error",
         }
     }
 }
@@ -890,6 +894,9 @@ struct GpuTerrainRepackTelemetry {
     source_missing: u64,
     payload_ready: u64,
     payload_bytes: u64,
+    upload_ready: u64,
+    upload_bytes: u64,
+    upload_ms: f64,
     last_ms: f64,
     fragmentation_before_pct: f64,
     fragmentation_after_pct: f64,
@@ -915,6 +922,9 @@ impl GpuTerrainRepackTelemetry {
                 source_missing: 0,
                 payload_ready: 0,
                 payload_bytes: 0,
+                upload_ready: 0,
+                upload_bytes: 0,
+                upload_ms: 0.0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -937,6 +947,9 @@ impl GpuTerrainRepackTelemetry {
                 source_missing: 0,
                 payload_ready: 0,
                 payload_bytes: 0,
+                upload_ready: 0,
+                upload_bytes: 0,
+                upload_ms: 0.0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -1056,6 +1069,12 @@ fn build_gpu_terrain_repack_payload(
     }
 
     Ok(GpuTerrainRepackPayload { bytes })
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct GpuTerrainRepackPreview {
+    telemetry: GpuTerrainRepackTelemetry,
+    payload: Option<GpuTerrainRepackPayload>,
 }
 
 #[repr(C)]
@@ -1203,6 +1222,9 @@ pub struct GpuTerrainStats {
     pub repack_source_missing: u64,
     pub repack_payload_ready: u64,
     pub repack_payload_bytes: u64,
+    pub repack_upload_ready: u64,
+    pub repack_upload_bytes: u64,
+    pub repack_upload_ms: f64,
     pub repack_ms: f64,
     pub repack_fragmentation_before_pct: f64,
     pub repack_fragmentation_after_pct: f64,
@@ -1426,6 +1448,7 @@ pub struct GpuTerrainBufferPool {
     draw_keys: Vec<GpuSubchunkKey>,
     draw_indices: HashMap<GpuSubchunkKey, usize>,
     repack_sources: HashMap<GpuSubchunkKey, Vec<u8>>,
+    repack_upload_preview_sampled: bool,
     render_pipeline: Option<GpuTerrainRenderPipeline>,
     used_faces: usize,
     draw_count: usize,
@@ -1519,6 +1542,7 @@ impl GpuTerrainBufferPool {
             draw_keys: Vec::new(),
             draw_indices: HashMap::new(),
             repack_sources: HashMap::new(),
+            repack_upload_preview_sampled: false,
             render_pipeline,
             used_faces: 0,
             draw_count: 0,
@@ -1582,8 +1606,9 @@ impl GpuTerrainBufferPool {
         key: GpuSubchunkKey,
         batch: &PackedFaceBatch,
     ) -> Option<GpuTerrainSlot> {
-        self.remove_subchunk(key);
+        self.remove_subchunk_inner(key);
         if batch.face_count() == 0 {
+            self.refresh_repack_upload_preview();
             return None;
         }
 
@@ -1628,6 +1653,7 @@ impl GpuTerrainBufferPool {
         }
         self.used_faces += range.len;
         self.insert_draw_command(key, slot);
+        self.refresh_repack_upload_preview();
         Some(slot)
     }
 
@@ -1654,6 +1680,11 @@ impl GpuTerrainBufferPool {
     }
 
     pub fn remove_subchunk(&mut self, key: GpuSubchunkKey) {
+        self.remove_subchunk_inner(key);
+        self.refresh_repack_upload_preview();
+    }
+
+    fn remove_subchunk_inner(&mut self, key: GpuSubchunkKey) {
         self.repack_sources.remove(&key);
         let Some(slot) = self.slots.remove(&key) else {
             return;
@@ -1741,6 +1772,9 @@ impl GpuTerrainBufferPool {
             repack_source_missing: repack_telemetry.source_missing,
             repack_payload_ready: repack_telemetry.payload_ready,
             repack_payload_bytes: repack_telemetry.payload_bytes,
+            repack_upload_ready: repack_telemetry.upload_ready,
+            repack_upload_bytes: repack_telemetry.upload_bytes,
+            repack_upload_ms: repack_telemetry.upload_ms,
             repack_ms: repack_telemetry.last_ms,
             repack_fragmentation_before_pct: repack_telemetry.fragmentation_before_pct,
             repack_fragmentation_after_pct: repack_telemetry.fragmentation_after_pct,
@@ -1769,18 +1803,27 @@ impl GpuTerrainBufferPool {
     }
 
     fn repack_telemetry(&self, allocator_stats: FaceAllocatorStats) -> GpuTerrainRepackTelemetry {
+        self.build_repack_preview(allocator_stats).telemetry
+    }
+
+    fn build_repack_preview(&self, allocator_stats: FaceAllocatorStats) -> GpuTerrainRepackPreview {
         let mut telemetry = self.repack_telemetry;
         if telemetry.requested == 0 {
-            return telemetry;
+            return GpuTerrainRepackPreview {
+                telemetry,
+                payload: None,
+            };
         }
 
+        telemetry.payload_ready = 0;
+        telemetry.payload_bytes = 0;
         telemetry.fragmentation_before_pct = allocator_stats.fragmentation_pct();
         telemetry.largest_free_before = allocator_stats.largest_free_faces;
         telemetry.source_subchunks = self.repack_sources.len() as u64;
         telemetry.source_bytes = repack_source_bytes(&self.repack_sources) as u64;
         telemetry.source_missing =
             repack_source_missing_count(&self.slots, &self.repack_sources) as u64;
-        match build_gpu_terrain_repack_plan(
+        let payload = match build_gpu_terrain_repack_plan(
             self.slots.iter().map(|(key, slot)| (*key, *slot)),
             MAX_GPU_TERRAIN_FACES,
         ) {
@@ -1794,22 +1837,89 @@ impl GpuTerrainBufferPool {
                     Ok(payload) => {
                         telemetry.payload_ready = 1;
                         telemetry.payload_bytes = payload.bytes.len() as u64;
-                        telemetry.failure_reason = GpuTerrainRepackFailureReason::MarkerOnly;
+                        if payload.bytes.is_empty()
+                            || (telemetry.upload_ready > 0
+                                && telemetry.upload_bytes != payload.bytes.len() as u64)
+                        {
+                            telemetry.upload_ready = 0;
+                            telemetry.upload_bytes = 0;
+                            telemetry.upload_ms = 0.0;
+                        }
+                        if telemetry.failure_reason != GpuTerrainRepackFailureReason::UploadError {
+                            telemetry.failure_reason = GpuTerrainRepackFailureReason::MarkerOnly;
+                        }
+                        Some(payload)
                     }
                     Err(GpuTerrainRepackPayloadError::MissingSource) => {
+                        telemetry.upload_ready = 0;
+                        telemetry.upload_bytes = 0;
+                        telemetry.upload_ms = 0.0;
                         telemetry.failure_reason = GpuTerrainRepackFailureReason::MissingSource;
+                        None
                     }
                     Err(GpuTerrainRepackPayloadError::SourceSizeMismatch) => {
+                        telemetry.upload_ready = 0;
+                        telemetry.upload_bytes = 0;
+                        telemetry.upload_ms = 0.0;
                         telemetry.failure_reason =
                             GpuTerrainRepackFailureReason::SourceSizeMismatch;
+                        None
                     }
                 }
             }
             Err(GpuTerrainRepackPlanError::CapacityExceeded) => {
+                telemetry.upload_ready = 0;
+                telemetry.upload_bytes = 0;
+                telemetry.upload_ms = 0.0;
                 telemetry.failure_reason = GpuTerrainRepackFailureReason::Capacity;
+                None
+            }
+        };
+
+        GpuTerrainRepackPreview { telemetry, payload }
+    }
+
+    fn refresh_repack_upload_preview(&mut self) {
+        if self.repack_telemetry.requested == 0
+            || self.repack_upload_preview_sampled
+            || !gpu_terrain_buffer_repack_upload_preview_enabled()
+        {
+            return;
+        }
+
+        let mut preview = self.build_repack_preview(self.allocator.stats());
+        if let Some(payload) = preview.payload {
+            if payload.bytes.is_empty() {
+                preview.telemetry.upload_bytes = 0;
+                preview.telemetry.upload_ms = 0.0;
+            } else {
+                let upload_start = Instant::now();
+                let upload_bytes = payload.bytes.len();
+                let payload_pba = PackedByteArray::from(payload.bytes.as_slice());
+                let replacement_buffer_rid = self.rd.storage_buffer_create(upload_bytes as u32);
+                if replacement_buffer_rid.is_invalid() {
+                    preview.telemetry.upload_ready = 0;
+                    preview.telemetry.upload_bytes = 0;
+                    preview.telemetry.upload_ms = 0.0;
+                    preview.telemetry.failure_reason = GpuTerrainRepackFailureReason::UploadError;
+                    self.repack_upload_preview_sampled = true;
+                } else {
+                    self.rd.buffer_update(
+                        replacement_buffer_rid,
+                        0,
+                        payload_pba.len() as u32,
+                        &payload_pba,
+                    );
+                    self.rd.free_rid(replacement_buffer_rid);
+                    preview.telemetry.upload_ready = 1;
+                    preview.telemetry.upload_bytes = upload_bytes as u64;
+                    preview.telemetry.upload_ms = upload_start.elapsed().as_secs_f64() * 1000.0;
+                    self.repack_upload_preview_sampled = true;
+                }
             }
         }
-        telemetry
+
+        self.repack_telemetry = preview.telemetry;
     }
 
     fn repack_source_enabled(&self) -> bool {
@@ -2794,6 +2904,15 @@ fn gpu_terrain_buffer_repack_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         gpu_terrain_buffer_repack_from_env(std::env::var(GPU_TERRAIN_BUFFER_REPACK_ENV).ok())
+    })
+}
+
+fn gpu_terrain_buffer_repack_upload_preview_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(
+            std::env::var(GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW_ENV).ok(),
+        )
     })
 }
 
