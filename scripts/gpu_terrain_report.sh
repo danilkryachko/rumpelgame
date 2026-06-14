@@ -89,7 +89,7 @@ metric_max_terrain_queue() {
   {
     summary_grep 'terrain_queue_max_ms=' \
       | sed -n 's/.*terrain_queue_max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
-    summary_grep '^movement_terrain_queue ' \
+    summary_grep ':movement_terrain_queue ' \
       | sed -n 's/.* max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p'
   } | awk '
     BEGIN { found = 0; max = 0.0 }
@@ -321,7 +321,7 @@ metric_max_source_terrain_queue() {
   {
     summary_grep_with_path 'terrain_queue_max_ms=' \
       | sed -n 's/^\([^:]*\):.*terrain_queue_max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\2 \1/p'
-    summary_grep_with_path '^movement_terrain_queue ' \
+    summary_grep_with_path ':movement_terrain_queue ' \
       | sed -n 's/^\([^:]*\):.* max_ms=\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\2 \1/p'
   } | awk '
     NF >= 2 {
