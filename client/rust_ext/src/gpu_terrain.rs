@@ -44,6 +44,7 @@ const GPU_TERRAIN_TIMESTAMP_END: &str = "rumpel_gpu_terrain_end";
 const GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT_ENV: &str = "RUMPELMC_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT";
 const MAX_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT: u32 = 64;
 const GPU_TERRAIN_CULL_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_CULL_MODE";
+const GPU_TERRAIN_BUFFER_REPACK_ENV: &str = "RUMPELMC_GPU_TERRAIN_BUFFER_REPACK";
 
 pub const FACE_LEFT: u32 = 0;
 pub const FACE_RIGHT: u32 = 1;
@@ -716,7 +717,7 @@ fn pack_signed_i16(value: i32) -> u32 {
     u16::from_le_bytes(value.to_le_bytes()) as u32
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GpuSubchunkKey {
     pub chunk_x: i32,
     pub sub_y: i32,
@@ -853,6 +854,147 @@ pub struct GpuTerrainSlot {
     pub face_count: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GpuTerrainRepackFailureReason {
+    Capacity,
+    Disabled,
+    MarkerOnly,
+}
+
+impl GpuTerrainRepackFailureReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Capacity => "capacity",
+            Self::Disabled => "disabled",
+            Self::MarkerOnly => "marker_only",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct GpuTerrainRepackTelemetry {
+    requested: u64,
+    active: u64,
+    attempts: u64,
+    success: u64,
+    abort: u64,
+    moved_subchunks: u64,
+    moved_faces: u64,
+    bytes: u64,
+    last_ms: f64,
+    fragmentation_before_pct: f64,
+    fragmentation_after_pct: f64,
+    largest_free_before: usize,
+    largest_free_after: usize,
+    failure_reason: GpuTerrainRepackFailureReason,
+}
+
+impl GpuTerrainRepackTelemetry {
+    fn marker_only(enabled: bool) -> Self {
+        if enabled {
+            Self {
+                requested: 1,
+                active: 0,
+                attempts: 0,
+                success: 0,
+                abort: 1,
+                moved_subchunks: 0,
+                moved_faces: 0,
+                bytes: 0,
+                last_ms: 0.0,
+                fragmentation_before_pct: 0.0,
+                fragmentation_after_pct: 0.0,
+                largest_free_before: 0,
+                largest_free_after: 0,
+                failure_reason: GpuTerrainRepackFailureReason::MarkerOnly,
+            }
+        } else {
+            Self {
+                requested: 0,
+                active: 0,
+                attempts: 0,
+                success: 0,
+                abort: 0,
+                moved_subchunks: 0,
+                moved_faces: 0,
+                bytes: 0,
+                last_ms: 0.0,
+                fragmentation_before_pct: 0.0,
+                fragmentation_after_pct: 0.0,
+                largest_free_before: 0,
+                largest_free_after: 0,
+                failure_reason: GpuTerrainRepackFailureReason::Disabled,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GpuTerrainRepackPlacement {
+    key: GpuSubchunkKey,
+    old_start_face: usize,
+    new_start_face: usize,
+    face_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GpuTerrainRepackPlan {
+    placements: Vec<GpuTerrainRepackPlacement>,
+    total_faces: usize,
+    moved_subchunks: usize,
+    moved_faces: usize,
+    tail_free_range: FaceRange,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuTerrainRepackPlanError {
+    CapacityExceeded,
+}
+
+fn build_gpu_terrain_repack_plan(
+    slots: impl IntoIterator<Item = (GpuSubchunkKey, GpuTerrainSlot)>,
+    capacity_faces: usize,
+) -> Result<GpuTerrainRepackPlan, GpuTerrainRepackPlanError> {
+    let mut slots = slots.into_iter().collect::<Vec<_>>();
+    slots.sort_by_key(|(key, _)| *key);
+
+    let mut placements = Vec::with_capacity(slots.len());
+    let mut next_start = 0usize;
+    let mut moved_subchunks = 0usize;
+    let mut moved_faces = 0usize;
+
+    for (key, slot) in slots {
+        let Some(next_end) = next_start.checked_add(slot.face_count) else {
+            return Err(GpuTerrainRepackPlanError::CapacityExceeded);
+        };
+        if next_end > capacity_faces {
+            return Err(GpuTerrainRepackPlanError::CapacityExceeded);
+        }
+        if slot.start_face != next_start {
+            moved_subchunks += 1;
+            moved_faces += slot.face_count;
+        }
+        placements.push(GpuTerrainRepackPlacement {
+            key,
+            old_start_face: slot.start_face,
+            new_start_face: next_start,
+            face_count: slot.face_count,
+        });
+        next_start = next_end;
+    }
+
+    Ok(GpuTerrainRepackPlan {
+        placements,
+        total_faces: next_start,
+        moved_subchunks,
+        moved_faces,
+        tail_free_range: FaceRange {
+            start: next_start,
+            len: capacity_faces.saturating_sub(next_start),
+        },
+    })
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 struct IndirectDrawCommand {
@@ -985,6 +1127,20 @@ pub struct GpuTerrainStats {
     pub largest_free_faces: usize,
     pub fragmented_free_faces: usize,
     pub fragmentation_pct: f64,
+    pub repack_requested: u64,
+    pub repack_active: u64,
+    pub repack_attempts: u64,
+    pub repack_success: u64,
+    pub repack_abort: u64,
+    pub repack_moved_subchunks: u64,
+    pub repack_moved_faces: u64,
+    pub repack_bytes: u64,
+    pub repack_ms: f64,
+    pub repack_fragmentation_before_pct: f64,
+    pub repack_fragmentation_after_pct: f64,
+    pub repack_largest_free_before: usize,
+    pub repack_largest_free_after: usize,
+    pub repack_failure_reason: &'static str,
     pub draw_rebuild_count: u64,
     pub last_draw_rebuild_ms: f64,
     pub avg_draw_rebuild_ms: f64,
@@ -1236,6 +1392,7 @@ pub struct GpuTerrainBufferPool {
     upload_failures: u64,
     upload_capacity_failures: u64,
     upload_fragmentation_failures: u64,
+    repack_telemetry: GpuTerrainRepackTelemetry,
     draw_rebuild_count: u64,
     avg_draw_rebuild_ms: f64,
     max_draw_rebuild_ms: f64,
@@ -1281,6 +1438,8 @@ impl GpuTerrainBufferPool {
             None
         };
         let immutable_binding_create_count = u64::from(render_pipeline.is_some());
+        let repack_telemetry =
+            GpuTerrainRepackTelemetry::marker_only(gpu_terrain_buffer_repack_enabled());
 
         Some(Self {
             rd,
@@ -1325,6 +1484,7 @@ impl GpuTerrainBufferPool {
             upload_failures: 0,
             upload_capacity_failures: 0,
             upload_fragmentation_failures: 0,
+            repack_telemetry,
             draw_rebuild_count: 0,
             avg_draw_rebuild_ms: 0.0,
             max_draw_rebuild_ms: 0.0,
@@ -1434,6 +1594,7 @@ impl GpuTerrainBufferPool {
 
     pub fn stats(&self) -> GpuTerrainStats {
         let allocator_stats = self.allocator.stats();
+        let repack_telemetry = self.repack_telemetry(allocator_stats);
         GpuTerrainStats {
             subchunks: self.slots.len(),
             faces: self.used_faces,
@@ -1488,6 +1649,20 @@ impl GpuTerrainBufferPool {
             largest_free_faces: allocator_stats.largest_free_faces,
             fragmented_free_faces: allocator_stats.fragmented_free_faces(),
             fragmentation_pct: allocator_stats.fragmentation_pct(),
+            repack_requested: repack_telemetry.requested,
+            repack_active: repack_telemetry.active,
+            repack_attempts: repack_telemetry.attempts,
+            repack_success: repack_telemetry.success,
+            repack_abort: repack_telemetry.abort,
+            repack_moved_subchunks: repack_telemetry.moved_subchunks,
+            repack_moved_faces: repack_telemetry.moved_faces,
+            repack_bytes: repack_telemetry.bytes,
+            repack_ms: repack_telemetry.last_ms,
+            repack_fragmentation_before_pct: repack_telemetry.fragmentation_before_pct,
+            repack_fragmentation_after_pct: repack_telemetry.fragmentation_after_pct,
+            repack_largest_free_before: repack_telemetry.largest_free_before,
+            repack_largest_free_after: repack_telemetry.largest_free_after,
+            repack_failure_reason: repack_telemetry.failure_reason.as_str(),
             draw_rebuild_count: self.draw_rebuild_count,
             last_draw_rebuild_ms: self.last_draw_rebuild_ms,
             avg_draw_rebuild_ms: self.avg_draw_rebuild_ms,
@@ -1507,6 +1682,33 @@ impl GpuTerrainBufferPool {
             avg_compositor_gpu_ms: self.avg_compositor_gpu_ms,
             max_compositor_gpu_ms: self.max_compositor_gpu_ms,
         }
+    }
+
+    fn repack_telemetry(&self, allocator_stats: FaceAllocatorStats) -> GpuTerrainRepackTelemetry {
+        let mut telemetry = self.repack_telemetry;
+        if telemetry.requested == 0 {
+            return telemetry;
+        }
+
+        telemetry.fragmentation_before_pct = allocator_stats.fragmentation_pct();
+        telemetry.largest_free_before = allocator_stats.largest_free_faces;
+        match build_gpu_terrain_repack_plan(
+            self.slots.iter().map(|(key, slot)| (*key, *slot)),
+            MAX_GPU_TERRAIN_FACES,
+        ) {
+            Ok(plan) => {
+                telemetry.moved_subchunks = plan.moved_subchunks as u64;
+                telemetry.moved_faces = plan.moved_faces as u64;
+                telemetry.bytes = (plan.moved_faces * PACKED_FACE_BYTES) as u64;
+                telemetry.fragmentation_after_pct = 0.0;
+                telemetry.largest_free_after = plan.tail_free_range.len;
+                telemetry.failure_reason = GpuTerrainRepackFailureReason::MarkerOnly;
+            }
+            Err(GpuTerrainRepackPlanError::CapacityExceeded) => {
+                telemetry.failure_reason = GpuTerrainRepackFailureReason::Capacity;
+            }
+        }
+        telemetry
     }
 
     pub fn set_lighting(&mut self, lighting: GpuTerrainLighting) {
@@ -2483,6 +2685,24 @@ fn gpu_terrain_cull_mode_from_env(value: Option<String>) -> PolygonCullMode {
     }
 }
 
+fn gpu_terrain_buffer_repack_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(std::env::var(GPU_TERRAIN_BUFFER_REPACK_ENV).ok())
+    })
+}
+
+fn gpu_terrain_buffer_repack_from_env(value: Option<String>) -> bool {
+    matches!(
+        value
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("1" | "true" | "yes" | "on" | "enabled")
+    )
+}
+
 fn polygon_cull_mode_label(cull_mode: PolygonCullMode) -> &'static str {
     match cull_mode {
         PolygonCullMode::DISABLED => "disabled",
@@ -2772,6 +2992,55 @@ mod tests {
             gpu_terrain_cull_mode_from_env(Some("front".to_string())),
             PolygonCullMode::FRONT
         );
+    }
+
+    #[test]
+    fn gpu_terrain_buffer_repack_flag_is_explicit_opt_in() {
+        assert!(!gpu_terrain_buffer_repack_from_env(None));
+        assert!(!gpu_terrain_buffer_repack_from_env(Some(String::new())));
+        assert!(!gpu_terrain_buffer_repack_from_env(Some("0".to_string())));
+        assert!(!gpu_terrain_buffer_repack_from_env(Some(
+            "false".to_string()
+        )));
+        assert!(!gpu_terrain_buffer_repack_from_env(Some(
+            "disabled".to_string()
+        )));
+        assert!(!gpu_terrain_buffer_repack_from_env(Some(
+            "unknown".to_string()
+        )));
+
+        assert!(gpu_terrain_buffer_repack_from_env(Some("1".to_string())));
+        assert!(gpu_terrain_buffer_repack_from_env(Some("true".to_string())));
+        assert!(gpu_terrain_buffer_repack_from_env(Some("on".to_string())));
+        assert!(gpu_terrain_buffer_repack_from_env(Some(
+            "enabled".to_string()
+        )));
+    }
+
+    #[test]
+    fn repack_marker_telemetry_is_default_off() {
+        let telemetry = GpuTerrainRepackTelemetry::marker_only(false);
+
+        assert_eq!(telemetry.requested, 0);
+        assert_eq!(telemetry.active, 0);
+        assert_eq!(telemetry.attempts, 0);
+        assert_eq!(telemetry.success, 0);
+        assert_eq!(telemetry.abort, 0);
+        assert_eq!(telemetry.failure_reason.as_str(), "disabled");
+    }
+
+    #[test]
+    fn repack_marker_telemetry_records_flagged_request_without_runtime_attempt() {
+        let telemetry = GpuTerrainRepackTelemetry::marker_only(true);
+
+        assert_eq!(telemetry.requested, 1);
+        assert_eq!(telemetry.active, 0);
+        assert_eq!(telemetry.attempts, 0);
+        assert_eq!(telemetry.success, 0);
+        assert_eq!(telemetry.abort, 1);
+        assert_eq!(telemetry.moved_subchunks, 0);
+        assert_eq!(telemetry.moved_faces, 0);
+        assert_eq!(telemetry.failure_reason.as_str(), "marker_only");
     }
 
     #[test]
@@ -3723,6 +3992,133 @@ mod tests {
         assert_eq!(
             upload_failure_kind(exhausted, 8),
             UploadFailureKind::Capacity
+        );
+    }
+
+    #[test]
+    fn repack_plan_packs_slots_in_deterministic_key_order() {
+        let slots = vec![
+            (
+                GpuSubchunkKey {
+                    chunk_x: 1,
+                    sub_y: 0,
+                    chunk_z: 0,
+                },
+                GpuTerrainSlot {
+                    start_face: 30,
+                    face_count: 3,
+                },
+            ),
+            (
+                GpuSubchunkKey {
+                    chunk_x: 0,
+                    sub_y: 1,
+                    chunk_z: 0,
+                },
+                GpuTerrainSlot {
+                    start_face: 10,
+                    face_count: 2,
+                },
+            ),
+            (
+                GpuSubchunkKey {
+                    chunk_x: 0,
+                    sub_y: 0,
+                    chunk_z: 0,
+                },
+                GpuTerrainSlot {
+                    start_face: 20,
+                    face_count: 4,
+                },
+            ),
+        ];
+
+        let plan = build_gpu_terrain_repack_plan(slots, 16).unwrap();
+
+        assert_eq!(plan.total_faces, 9);
+        assert_eq!(plan.tail_free_range, FaceRange { start: 9, len: 7 });
+        assert_eq!(
+            plan.placements
+                .iter()
+                .map(|placement| (
+                    placement.key.chunk_x,
+                    placement.key.sub_y,
+                    placement.key.chunk_z,
+                    placement.new_start_face,
+                    placement.face_count,
+                ))
+                .collect::<Vec<_>>(),
+            vec![(0, 0, 0, 0, 4), (0, 1, 0, 4, 2), (1, 0, 0, 6, 3)]
+        );
+    }
+
+    #[test]
+    fn repack_plan_reports_only_changed_slots_as_moved() {
+        let slots = vec![
+            (
+                GpuSubchunkKey {
+                    chunk_x: 0,
+                    sub_y: 0,
+                    chunk_z: 0,
+                },
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 4,
+                },
+            ),
+            (
+                GpuSubchunkKey {
+                    chunk_x: 0,
+                    sub_y: 1,
+                    chunk_z: 0,
+                },
+                GpuTerrainSlot {
+                    start_face: 12,
+                    face_count: 2,
+                },
+            ),
+        ];
+
+        let plan = build_gpu_terrain_repack_plan(slots, 16).unwrap();
+
+        assert_eq!(plan.moved_subchunks, 1);
+        assert_eq!(plan.moved_faces, 2);
+        assert_eq!(plan.placements[0].old_start_face, 0);
+        assert_eq!(plan.placements[0].new_start_face, 0);
+        assert_eq!(plan.placements[1].old_start_face, 12);
+        assert_eq!(plan.placements[1].new_start_face, 4);
+    }
+
+    #[test]
+    fn repack_plan_rejects_capacity_overflow() {
+        let slots = vec![
+            (
+                GpuSubchunkKey {
+                    chunk_x: 0,
+                    sub_y: 0,
+                    chunk_z: 0,
+                },
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 8,
+                },
+            ),
+            (
+                GpuSubchunkKey {
+                    chunk_x: 1,
+                    sub_y: 0,
+                    chunk_z: 0,
+                },
+                GpuTerrainSlot {
+                    start_face: 12,
+                    face_count: 9,
+                },
+            ),
+        ];
+
+        assert_eq!(
+            build_gpu_terrain_repack_plan(slots, 16),
+            Err(GpuTerrainRepackPlanError::CapacityExceeded)
         );
     }
 

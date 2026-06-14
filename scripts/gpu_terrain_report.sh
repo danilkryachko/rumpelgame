@@ -130,6 +130,28 @@ metric_sum() {
     '
 }
 
+metric_latest_text() {
+  key="$1"
+  summary_grep "$key=" | awk -v key="$key" '
+    BEGIN { prefix = key "=" }
+    {
+      for (i = 1; i <= NF; i++) {
+        if (index($i, prefix) == 1) {
+          value = substr($i, length(prefix) + 1)
+          found = 1
+        }
+      }
+    }
+    END {
+      if (found) {
+        printf("%s\n", value)
+      } else {
+        printf("n/a\n")
+      }
+    }
+  '
+}
+
 metric_triplet_max() {
   key="$1"
   summary_grep "$key=" \
@@ -529,6 +551,20 @@ error_scan() {
   printf -- '- max `gpu_largest_free`: `%s`\n' "$(metric_max gpu_largest_free)"
   printf -- '- max `gpu_fragmented_free_faces`: `%s`\n' "$(metric_max gpu_fragmented_free_faces)"
   printf -- '- max `gpu_fragmentation_pct`: `%s`\n' "$(metric_max gpu_fragmentation_pct)"
+  printf -- '- max `gpu_repack_requested`: `%s`\n' "$(metric_max gpu_repack_requested)"
+  printf -- '- max `gpu_repack_active`: `%s`\n' "$(metric_max gpu_repack_active)"
+  printf -- '- max `gpu_repack_attempts`: `%s`\n' "$(metric_max gpu_repack_attempts)"
+  printf -- '- max `gpu_repack_success`: `%s`\n' "$(metric_max gpu_repack_success)"
+  printf -- '- max `gpu_repack_abort`: `%s`\n' "$(metric_max gpu_repack_abort)"
+  printf -- '- max `gpu_repack_moved_subchunks`: `%s`\n' "$(metric_max gpu_repack_moved_subchunks)"
+  printf -- '- max `gpu_repack_moved_faces`: `%s`\n' "$(metric_max gpu_repack_moved_faces)"
+  printf -- '- max `gpu_repack_bytes`: `%s`\n' "$(metric_max gpu_repack_bytes)"
+  printf -- '- max `gpu_repack_ms`: `%s`\n' "$(metric_max gpu_repack_ms)"
+  printf -- '- max `gpu_repack_fragmentation_before_pct`: `%s`\n' "$(metric_max gpu_repack_fragmentation_before_pct)"
+  printf -- '- max `gpu_repack_fragmentation_after_pct`: `%s`\n' "$(metric_max gpu_repack_fragmentation_after_pct)"
+  printf -- '- max `gpu_repack_largest_free_before`: `%s`\n' "$(metric_max gpu_repack_largest_free_before)"
+  printf -- '- max `gpu_repack_largest_free_after`: `%s`\n' "$(metric_max gpu_repack_largest_free_after)"
+  printf -- '- latest `gpu_repack_failure_reason`: `%s`\n' "$(metric_latest_text gpu_repack_failure_reason)"
   printf -- '- max `terrain_queue_max_ms`: `%s`\n' "$(metric_max_terrain_queue)"
   printf -- '- max `process_wall_p95_ms`: `%s`\n' "$(metric_max process_wall_p95_ms)"
   printf -- '- max `gpu_compositor_submit_max_ms`: `%s`\n' "$(metric_max gpu_compositor_submit_max_ms)"

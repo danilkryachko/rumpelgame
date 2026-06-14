@@ -111,6 +111,12 @@ This design does not authorize:
 - enabling repack by default
 - hiding upload failures by reducing terrain quality
 
+## Current Prototype Status
+
+The first prototype slice is implemented as marker-only telemetry plus a pure planner. `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK=1` records `gpu_repack_requested=1`, keeps `gpu_repack_active=0`, keeps runtime attempts and success at `0`, records an abort reason of `marker_only`, and computes a read-only deterministic compaction preview from current slots. It does not replace the GPU face buffer or mutate slot offsets.
+
+`scripts/gpu_terrain_report.sh` aggregates the numeric `gpu_repack_*` fields and reports the latest `gpu_repack_failure_reason`.
+
 ## Next Implementation Slice
 
-The next slice should add the default-off flag parser, marker-only telemetry, and unit tests for a pure `GpuTerrainRepackPlan` planner. Runtime buffer replacement should wait until the plan, telemetry, and abort paths are covered by tests.
+The next slice should add the CPU-owned resident packed-face source needed for an all-or-nothing repack. Runtime buffer replacement should wait until that source data, buffer swap, telemetry, and abort paths are covered by tests.
