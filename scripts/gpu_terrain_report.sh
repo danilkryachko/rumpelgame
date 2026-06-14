@@ -452,6 +452,8 @@ error_scan() {
   printf -- '- max `native_shadow_framebuffer_rid_allocated`: `%s`\n' "$(metric_max native_shadow_framebuffer_rid_allocated)"
   printf -- '- max `native_shadow_framebuffer_attachment_count`: `%s`\n' "$(metric_max native_shadow_framebuffer_attachment_count)"
   printf -- '- max `native_shadow_framebuffer_pass_compat_error_count`: `%s`\n' "$(metric_max native_shadow_framebuffer_pass_compat_error_count)"
+  printf -- '- max `native_shadow_framebuffer_depth_only_enabled`: `%s`\n' "$(metric_max native_shadow_framebuffer_depth_only_enabled)"
+  printf -- '- max `native_shadow_framebuffer_color_attachment_count`: `%s`\n' "$(metric_max native_shadow_framebuffer_color_attachment_count)"
   printf -- '- max `native_shadow_pass_rid_allocated`: `%s`\n' "$(metric_max native_shadow_pass_rid_allocated)"
   printf -- '- max `native_shadow_pass_begin_count`: `%s`\n' "$(metric_max native_shadow_pass_begin_count)"
   printf -- '- max `native_shadow_pass_end_count`: `%s`\n' "$(metric_max native_shadow_pass_end_count)"
@@ -563,6 +565,8 @@ error_scan() {
   metric_max_source native_shadow_framebuffer_rid_allocated | sed 's/^/- /'
   metric_max_source native_shadow_framebuffer_attachment_count | sed 's/^/- /'
   metric_max_source native_shadow_framebuffer_pass_compat_error_count | sed 's/^/- /'
+  metric_max_source native_shadow_framebuffer_depth_only_enabled | sed 's/^/- /'
+  metric_max_source native_shadow_framebuffer_color_attachment_count | sed 's/^/- /'
   metric_max_source native_shadow_pass_rid_allocated | sed 's/^/- /'
   metric_max_source native_shadow_pass_begin_count | sed 's/^/- /'
   metric_max_source native_shadow_pass_end_count | sed 's/^/- /'
