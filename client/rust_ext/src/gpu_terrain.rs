@@ -916,6 +916,9 @@ struct GpuTerrainRepackTelemetry {
     apply_ready: u64,
     apply_steps: u64,
     apply_slots: u64,
+    final_swap_ready: u64,
+    final_swap_blocked: u64,
+    final_swap_slots: u64,
     last_ms: f64,
     fragmentation_before_pct: f64,
     fragmentation_after_pct: f64,
@@ -957,6 +960,9 @@ impl GpuTerrainRepackTelemetry {
                 apply_ready: 0,
                 apply_steps: 0,
                 apply_slots: 0,
+                final_swap_ready: 0,
+                final_swap_blocked: 0,
+                final_swap_slots: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -995,6 +1001,9 @@ impl GpuTerrainRepackTelemetry {
                 apply_ready: 0,
                 apply_steps: 0,
                 apply_slots: 0,
+                final_swap_ready: 0,
+                final_swap_blocked: 0,
+                final_swap_slots: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -1073,6 +1082,15 @@ struct GpuTerrainRepackApplyPreview {
     draw_bytes_len: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GpuTerrainRepackFinalSwapGuard {
+    final_swap_ready: bool,
+    final_swap_blocked: bool,
+    slots: usize,
+    face_bytes_len: usize,
+    draw_bytes_len: usize,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GpuTerrainRepackPayloadError {
     MissingSource,
@@ -1106,6 +1124,11 @@ enum GpuTerrainRepackApplyPreviewError {
     FaceBytes,
     DrawBytes,
     AllocatorMirror,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuTerrainRepackFinalSwapGuardError {
+    MissingApplyPreview,
 }
 
 fn gpu_terrain_repack_commit_steps() -> Vec<GpuTerrainRepackCommitStep> {
@@ -1357,6 +1380,22 @@ fn build_gpu_terrain_repack_apply_preview(
     })
 }
 
+fn build_gpu_terrain_repack_final_swap_guard(
+    apply_preview: Option<&GpuTerrainRepackApplyPreview>,
+) -> Result<GpuTerrainRepackFinalSwapGuard, GpuTerrainRepackFinalSwapGuardError> {
+    let Some(apply_preview) = apply_preview else {
+        return Err(GpuTerrainRepackFinalSwapGuardError::MissingApplyPreview);
+    };
+
+    Ok(GpuTerrainRepackFinalSwapGuard {
+        final_swap_ready: false,
+        final_swap_blocked: true,
+        slots: apply_preview.slots.len(),
+        face_bytes_len: apply_preview.face_bytes_len,
+        draw_bytes_len: apply_preview.draw_bytes_len,
+    })
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct GpuTerrainRepackPreview {
     telemetry: GpuTerrainRepackTelemetry,
@@ -1524,6 +1563,9 @@ pub struct GpuTerrainStats {
     pub repack_apply_ready: u64,
     pub repack_apply_steps: u64,
     pub repack_apply_slots: u64,
+    pub repack_final_swap_ready: u64,
+    pub repack_final_swap_blocked: u64,
+    pub repack_final_swap_slots: u64,
     pub repack_ms: f64,
     pub repack_fragmentation_before_pct: f64,
     pub repack_fragmentation_after_pct: f64,
@@ -2087,6 +2129,9 @@ impl GpuTerrainBufferPool {
             repack_apply_ready: repack_telemetry.apply_ready,
             repack_apply_steps: repack_telemetry.apply_steps,
             repack_apply_slots: repack_telemetry.apply_slots,
+            repack_final_swap_ready: repack_telemetry.final_swap_ready,
+            repack_final_swap_blocked: repack_telemetry.final_swap_blocked,
+            repack_final_swap_slots: repack_telemetry.final_swap_slots,
             repack_ms: repack_telemetry.last_ms,
             repack_fragmentation_before_pct: repack_telemetry.fragmentation_before_pct,
             repack_fragmentation_after_pct: repack_telemetry.fragmentation_after_pct,
@@ -2140,6 +2185,9 @@ impl GpuTerrainBufferPool {
         telemetry.apply_ready = 0;
         telemetry.apply_steps = 0;
         telemetry.apply_slots = 0;
+        telemetry.final_swap_ready = 0;
+        telemetry.final_swap_blocked = 0;
+        telemetry.final_swap_slots = 0;
         telemetry.fragmentation_before_pct = allocator_stats.fragmentation_pct();
         telemetry.largest_free_before = allocator_stats.largest_free_faces;
         telemetry.source_subchunks = self.repack_sources.len() as u64;
@@ -2243,6 +2291,39 @@ impl GpuTerrainBufferPool {
                                                     apply_preview.steps.len() as u64;
                                                 telemetry.apply_slots =
                                                     apply_preview.slots.len() as u64;
+                                                match build_gpu_terrain_repack_final_swap_guard(
+                                                    Some(&apply_preview),
+                                                ) {
+                                                    Ok(final_swap_guard) => {
+                                                        telemetry.final_swap_ready =
+                                                            u64::from(final_swap_guard.final_swap_ready);
+                                                        telemetry.final_swap_blocked =
+                                                            u64::from(final_swap_guard.final_swap_blocked);
+                                                        telemetry.final_swap_slots =
+                                                            final_swap_guard.slots as u64;
+                                                    }
+                                                    Err(GpuTerrainRepackFinalSwapGuardError::MissingApplyPreview) => {
+                                                        telemetry.apply_ready = 0;
+                                                        telemetry.apply_steps = 0;
+                                                        telemetry.apply_slots = 0;
+                                                        telemetry.commit_ready = 0;
+                                                        telemetry.commit_steps = 0;
+                                                        telemetry.commit_tail_free = 0;
+                                                        telemetry.draw_ready = 0;
+                                                        telemetry.draw_bytes = 0;
+                                                        telemetry.upload_ready = 0;
+                                                        telemetry.upload_bytes = 0;
+                                                        telemetry.upload_ms = 0.0;
+                                                        telemetry.bind_ready = 0;
+                                                        telemetry.bind_ms = 0.0;
+                                                        telemetry.failure_reason =
+                                                            GpuTerrainRepackFailureReason::DrawRebuildError;
+                                                        return GpuTerrainRepackPreview {
+                                                            telemetry,
+                                                            staged_swap: None,
+                                                        };
+                                                    }
+                                                }
                                                 Some(staged_swap)
                                             }
                                             Err(
@@ -5581,6 +5662,45 @@ mod tests {
         assert_eq!(
             build_gpu_terrain_repack_apply_preview(&staged, &proof),
             Err(GpuTerrainRepackApplyPreviewError::AllocatorMirror)
+        );
+    }
+
+    #[test]
+    fn repack_final_swap_guard_blocks_runtime_swap_after_apply_preview() {
+        let key = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let staged = GpuTerrainRepackStagedSwap {
+            face_bytes: vec![1u8; PACKED_FACE_BYTES],
+            draw_bytes: vec![0u8; INDIRECT_DRAW_BYTES],
+            slots: vec![(
+                key,
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 1,
+                },
+            )],
+            tail_free_range: FaceRange { start: 1, len: 7 },
+        };
+        let proof = build_gpu_terrain_repack_commit_proof(&staged, 8).unwrap();
+        let apply_preview = build_gpu_terrain_repack_apply_preview(&staged, &proof).unwrap();
+
+        let guard = build_gpu_terrain_repack_final_swap_guard(Some(&apply_preview)).unwrap();
+
+        assert!(!guard.final_swap_ready);
+        assert!(guard.final_swap_blocked);
+        assert_eq!(guard.slots, 1);
+        assert_eq!(guard.face_bytes_len, PACKED_FACE_BYTES);
+        assert_eq!(guard.draw_bytes_len, INDIRECT_DRAW_BYTES);
+    }
+
+    #[test]
+    fn repack_final_swap_guard_rejects_missing_apply_preview() {
+        assert_eq!(
+            build_gpu_terrain_repack_final_swap_guard(None),
+            Err(GpuTerrainRepackFinalSwapGuardError::MissingApplyPreview)
         );
     }
 
