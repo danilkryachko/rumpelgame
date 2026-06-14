@@ -61,7 +61,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 37. Add fragmentation tests.
 38. Add runtime warning for high fragmentation.
 39. Done 2026-06-14: designed safe GPU terrain buffer repack behind explicit rollback flag in `docs/GPU_BUFFER_REPACK.md`.
-40. Done 2026-06-14: added default-off GPU buffer repack prototype foundation behind `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK=1`, with marker-only telemetry, source mirror, payload preview, explicit one-shot temporary replacement-buffer upload/binding preview, draw-command remap preview, all-or-nothing staged swap guard, report aggregation, and pure planner/payload/draw/staged tests; no active render binding, indirect-buffer swap, slot mutation, or allocator mutation yet.
+40. Done 2026-06-14: added default-off GPU buffer repack prototype foundation behind `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK=1`, with marker-only telemetry, source mirror, payload preview, explicit one-shot temporary replacement-buffer upload/binding preview, draw-command remap preview, all-or-nothing staged swap guard, disabled commit-point proof, report aggregation, and pure planner/payload/draw/staged/commit tests; no active render binding, indirect-buffer swap, slot mutation, or allocator mutation yet.
 
 ## Phase 5: Upload Pipeline
 
@@ -182,7 +182,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 7. Done 2026-06-14: added allocator stress gate wrapper over scoped GPU reports with upload-failure, failure-cause, free-range, largest-free, and fragmentation checks.
 8. Done 2026-06-14: designed a safe GPU terrain buffer repack behind an explicit rollback flag in `docs/GPU_BUFFER_REPACK.md`.
 9. Done 2026-06-14: prototyped buffer repack foundation behind that flag with marker-only telemetry, report aggregation, and deterministic planner tests; runtime buffer replacement remains intentionally unimplemented.
-10. Done 2026-06-14: added CPU-owned resident packed-face source bytes, deterministic compact payload preview, explicit one-shot temporary replacement-buffer upload/binding preview, draw-command remap preview, and all-or-nothing staged swap guard behind the repack flag, with source/payload/upload/bind/draw/stage readiness telemetry and missing-source/source-size/upload-error/bind/draw-error validation; active render binding, indirect-buffer swap, slot mutation, and allocator mutation remain intentionally unimplemented.
+10. Done 2026-06-14: added CPU-owned resident packed-face source bytes, deterministic compact payload preview, explicit one-shot temporary replacement-buffer upload/binding preview, draw-command remap preview, all-or-nothing staged swap guard, and disabled commit-point proof behind the repack flag, with source/payload/upload/bind/draw/stage/commit readiness telemetry and missing-source/source-size/upload-error/bind/draw-error validation; active render binding, indirect-buffer swap, slot mutation, and allocator mutation remain intentionally unimplemented.
 
 ### Weeks 11-20: Upload And Draw Submission
 
