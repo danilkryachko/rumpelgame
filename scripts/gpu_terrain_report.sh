@@ -562,6 +562,8 @@ error_scan() {
   printf -- '- max `gpu_repack_source_subchunks`: `%s`\n' "$(metric_max gpu_repack_source_subchunks)"
   printf -- '- max `gpu_repack_source_bytes`: `%s`\n' "$(metric_max gpu_repack_source_bytes)"
   printf -- '- max `gpu_repack_source_missing`: `%s`\n' "$(metric_max gpu_repack_source_missing)"
+  printf -- '- max `gpu_repack_payload_ready`: `%s`\n' "$(metric_max gpu_repack_payload_ready)"
+  printf -- '- max `gpu_repack_payload_bytes`: `%s`\n' "$(metric_max gpu_repack_payload_bytes)"
   printf -- '- max `gpu_repack_ms`: `%s`\n' "$(metric_max gpu_repack_ms)"
   printf -- '- max `gpu_repack_fragmentation_before_pct`: `%s`\n' "$(metric_max gpu_repack_fragmentation_before_pct)"
   printf -- '- max `gpu_repack_fragmentation_after_pct`: `%s`\n' "$(metric_max gpu_repack_fragmentation_after_pct)"

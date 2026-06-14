@@ -860,6 +860,7 @@ enum GpuTerrainRepackFailureReason {
     Disabled,
     MarkerOnly,
     MissingSource,
+    SourceSizeMismatch,
 }
 
 impl GpuTerrainRepackFailureReason {
@@ -869,6 +870,7 @@ impl GpuTerrainRepackFailureReason {
             Self::Disabled => "disabled",
             Self::MarkerOnly => "marker_only",
             Self::MissingSource => "missing_source",
+            Self::SourceSizeMismatch => "source_size_mismatch",
         }
     }
 }
@@ -886,6 +888,8 @@ struct GpuTerrainRepackTelemetry {
     source_subchunks: u64,
     source_bytes: u64,
     source_missing: u64,
+    payload_ready: u64,
+    payload_bytes: u64,
     last_ms: f64,
     fragmentation_before_pct: f64,
     fragmentation_after_pct: f64,
@@ -909,6 +913,8 @@ impl GpuTerrainRepackTelemetry {
                 source_subchunks: 0,
                 source_bytes: 0,
                 source_missing: 0,
+                payload_ready: 0,
+                payload_bytes: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -929,6 +935,8 @@ impl GpuTerrainRepackTelemetry {
                 source_subchunks: 0,
                 source_bytes: 0,
                 source_missing: 0,
+                payload_ready: 0,
+                payload_bytes: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -960,6 +968,17 @@ struct GpuTerrainRepackPlan {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GpuTerrainRepackPlanError {
     CapacityExceeded,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GpuTerrainRepackPayload {
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuTerrainRepackPayloadError {
+    MissingSource,
+    SourceSizeMismatch,
 }
 
 fn build_gpu_terrain_repack_plan(
@@ -1018,6 +1037,25 @@ fn repack_source_missing_count(
 
 fn repack_source_bytes(sources: &HashMap<GpuSubchunkKey, Vec<u8>>) -> usize {
     sources.values().map(Vec::len).sum()
+}
+
+fn build_gpu_terrain_repack_payload(
+    plan: &GpuTerrainRepackPlan,
+    sources: &HashMap<GpuSubchunkKey, Vec<u8>>,
+) -> Result<GpuTerrainRepackPayload, GpuTerrainRepackPayloadError> {
+    let mut bytes = Vec::with_capacity(plan.total_faces * PACKED_FACE_BYTES);
+    for placement in &plan.placements {
+        let Some(source) = sources.get(&placement.key) else {
+            return Err(GpuTerrainRepackPayloadError::MissingSource);
+        };
+        let expected_len = placement.face_count * PACKED_FACE_BYTES;
+        if source.len() != expected_len {
+            return Err(GpuTerrainRepackPayloadError::SourceSizeMismatch);
+        }
+        bytes.extend_from_slice(source);
+    }
+
+    Ok(GpuTerrainRepackPayload { bytes })
 }
 
 #[repr(C)]
@@ -1163,6 +1201,8 @@ pub struct GpuTerrainStats {
     pub repack_source_subchunks: u64,
     pub repack_source_bytes: u64,
     pub repack_source_missing: u64,
+    pub repack_payload_ready: u64,
+    pub repack_payload_bytes: u64,
     pub repack_ms: f64,
     pub repack_fragmentation_before_pct: f64,
     pub repack_fragmentation_after_pct: f64,
@@ -1699,6 +1739,8 @@ impl GpuTerrainBufferPool {
             repack_source_subchunks: repack_telemetry.source_subchunks,
             repack_source_bytes: repack_telemetry.source_bytes,
             repack_source_missing: repack_telemetry.source_missing,
+            repack_payload_ready: repack_telemetry.payload_ready,
+            repack_payload_bytes: repack_telemetry.payload_bytes,
             repack_ms: repack_telemetry.last_ms,
             repack_fragmentation_before_pct: repack_telemetry.fragmentation_before_pct,
             repack_fragmentation_after_pct: repack_telemetry.fragmentation_after_pct,
@@ -1748,11 +1790,20 @@ impl GpuTerrainBufferPool {
                 telemetry.bytes = (plan.moved_faces * PACKED_FACE_BYTES) as u64;
                 telemetry.fragmentation_after_pct = 0.0;
                 telemetry.largest_free_after = plan.tail_free_range.len;
-                telemetry.failure_reason = if telemetry.source_missing > 0 {
-                    GpuTerrainRepackFailureReason::MissingSource
-                } else {
-                    GpuTerrainRepackFailureReason::MarkerOnly
-                };
+                match build_gpu_terrain_repack_payload(&plan, &self.repack_sources) {
+                    Ok(payload) => {
+                        telemetry.payload_ready = 1;
+                        telemetry.payload_bytes = payload.bytes.len() as u64;
+                        telemetry.failure_reason = GpuTerrainRepackFailureReason::MarkerOnly;
+                    }
+                    Err(GpuTerrainRepackPayloadError::MissingSource) => {
+                        telemetry.failure_reason = GpuTerrainRepackFailureReason::MissingSource;
+                    }
+                    Err(GpuTerrainRepackPayloadError::SourceSizeMismatch) => {
+                        telemetry.failure_reason =
+                            GpuTerrainRepackFailureReason::SourceSizeMismatch;
+                    }
+                }
             }
             Err(GpuTerrainRepackPlanError::CapacityExceeded) => {
                 telemetry.failure_reason = GpuTerrainRepackFailureReason::Capacity;
@@ -4216,6 +4267,103 @@ mod tests {
         sources.insert(second, vec![2u8; 3 * PACKED_FACE_BYTES]);
         assert_eq!(repack_source_missing_count(&slots, &sources), 0);
         assert_eq!(repack_source_bytes(&sources), 5 * PACKED_FACE_BYTES);
+    }
+
+    #[test]
+    fn repack_payload_assembles_sources_in_plan_order() {
+        let first = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let second = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let plan = build_gpu_terrain_repack_plan(
+            vec![
+                (
+                    second,
+                    GpuTerrainSlot {
+                        start_face: 16,
+                        face_count: 1,
+                    },
+                ),
+                (
+                    first,
+                    GpuTerrainSlot {
+                        start_face: 8,
+                        face_count: 2,
+                    },
+                ),
+            ],
+            16,
+        )
+        .unwrap();
+        let first_bytes = vec![1u8; 2 * PACKED_FACE_BYTES];
+        let second_bytes = vec![2u8; PACKED_FACE_BYTES];
+        let mut sources = HashMap::new();
+        sources.insert(second, second_bytes.clone());
+        sources.insert(first, first_bytes.clone());
+
+        let payload = build_gpu_terrain_repack_payload(&plan, &sources).unwrap();
+        let mut expected = first_bytes;
+        expected.extend_from_slice(&second_bytes);
+
+        assert_eq!(payload.bytes, expected);
+    }
+
+    #[test]
+    fn repack_payload_rejects_missing_source() {
+        let key = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let plan = build_gpu_terrain_repack_plan(
+            vec![(
+                key,
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 1,
+                },
+            )],
+            16,
+        )
+        .unwrap();
+
+        assert_eq!(
+            build_gpu_terrain_repack_payload(&plan, &HashMap::new()),
+            Err(GpuTerrainRepackPayloadError::MissingSource)
+        );
+    }
+
+    #[test]
+    fn repack_payload_rejects_source_size_mismatch() {
+        let key = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let plan = build_gpu_terrain_repack_plan(
+            vec![(
+                key,
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 2,
+                },
+            )],
+            16,
+        )
+        .unwrap();
+        let mut sources = HashMap::new();
+        sources.insert(key, vec![3u8; PACKED_FACE_BYTES]);
+
+        assert_eq!(
+            build_gpu_terrain_repack_payload(&plan, &sources),
+            Err(GpuTerrainRepackPayloadError::SourceSizeMismatch)
+        );
     }
 
     #[test]

@@ -61,7 +61,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 37. Add fragmentation tests.
 38. Add runtime warning for high fragmentation.
 39. Done 2026-06-14: designed safe GPU terrain buffer repack behind explicit rollback flag in `docs/GPU_BUFFER_REPACK.md`.
-40. Done 2026-06-14: added default-off GPU buffer repack prototype foundation behind `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK=1`, with marker-only telemetry and pure planner tests; no runtime buffer swap yet.
+40. Done 2026-06-14: added default-off GPU buffer repack prototype foundation behind `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK=1`, with marker-only telemetry, source mirror, payload preview, report aggregation, and pure planner/payload tests; no runtime buffer swap yet.
 
 ## Phase 5: Upload Pipeline
 
@@ -182,7 +182,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 7. Done 2026-06-14: added allocator stress gate wrapper over scoped GPU reports with upload-failure, failure-cause, free-range, largest-free, and fragmentation checks.
 8. Done 2026-06-14: designed a safe GPU terrain buffer repack behind an explicit rollback flag in `docs/GPU_BUFFER_REPACK.md`.
 9. Done 2026-06-14: prototyped buffer repack foundation behind that flag with marker-only telemetry, report aggregation, and deterministic planner tests; runtime buffer replacement remains intentionally unimplemented.
-10. Done 2026-06-14: added CPU-owned resident packed-face source bytes behind the repack flag, with source readiness telemetry and missing-source accounting; runtime buffer replacement remains intentionally unimplemented.
+10. Done 2026-06-14: added CPU-owned resident packed-face source bytes and deterministic compact payload preview behind the repack flag, with source/payload readiness telemetry and missing-source/source-size validation; runtime buffer replacement remains intentionally unimplemented.
 
 ### Weeks 11-20: Upload And Draw Submission
 

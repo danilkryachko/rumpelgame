@@ -49,6 +49,8 @@ The first implementation slice should add marker-only counters while the flag is
 - `gpu_repack_source_subchunks`
 - `gpu_repack_source_bytes`
 - `gpu_repack_source_missing`
+- `gpu_repack_payload_ready`
+- `gpu_repack_payload_bytes`
 - `gpu_repack_ms`
 - `gpu_repack_fragmentation_before_pct`
 - `gpu_repack_fragmentation_after_pct`
@@ -56,7 +58,7 @@ The first implementation slice should add marker-only counters while the flag is
 - `gpu_repack_largest_free_after`
 - `gpu_repack_failure_reason`
 
-`gpu_repack_failure_reason` should use bounded values such as `none`, `disabled`, `marker_only`, `threshold_not_met`, `in_flight`, `missing_source`, `capacity`, `upload_error`, and `draw_rebuild_error`.
+`gpu_repack_failure_reason` should use bounded values such as `none`, `disabled`, `marker_only`, `threshold_not_met`, `in_flight`, `missing_source`, `source_size_mismatch`, `capacity`, `upload_error`, and `draw_rebuild_error`.
 
 ## Trigger Policy
 
@@ -120,8 +122,10 @@ The first prototype slice is implemented as marker-only telemetry plus a pure pl
 
 The current source-readiness slice stores CPU-owned encoded packed-face bytes for resident subchunks only when the repack flag is enabled. Upload behavior is otherwise unchanged. Removing a subchunk removes its source bytes. Telemetry reports `gpu_repack_source_subchunks`, `gpu_repack_source_bytes`, and `gpu_repack_source_missing`; a missing resident source changes the marker-only reason to `missing_source`.
 
-`scripts/gpu_terrain_report.sh` aggregates the numeric `gpu_repack_*` fields, including source readiness counters, and reports the latest `gpu_repack_failure_reason`.
+The current payload-preview slice assembles a compact replacement byte payload from the resident source map in deterministic plan order and then discards it. Telemetry reports `gpu_repack_payload_ready` and `gpu_repack_payload_bytes`; source size mismatches report `gpu_repack_failure_reason=source_size_mismatch`. Runtime buffer replacement is still disabled.
+
+`scripts/gpu_terrain_report.sh` aggregates the numeric `gpu_repack_*` fields, including source readiness and payload-preview counters, and reports the latest `gpu_repack_failure_reason`.
 
 ## Next Implementation Slice
 
-The next slice should assemble a replacement buffer payload from the CPU-owned resident sources and keep the final RenderingDevice buffer swap disabled until upload, swap, telemetry, and abort paths are covered by tests.
+The next slice should move from payload preview to a disabled replacement-buffer upload path. The final RenderingDevice buffer swap must stay disabled until upload, swap, telemetry, and abort paths are covered by tests.
