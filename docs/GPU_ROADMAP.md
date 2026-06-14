@@ -179,7 +179,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 4. Done 2026-06-14: fixed dirty-only aggregate report terrain queue diagnostics so `movement_terrain_queue max_ms` is surfaced with an origin.
 5. Done 2026-06-14: checkpointed dirty-update default-on status, explicit rollback flag behavior, project memory, handoff state, and trend entry.
 6. Done 2026-06-14: refreshed GPU allocator fragmentation, largest-free-range, and failure-cause telemetry in stress summaries and aggregate reports.
-7. Add or refresh allocator stress gates.
+7. Done 2026-06-14: added allocator stress gate wrapper over scoped GPU reports with upload-failure, failure-cause, free-range, largest-free, and fragmentation checks.
 8. Design a safe GPU terrain buffer repack behind an explicit rollback flag.
 9. Prototype buffer repack behind that flag.
 10. Compare repack against the current path and keep or drop it from evidence.

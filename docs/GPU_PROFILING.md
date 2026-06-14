@@ -91,6 +91,12 @@ RUMPELMC_FILL_STRESS_REPORT_ONLY_REPEATS="16" \
 ./scripts/gpu_terrain_fill_stress.sh logs/gpu_terrain_profile_fill_heavy
 ```
 
+Use the allocator stress gate after a movement/workload/fill artifact has been captured. It refreshes the scoped GPU report and fails on upload failures, capacity/fragmentation failure causes, missing free-range telemetry, or allocator fragmentation above the configured threshold:
+
+```sh
+./scripts/gpu_terrain_allocator_stress_gate.sh logs/week2_gpu_allocator_telemetry_20260614
+```
+
 Use workload matrix to compare movement and resident-load cases:
 
 ```sh
