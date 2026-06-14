@@ -463,6 +463,8 @@ error_scan() {
   printf -- '- max `native_shadow_draw_face_stride_bytes`: `%s`\n' "$(metric_max native_shadow_draw_face_stride_bytes)"
   printf -- '- max `native_shadow_draw_command_stride_bytes`: `%s`\n' "$(metric_max native_shadow_draw_command_stride_bytes)"
   printf -- '- max `native_shadow_draw_indirect_enabled`: `%s`\n' "$(metric_max native_shadow_draw_indirect_enabled)"
+  printf -- '- max `native_shadow_draw_call_count`: `%s`\n' "$(metric_max native_shadow_draw_call_count)"
+  printf -- '- max `native_shadow_draw_face_count`: `%s`\n' "$(metric_max native_shadow_draw_face_count)"
   printf -- '- max `native_shadow_uniform_set_index`: `%s`\n' "$(metric_max native_shadow_uniform_set_index)"
   printf -- '- max `native_shadow_face_buffer_binding`: `%s`\n' "$(metric_max native_shadow_face_buffer_binding)"
   printf -- '- max `native_shadow_push_constant_bytes`: `%s`\n' "$(metric_max native_shadow_push_constant_bytes)"
@@ -563,6 +565,8 @@ error_scan() {
   metric_max_source native_shadow_draw_face_stride_bytes | sed 's/^/- /'
   metric_max_source native_shadow_draw_command_stride_bytes | sed 's/^/- /'
   metric_max_source native_shadow_draw_indirect_enabled | sed 's/^/- /'
+  metric_max_source native_shadow_draw_call_count | sed 's/^/- /'
+  metric_max_source native_shadow_draw_face_count | sed 's/^/- /'
   metric_max_source native_shadow_uniform_set_index | sed 's/^/- /'
   metric_max_source native_shadow_face_buffer_binding | sed 's/^/- /'
   metric_max_source native_shadow_push_constant_bytes | sed 's/^/- /'
