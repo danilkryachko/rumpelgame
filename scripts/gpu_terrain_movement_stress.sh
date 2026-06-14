@@ -213,6 +213,17 @@ write_summary() {
   gpu_light_color="$(text_metric gpu_light_color "$marker_path")"
   gpu_light_energy="$(float_metric gpu_light_energy "$marker_path")"
   gpu_light_ambient="$(float_metric gpu_light_ambient "$marker_path")"
+  native_shadow_requested="$(metric native_shadow_requested "$marker_path")"
+  native_shadow_active="$(metric native_shadow_active "$marker_path")"
+  native_shadow_fallback="$(metric native_shadow_fallback "$marker_path")"
+  native_shadow_implemented="$(metric native_shadow_implemented "$marker_path")"
+  native_shadow_resource_status="$(text_metric native_shadow_resource_status "$marker_path")"
+  native_shadow_resource_creates="$(metric native_shadow_resource_creates "$marker_path")"
+  native_shadow_resource_reuses="$(metric native_shadow_resource_reuses "$marker_path")"
+  native_shadow_resource_replaces="$(metric native_shadow_resource_replaces "$marker_path")"
+  native_shadow_resource_releases="$(metric native_shadow_resource_releases "$marker_path")"
+  native_shadow_covered_chunks="$(metric native_shadow_covered_chunks "$marker_path")"
+  native_shadow_covered_subchunks="$(metric native_shadow_covered_subchunks "$marker_path")"
   smoke_pose="$(text_metric pose "$marker_path")"
   lighting_variant="$(text_metric lighting_variant "$marker_path")"
   gpu_cull="$(text_metric gpu_cull "$marker_path")"
@@ -244,6 +255,7 @@ write_summary() {
   test -n "$gpu_light_color" || fail "missing gpu_light_color in $marker_path"
   test -n "$gpu_light_energy" || fail "missing gpu_light_energy in $marker_path"
   test -n "$gpu_light_ambient" || fail "missing gpu_light_ambient in $marker_path"
+  test -n "$native_shadow_resource_status" || fail "missing native_shadow_resource_status in $marker_path"
   require_positive_float startup_chunk_packet_ms "$startup_chunk_packet_ms"
   test -n "$startup_packet_read_work_ms" || fail "missing startup_packet_read_work_ms in $marker_path"
   test -n "$startup_packet_decode_work_ms" || fail "missing startup_packet_decode_work_ms in $marker_path"
@@ -307,6 +319,17 @@ write_summary() {
     -v gpu_light_color="${gpu_light_color:-n/a}" \
     -v gpu_light_energy="${gpu_light_energy:-0}" \
     -v gpu_light_ambient="${gpu_light_ambient:-0}" \
+    -v native_shadow_requested="${native_shadow_requested:-0}" \
+    -v native_shadow_active="${native_shadow_active:-0}" \
+    -v native_shadow_fallback="${native_shadow_fallback:-0}" \
+    -v native_shadow_implemented="${native_shadow_implemented:-0}" \
+    -v native_shadow_resource_status="${native_shadow_resource_status:-n/a}" \
+    -v native_shadow_resource_creates="${native_shadow_resource_creates:-0}" \
+    -v native_shadow_resource_reuses="${native_shadow_resource_reuses:-0}" \
+    -v native_shadow_resource_replaces="${native_shadow_resource_replaces:-0}" \
+    -v native_shadow_resource_releases="${native_shadow_resource_releases:-0}" \
+    -v native_shadow_covered_chunks="${native_shadow_covered_chunks:-0}" \
+    -v native_shadow_covered_subchunks="${native_shadow_covered_subchunks:-0}" \
     -v smoke_pose="${smoke_pose:-n/a}" \
     -v lighting_variant="${lighting_variant:-n/a}" \
     -v gpu_cull="${gpu_cull:-n/a}" \
@@ -338,6 +361,7 @@ write_summary() {
         }
         printf("GPU terrain movement stress summary target_fps=%.0f budget_ms=%.3f smoke_pose=%s lighting_variant=%s\n", 1000.0 / budget, budget, smoke_pose, lighting_variant)
         printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f queue_uploads_avg=%.2f queue_uploads_max=%.0f queue_upload_kb_avg=%.1f queue_upload_kb_max=%.1f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_effective_draws=%d gpu_draw_repeat=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_scene_target_create=%d gpu_scene_target_reuse=%d gpu_scene_target_replace=%d gpu_uniform_set_create=%d gpu_atlas_texture_create=%d gpu_atlas_sampler_create=%d gpu_push_constant_bytes=%d gpu_push_constant_updates=%d gpu_push_constant_total_bytes=%d gpu_push_constant_avg_bytes=%.1f gpu_push_constant_camera_bytes=%d gpu_push_constant_lighting_bytes=%d gpu_push_constant_atlas_bytes=%d gpu_light_dir=%s gpu_light_color=%s gpu_light_energy=%.3f gpu_light_ambient=%.3f gpu_cull=%s gpu_front_face=%s gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, terrain_queue_uploads_avg, terrain_queue_uploads_max, terrain_queue_upload_kb_avg, terrain_queue_upload_kb_max, mesh_avg, mesh_max, coll_avg, coll_max, gpu_effective_draws, gpu_draw_repeat, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_scene_target_create, gpu_scene_target_reuse, gpu_scene_target_replace, gpu_uniform_set_create, gpu_atlas_texture_create, gpu_atlas_sampler_create, gpu_push_constant_bytes, gpu_push_constant_updates, gpu_push_constant_total_bytes, gpu_push_constant_avg_bytes, gpu_push_constant_camera_bytes, gpu_push_constant_lighting_bytes, gpu_push_constant_atlas_bytes, gpu_light_dir, gpu_light_color, gpu_light_energy, gpu_light_ambient, gpu_cull, gpu_front_face, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
+        printf("movement_native_shadow requested=%d active=%d fallback=%d implemented=%d resource_status=%s resource_creates=%d resource_reuses=%d resource_replaces=%d resource_releases=%d covered_chunks=%d covered_subchunks=%d native_shadow_requested=%d native_shadow_active=%d native_shadow_fallback=%d native_shadow_implemented=%d native_shadow_resource_creates=%d native_shadow_resource_reuses=%d native_shadow_resource_replaces=%d native_shadow_resource_releases=%d native_shadow_covered_chunks=%d native_shadow_covered_subchunks=%d\n", native_shadow_requested, native_shadow_active, native_shadow_fallback, native_shadow_implemented, native_shadow_resource_status, native_shadow_resource_creates, native_shadow_resource_reuses, native_shadow_resource_replaces, native_shadow_resource_releases, native_shadow_covered_chunks, native_shadow_covered_subchunks, native_shadow_requested, native_shadow_active, native_shadow_fallback, native_shadow_implemented, native_shadow_resource_creates, native_shadow_resource_reuses, native_shadow_resource_replaces, native_shadow_resource_releases, native_shadow_covered_chunks, native_shadow_covered_subchunks)
         printf("movement_startup packet_ms=%.3f packet_read_work_ms=%.3f packet_decode_work_ms=%.3f packet_reader_elapsed_ms=%.3f packet_queue_lag_ms=%.3f chunk_decode_work_ms=%.3f chunk_inserted_ms=%.3f chunk_loaded_ms=%.3f mesh_queued_ms=%.3f mesh_dispatched_ms=%.3f first_mesh_ms=%.3f first_mesh_work_ms=%.3f first_mesh_phase_ms=%s first_mesh_collision_work_ms=%.3f collision_ms=%.3f player_spawn_ms=%.3f\n", startup_chunk_packet_ms, startup_packet_read_work_ms, startup_packet_decode_work_ms, startup_packet_reader_elapsed_ms, startup_packet_queue_lag_ms, startup_chunk_decode_work_ms, startup_chunk_inserted_ms, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_mesh_dispatched_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_phase_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms)
       }
     ' > "$summary_path"
