@@ -50,7 +50,7 @@ Checks:
 - `subchunk_needs_shadow_proxy` and `chunk_needs_cpu_proxy_refresh` decide which loaded subchunks/chunks still need CPU proxy refreshes for shadow coverage.
 - `configure_terrain_mesh_render_mode` sets Godot `MeshInstance3D` shadow casting. Shadow proxies use `SHADOWS_ONLY`; collision-only proxies have shadows off.
 - `TerrainCpuProxyMeshPayload` and `PackedFaceBatch` already support full, compact, and indexed compact CPU proxy meshes. These reduce proxy payload but still rely on Godot CPU mesh instances to participate in shadows.
-- Perf text already publishes `shadow_path`, `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, `native_shadow_implemented`, `native_shadow_resource_status`, native-shadow resource lifecycle counters, native-shadow coverage counters, `shadow_mode`, `shadow_mesh`, `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and compact normal savings counters.
+- Perf text already publishes `shadow_path`, `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, `native_shadow_implemented`, `native_shadow_resource_status`, native-shadow resource descriptor format/usage labels, native-shadow resource lifecycle counters, native-shadow coverage counters, `shadow_mode`, `shadow_mesh`, `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and compact normal savings counters.
 
 ## Proposed Rollout
 
@@ -128,5 +128,6 @@ The current code slice is telemetry/test scaffolding, not a renderer rewrite:
 - Fresh release parity capture in `logs/gpu_native_shadow_resource_lifecycle_parity_20260614` passed 17 cases. Its fallback case reports `shadow_path=godot_proxy`, `native_shadow_requested=1`, `native_shadow_active=0`, `native_shadow_fallback=1`, `native_shadow_implemented=0`, `native_shadow_resource_status=disabled`, and zero resource create/replace/release counters, with a zero visual metric delta against the ordinary GPU terrain case.
 - Fresh release movement capture in `logs/gpu_native_shadow_coverage_scaffold_20260614` reports `shadow_path=godot_proxy`, `native_shadow_requested=1`, `native_shadow_active=0`, `native_shadow_fallback=1`, `native_shadow_implemented=0`, `native_shadow_resource_status=disabled`, zero resource lifecycle counters, and zero `native_shadow_covered_chunks/subchunks`.
 - Fresh release movement capture in `logs/gpu_native_shadow_summary_fields_20260614` writes the same env-on fallback and zero lifecycle/coverage proof into a compact `movement_native_shadow` summary row, so reports can cite the native-shadow summary without reading the full `.png.txt` marker.
+- The native-shadow resource descriptor now records future shadow-map allocation labels as `native_shadow_resource_format=d32_sfloat` and `native_shadow_resource_usage=depth_stencil_attachment|sampling`; disabled resources report `none` labels and still do not allocate RenderingDevice RIDs while `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`.
 
 The next implementation slice can keep measuring the current compact proxy path with an external profiler, or start a tiny renderer proof only after the fallback and parity gates above are kept intact.
