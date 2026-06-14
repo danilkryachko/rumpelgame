@@ -440,6 +440,9 @@ error_scan() {
   printf -- '- max `native_shadow_active`: `%s`\n' "$(metric_max native_shadow_active)"
   printf -- '- max `native_shadow_fallback`: `%s`\n' "$(metric_max native_shadow_fallback)"
   printf -- '- max `native_shadow_implemented`: `%s`\n' "$(metric_max native_shadow_implemented)"
+  printf -- '- max `native_shadow_resource_creates`: `%s`\n' "$(metric_max native_shadow_resource_creates)"
+  printf -- '- max `native_shadow_resource_replaces`: `%s`\n' "$(metric_max native_shadow_resource_replaces)"
+  printf -- '- max `native_shadow_resource_releases`: `%s`\n' "$(metric_max native_shadow_resource_releases)"
   printf -- '- max `transparent_requested`: `%s`\n' "$(metric_max transparent_requested)"
   printf -- '- max `transparent_active`: `%s`\n' "$(metric_max transparent_active)"
   printf -- '- max `transparent_fallback`: `%s`\n' "$(metric_max transparent_fallback)"
@@ -499,6 +502,9 @@ error_scan() {
   metric_max_source native_shadow_active | sed 's/^/- /'
   metric_max_source native_shadow_fallback | sed 's/^/- /'
   metric_max_source native_shadow_implemented | sed 's/^/- /'
+  metric_max_source native_shadow_resource_creates | sed 's/^/- /'
+  metric_max_source native_shadow_resource_replaces | sed 's/^/- /'
+  metric_max_source native_shadow_resource_releases | sed 's/^/- /'
   metric_max_source transparent_requested | sed 's/^/- /'
   metric_max_source transparent_active | sed 's/^/- /'
   metric_max_source transparent_fallback | sed 's/^/- /'

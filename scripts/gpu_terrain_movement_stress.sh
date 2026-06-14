@@ -467,6 +467,13 @@ require_native_shadow_fallback_marker_if_requested() {
   require_metric_eq "$marker_path" "native_shadow_active" 0
   require_metric_eq "$marker_path" "native_shadow_fallback" 1
   require_metric_eq "$marker_path" "native_shadow_implemented" 0
+  test "$(text_metric native_shadow_resource_status "$marker_path")" = "disabled" \
+    || fail "native shadow fallback unexpectedly prepared resources in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_resource_radius" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_map" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_creates" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_replaces" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_releases" 0
   grep -q "shadow_path=godot_proxy" "$marker_path" || fail "native shadow fallback did not keep godot_proxy in $marker_path"
 }
 

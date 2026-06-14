@@ -29,7 +29,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 - The render shader lighting contract is guarded in Rust tests: vertex code computes lighting from `face_normal(face_idx)` and lighting push constants, passes it through `lighting_out`/`lighting_in`, and fragment code only applies that lighting to the sampled atlas texel with opaque alpha. Scene depth remains guarded separately as reverse-Z `GREATER_OR_EQUAL`.
 - Runtime markers expose the sanitized lighting push block as `gpu_light_dir`, `gpu_light_color`, `gpu_light_energy`, and `gpu_light_ambient`. Use these fields to prove which scene light values were rendered before comparing lighting variants or shadow paths.
 - `RUMPELMC_VISUAL_SMOKE_POSE=lighting_low_angle` is a smoke-only controlled lighting variant. It keeps the existing visual smoke path and Godot shadow proxy but changes the `SunLight` rotation/energy for comparison captures, and the marker records `lighting_variant="low_angle"`.
-- Native-shadow fallback markers expose `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, and `native_shadow_implemented`. While `native_shadow_implemented=0`, env-on captures must remain on `shadow_path=godot_proxy` with `requested=1`, `active=0`, and `fallback=1`.
+- Native-shadow fallback markers expose `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, `native_shadow_implemented`, and `native_shadow_resource_*`. While `native_shadow_implemented=0`, env-on captures must remain on `shadow_path=godot_proxy` with `requested=1`, `active=0`, `fallback=1`, `native_shadow_resource_status=disabled`, and zero native-shadow resource lifecycle counters.
 
 ## Report-Only Or Untrusted Local Signals
 
@@ -169,7 +169,7 @@ sh scripts/gpu_terrain_shadow_profiler_results_check.sh \
 
 ## Shadow Path Design
 
-The current production GPU terrain shadow path is still Godot CPU shadow proxies. `docs/GPU_SHADOW_PATH.md` records the Phase 12 design for a future GPU-native terrain shadow path. Treat `scene_shadows_disabled` and `diagnostic_no_shadow_proxy` as diagnostic controls only; they cannot justify production shadow reductions. A future native path must be behind an explicit rollback flag, flip `native_shadow_implemented` only with a real implementation, report its own `shadow_path`, preserve the existing Godot proxy fallback, and pass visual parity plus an external profiler comparison before becoming default.
+The current production GPU terrain shadow path is still Godot CPU shadow proxies. `docs/GPU_SHADOW_PATH.md` records the Phase 12 design for a future GPU-native terrain shadow path. Treat `scene_shadows_disabled` and `diagnostic_no_shadow_proxy` as diagnostic controls only; they cannot justify production shadow reductions. A future native path must be behind an explicit rollback flag, flip `native_shadow_implemented` only with a real implementation, report its own `shadow_path`, preserve the existing Godot proxy fallback, and pass visual parity plus an external profiler comparison before becoming default. For marker/lifecycle-only changes that do not alter shader, visual path, scene setup, or parity case definitions, prefer targeted Rust tests plus env-on movement smoke, validate-only over a fresh compatible parity artifact, aggregate report, `./scripts/check.sh fast`, and `./scripts/diff_guard.sh`; reserve full parity recaptures for visual-path, shader, or parity-validator changes.
 
 ## Transparent Path Design
 

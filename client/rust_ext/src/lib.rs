@@ -27,6 +27,7 @@ pub struct GameClient {
     mesher: Option<meshing::ComputeMesher>,
     gpu_terrain: Option<gpu_terrain::GpuTerrainBufferPool>,
     gpu_terrain_compositor: Option<gpu_terrain::GpuTerrainCompositor>,
+    gpu_native_shadow_resources: GpuNativeShadowResources,
     gpu_visible_transition_applied: bool,
     network: Option<network::NetworkClient>,
     packet_receiver: Option<Receiver<network::PacketReadRecord>>,
@@ -60,6 +61,7 @@ impl INode for GameClient {
             mesher: None,
             gpu_terrain: None,
             gpu_terrain_compositor: None,
+            gpu_native_shadow_resources: GpuNativeShadowResources::default(),
             gpu_visible_transition_applied: false,
             network: None,
             packet_receiver: None,
@@ -217,6 +219,7 @@ impl INode for GameClient {
             mesh_frame.gpu_upload_bytes,
         );
         self.sync_gpu_terrain_lighting();
+        self.update_gpu_native_shadow_resources();
         self.update_gpu_visible_transition();
         if gpu_terrain_render_enabled()
             && let Some(gpu_terrain) = &mut self.gpu_terrain
@@ -237,6 +240,7 @@ impl GameClient {
         }
         self.gpu_terrain_compositor = None;
         self.gpu_terrain = None;
+        self.gpu_native_shadow_resources.release();
         self.mesher = None;
         self.network = None;
         self.packet_receiver = None;
@@ -1651,6 +1655,18 @@ impl GameClient {
         gpu_terrain.set_lighting(lighting);
     }
 
+    fn update_gpu_native_shadow_resources(&mut self) {
+        let gpu_visible = self.gpu_terrain_visible_render_active();
+        let mode = gpu_terrain_shadow_proxy_mode();
+        let scene_shadow_radius = self.terrain_shadow_proxy_chunk_distance();
+        self.gpu_native_shadow_resources.sync(
+            gpu_terrain_native_shadow_active(),
+            gpu_visible,
+            mode,
+            scene_shadow_radius,
+        );
+    }
+
     fn gpu_terrain_lighting_from_scene(&self) -> Option<gpu_terrain::GpuTerrainLighting> {
         let parent = self.base().get_parent()?;
         let sun = parent.try_get_node_as::<godot::classes::DirectionalLight3D>("SunLight")?;
@@ -2779,6 +2795,7 @@ const GPU_TERRAIN_SHADOW_PROXY_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PRO
 const GPU_TERRAIN_SHADOW_PROXY_MESH_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH";
 const GPU_TERRAIN_NATIVE_SHADOW_ENV: &str = "RUMPELMC_GPU_TERRAIN_NATIVE_SHADOW";
 const GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED: bool = false;
+const GPU_TERRAIN_NATIVE_SHADOW_MAP_SIZE_PX: u32 = 2048;
 const GPU_TERRAIN_TRANSPARENT_ENV: &str = "RUMPELMC_GPU_TERRAIN_TRANSPARENT";
 const GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY";
@@ -3182,6 +3199,124 @@ fn gpu_terrain_native_shadow_active_decision(requested: bool, implementation_rea
 
 fn gpu_terrain_native_shadow_fallback_decision(requested: bool, active: bool) -> bool {
     requested && !active
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GpuNativeShadowResourceDescriptor {
+    map_size_px: u32,
+    shadow_radius_chunks: i32,
+}
+
+impl GpuNativeShadowResourceDescriptor {
+    fn new(shadow_radius_chunks: i32) -> Self {
+        Self {
+            map_size_px: GPU_TERRAIN_NATIVE_SHADOW_MAP_SIZE_PX,
+            shadow_radius_chunks,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GpuNativeShadowResourceAction {
+    Disabled,
+    Create,
+    Reuse,
+    Replace,
+    Release,
+}
+
+#[derive(Debug, Default)]
+struct GpuNativeShadowResources {
+    descriptor: Option<GpuNativeShadowResourceDescriptor>,
+    creates: u64,
+    reuses: u64,
+    replaces: u64,
+    releases: u64,
+}
+
+impl GpuNativeShadowResources {
+    fn sync(
+        &mut self,
+        native_shadow_active: bool,
+        gpu_visible_render_active: bool,
+        mode: GpuTerrainShadowProxyMode,
+        scene_shadow_radius: i32,
+    ) -> GpuNativeShadowResourceAction {
+        let desired = gpu_native_shadow_resource_descriptor(
+            native_shadow_active,
+            gpu_visible_render_active,
+            mode,
+            scene_shadow_radius,
+        );
+        match (self.descriptor, desired) {
+            (None, None) => GpuNativeShadowResourceAction::Disabled,
+            (Some(_), None) => {
+                self.descriptor = None;
+                self.releases += 1;
+                GpuNativeShadowResourceAction::Release
+            }
+            (None, Some(descriptor)) => {
+                self.descriptor = Some(descriptor);
+                self.creates += 1;
+                GpuNativeShadowResourceAction::Create
+            }
+            (Some(current), Some(descriptor)) if current == descriptor => {
+                self.reuses += 1;
+                GpuNativeShadowResourceAction::Reuse
+            }
+            (Some(_), Some(descriptor)) => {
+                self.descriptor = Some(descriptor);
+                self.replaces += 1;
+                GpuNativeShadowResourceAction::Replace
+            }
+        }
+    }
+
+    fn release(&mut self) -> GpuNativeShadowResourceAction {
+        if self.descriptor.take().is_some() {
+            self.releases += 1;
+            GpuNativeShadowResourceAction::Release
+        } else {
+            GpuNativeShadowResourceAction::Disabled
+        }
+    }
+
+    fn status_label(&self) -> &'static str {
+        if self.descriptor.is_some() {
+            "ready"
+        } else {
+            "disabled"
+        }
+    }
+
+    fn shadow_radius_chunks(&self) -> i32 {
+        self.descriptor
+            .map(|descriptor| descriptor.shadow_radius_chunks)
+            .unwrap_or(0)
+    }
+
+    fn map_size_px(&self) -> u32 {
+        self.descriptor
+            .map(|descriptor| descriptor.map_size_px)
+            .unwrap_or(0)
+    }
+}
+
+fn gpu_native_shadow_resource_descriptor(
+    native_shadow_active: bool,
+    gpu_visible_render_active: bool,
+    mode: GpuTerrainShadowProxyMode,
+    scene_shadow_radius: i32,
+) -> Option<GpuNativeShadowResourceDescriptor> {
+    if !native_shadow_active
+        || !gpu_visible_render_active
+        || !mode.keeps_shadow_proxies()
+        || scene_shadow_radius <= 0
+    {
+        return None;
+    }
+
+    Some(GpuNativeShadowResourceDescriptor::new(scene_shadow_radius))
 }
 
 fn gpu_terrain_transparent_active() -> bool {
@@ -4279,6 +4414,9 @@ impl GameClient {
             native_shadow_active,
         );
         let native_shadow_implemented = GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED;
+        let native_shadow_resource_status = self.gpu_native_shadow_resources.status_label();
+        let native_shadow_resource_radius = self.gpu_native_shadow_resources.shadow_radius_chunks();
+        let native_shadow_resource_map = self.gpu_native_shadow_resources.map_size_px();
         let transparent_requested = gpu_terrain_transparent_requested();
         let transparent_active = gpu_terrain_transparent_active();
         let transparent_fallback =
@@ -4305,7 +4443,7 @@ impl GameClient {
         let dirty_bounds = dirty_bounds_label(self.perf.last_dirty_bounds);
         let dirty_edges = dirty_edge_label(self.perf.last_dirty_edge_mask);
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -4340,6 +4478,13 @@ impl GameClient {
             native_shadow_active as u8,
             native_shadow_fallback as u8,
             native_shadow_implemented as u8,
+            native_shadow_resource_status,
+            native_shadow_resource_radius,
+            native_shadow_resource_map,
+            self.gpu_native_shadow_resources.creates,
+            self.gpu_native_shadow_resources.reuses,
+            self.gpu_native_shadow_resources.replaces,
+            self.gpu_native_shadow_resources.releases,
             transparent_requested as u8,
             transparent_active as u8,
             transparent_fallback as u8,
@@ -4787,6 +4932,86 @@ mod tests {
         assert!(!gpu_terrain_native_shadow_fallback_decision(false, true));
         assert!(gpu_terrain_native_shadow_fallback_decision(true, false));
         assert!(!gpu_terrain_native_shadow_fallback_decision(true, true));
+    }
+
+    #[test]
+    fn native_shadow_resource_descriptor_requires_active_shadow_casting_path() {
+        let mode = GpuTerrainShadowProxyMode::Conservative;
+
+        assert_eq!(
+            gpu_native_shadow_resource_descriptor(false, true, mode, 5),
+            None
+        );
+        assert_eq!(
+            gpu_native_shadow_resource_descriptor(true, false, mode, 5),
+            None
+        );
+        assert_eq!(
+            gpu_native_shadow_resource_descriptor(
+                true,
+                true,
+                GpuTerrainShadowProxyMode::CollisionOnly,
+                5,
+            ),
+            None
+        );
+        assert_eq!(
+            gpu_native_shadow_resource_descriptor(true, true, mode, 0),
+            None
+        );
+        assert_eq!(
+            gpu_native_shadow_resource_descriptor(true, true, mode, 5),
+            Some(GpuNativeShadowResourceDescriptor {
+                map_size_px: GPU_TERRAIN_NATIVE_SHADOW_MAP_SIZE_PX,
+                shadow_radius_chunks: 5,
+            })
+        );
+    }
+
+    #[test]
+    fn native_shadow_resource_lifecycle_tracks_create_reuse_replace_and_release() {
+        let mut resources = GpuNativeShadowResources::default();
+        let mode = GpuTerrainShadowProxyMode::Conservative;
+
+        assert_eq!(
+            resources.sync(false, true, mode, 5),
+            GpuNativeShadowResourceAction::Disabled
+        );
+        assert_eq!(resources.status_label(), "disabled");
+        assert_eq!(resources.shadow_radius_chunks(), 0);
+        assert_eq!(resources.map_size_px(), 0);
+
+        assert_eq!(
+            resources.sync(true, true, mode, 5),
+            GpuNativeShadowResourceAction::Create
+        );
+        assert_eq!(resources.status_label(), "ready");
+        assert_eq!(resources.shadow_radius_chunks(), 5);
+        assert_eq!(
+            resources.map_size_px(),
+            GPU_TERRAIN_NATIVE_SHADOW_MAP_SIZE_PX
+        );
+
+        assert_eq!(
+            resources.sync(true, true, mode, 5),
+            GpuNativeShadowResourceAction::Reuse
+        );
+        assert_eq!(
+            resources.sync(true, true, mode, 3),
+            GpuNativeShadowResourceAction::Replace
+        );
+        assert_eq!(resources.shadow_radius_chunks(), 3);
+        assert_eq!(
+            resources.sync(true, true, GpuTerrainShadowProxyMode::CollisionOnly, 3),
+            GpuNativeShadowResourceAction::Release
+        );
+        assert_eq!(resources.status_label(), "disabled");
+        assert_eq!(resources.creates, 1);
+        assert_eq!(resources.reuses, 1);
+        assert_eq!(resources.replaces, 1);
+        assert_eq!(resources.releases, 1);
+
+        assert_eq!(resources.release(), GpuNativeShadowResourceAction::Disabled);
     }
 
     #[test]
