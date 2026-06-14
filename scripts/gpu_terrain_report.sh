@@ -445,6 +445,7 @@ error_scan() {
   printf -- '- max `native_shadow_resource_layers`: `%s`\n' "$(metric_max native_shadow_resource_layers)"
   printf -- '- max `native_shadow_resource_bytes`: `%s`\n' "$(metric_max native_shadow_resource_bytes)"
   printf -- '- max `native_shadow_pass_clear_depth_milli`: `%s`\n' "$(metric_max native_shadow_pass_clear_depth_milli)"
+  printf -- '- max `native_shadow_sampler_compare_enabled`: `%s`\n' "$(metric_max native_shadow_sampler_compare_enabled)"
   printf -- '- max `native_shadow_resource_creates`: `%s`\n' "$(metric_max native_shadow_resource_creates)"
   printf -- '- max `native_shadow_resource_replaces`: `%s`\n' "$(metric_max native_shadow_resource_replaces)"
   printf -- '- max `native_shadow_resource_releases`: `%s`\n' "$(metric_max native_shadow_resource_releases)"
@@ -514,6 +515,7 @@ error_scan() {
   metric_max_source native_shadow_resource_layers | sed 's/^/- /'
   metric_max_source native_shadow_resource_bytes | sed 's/^/- /'
   metric_max_source native_shadow_pass_clear_depth_milli | sed 's/^/- /'
+  metric_max_source native_shadow_sampler_compare_enabled | sed 's/^/- /'
   metric_max_source native_shadow_resource_creates | sed 's/^/- /'
   metric_max_source native_shadow_resource_replaces | sed 's/^/- /'
   metric_max_source native_shadow_resource_releases | sed 's/^/- /'
