@@ -54,6 +54,8 @@ The first implementation slice should add marker-only counters while the flag is
 - `gpu_repack_upload_ready`
 - `gpu_repack_upload_bytes`
 - `gpu_repack_upload_ms`
+- `gpu_repack_bind_ready`
+- `gpu_repack_bind_ms`
 - `gpu_repack_ms`
 - `gpu_repack_fragmentation_before_pct`
 - `gpu_repack_fragmentation_after_pct`
@@ -125,10 +127,10 @@ The first prototype slice is implemented as marker-only telemetry plus a pure pl
 
 The current source-readiness slice stores CPU-owned encoded packed-face bytes for resident subchunks only when the repack flag is enabled. Upload behavior is otherwise unchanged. Removing a subchunk removes its source bytes. Telemetry reports `gpu_repack_source_subchunks`, `gpu_repack_source_bytes`, and `gpu_repack_source_missing`; a missing resident source changes the marker-only reason to `missing_source`.
 
-The current replacement-upload preview slice assembles a compact replacement byte payload from the resident source map in deterministic plan order. With the additional explicit `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW=1` profiling flag, the runtime takes one upload sample: it creates a temporary replacement storage buffer, uploads the current payload, and immediately frees the temporary buffer. Telemetry reports `gpu_repack_payload_ready`, `gpu_repack_payload_bytes`, `gpu_repack_upload_ready`, `gpu_repack_upload_bytes`, and `gpu_repack_upload_ms`; source size mismatches report `gpu_repack_failure_reason=source_size_mismatch`, and invalid temporary buffer creation reports `gpu_repack_failure_reason=upload_error`. Runtime buffer replacement, render binding swap, slot mutation, and allocator mutation are still disabled.
+The current replacement-upload and binding-preview slice assembles a compact replacement byte payload from the resident source map in deterministic plan order. With the additional explicit `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW=1` profiling flag, the runtime takes one sample: it creates a temporary replacement storage buffer, uploads the current payload, creates and validates a temporary uniform set that binds the replacement face buffer to the existing shader/atlas resources, then immediately frees the temporary uniform set and buffer. Telemetry reports `gpu_repack_payload_ready`, `gpu_repack_payload_bytes`, `gpu_repack_upload_ready`, `gpu_repack_upload_bytes`, `gpu_repack_upload_ms`, `gpu_repack_bind_ready`, and `gpu_repack_bind_ms`; source size mismatches report `gpu_repack_failure_reason=source_size_mismatch`, invalid temporary buffer creation reports `gpu_repack_failure_reason=upload_error`, and temporary binding failure reports `gpu_repack_failure_reason=draw_rebuild_error`. Runtime buffer replacement, active render binding swap, slot mutation, and allocator mutation are still disabled.
 
-`scripts/gpu_terrain_report.sh` aggregates the numeric `gpu_repack_*` fields, including source readiness, payload-preview, and upload-preview counters, and reports the latest `gpu_repack_failure_reason`.
+`scripts/gpu_terrain_report.sh` aggregates the numeric `gpu_repack_*` fields, including source readiness, payload-preview, upload-preview, and binding-preview counters, and reports the latest `gpu_repack_failure_reason`.
 
 ## Next Implementation Slice
 
-The next slice should add a disabled render-binding rebuild path for the replacement buffer. The final RenderingDevice buffer swap must stay disabled until upload, swap, telemetry, and abort paths are covered by tests.
+The next slice should add a disabled draw-command remap preview for the compacted slot offsets. The final RenderingDevice buffer swap must stay disabled until upload, swap, telemetry, and abort paths are covered by tests.

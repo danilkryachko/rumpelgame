@@ -864,6 +864,7 @@ enum GpuTerrainRepackFailureReason {
     MissingSource,
     SourceSizeMismatch,
     UploadError,
+    DrawRebuildError,
 }
 
 impl GpuTerrainRepackFailureReason {
@@ -875,7 +876,12 @@ impl GpuTerrainRepackFailureReason {
             Self::MissingSource => "missing_source",
             Self::SourceSizeMismatch => "source_size_mismatch",
             Self::UploadError => "upload_error",
+            Self::DrawRebuildError => "draw_rebuild_error",
         }
+    }
+
+    fn preserves_preview_error(self) -> bool {
+        matches!(self, Self::UploadError | Self::DrawRebuildError)
     }
 }
 
@@ -897,6 +903,8 @@ struct GpuTerrainRepackTelemetry {
     upload_ready: u64,
     upload_bytes: u64,
     upload_ms: f64,
+    bind_ready: u64,
+    bind_ms: f64,
     last_ms: f64,
     fragmentation_before_pct: f64,
     fragmentation_after_pct: f64,
@@ -925,6 +933,8 @@ impl GpuTerrainRepackTelemetry {
                 upload_ready: 0,
                 upload_bytes: 0,
                 upload_ms: 0.0,
+                bind_ready: 0,
+                bind_ms: 0.0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -950,6 +960,8 @@ impl GpuTerrainRepackTelemetry {
                 upload_ready: 0,
                 upload_bytes: 0,
                 upload_ms: 0.0,
+                bind_ready: 0,
+                bind_ms: 0.0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -1225,6 +1237,8 @@ pub struct GpuTerrainStats {
     pub repack_upload_ready: u64,
     pub repack_upload_bytes: u64,
     pub repack_upload_ms: f64,
+    pub repack_bind_ready: u64,
+    pub repack_bind_ms: f64,
     pub repack_ms: f64,
     pub repack_fragmentation_before_pct: f64,
     pub repack_fragmentation_after_pct: f64,
@@ -1775,6 +1789,8 @@ impl GpuTerrainBufferPool {
             repack_upload_ready: repack_telemetry.upload_ready,
             repack_upload_bytes: repack_telemetry.upload_bytes,
             repack_upload_ms: repack_telemetry.upload_ms,
+            repack_bind_ready: repack_telemetry.bind_ready,
+            repack_bind_ms: repack_telemetry.bind_ms,
             repack_ms: repack_telemetry.last_ms,
             repack_fragmentation_before_pct: repack_telemetry.fragmentation_before_pct,
             repack_fragmentation_after_pct: repack_telemetry.fragmentation_after_pct,
@@ -1844,8 +1860,10 @@ impl GpuTerrainBufferPool {
                             telemetry.upload_ready = 0;
                             telemetry.upload_bytes = 0;
                             telemetry.upload_ms = 0.0;
+                            telemetry.bind_ready = 0;
+                            telemetry.bind_ms = 0.0;
                         }
-                        if telemetry.failure_reason != GpuTerrainRepackFailureReason::UploadError {
+                        if !telemetry.failure_reason.preserves_preview_error() {
                             telemetry.failure_reason = GpuTerrainRepackFailureReason::MarkerOnly;
                         }
                         Some(payload)
@@ -1854,6 +1872,8 @@ impl GpuTerrainBufferPool {
                         telemetry.upload_ready = 0;
                         telemetry.upload_bytes = 0;
                         telemetry.upload_ms = 0.0;
+                        telemetry.bind_ready = 0;
+                        telemetry.bind_ms = 0.0;
                         telemetry.failure_reason = GpuTerrainRepackFailureReason::MissingSource;
                         None
                     }
@@ -1861,6 +1881,8 @@ impl GpuTerrainBufferPool {
                         telemetry.upload_ready = 0;
                         telemetry.upload_bytes = 0;
                         telemetry.upload_ms = 0.0;
+                        telemetry.bind_ready = 0;
+                        telemetry.bind_ms = 0.0;
                         telemetry.failure_reason =
                             GpuTerrainRepackFailureReason::SourceSizeMismatch;
                         None
@@ -1871,6 +1893,8 @@ impl GpuTerrainBufferPool {
                 telemetry.upload_ready = 0;
                 telemetry.upload_bytes = 0;
                 telemetry.upload_ms = 0.0;
+                telemetry.bind_ready = 0;
+                telemetry.bind_ms = 0.0;
                 telemetry.failure_reason = GpuTerrainRepackFailureReason::Capacity;
                 None
             }
@@ -1901,6 +1925,8 @@ impl GpuTerrainBufferPool {
                     preview.telemetry.upload_ready = 0;
                     preview.telemetry.upload_bytes = 0;
                     preview.telemetry.upload_ms = 0.0;
+                    preview.telemetry.bind_ready = 0;
+                    preview.telemetry.bind_ms = 0.0;
                     preview.telemetry.failure_reason = GpuTerrainRepackFailureReason::UploadError;
                     self.repack_upload_preview_sampled = true;
                 } else {
@@ -1910,16 +1936,49 @@ impl GpuTerrainBufferPool {
                         payload_pba.len() as u32,
                         &payload_pba,
                     );
-                    self.rd.free_rid(replacement_buffer_rid);
                     preview.telemetry.upload_ready = 1;
                     preview.telemetry.upload_bytes = upload_bytes as u64;
                     preview.telemetry.upload_ms = upload_start.elapsed().as_secs_f64() * 1000.0;
+                    let bind_start = Instant::now();
+                    if self.preview_repack_render_binding(replacement_buffer_rid) {
+                        preview.telemetry.bind_ready = 1;
+                        preview.telemetry.bind_ms = bind_start.elapsed().as_secs_f64() * 1000.0;
+                    } else {
+                        preview.telemetry.bind_ready = 0;
+                        preview.telemetry.bind_ms = 0.0;
+                        preview.telemetry.failure_reason =
+                            GpuTerrainRepackFailureReason::DrawRebuildError;
+                    }
+                    self.rd.free_rid(replacement_buffer_rid);
                     self.repack_upload_preview_sampled = true;
                 }
             }
         }
 
         self.repack_telemetry = preview.telemetry;
+    }
+
+    fn preview_repack_render_binding(&mut self, replacement_faces_buffer_rid: Rid) -> bool {
+        let Some(render_pipeline) = &self.render_pipeline else {
+            return false;
+        };
+
+        let uniform_set_rid = create_uniform_set(
+            &mut self.rd,
+            render_pipeline.shader_rid,
+            replacement_faces_buffer_rid,
+            render_pipeline.atlas_texture_rid,
+            render_pipeline.atlas_sampler_rid,
+        );
+        if !self.rd.uniform_set_is_valid(uniform_set_rid) {
+            if !uniform_set_rid.is_invalid() {
+                self.rd.free_rid(uniform_set_rid);
+            }
+            return false;
+        }
+
+        self.rd.free_rid(uniform_set_rid);
+        true
     }
 
     fn repack_source_enabled(&self) -> bool {
