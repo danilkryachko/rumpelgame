@@ -448,6 +448,8 @@ error_scan() {
   printf -- '- max `native_shadow_pass_rid_allocated`: `%s`\n' "$(metric_max native_shadow_pass_rid_allocated)"
   printf -- '- max `native_shadow_pass_begin_count`: `%s`\n' "$(metric_max native_shadow_pass_begin_count)"
   printf -- '- max `native_shadow_pass_end_count`: `%s`\n' "$(metric_max native_shadow_pass_end_count)"
+  printf -- '- max `native_shadow_command_buffer_submit_count`: `%s`\n' "$(metric_max native_shadow_command_buffer_submit_count)"
+  printf -- '- max `native_shadow_command_buffer_error_count`: `%s`\n' "$(metric_max native_shadow_command_buffer_error_count)"
   printf -- '- max `native_shadow_sampler_compare_enabled`: `%s`\n' "$(metric_max native_shadow_sampler_compare_enabled)"
   printf -- '- max `native_shadow_depth_bias_constant_milli`: `%s`\n' "$(metric_max native_shadow_depth_bias_constant_milli)"
   printf -- '- max `native_shadow_depth_bias_slope_milli`: `%s`\n' "$(metric_max native_shadow_depth_bias_slope_milli)"
@@ -550,6 +552,8 @@ error_scan() {
   metric_max_source native_shadow_pass_rid_allocated | sed 's/^/- /'
   metric_max_source native_shadow_pass_begin_count | sed 's/^/- /'
   metric_max_source native_shadow_pass_end_count | sed 's/^/- /'
+  metric_max_source native_shadow_command_buffer_submit_count | sed 's/^/- /'
+  metric_max_source native_shadow_command_buffer_error_count | sed 's/^/- /'
   metric_max_source native_shadow_sampler_compare_enabled | sed 's/^/- /'
   metric_max_source native_shadow_depth_bias_constant_milli | sed 's/^/- /'
   metric_max_source native_shadow_depth_bias_slope_milli | sed 's/^/- /'
