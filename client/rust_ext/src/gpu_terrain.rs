@@ -905,6 +905,8 @@ struct GpuTerrainRepackTelemetry {
     upload_ms: f64,
     bind_ready: u64,
     bind_ms: f64,
+    draw_ready: u64,
+    draw_bytes: u64,
     last_ms: f64,
     fragmentation_before_pct: f64,
     fragmentation_after_pct: f64,
@@ -935,6 +937,8 @@ impl GpuTerrainRepackTelemetry {
                 upload_ms: 0.0,
                 bind_ready: 0,
                 bind_ms: 0.0,
+                draw_ready: 0,
+                draw_bytes: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -962,6 +966,8 @@ impl GpuTerrainRepackTelemetry {
                 upload_ms: 0.0,
                 bind_ready: 0,
                 bind_ms: 0.0,
+                draw_ready: 0,
+                draw_bytes: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -1000,10 +1006,21 @@ struct GpuTerrainRepackPayload {
     bytes: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GpuTerrainRepackDrawPayload {
+    bytes: Vec<u8>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GpuTerrainRepackPayloadError {
     MissingSource,
     SourceSizeMismatch,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuTerrainRepackDrawError {
+    CapacityExceeded,
+    MissingPlacement,
 }
 
 fn build_gpu_terrain_repack_plan(
@@ -1081,6 +1098,35 @@ fn build_gpu_terrain_repack_payload(
     }
 
     Ok(GpuTerrainRepackPayload { bytes })
+}
+
+fn build_gpu_terrain_repack_draw_payload(
+    plan: &GpuTerrainRepackPlan,
+    draw_keys: &[GpuSubchunkKey],
+    max_draws: usize,
+) -> Result<GpuTerrainRepackDrawPayload, GpuTerrainRepackDrawError> {
+    if draw_keys.len() > max_draws {
+        return Err(GpuTerrainRepackDrawError::CapacityExceeded);
+    }
+
+    let placements = plan
+        .placements
+        .iter()
+        .map(|placement| (placement.key, *placement))
+        .collect::<HashMap<_, _>>();
+    let mut bytes = Vec::with_capacity(draw_command_active_bytes(draw_keys.len()));
+    for key in draw_keys {
+        let Some(placement) = placements.get(key) else {
+            return Err(GpuTerrainRepackDrawError::MissingPlacement);
+        };
+        IndirectDrawCommand::for_slot(GpuTerrainSlot {
+            start_face: placement.new_start_face,
+            face_count: placement.face_count,
+        })
+        .append_bytes(&mut bytes);
+    }
+
+    Ok(GpuTerrainRepackDrawPayload { bytes })
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1239,6 +1285,8 @@ pub struct GpuTerrainStats {
     pub repack_upload_ms: f64,
     pub repack_bind_ready: u64,
     pub repack_bind_ms: f64,
+    pub repack_draw_ready: u64,
+    pub repack_draw_bytes: u64,
     pub repack_ms: f64,
     pub repack_fragmentation_before_pct: f64,
     pub repack_fragmentation_after_pct: f64,
@@ -1791,6 +1839,8 @@ impl GpuTerrainBufferPool {
             repack_upload_ms: repack_telemetry.upload_ms,
             repack_bind_ready: repack_telemetry.bind_ready,
             repack_bind_ms: repack_telemetry.bind_ms,
+            repack_draw_ready: repack_telemetry.draw_ready,
+            repack_draw_bytes: repack_telemetry.draw_bytes,
             repack_ms: repack_telemetry.last_ms,
             repack_fragmentation_before_pct: repack_telemetry.fragmentation_before_pct,
             repack_fragmentation_after_pct: repack_telemetry.fragmentation_after_pct,
@@ -1833,6 +1883,8 @@ impl GpuTerrainBufferPool {
 
         telemetry.payload_ready = 0;
         telemetry.payload_bytes = 0;
+        telemetry.draw_ready = 0;
+        telemetry.draw_bytes = 0;
         telemetry.fragmentation_before_pct = allocator_stats.fragmentation_pct();
         telemetry.largest_free_before = allocator_stats.largest_free_faces;
         telemetry.source_subchunks = self.repack_sources.len() as u64;
@@ -1849,6 +1901,43 @@ impl GpuTerrainBufferPool {
                 telemetry.bytes = (plan.moved_faces * PACKED_FACE_BYTES) as u64;
                 telemetry.fragmentation_after_pct = 0.0;
                 telemetry.largest_free_after = plan.tail_free_range.len;
+                if self.draw_dirty {
+                    telemetry.upload_ready = 0;
+                    telemetry.upload_bytes = 0;
+                    telemetry.upload_ms = 0.0;
+                    telemetry.bind_ready = 0;
+                    telemetry.bind_ms = 0.0;
+                    telemetry.failure_reason = GpuTerrainRepackFailureReason::DrawRebuildError;
+                    return GpuTerrainRepackPreview {
+                        telemetry,
+                        payload: None,
+                    };
+                }
+                match build_gpu_terrain_repack_draw_payload(
+                    &plan,
+                    &self.draw_keys,
+                    MAX_INDIRECT_DRAWS,
+                ) {
+                    Ok(draw_payload) => {
+                        telemetry.draw_ready = 1;
+                        telemetry.draw_bytes = draw_payload.bytes.len() as u64;
+                    }
+                    Err(
+                        GpuTerrainRepackDrawError::CapacityExceeded
+                        | GpuTerrainRepackDrawError::MissingPlacement,
+                    ) => {
+                        telemetry.upload_ready = 0;
+                        telemetry.upload_bytes = 0;
+                        telemetry.upload_ms = 0.0;
+                        telemetry.bind_ready = 0;
+                        telemetry.bind_ms = 0.0;
+                        telemetry.failure_reason = GpuTerrainRepackFailureReason::DrawRebuildError;
+                        return GpuTerrainRepackPreview {
+                            telemetry,
+                            payload: None,
+                        };
+                    }
+                }
                 match build_gpu_terrain_repack_payload(&plan, &self.repack_sources) {
                     Ok(payload) => {
                         telemetry.payload_ready = 1;
@@ -4541,6 +4630,82 @@ mod tests {
         assert_eq!(
             build_gpu_terrain_repack_payload(&plan, &sources),
             Err(GpuTerrainRepackPayloadError::SourceSizeMismatch)
+        );
+    }
+
+    #[test]
+    fn repack_draw_payload_uses_draw_order_with_compacted_offsets() {
+        let first = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let second = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let plan = build_gpu_terrain_repack_plan(
+            vec![
+                (
+                    first,
+                    GpuTerrainSlot {
+                        start_face: 12,
+                        face_count: 3,
+                    },
+                ),
+                (
+                    second,
+                    GpuTerrainSlot {
+                        start_face: 2,
+                        face_count: 5,
+                    },
+                ),
+            ],
+            16,
+        )
+        .unwrap();
+
+        let payload =
+            build_gpu_terrain_repack_draw_payload(&plan, &[second, first], MAX_INDIRECT_DRAWS)
+                .unwrap();
+        let words = payload
+            .bytes
+            .chunks_exact(std::mem::size_of::<u32>())
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(payload.bytes.len(), 2 * INDIRECT_DRAW_BYTES);
+        assert_eq!(words, vec![6, 5, 0, 3, 6, 3, 0, 0]);
+    }
+
+    #[test]
+    fn repack_draw_payload_rejects_missing_placement() {
+        let key = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let missing = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let plan = build_gpu_terrain_repack_plan(
+            vec![(
+                key,
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 1,
+                },
+            )],
+            16,
+        )
+        .unwrap();
+
+        assert_eq!(
+            build_gpu_terrain_repack_draw_payload(&plan, &[missing], MAX_INDIRECT_DRAWS),
+            Err(GpuTerrainRepackDrawError::MissingPlacement)
         );
     }
 
