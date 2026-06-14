@@ -8,6 +8,12 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 - `gpu_time` is report-only on the current macOS/Metal path because Godot timestamp samples report `0.0us`.
 - Prefer `terrain_queue_max_ms`, `process_wall_p95_ms`, `gpu_compositor_submit_max_ms`, `gpu_upload_fail`, draw counts, and external GPU profiler captures for decisions.
 
+## 2026-06-15
+
+| Commit | Slice | Artifact | Key Result | Caveat |
+| --- | --- | --- | --- | --- |
+| `post-5e9fdfe` | World load/upload measurement | `logs/world_load_upload_measurement_20260615/movement`, `logs/world_load_upload_measurement_20260615/workload_matrix`, `logs/world_load_upload_measurement_20260615/gpu-terrain-report.txt` | Fresh release movement plus standard workload matrix passed with `gpu_upload_fail=0`, max `gpu_effective_draws=996`, max `gpu_faces=1562`, max draw-command occupancy `12.158%`, max `terrain_queue_max_ms=2.151`, max `process_wall_p95_ms=0.053`, max `gpu_compositor_submit_max_ms=0.212`, and max per-frame upload payload `terrain_queue_gpu_upload_kb=1.5`; the loaded resident set still has large headroom (`gpu_draw_cmd_headroom_bytes=115136`) | measurement/artifact slice only; local visual FPS and Godot GPU timestamps remain report-only on macOS/Metal, and this points the next optimization toward world streaming/resident-set growth rather than active GPU buffer repack |
+
 ## 2026-06-14
 
 | Commit | Slice | Artifact | Key Result | Caveat |

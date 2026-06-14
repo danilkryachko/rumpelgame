@@ -4,7 +4,11 @@ This file is the current continuation state for Codex threads. Update it after n
 
 ## Latest Snapshot
 
-Date: 2026-06-14
+Date: 2026-06-15
+
+Fresh 2026-06-15 status:
+
+- Fresh world load/upload measurement is captured after commit `5e9fdfe` with release Rust GDExtension. Artifacts are `logs/world_load_upload_measurement_20260615/movement`, `logs/world_load_upload_measurement_20260615/workload_matrix`, and `logs/world_load_upload_measurement_20260615/gpu-terrain-report.txt`. Movement stress passed with `terrain_queue_max_ms=0.868`, `process_wall_p95_ms=0.046`, `gpu_compositor_submit_max_ms=0.212`, `gpu_upload_fail=0`, and startup `chunk_loaded_ms=107.048` / `player_spawn_ms=107.048`. The workload matrix also passed with max `gpu_effective_draws=996`, max `gpu_faces=1562`, max draw-command occupancy `12.158%`, max `terrain_queue_max_ms=2.151`, max `process_wall_p95_ms=0.053`, max `gpu_compositor_submit_max_ms=0.174`, max per-frame upload payload `terrain_queue_gpu_upload_kb=1.5`, and zero `gpu_upload_fail_capacity` / `gpu_upload_fail_fragmented`. The current data does not justify active GPU buffer repack as the next performance move; the better next slice is a world streaming/resident-set growth experiment that pushes chunk delivery and simultaneous resident terrain higher while keeping draw distance, lighting, shadows, texture quality, protocol, storage, worldgen, and chunk serialization unchanged.
 
 Fresh 2026-06-14 status:
 
