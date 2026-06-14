@@ -445,6 +445,8 @@ error_scan() {
   printf -- '- max `native_shadow_resource_layers`: `%s`\n' "$(metric_max native_shadow_resource_layers)"
   printf -- '- max `native_shadow_resource_bytes`: `%s`\n' "$(metric_max native_shadow_resource_bytes)"
   printf -- '- max `native_shadow_pass_clear_depth_milli`: `%s`\n' "$(metric_max native_shadow_pass_clear_depth_milli)"
+  printf -- '- max `native_shadow_depth_attachment_binding_count`: `%s`\n' "$(metric_max native_shadow_depth_attachment_binding_count)"
+  printf -- '- max `native_shadow_depth_attachment_clear_count`: `%s`\n' "$(metric_max native_shadow_depth_attachment_clear_count)"
   printf -- '- max `native_shadow_pass_rid_allocated`: `%s`\n' "$(metric_max native_shadow_pass_rid_allocated)"
   printf -- '- max `native_shadow_pass_begin_count`: `%s`\n' "$(metric_max native_shadow_pass_begin_count)"
   printf -- '- max `native_shadow_pass_end_count`: `%s`\n' "$(metric_max native_shadow_pass_end_count)"
@@ -549,6 +551,8 @@ error_scan() {
   metric_max_source native_shadow_resource_layers | sed 's/^/- /'
   metric_max_source native_shadow_resource_bytes | sed 's/^/- /'
   metric_max_source native_shadow_pass_clear_depth_milli | sed 's/^/- /'
+  metric_max_source native_shadow_depth_attachment_binding_count | sed 's/^/- /'
+  metric_max_source native_shadow_depth_attachment_clear_count | sed 's/^/- /'
   metric_max_source native_shadow_pass_rid_allocated | sed 's/^/- /'
   metric_max_source native_shadow_pass_begin_count | sed 's/^/- /'
   metric_max_source native_shadow_pass_end_count | sed 's/^/- /'
