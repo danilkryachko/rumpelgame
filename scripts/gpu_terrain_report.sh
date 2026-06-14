@@ -469,6 +469,8 @@ error_scan() {
   printf -- '- max `native_shadow_pass_end_count`: `%s`\n' "$(metric_max native_shadow_pass_end_count)"
   printf -- '- max `native_shadow_command_buffer_record_ready`: `%s`\n' "$(metric_max native_shadow_command_buffer_record_ready)"
   printf -- '- max `native_shadow_command_buffer_record_error_count`: `%s`\n' "$(metric_max native_shadow_command_buffer_record_error_count)"
+  printf -- '- max `native_shadow_command_buffer_submit_ready`: `%s`\n' "$(metric_max native_shadow_command_buffer_submit_ready)"
+  printf -- '- max `native_shadow_command_buffer_submit_error_count`: `%s`\n' "$(metric_max native_shadow_command_buffer_submit_error_count)"
   printf -- '- max `native_shadow_command_buffer_submit_count`: `%s`\n' "$(metric_max native_shadow_command_buffer_submit_count)"
   printf -- '- max `native_shadow_command_buffer_error_count`: `%s`\n' "$(metric_max native_shadow_command_buffer_error_count)"
   printf -- '- max `native_shadow_sampler_compare_enabled`: `%s`\n' "$(metric_max native_shadow_sampler_compare_enabled)"
@@ -594,6 +596,8 @@ error_scan() {
   metric_max_source native_shadow_pass_end_count | sed 's/^/- /'
   metric_max_source native_shadow_command_buffer_record_ready | sed 's/^/- /'
   metric_max_source native_shadow_command_buffer_record_error_count | sed 's/^/- /'
+  metric_max_source native_shadow_command_buffer_submit_ready | sed 's/^/- /'
+  metric_max_source native_shadow_command_buffer_submit_error_count | sed 's/^/- /'
   metric_max_source native_shadow_command_buffer_submit_count | sed 's/^/- /'
   metric_max_source native_shadow_command_buffer_error_count | sed 's/^/- /'
   metric_max_source native_shadow_sampler_compare_enabled | sed 's/^/- /'
