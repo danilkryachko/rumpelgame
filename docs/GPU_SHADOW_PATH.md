@@ -50,7 +50,7 @@ Checks:
 - `subchunk_needs_shadow_proxy` and `chunk_needs_cpu_proxy_refresh` decide which loaded subchunks/chunks still need CPU proxy refreshes for shadow coverage.
 - `configure_terrain_mesh_render_mode` sets Godot `MeshInstance3D` shadow casting. Shadow proxies use `SHADOWS_ONLY`; collision-only proxies have shadows off.
 - `TerrainCpuProxyMeshPayload` and `PackedFaceBatch` already support full, compact, and indexed compact CPU proxy meshes. These reduce proxy payload but still rely on Godot CPU mesh instances to participate in shadows.
-- Perf text already publishes `shadow_path`, `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, `native_shadow_implemented`, `native_shadow_resource_status`, native-shadow resource descriptor format/usage labels, native-shadow resource lifecycle counters, native-shadow coverage counters, `shadow_mode`, `shadow_mesh`, `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and compact normal savings counters.
+- Perf text already publishes `shadow_path`, `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, `native_shadow_implemented`, `native_shadow_resource_status`, native-shadow resource descriptor format/usage labels, pass/sampler/depth-bias/viewport/pipeline/draw descriptor fields, native-shadow resource lifecycle counters, native-shadow coverage counters, `shadow_mode`, `shadow_mesh`, `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and compact normal savings counters.
 
 ## Proposed Rollout
 
