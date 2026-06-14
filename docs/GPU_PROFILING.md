@@ -97,6 +97,8 @@ Use the allocator stress gate after a movement/workload/fill artifact has been c
 ./scripts/gpu_terrain_allocator_stress_gate.sh logs/week2_gpu_allocator_telemetry_20260614
 ```
 
+Future GPU terrain buffer repack work is documented in `docs/GPU_BUFFER_REPACK.md`. Repack is default-off behind `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK=1`; unset or `0` must keep the current allocator path, and the allocator stress gate remains required before and after any prototype run.
+
 Use workload matrix to compare movement and resident-load cases:
 
 ```sh
