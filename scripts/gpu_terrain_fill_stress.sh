@@ -101,6 +101,13 @@ summary_line() {
   gpu_draw_repeat="$(metric gpu_draw_repeat "$marker_path")"
   gpu_faces="$(metric gpu_faces "$marker_path")"
   gpu_upload_fail="$(metric gpu_upload_fail "$marker_path")"
+  gpu_upload_fail_capacity="$(metric gpu_upload_fail_capacity "$marker_path")"
+  gpu_upload_fail_fragmented="$(metric gpu_upload_fail_fragmented "$marker_path")"
+  gpu_free_ranges="$(metric gpu_free_ranges "$marker_path")"
+  gpu_free_faces="$(metric gpu_free_faces "$marker_path")"
+  gpu_largest_free="$(metric gpu_largest_free "$marker_path")"
+  gpu_fragmented_free_faces="$(metric gpu_fragmented_free_faces "$marker_path")"
+  gpu_fragmentation_pct="$(default_float "$(float_metric gpu_fragmentation_pct "$marker_path")")"
   smoke_err="$(metric smoke_err "$marker_path")"
   terrain_samples="$(metric terrain_samples "$marker_path")"
   terrain_color_buckets="$(metric terrain_color_buckets "$marker_path")"
@@ -121,6 +128,13 @@ summary_line() {
     -v gpu_effective_draws="${gpu_effective_draws:-0}" \
     -v gpu_faces="${gpu_faces:-0}" \
     -v gpu_upload_fail="${gpu_upload_fail:-0}" \
+    -v gpu_upload_fail_capacity="${gpu_upload_fail_capacity:-0}" \
+    -v gpu_upload_fail_fragmented="${gpu_upload_fail_fragmented:-0}" \
+    -v gpu_free_ranges="${gpu_free_ranges:-0}" \
+    -v gpu_free_faces="${gpu_free_faces:-0}" \
+    -v gpu_largest_free="${gpu_largest_free:-0}" \
+    -v gpu_fragmented_free_faces="${gpu_fragmented_free_faces:-0}" \
+    -v gpu_fragmentation_pct="$gpu_fragmentation_pct" \
     -v smoke_err="${smoke_err:-1}" \
     -v terrain_samples="${terrain_samples:-0}" \
     -v terrain_color_buckets="${terrain_color_buckets:-0}" \
@@ -134,7 +148,7 @@ summary_line() {
     -v frame_p95="$frame_p95" \
     -v fps_p05="$fps_p05" '
       BEGIN {
-        printf("repeat=%s status=pass gpu_draw_repeat=%d gpu_draws=%d gpu_effective_draws=%d gpu_faces=%d gpu_upload_fail=%d smoke_err=%d terrain_samples=%d terrain_color_buckets=%d terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", repeat, gpu_draw_repeat, gpu_draws, gpu_effective_draws, gpu_faces, gpu_upload_fail, smoke_err, terrain_samples, terrain_color_buckets, queue_max, process_wall_p95, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, frame_p95, fps_p05)
+        printf("repeat=%s status=pass gpu_draw_repeat=%d gpu_draws=%d gpu_effective_draws=%d gpu_faces=%d gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d gpu_free_ranges=%d gpu_free_faces=%d gpu_largest_free=%d gpu_fragmented_free_faces=%d gpu_fragmentation_pct=%.1f smoke_err=%d terrain_samples=%d terrain_color_buckets=%d terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", repeat, gpu_draw_repeat, gpu_draws, gpu_effective_draws, gpu_faces, gpu_upload_fail, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, gpu_free_ranges, gpu_free_faces, gpu_largest_free, gpu_fragmented_free_faces, gpu_fragmentation_pct, smoke_err, terrain_samples, terrain_color_buckets, queue_max, process_wall_p95, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, frame_p95, fps_p05)
       }
     '
 }

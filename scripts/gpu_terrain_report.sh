@@ -415,6 +415,8 @@ error_scan() {
   printf -- '- max `gpu_light_ambient`: `%s`\n' "$(metric_max gpu_light_ambient)"
   printf -- '- max `gpu_faces`: `%s`\n' "$(metric_max gpu_faces)"
   printf -- '- sum `gpu_upload_fail`: `%s`\n' "$(metric_sum gpu_upload_fail)"
+  printf -- '- sum `gpu_upload_fail_capacity`: `%s`\n' "$(metric_sum gpu_upload_fail_capacity)"
+  printf -- '- sum `gpu_upload_fail_fragmented`: `%s`\n' "$(metric_sum gpu_upload_fail_fragmented)"
   printf -- '- max `gpu_upload_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_ms)"
   printf -- '- max `gpu_upload_encode_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_encode_ms)"
   printf -- '- max `gpu_upload_stage_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_stage_ms)"
@@ -522,6 +524,9 @@ error_scan() {
   printf -- '- max `compact_collision_normals_saved`: `%s`\n' "$(metric_max compact_collision_normals_saved)"
   printf -- '- max `fast_proxy`: `%s`\n' "$(metric_max fast_proxy)"
   printf -- '- max `proxy_refresh_reuse`: `%s`\n' "$(metric_max proxy_refresh_reuse)"
+  printf -- '- max `gpu_free_ranges`: `%s`\n' "$(metric_max gpu_free_ranges)"
+  printf -- '- max `gpu_free_faces`: `%s`\n' "$(metric_max gpu_free_faces)"
+  printf -- '- max `gpu_largest_free`: `%s`\n' "$(metric_max gpu_largest_free)"
   printf -- '- max `gpu_fragmented_free_faces`: `%s`\n' "$(metric_max gpu_fragmented_free_faces)"
   printf -- '- max `gpu_fragmentation_pct`: `%s`\n' "$(metric_max gpu_fragmentation_pct)"
   printf -- '- max `terrain_queue_max_ms`: `%s`\n' "$(metric_max_terrain_queue)"
@@ -554,6 +559,8 @@ error_scan() {
   metric_max_source gpu_light_energy | sed 's/^/- /'
   metric_max_source gpu_light_ambient | sed 's/^/- /'
   metric_max_source gpu_faces | sed 's/^/- /'
+  metric_max_source gpu_upload_fail_capacity | sed 's/^/- /'
+  metric_max_source gpu_upload_fail_fragmented | sed 's/^/- /'
   metric_max_source dirty_blocks | sed 's/^/- /'
   metric_max_source dirty_last_blocks | sed 's/^/- /'
   metric_max_source dirty_edge_neighbor_subchunks | sed 's/^/- /'
@@ -653,6 +660,10 @@ error_scan() {
   metric_max_source compact_collision_normals_saved | sed 's/^/- /'
   metric_max_source fast_proxy | sed 's/^/- /'
   metric_max_source proxy_refresh_reuse | sed 's/^/- /'
+  metric_max_source gpu_free_ranges | sed 's/^/- /'
+  metric_max_source gpu_free_faces | sed 's/^/- /'
+  metric_max_source gpu_largest_free | sed 's/^/- /'
+  metric_max_source gpu_fragmented_free_faces | sed 's/^/- /'
   metric_max_source gpu_fragmentation_pct | sed 's/^/- /'
   metric_max_source_terrain_queue | sed 's/^/- /'
   metric_max_source gpu_compositor_submit_max_ms | sed 's/^/- /'
