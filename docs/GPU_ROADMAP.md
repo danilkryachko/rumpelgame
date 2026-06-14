@@ -175,7 +175,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 
 1. Done 2026-06-14: refreshed the aggregate GPU report on current native-shadow checkpoint evidence and removed the stale-report assumption from handoff.
 2. Done 2026-06-14: captured fresh release movement, standard workload matrix, and fill-stress repeats `1/4/8` under `logs/week2_gpu_baseline_20260614`.
-3. Refresh dirty-update default-on evidence on current runtime behavior.
+3. Done 2026-06-14: refreshed dirty-update default-on single-edge evidence under `logs/week2_gpu_dirty_default_on_20260614`.
 4. Improve dirty-update report summaries and failure diagnostics where evidence is weak.
 5. Checkpoint dirty-update status with rollback flag, docs, and trend entry.
 6. Refresh GPU allocator fragmentation, largest-free-range, and failure-cause telemetry.
