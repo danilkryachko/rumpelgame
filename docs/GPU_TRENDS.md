@@ -8,6 +8,12 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 - `gpu_time` is report-only on the current macOS/Metal path because Godot timestamp samples report `0.0us`.
 - Prefer `terrain_queue_max_ms`, `process_wall_p95_ms`, `gpu_compositor_submit_max_ms`, `gpu_upload_fail`, draw counts, and external GPU profiler captures for decisions.
 
+## 2026-06-14
+
+| Commit | Slice | Artifact | Key Result | Caveat |
+| --- | --- | --- | --- | --- |
+| `post-3961af6` | Native-shadow implementation gate marker | `logs/gpu_native_shadow_implemented_marker_20260614/movement-stress-summary.txt`, `logs/gpu_native_shadow_implemented_parity_20260614/parity-summary.txt`, `/tmp/rumpel-gpu-report-native-shadow-implemented.txt` | Runtime perf markers, movement-stress fallback validation, parity fallback validation, and aggregate reports now expose `native_shadow_implemented`; fresh env-on release movement smoke passed with `shadow_path=godot_proxy`, `native_shadow_requested=1`, `native_shadow_active=0`, `native_shadow_fallback=1`, `native_shadow_implemented=0`, `gpu_upload_fail=0`, `terrain_queue_max_ms=1.586`, and `gpu_compositor_submit_max_ms=0.749`; fresh full parity passed with `case_count=17` and fallback case `native_shadow_requested=1 active=0 fallback=1 implemented=0` with zero visual delta against the ordinary GPU marker | marker/guard slice only; no renderer implementation, shader path, Godot scene, shadow quality, CPU proxy fallback, native shadow-map path, default behavior, draw distance, texture quality, protocol, storage, world generation, or chunk serialization changed |
+
 ## 2026-06-13
 
 | Commit | Slice | Artifact | Key Result | Caveat |

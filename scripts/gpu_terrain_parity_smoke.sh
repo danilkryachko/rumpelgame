@@ -188,6 +188,7 @@ validate_native_shadow_fallback_marker() {
   require_metric_eq "$marker_path" "native_shadow_requested" 1
   require_metric_eq "$marker_path" "native_shadow_active" 0
   require_metric_eq "$marker_path" "native_shadow_fallback" 1
+  require_metric_eq "$marker_path" "native_shadow_implemented" 0
   require_metric_ge "$marker_path" "gpu_frames" 1
   require_metric_ge "$marker_path" "gpu_subchunks" 1
   require_metric_ge "$marker_path" "gpu_faces" 1
@@ -583,9 +584,10 @@ append_case_summary() {
   native_shadow_requested="$(value_or_na "$(metric "native_shadow_requested" "$append_case_marker_path")")"
   native_shadow_active="$(value_or_na "$(metric "native_shadow_active" "$append_case_marker_path")")"
   native_shadow_fallback="$(value_or_na "$(metric "native_shadow_fallback" "$append_case_marker_path")")"
+  native_shadow_implemented="$(value_or_na "$(metric "native_shadow_implemented" "$append_case_marker_path")")"
 
   printf '%s\n' \
-    "case=$append_case_name marker=$append_case_marker_path smoke_err=$smoke_err terrain_samples=$terrain_samples terrain_color_buckets=$terrain_color_buckets terrain_luma_range=$terrain_luma_range gpu_frames=$gpu_frames gpu_subchunks=$gpu_subchunks shadow_path=$shadow_path shadow_mode=$shadow_mode shadow_mesh=$shadow_mesh native_shadow_requested=$native_shadow_requested native_shadow_active=$native_shadow_active native_shadow_fallback=$native_shadow_fallback" \
+    "case=$append_case_name marker=$append_case_marker_path smoke_err=$smoke_err terrain_samples=$terrain_samples terrain_color_buckets=$terrain_color_buckets terrain_luma_range=$terrain_luma_range gpu_frames=$gpu_frames gpu_subchunks=$gpu_subchunks shadow_path=$shadow_path shadow_mode=$shadow_mode shadow_mesh=$shadow_mesh native_shadow_requested=$native_shadow_requested native_shadow_active=$native_shadow_active native_shadow_fallback=$native_shadow_fallback native_shadow_implemented=$native_shadow_implemented" \
     >> "$append_case_summary_path"
 }
 

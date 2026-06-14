@@ -50,7 +50,7 @@ Checks:
 - `subchunk_needs_shadow_proxy` and `chunk_needs_cpu_proxy_refresh` decide which loaded subchunks/chunks still need CPU proxy refreshes for shadow coverage.
 - `configure_terrain_mesh_render_mode` sets Godot `MeshInstance3D` shadow casting. Shadow proxies use `SHADOWS_ONLY`; collision-only proxies have shadows off.
 - `TerrainCpuProxyMeshPayload` and `PackedFaceBatch` already support full, compact, and indexed compact CPU proxy meshes. These reduce proxy payload but still rely on Godot CPU mesh instances to participate in shadows.
-- Perf text already publishes `shadow_path`, `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, `shadow_mode`, `shadow_mesh`, `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and compact normal savings counters.
+- Perf text already publishes `shadow_path`, `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, `native_shadow_implemented`, `shadow_mode`, `shadow_mesh`, `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and compact normal savings counters.
 
 ## Proposed Rollout
 
@@ -114,15 +114,15 @@ The current code slice is telemetry/test scaffolding, not a renderer rewrite:
 
 - `GpuTerrainShadowPath::GpuNativeShadow` reserves the future marker token `gpu_native_shadow`.
 - `RUMPELMC_GPU_TERRAIN_NATIVE_SHADOW` is off by default and is additionally blocked by `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`, so current runtime markers remain on `godot_proxy` even if the env flag is set.
-- Perf markers and `scripts/gpu_terrain_report.sh` expose `native_shadow_requested`, `native_shadow_active`, and `native_shadow_fallback`, so future captures can show when the env flag was requested without implying the native path actually ran.
+- Perf markers and `scripts/gpu_terrain_report.sh` expose `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, and `native_shadow_implemented`, so future captures can show when the env flag was requested without implying the native path actually ran.
 - `terrain_godot_shadow_proxy_chunk_distance` keeps the future native renderer path distinct from the current Godot proxy fallback: when `native_shadow_active=true`, the marker path can be `gpu_native_shadow` while the Godot shadow-proxy refresh radius is `0`; while the implementation gate remains false, current `godot_proxy` behavior is unchanged.
 - `terrain_shadow_path_decision` tests stay explicit for production, disabled, diagnostic, and future prototype paths.
 - `scripts/gpu_terrain_compact_proxy_benchmark.sh` validates shadow-casting paths through a helper that accepts only `godot_proxy` and future `gpu_native_shadow`, keeping them separate from `scene_shadows_disabled` and `diagnostic_no_shadow_proxy`.
 - `scripts/gpu_terrain_parity_smoke.sh` prepares the requested Godot Rust extension profile before full captures, requires that profile in fresh marker files, and normalizes relative output directories to the repo root before passing screenshot paths to Godot.
-- The parity smoke now includes `gpu-terrain-native-shadow-fallback-parity`, which runs with `RUMPELMC_GPU_TERRAIN_NATIVE_SHADOW=1` and requires `shadow_path=godot_proxy`, `native_shadow_requested=1`, `native_shadow_active=0`, and `native_shadow_fallback=1` while the implementation gate remains false.
+- The parity smoke now includes `gpu-terrain-native-shadow-fallback-parity`, which runs with `RUMPELMC_GPU_TERRAIN_NATIVE_SHADOW=1` and requires `shadow_path=godot_proxy`, `native_shadow_requested=1`, `native_shadow_active=0`, `native_shadow_fallback=1`, and `native_shadow_implemented=0` while the implementation gate remains false.
 - No CPU proxy mesh builder or Godot `SHADOWS_ONLY` fallback was removed.
 - Fresh release movement capture in `logs/gpu_native_shadow_requested_active_capture` reports `shadow_path=godot_proxy`, `native_shadow_requested=0`, and `native_shadow_active=0`; the aggregate report now resolves both native-shadow fields to `0.000` with metric origins instead of `n/a`.
 - Fresh env-on rollback capture in `logs/gpu_native_shadow_fallback_capture` reports `shadow_path=godot_proxy`, `native_shadow_requested=1`, `native_shadow_active=0`, and `native_shadow_fallback=1`; this confirms the current env flag still falls back to Godot proxy shadows until the implementation gate changes.
-- Fresh release parity capture in `logs/gpu_native_shadow_fallback_parity` passed 14 cases. Its fallback case reports `shadow_path=godot_proxy`, `native_shadow_requested=1`, `native_shadow_active=0`, and `native_shadow_fallback=1`, with a zero visual metric delta against the ordinary GPU terrain case.
+- Fresh release parity capture in `logs/gpu_native_shadow_implemented_parity_20260614` passed 17 cases. Its fallback case reports `shadow_path=godot_proxy`, `native_shadow_requested=1`, `native_shadow_active=0`, `native_shadow_fallback=1`, and `native_shadow_implemented=0`, with a zero visual metric delta against the ordinary GPU terrain case.
 
 The next implementation slice can keep measuring the current compact proxy path with an external profiler, or start a tiny renderer proof only after the fallback and parity gates above are kept intact.

@@ -457,6 +457,19 @@ require_transparent_fallback_marker_if_requested() {
   fi
 }
 
+require_native_shadow_fallback_marker_if_requested() {
+  marker_path="$1"
+  if ! env_flag_is_true "${RUMPELMC_GPU_TERRAIN_NATIVE_SHADOW:-}"; then
+    return 0
+  fi
+
+  require_metric_eq "$marker_path" "native_shadow_requested" 1
+  require_metric_eq "$marker_path" "native_shadow_active" 0
+  require_metric_eq "$marker_path" "native_shadow_fallback" 1
+  require_metric_eq "$marker_path" "native_shadow_implemented" 0
+  grep -q "shadow_path=godot_proxy" "$marker_path" || fail "native shadow fallback did not keep godot_proxy in $marker_path"
+}
+
 screenshot_path="$OUT_DIR/gpu-terrain-movement-stress.png"
 marker_path="$screenshot_path.txt"
 rm -f "$screenshot_path" "$marker_path"
@@ -516,6 +529,7 @@ require_metric_ge "$marker_path" "gpu_uploads" 1
 require_metric_eq "$marker_path" "gpu_upload_fail" 0
 require_metric_eq "$marker_path" "gpu_upload_fail_capacity" 0
 require_metric_eq "$marker_path" "gpu_upload_fail_fragmented" 0
+require_native_shadow_fallback_marker_if_requested "$marker_path"
 require_transparent_fallback_marker_if_requested "$marker_path"
 test -n "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)" || fail "missing terrain_queue_work_ms in $marker_path"
 
