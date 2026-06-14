@@ -850,7 +850,7 @@ fn upload_failure_kind(stats: FaceAllocatorStats, requested_faces: usize) -> Upl
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GpuTerrainSlot {
     pub start_face: usize,
     pub face_count: usize,
@@ -907,6 +907,9 @@ struct GpuTerrainRepackTelemetry {
     bind_ms: f64,
     draw_ready: u64,
     draw_bytes: u64,
+    stage_ready: u64,
+    stage_slots: u64,
+    stage_bytes: u64,
     last_ms: f64,
     fragmentation_before_pct: f64,
     fragmentation_after_pct: f64,
@@ -939,6 +942,9 @@ impl GpuTerrainRepackTelemetry {
                 bind_ms: 0.0,
                 draw_ready: 0,
                 draw_bytes: 0,
+                stage_ready: 0,
+                stage_slots: 0,
+                stage_bytes: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -968,6 +974,9 @@ impl GpuTerrainRepackTelemetry {
                 bind_ms: 0.0,
                 draw_ready: 0,
                 draw_bytes: 0,
+                stage_ready: 0,
+                stage_slots: 0,
+                stage_bytes: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -1011,6 +1020,14 @@ struct GpuTerrainRepackDrawPayload {
     bytes: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GpuTerrainRepackStagedSwap {
+    face_bytes: Vec<u8>,
+    draw_bytes: Vec<u8>,
+    slots: Vec<(GpuSubchunkKey, GpuTerrainSlot)>,
+    tail_free_range: FaceRange,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GpuTerrainRepackPayloadError {
     MissingSource,
@@ -1021,6 +1038,12 @@ enum GpuTerrainRepackPayloadError {
 enum GpuTerrainRepackDrawError {
     CapacityExceeded,
     MissingPlacement,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuTerrainRepackStagedSwapError {
+    FacePayloadSizeMismatch,
+    DrawPayloadSizeMismatch,
 }
 
 fn build_gpu_terrain_repack_plan(
@@ -1129,10 +1152,48 @@ fn build_gpu_terrain_repack_draw_payload(
     Ok(GpuTerrainRepackDrawPayload { bytes })
 }
 
+fn build_gpu_terrain_repack_staged_swap(
+    plan: &GpuTerrainRepackPlan,
+    payload: GpuTerrainRepackPayload,
+    draw_payload: GpuTerrainRepackDrawPayload,
+    draw_count: usize,
+) -> Result<GpuTerrainRepackStagedSwap, GpuTerrainRepackStagedSwapError> {
+    let expected_face_bytes = plan.total_faces * PACKED_FACE_BYTES;
+    if payload.bytes.len() != expected_face_bytes {
+        return Err(GpuTerrainRepackStagedSwapError::FacePayloadSizeMismatch);
+    }
+
+    let expected_draw_bytes = draw_command_active_bytes(draw_count);
+    if draw_payload.bytes.len() != expected_draw_bytes {
+        return Err(GpuTerrainRepackStagedSwapError::DrawPayloadSizeMismatch);
+    }
+
+    let slots = plan
+        .placements
+        .iter()
+        .map(|placement| {
+            (
+                placement.key,
+                GpuTerrainSlot {
+                    start_face: placement.new_start_face,
+                    face_count: placement.face_count,
+                },
+            )
+        })
+        .collect();
+
+    Ok(GpuTerrainRepackStagedSwap {
+        face_bytes: payload.bytes,
+        draw_bytes: draw_payload.bytes,
+        slots,
+        tail_free_range: plan.tail_free_range,
+    })
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct GpuTerrainRepackPreview {
     telemetry: GpuTerrainRepackTelemetry,
-    payload: Option<GpuTerrainRepackPayload>,
+    staged_swap: Option<GpuTerrainRepackStagedSwap>,
 }
 
 #[repr(C)]
@@ -1287,6 +1348,9 @@ pub struct GpuTerrainStats {
     pub repack_bind_ms: f64,
     pub repack_draw_ready: u64,
     pub repack_draw_bytes: u64,
+    pub repack_stage_ready: u64,
+    pub repack_stage_slots: u64,
+    pub repack_stage_bytes: u64,
     pub repack_ms: f64,
     pub repack_fragmentation_before_pct: f64,
     pub repack_fragmentation_after_pct: f64,
@@ -1841,6 +1905,9 @@ impl GpuTerrainBufferPool {
             repack_bind_ms: repack_telemetry.bind_ms,
             repack_draw_ready: repack_telemetry.draw_ready,
             repack_draw_bytes: repack_telemetry.draw_bytes,
+            repack_stage_ready: repack_telemetry.stage_ready,
+            repack_stage_slots: repack_telemetry.stage_slots,
+            repack_stage_bytes: repack_telemetry.stage_bytes,
             repack_ms: repack_telemetry.last_ms,
             repack_fragmentation_before_pct: repack_telemetry.fragmentation_before_pct,
             repack_fragmentation_after_pct: repack_telemetry.fragmentation_after_pct,
@@ -1877,7 +1944,7 @@ impl GpuTerrainBufferPool {
         if telemetry.requested == 0 {
             return GpuTerrainRepackPreview {
                 telemetry,
-                payload: None,
+                staged_swap: None,
             };
         }
 
@@ -1885,13 +1952,16 @@ impl GpuTerrainBufferPool {
         telemetry.payload_bytes = 0;
         telemetry.draw_ready = 0;
         telemetry.draw_bytes = 0;
+        telemetry.stage_ready = 0;
+        telemetry.stage_slots = 0;
+        telemetry.stage_bytes = 0;
         telemetry.fragmentation_before_pct = allocator_stats.fragmentation_pct();
         telemetry.largest_free_before = allocator_stats.largest_free_faces;
         telemetry.source_subchunks = self.repack_sources.len() as u64;
         telemetry.source_bytes = repack_source_bytes(&self.repack_sources) as u64;
         telemetry.source_missing =
             repack_source_missing_count(&self.slots, &self.repack_sources) as u64;
-        let payload = match build_gpu_terrain_repack_plan(
+        let staged_swap = match build_gpu_terrain_repack_plan(
             self.slots.iter().map(|(key, slot)| (*key, *slot)),
             MAX_GPU_TERRAIN_FACES,
         ) {
@@ -1910,10 +1980,10 @@ impl GpuTerrainBufferPool {
                     telemetry.failure_reason = GpuTerrainRepackFailureReason::DrawRebuildError;
                     return GpuTerrainRepackPreview {
                         telemetry,
-                        payload: None,
+                        staged_swap: None,
                     };
                 }
-                match build_gpu_terrain_repack_draw_payload(
+                let draw_payload = match build_gpu_terrain_repack_draw_payload(
                     &plan,
                     &self.draw_keys,
                     MAX_INDIRECT_DRAWS,
@@ -1921,6 +1991,7 @@ impl GpuTerrainBufferPool {
                     Ok(draw_payload) => {
                         telemetry.draw_ready = 1;
                         telemetry.draw_bytes = draw_payload.bytes.len() as u64;
+                        draw_payload
                     }
                     Err(
                         GpuTerrainRepackDrawError::CapacityExceeded
@@ -1934,17 +2005,18 @@ impl GpuTerrainBufferPool {
                         telemetry.failure_reason = GpuTerrainRepackFailureReason::DrawRebuildError;
                         return GpuTerrainRepackPreview {
                             telemetry,
-                            payload: None,
+                            staged_swap: None,
                         };
                     }
-                }
+                };
                 match build_gpu_terrain_repack_payload(&plan, &self.repack_sources) {
                     Ok(payload) => {
                         telemetry.payload_ready = 1;
                         telemetry.payload_bytes = payload.bytes.len() as u64;
-                        if payload.bytes.is_empty()
+                        let payload_bytes = payload.bytes.len();
+                        if payload_bytes == 0
                             || (telemetry.upload_ready > 0
-                                && telemetry.upload_bytes != payload.bytes.len() as u64)
+                                && telemetry.upload_bytes != payload_bytes as u64)
                         {
                             telemetry.upload_ready = 0;
                             telemetry.upload_bytes = 0;
@@ -1955,7 +2027,45 @@ impl GpuTerrainBufferPool {
                         if !telemetry.failure_reason.preserves_preview_error() {
                             telemetry.failure_reason = GpuTerrainRepackFailureReason::MarkerOnly;
                         }
-                        Some(payload)
+                        match build_gpu_terrain_repack_staged_swap(
+                            &plan,
+                            payload,
+                            draw_payload,
+                            self.draw_keys.len(),
+                        ) {
+                            Ok(staged_swap) => {
+                                telemetry.stage_ready = 1;
+                                telemetry.stage_slots = staged_swap.slots.len() as u64;
+                                telemetry.stage_bytes = (staged_swap.face_bytes.len()
+                                    + staged_swap.draw_bytes.len())
+                                    as u64;
+                                Some(staged_swap)
+                            }
+                            Err(GpuTerrainRepackStagedSwapError::FacePayloadSizeMismatch) => {
+                                telemetry.payload_ready = 0;
+                                telemetry.payload_bytes = 0;
+                                telemetry.upload_ready = 0;
+                                telemetry.upload_bytes = 0;
+                                telemetry.upload_ms = 0.0;
+                                telemetry.bind_ready = 0;
+                                telemetry.bind_ms = 0.0;
+                                telemetry.failure_reason =
+                                    GpuTerrainRepackFailureReason::SourceSizeMismatch;
+                                None
+                            }
+                            Err(GpuTerrainRepackStagedSwapError::DrawPayloadSizeMismatch) => {
+                                telemetry.draw_ready = 0;
+                                telemetry.draw_bytes = 0;
+                                telemetry.upload_ready = 0;
+                                telemetry.upload_bytes = 0;
+                                telemetry.upload_ms = 0.0;
+                                telemetry.bind_ready = 0;
+                                telemetry.bind_ms = 0.0;
+                                telemetry.failure_reason =
+                                    GpuTerrainRepackFailureReason::DrawRebuildError;
+                                None
+                            }
+                        }
                     }
                     Err(GpuTerrainRepackPayloadError::MissingSource) => {
                         telemetry.upload_ready = 0;
@@ -1989,7 +2099,10 @@ impl GpuTerrainBufferPool {
             }
         };
 
-        GpuTerrainRepackPreview { telemetry, payload }
+        GpuTerrainRepackPreview {
+            telemetry,
+            staged_swap,
+        }
     }
 
     fn refresh_repack_upload_preview(&mut self) {
@@ -2001,14 +2114,14 @@ impl GpuTerrainBufferPool {
         }
 
         let mut preview = self.build_repack_preview(self.allocator.stats());
-        if let Some(payload) = preview.payload {
-            if payload.bytes.is_empty() {
+        if let Some(staged_swap) = preview.staged_swap {
+            if staged_swap.face_bytes.is_empty() {
                 preview.telemetry.upload_bytes = 0;
                 preview.telemetry.upload_ms = 0.0;
             } else {
                 let upload_start = Instant::now();
-                let upload_bytes = payload.bytes.len();
-                let payload_pba = PackedByteArray::from(payload.bytes.as_slice());
+                let upload_bytes = staged_swap.face_bytes.len();
+                let payload_pba = PackedByteArray::from(staged_swap.face_bytes.as_slice());
                 let replacement_buffer_rid = self.rd.storage_buffer_create(upload_bytes as u32);
                 if replacement_buffer_rid.is_invalid() {
                     preview.telemetry.upload_ready = 0;
@@ -4706,6 +4819,143 @@ mod tests {
         assert_eq!(
             build_gpu_terrain_repack_draw_payload(&plan, &[missing], MAX_INDIRECT_DRAWS),
             Err(GpuTerrainRepackDrawError::MissingPlacement)
+        );
+    }
+
+    #[test]
+    fn repack_staged_swap_collects_payload_draws_and_slots_atomically() {
+        let first = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let second = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let plan = build_gpu_terrain_repack_plan(
+            vec![
+                (
+                    second,
+                    GpuTerrainSlot {
+                        start_face: 12,
+                        face_count: 2,
+                    },
+                ),
+                (
+                    first,
+                    GpuTerrainSlot {
+                        start_face: 4,
+                        face_count: 1,
+                    },
+                ),
+            ],
+            8,
+        )
+        .unwrap();
+        let first_bytes = vec![1u8; PACKED_FACE_BYTES];
+        let second_bytes = vec![2u8; 2 * PACKED_FACE_BYTES];
+        let mut sources = HashMap::new();
+        sources.insert(first, first_bytes.clone());
+        sources.insert(second, second_bytes.clone());
+        let payload = build_gpu_terrain_repack_payload(&plan, &sources).unwrap();
+        let draw_payload =
+            build_gpu_terrain_repack_draw_payload(&plan, &[second, first], MAX_INDIRECT_DRAWS)
+                .unwrap();
+        let draw_bytes = draw_payload.bytes.clone();
+
+        let staged = build_gpu_terrain_repack_staged_swap(&plan, payload, draw_payload, 2).unwrap();
+        let mut expected_face_bytes = first_bytes;
+        expected_face_bytes.extend_from_slice(&second_bytes);
+
+        assert_eq!(staged.face_bytes, expected_face_bytes);
+        assert_eq!(staged.draw_bytes, draw_bytes);
+        assert_eq!(
+            staged.slots,
+            vec![
+                (
+                    first,
+                    GpuTerrainSlot {
+                        start_face: 0,
+                        face_count: 1,
+                    },
+                ),
+                (
+                    second,
+                    GpuTerrainSlot {
+                        start_face: 1,
+                        face_count: 2,
+                    },
+                ),
+            ]
+        );
+        assert_eq!(staged.tail_free_range, FaceRange { start: 3, len: 5 });
+    }
+
+    #[test]
+    fn repack_staged_swap_rejects_inconsistent_payload_sizes() {
+        let key = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let plan = build_gpu_terrain_repack_plan(
+            vec![(
+                key,
+                GpuTerrainSlot {
+                    start_face: 4,
+                    face_count: 2,
+                },
+            )],
+            8,
+        )
+        .unwrap();
+        let draw_payload =
+            build_gpu_terrain_repack_draw_payload(&plan, &[key], MAX_INDIRECT_DRAWS).unwrap();
+
+        assert_eq!(
+            build_gpu_terrain_repack_staged_swap(
+                &plan,
+                GpuTerrainRepackPayload {
+                    bytes: vec![1u8; PACKED_FACE_BYTES],
+                },
+                draw_payload,
+                1,
+            ),
+            Err(GpuTerrainRepackStagedSwapError::FacePayloadSizeMismatch)
+        );
+    }
+
+    #[test]
+    fn repack_staged_swap_rejects_inconsistent_draw_sizes() {
+        let key = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let plan = build_gpu_terrain_repack_plan(
+            vec![(
+                key,
+                GpuTerrainSlot {
+                    start_face: 4,
+                    face_count: 1,
+                },
+            )],
+            8,
+        )
+        .unwrap();
+
+        assert_eq!(
+            build_gpu_terrain_repack_staged_swap(
+                &plan,
+                GpuTerrainRepackPayload {
+                    bytes: vec![1u8; PACKED_FACE_BYTES],
+                },
+                GpuTerrainRepackDrawPayload { bytes: Vec::new() },
+                1,
+            ),
+            Err(GpuTerrainRepackStagedSwapError::DrawPayloadSizeMismatch)
         );
     }
 
