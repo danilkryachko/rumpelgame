@@ -859,6 +859,7 @@ enum GpuTerrainRepackFailureReason {
     Capacity,
     Disabled,
     MarkerOnly,
+    MissingSource,
 }
 
 impl GpuTerrainRepackFailureReason {
@@ -867,6 +868,7 @@ impl GpuTerrainRepackFailureReason {
             Self::Capacity => "capacity",
             Self::Disabled => "disabled",
             Self::MarkerOnly => "marker_only",
+            Self::MissingSource => "missing_source",
         }
     }
 }
@@ -881,6 +883,9 @@ struct GpuTerrainRepackTelemetry {
     moved_subchunks: u64,
     moved_faces: u64,
     bytes: u64,
+    source_subchunks: u64,
+    source_bytes: u64,
+    source_missing: u64,
     last_ms: f64,
     fragmentation_before_pct: f64,
     fragmentation_after_pct: f64,
@@ -901,6 +906,9 @@ impl GpuTerrainRepackTelemetry {
                 moved_subchunks: 0,
                 moved_faces: 0,
                 bytes: 0,
+                source_subchunks: 0,
+                source_bytes: 0,
+                source_missing: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -918,6 +926,9 @@ impl GpuTerrainRepackTelemetry {
                 moved_subchunks: 0,
                 moved_faces: 0,
                 bytes: 0,
+                source_subchunks: 0,
+                source_bytes: 0,
+                source_missing: 0,
                 last_ms: 0.0,
                 fragmentation_before_pct: 0.0,
                 fragmentation_after_pct: 0.0,
@@ -993,6 +1004,20 @@ fn build_gpu_terrain_repack_plan(
             len: capacity_faces.saturating_sub(next_start),
         },
     })
+}
+
+fn repack_source_missing_count(
+    slots: &HashMap<GpuSubchunkKey, GpuTerrainSlot>,
+    sources: &HashMap<GpuSubchunkKey, Vec<u8>>,
+) -> usize {
+    slots
+        .keys()
+        .filter(|key| !sources.contains_key(key))
+        .count()
+}
+
+fn repack_source_bytes(sources: &HashMap<GpuSubchunkKey, Vec<u8>>) -> usize {
+    sources.values().map(Vec::len).sum()
 }
 
 #[repr(C)]
@@ -1135,6 +1160,9 @@ pub struct GpuTerrainStats {
     pub repack_moved_subchunks: u64,
     pub repack_moved_faces: u64,
     pub repack_bytes: u64,
+    pub repack_source_subchunks: u64,
+    pub repack_source_bytes: u64,
+    pub repack_source_missing: u64,
     pub repack_ms: f64,
     pub repack_fragmentation_before_pct: f64,
     pub repack_fragmentation_after_pct: f64,
@@ -1357,6 +1385,7 @@ pub struct GpuTerrainBufferPool {
     slots: HashMap<GpuSubchunkKey, GpuTerrainSlot>,
     draw_keys: Vec<GpuSubchunkKey>,
     draw_indices: HashMap<GpuSubchunkKey, usize>,
+    repack_sources: HashMap<GpuSubchunkKey, Vec<u8>>,
     render_pipeline: Option<GpuTerrainRenderPipeline>,
     used_faces: usize,
     draw_count: usize,
@@ -1449,6 +1478,7 @@ impl GpuTerrainBufferPool {
             slots: HashMap::new(),
             draw_keys: Vec::new(),
             draw_indices: HashMap::new(),
+            repack_sources: HashMap::new(),
             render_pipeline,
             used_faces: 0,
             draw_count: 0,
@@ -1524,6 +1554,11 @@ impl GpuTerrainBufferPool {
         };
         let encode_start = Instant::now();
         let bytes = batch.to_bytes_for_subchunk(key);
+        let repack_source = if self.repack_source_enabled() {
+            Some(bytes.clone())
+        } else {
+            None
+        };
         let upload_encode_ms = encode_start.elapsed().as_secs_f64() * 1000.0;
         let stage_start = Instant::now();
         let pba = PackedByteArray::from(bytes.as_slice());
@@ -1548,6 +1583,9 @@ impl GpuTerrainBufferPool {
             face_count: range.len,
         };
         self.slots.insert(key, slot);
+        if let Some(repack_source) = repack_source {
+            self.repack_sources.insert(key, repack_source);
+        }
         self.used_faces += range.len;
         self.insert_draw_command(key, slot);
         Some(slot)
@@ -1576,6 +1614,7 @@ impl GpuTerrainBufferPool {
     }
 
     pub fn remove_subchunk(&mut self, key: GpuSubchunkKey) {
+        self.repack_sources.remove(&key);
         let Some(slot) = self.slots.remove(&key) else {
             return;
         };
@@ -1657,6 +1696,9 @@ impl GpuTerrainBufferPool {
             repack_moved_subchunks: repack_telemetry.moved_subchunks,
             repack_moved_faces: repack_telemetry.moved_faces,
             repack_bytes: repack_telemetry.bytes,
+            repack_source_subchunks: repack_telemetry.source_subchunks,
+            repack_source_bytes: repack_telemetry.source_bytes,
+            repack_source_missing: repack_telemetry.source_missing,
             repack_ms: repack_telemetry.last_ms,
             repack_fragmentation_before_pct: repack_telemetry.fragmentation_before_pct,
             repack_fragmentation_after_pct: repack_telemetry.fragmentation_after_pct,
@@ -1692,6 +1734,10 @@ impl GpuTerrainBufferPool {
 
         telemetry.fragmentation_before_pct = allocator_stats.fragmentation_pct();
         telemetry.largest_free_before = allocator_stats.largest_free_faces;
+        telemetry.source_subchunks = self.repack_sources.len() as u64;
+        telemetry.source_bytes = repack_source_bytes(&self.repack_sources) as u64;
+        telemetry.source_missing =
+            repack_source_missing_count(&self.slots, &self.repack_sources) as u64;
         match build_gpu_terrain_repack_plan(
             self.slots.iter().map(|(key, slot)| (*key, *slot)),
             MAX_GPU_TERRAIN_FACES,
@@ -1702,13 +1748,21 @@ impl GpuTerrainBufferPool {
                 telemetry.bytes = (plan.moved_faces * PACKED_FACE_BYTES) as u64;
                 telemetry.fragmentation_after_pct = 0.0;
                 telemetry.largest_free_after = plan.tail_free_range.len;
-                telemetry.failure_reason = GpuTerrainRepackFailureReason::MarkerOnly;
+                telemetry.failure_reason = if telemetry.source_missing > 0 {
+                    GpuTerrainRepackFailureReason::MissingSource
+                } else {
+                    GpuTerrainRepackFailureReason::MarkerOnly
+                };
             }
             Err(GpuTerrainRepackPlanError::CapacityExceeded) => {
                 telemetry.failure_reason = GpuTerrainRepackFailureReason::Capacity;
             }
         }
         telemetry
+    }
+
+    fn repack_source_enabled(&self) -> bool {
+        self.repack_telemetry.requested > 0
     }
 
     pub fn set_lighting(&mut self, lighting: GpuTerrainLighting) {
@@ -3040,6 +3094,9 @@ mod tests {
         assert_eq!(telemetry.abort, 1);
         assert_eq!(telemetry.moved_subchunks, 0);
         assert_eq!(telemetry.moved_faces, 0);
+        assert_eq!(telemetry.source_subchunks, 0);
+        assert_eq!(telemetry.source_bytes, 0);
+        assert_eq!(telemetry.source_missing, 0);
         assert_eq!(telemetry.failure_reason.as_str(), "marker_only");
     }
 
@@ -4120,6 +4177,45 @@ mod tests {
             build_gpu_terrain_repack_plan(slots, 16),
             Err(GpuTerrainRepackPlanError::CapacityExceeded)
         );
+    }
+
+    #[test]
+    fn repack_source_accounting_reports_missing_resident_sources() {
+        let first = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let second = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let mut slots = HashMap::new();
+        slots.insert(
+            first,
+            GpuTerrainSlot {
+                start_face: 0,
+                face_count: 2,
+            },
+        );
+        slots.insert(
+            second,
+            GpuTerrainSlot {
+                start_face: 4,
+                face_count: 3,
+            },
+        );
+
+        let mut sources = HashMap::new();
+        sources.insert(first, vec![1u8; 2 * PACKED_FACE_BYTES]);
+
+        assert_eq!(repack_source_missing_count(&slots, &sources), 1);
+        assert_eq!(repack_source_bytes(&sources), 2 * PACKED_FACE_BYTES);
+
+        sources.insert(second, vec![2u8; 3 * PACKED_FACE_BYTES]);
+        assert_eq!(repack_source_missing_count(&slots, &sources), 0);
+        assert_eq!(repack_source_bytes(&sources), 5 * PACKED_FACE_BYTES);
     }
 
     #[test]

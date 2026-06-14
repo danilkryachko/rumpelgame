@@ -46,6 +46,9 @@ The first implementation slice should add marker-only counters while the flag is
 - `gpu_repack_moved_subchunks`
 - `gpu_repack_moved_faces`
 - `gpu_repack_bytes`
+- `gpu_repack_source_subchunks`
+- `gpu_repack_source_bytes`
+- `gpu_repack_source_missing`
 - `gpu_repack_ms`
 - `gpu_repack_fragmentation_before_pct`
 - `gpu_repack_fragmentation_after_pct`
@@ -53,7 +56,7 @@ The first implementation slice should add marker-only counters while the flag is
 - `gpu_repack_largest_free_after`
 - `gpu_repack_failure_reason`
 
-`gpu_repack_failure_reason` should use bounded values such as `none`, `disabled`, `threshold_not_met`, `in_flight`, `missing_source`, `capacity`, `upload_error`, and `draw_rebuild_error`.
+`gpu_repack_failure_reason` should use bounded values such as `none`, `disabled`, `marker_only`, `threshold_not_met`, `in_flight`, `missing_source`, `capacity`, `upload_error`, and `draw_rebuild_error`.
 
 ## Trigger Policy
 
@@ -115,8 +118,10 @@ This design does not authorize:
 
 The first prototype slice is implemented as marker-only telemetry plus a pure planner. `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK=1` records `gpu_repack_requested=1`, keeps `gpu_repack_active=0`, keeps runtime attempts and success at `0`, records an abort reason of `marker_only`, and computes a read-only deterministic compaction preview from current slots. It does not replace the GPU face buffer or mutate slot offsets.
 
-`scripts/gpu_terrain_report.sh` aggregates the numeric `gpu_repack_*` fields and reports the latest `gpu_repack_failure_reason`.
+The current source-readiness slice stores CPU-owned encoded packed-face bytes for resident subchunks only when the repack flag is enabled. Upload behavior is otherwise unchanged. Removing a subchunk removes its source bytes. Telemetry reports `gpu_repack_source_subchunks`, `gpu_repack_source_bytes`, and `gpu_repack_source_missing`; a missing resident source changes the marker-only reason to `missing_source`.
+
+`scripts/gpu_terrain_report.sh` aggregates the numeric `gpu_repack_*` fields, including source readiness counters, and reports the latest `gpu_repack_failure_reason`.
 
 ## Next Implementation Slice
 
-The next slice should add the CPU-owned resident packed-face source needed for an all-or-nothing repack. Runtime buffer replacement should wait until that source data, buffer swap, telemetry, and abort paths are covered by tests.
+The next slice should assemble a replacement buffer payload from the CPU-owned resident sources and keep the final RenderingDevice buffer swap disabled until upload, swap, telemetry, and abort paths are covered by tests.

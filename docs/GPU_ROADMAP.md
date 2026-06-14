@@ -182,7 +182,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 7. Done 2026-06-14: added allocator stress gate wrapper over scoped GPU reports with upload-failure, failure-cause, free-range, largest-free, and fragmentation checks.
 8. Done 2026-06-14: designed a safe GPU terrain buffer repack behind an explicit rollback flag in `docs/GPU_BUFFER_REPACK.md`.
 9. Done 2026-06-14: prototyped buffer repack foundation behind that flag with marker-only telemetry, report aggregation, and deterministic planner tests; runtime buffer replacement remains intentionally unimplemented.
-10. Compare repack against the current path and keep or drop it from evidence.
+10. Done 2026-06-14: added CPU-owned resident packed-face source bytes behind the repack flag, with source readiness telemetry and missing-source accounting; runtime buffer replacement remains intentionally unimplemented.
 
 ### Weeks 11-20: Upload And Draw Submission
 
