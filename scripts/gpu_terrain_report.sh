@@ -466,6 +466,8 @@ error_scan() {
   printf -- '- max `native_shadow_texture_sampling_enabled`: `%s`\n' "$(metric_max native_shadow_texture_sampling_enabled)"
   printf -- '- max `native_shadow_shader_depth_output_enabled`: `%s`\n' "$(metric_max native_shadow_shader_depth_output_enabled)"
   printf -- '- max `native_shadow_shader_color_output_enabled`: `%s`\n' "$(metric_max native_shadow_shader_color_output_enabled)"
+  printf -- '- max `native_shadow_shader_source_bytes`: `%s`\n' "$(metric_max native_shadow_shader_source_bytes)"
+  printf -- '- max `native_shadow_shader_source_checksum`: `%s`\n' "$(metric_max native_shadow_shader_source_checksum)"
   printf -- '- max `native_shadow_cascade_count`: `%s`\n' "$(metric_max native_shadow_cascade_count)"
   printf -- '- max `native_shadow_light_matrix_bytes`: `%s`\n' "$(metric_max native_shadow_light_matrix_bytes)"
   printf -- '- max `native_shadow_depth_near_milli`: `%s`\n' "$(metric_max native_shadow_depth_near_milli)"
@@ -560,6 +562,8 @@ error_scan() {
   metric_max_source native_shadow_texture_sampling_enabled | sed 's/^/- /'
   metric_max_source native_shadow_shader_depth_output_enabled | sed 's/^/- /'
   metric_max_source native_shadow_shader_color_output_enabled | sed 's/^/- /'
+  metric_max_source native_shadow_shader_source_bytes | sed 's/^/- /'
+  metric_max_source native_shadow_shader_source_checksum | sed 's/^/- /'
   metric_max_source native_shadow_cascade_count | sed 's/^/- /'
   metric_max_source native_shadow_light_matrix_bytes | sed 's/^/- /'
   metric_max_source native_shadow_depth_near_milli | sed 's/^/- /'
