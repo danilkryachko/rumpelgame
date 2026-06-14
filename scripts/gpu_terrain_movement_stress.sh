@@ -474,6 +474,8 @@ require_native_shadow_fallback_marker_if_requested() {
   require_metric_eq "$marker_path" "native_shadow_resource_creates" 0
   require_metric_eq "$marker_path" "native_shadow_resource_replaces" 0
   require_metric_eq "$marker_path" "native_shadow_resource_releases" 0
+  require_metric_eq "$marker_path" "native_shadow_covered_chunks" 0
+  require_metric_eq "$marker_path" "native_shadow_covered_subchunks" 0
   grep -q "shadow_path=godot_proxy" "$marker_path" || fail "native shadow fallback did not keep godot_proxy in $marker_path"
 }
 
