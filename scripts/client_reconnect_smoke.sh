@@ -12,13 +12,15 @@ GODOT_BIN="${GODOT_BIN:-/opt/homebrew/bin/godot}"
 TIMEOUT_BIN="${TIMEOUT_BIN:-/opt/homebrew/bin/timeout}"
 GODOT_TIMEOUT_SEC="${GODOT_TIMEOUT_SEC:-90}"
 GODOT_QUIT_AFTER_FRAMES="${GODOT_QUIT_AFTER_FRAMES:-30000}"
-SMOKE_DELAY_SEC="${RUMPELMC_CLIENT_RECONNECT_SMOKE_DELAY_SEC:-5.0}"
+SMOKE_DELAY_SEC="${RUMPELMC_CLIENT_RECONNECT_SMOKE_DELAY_SEC:-7.0}"
 SERVER_KILL_AFTER_SEC="${RUMPELMC_CLIENT_RECONNECT_SMOKE_KILL_AFTER_SEC:-2.0}"
+SERVER_RESTART_AFTER_SEC="${RUMPELMC_CLIENT_RECONNECT_SMOKE_RESTART_AFTER_SEC:-1.0}"
 SERVER_DIR="$ROOT_DIR/server"
 SERVER_BINARY="$SERVER_DIR/server"
 SMOKE_PORT=25565
 SMOKE_DB="$OUT_DIR/rocksdb"
-SERVER_LOG="$OUT_DIR/server.log"
+INITIAL_SERVER_LOG="$OUT_DIR/server-initial.log"
+RESTART_SERVER_LOG="$OUT_DIR/server-restart.log"
 GODOT_LOG="$OUT_DIR/godot.log"
 SUMMARY_PATH="$OUT_DIR/client-reconnect-smoke-summary.txt"
 SERVER_PID=""
@@ -80,6 +82,7 @@ listener_pid() {
 }
 
 wait_for_server() {
+  log_path="$1"
   tries=0
   while [ "$tries" -lt 30 ]; do
     pid="$(listener_pid || true)"
@@ -89,7 +92,7 @@ wait_for_server() {
     tries=$((tries + 1))
     sleep 1
   done
-  cat "$SERVER_LOG" >&2 || true
+  cat "$log_path" >&2 || true
   fail "server did not start listening on port $SMOKE_PORT"
 }
 
@@ -128,6 +131,22 @@ cleanup_all() {
   cleanup_server
 }
 
+start_server() {
+  log_path="$1"
+  rm -f "$log_path"
+  (
+    cd "$SERVER_DIR"
+    exec env RUMPELMC_SERVER_CHUNK_ENCODING=rle \
+      RUMPELMC_SERVER_ADDRESS=":$SMOKE_PORT" \
+      RUMPELMC_SERVER_ROCKSDB_PATH="$SMOKE_DB" \
+      RUMPELMC_SERVER_BOOTSTRAP_RADIUS=0 \
+      RUMPELMC_SERVER_CHUNKS_PER_UPDATE=64 \
+      "$SERVER_BINARY" > "$log_path" 2>&1
+  ) &
+  SERVER_PID="$!"
+  wait_for_server "$log_path"
+}
+
 listener="$(listener_pid || true)"
 if [ -n "$listener" ]; then
   fail "port $SMOKE_PORT is already in use; stop the existing server before reconnect smoke"
@@ -140,20 +159,10 @@ trap cleanup_all EXIT HUP INT TERM
   sign_server_binary_if_possible
 )
 
-rm -f "$SERVER_LOG" "$GODOT_LOG" "$SUMMARY_PATH"
+rm -f "$INITIAL_SERVER_LOG" "$RESTART_SERVER_LOG" "$GODOT_LOG" "$SUMMARY_PATH"
 rm -rf "$SMOKE_DB"
 
-(
-  cd "$SERVER_DIR"
-  exec env RUMPELMC_SERVER_CHUNK_ENCODING=rle \
-    RUMPELMC_SERVER_ADDRESS=":$SMOKE_PORT" \
-    RUMPELMC_SERVER_ROCKSDB_PATH="$SMOKE_DB" \
-    RUMPELMC_SERVER_BOOTSTRAP_RADIUS=0 \
-    RUMPELMC_SERVER_CHUNKS_PER_UPDATE=64 \
-    "$SERVER_BINARY" > "$SERVER_LOG" 2>&1
-) &
-SERVER_PID="$!"
-wait_for_server
+start_server "$INITIAL_SERVER_LOG"
 
 prepare_godot_rust_ext_profile "$ROOT_DIR"
 trap 'cleanup_all; restore_godot_rust_ext_profile' EXIT HUP INT TERM
@@ -178,6 +187,8 @@ GODOT_PID="$!"
 
 sleep "$SERVER_KILL_AFTER_SEC"
 cleanup_server
+sleep "$SERVER_RESTART_AFTER_SEC"
+start_server "$RESTART_SERVER_LOG"
 
 set +e
 wait "$GODOT_PID"
@@ -193,23 +204,27 @@ test -s "$screenshot_path" || fail "missing screenshot $screenshot_path"
 test -s "$marker_path" || fail "missing marker $marker_path"
 grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing visual smoke summary in $marker_path"
 require_godot_rust_ext_marker_profile "$marker_path"
-require_text_metric_eq "$marker_path" client_state reconnecting
+require_text_metric_eq "$marker_path" client_state active
 require_metric_ge "$marker_path" lifecycle_transitions 4
 require_metric_ge "$marker_path" reconnect_events 1
+require_metric_ge "$marker_path" reconnect_attempts 1
+require_metric_ge "$marker_path" reconnect_successes 1
 require_metric_ge "$marker_path" network_reader_errors 1
 require_metric_ge "$marker_path" current_chunk_loaded 1
 last_network_error="$(text_metric last_network_error "$marker_path")"
 test -n "$last_network_error" || fail "missing last_network_error in $marker_path"
-test "$last_network_error" != "none" || fail "last_network_error stayed none in $marker_path"
 
 {
-  printf 'client_reconnect_smoke status=pass client_state=reconnecting lifecycle_transitions=%s reconnect_events=%s network_reader_errors=%s current_chunk_loaded=%s last_network_error=%s active_protocol_change=0 server_log=%s godot_log=%s marker=%s\n' \
+  printf 'client_reconnect_smoke status=pass client_state=active lifecycle_transitions=%s reconnect_events=%s reconnect_attempts=%s reconnect_successes=%s network_reader_errors=%s current_chunk_loaded=%s last_network_error=%s active_protocol_change=0 initial_server_log=%s restart_server_log=%s godot_log=%s marker=%s\n' \
     "$(metric lifecycle_transitions "$marker_path")" \
     "$(metric reconnect_events "$marker_path")" \
+    "$(metric reconnect_attempts "$marker_path")" \
+    "$(metric reconnect_successes "$marker_path")" \
     "$(metric network_reader_errors "$marker_path")" \
     "$(metric current_chunk_loaded "$marker_path")" \
     "$last_network_error" \
-    "$SERVER_LOG" \
+    "$INITIAL_SERVER_LOG" \
+    "$RESTART_SERVER_LOG" \
     "$GODOT_LOG" \
     "$marker_path"
 } > "$SUMMARY_PATH"

@@ -142,11 +142,13 @@ fi
 reconnect_smoke_status="deferred"
 reconnect_smoke_client_state="missing"
 reconnect_smoke_reader_errors="0"
+reconnect_smoke_successes="0"
 reconnect_smoke_protocol_change="0"
 if [ -s "$RECONNECT_SMOKE_SUMMARY" ]; then
   reconnect_smoke_status="$(field_metric status "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_client_state="$(field_metric client_state "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SMOKE_SUMMARY")"
+  reconnect_smoke_successes="$(field_metric reconnect_successes "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SMOKE_SUMMARY")"
 fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
@@ -182,6 +184,7 @@ awk \
   -v reconnect_smoke_status="${reconnect_smoke_status:-deferred}" \
   -v reconnect_smoke_client_state="${reconnect_smoke_client_state:-missing}" \
   -v reconnect_smoke_reader_errors="${reconnect_smoke_reader_errors:-0}" \
+  -v reconnect_smoke_successes="${reconnect_smoke_successes:-0}" \
   -v reconnect_smoke_protocol_change="${reconnect_smoke_protocol_change:-0}" \
   -v reconnect_smoke_required="$RUN_RECONNECT_SMOKE" \
   -v proto_diff_count="$proto_diff_count" \
@@ -196,10 +199,11 @@ awk \
     reason = "ok"
     robustness_status = "unit_guarded"
     reconnect_ok = reconnect_smoke_status == "pass" &&
-      reconnect_smoke_client_state == "reconnecting" &&
+      reconnect_smoke_client_state == "active" &&
       reconnect_smoke_reader_errors + 0 >= 1 &&
+      reconnect_smoke_successes + 0 >= 1 &&
       reconnect_smoke_protocol_change + 0 == 0
-    reconnect_status = reconnect_ok ? "live_disconnect_guarded" : "deferred"
+    reconnect_status = reconnect_ok ? "live_rebootstrap_guarded" : "deferred"
     slow_client_status = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1 ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred")
     multi_client_live_status = server_scalability_live_load
     overload_status = "deferred"
@@ -230,7 +234,7 @@ awk \
       reason = "client_boundary_tests_failed"
     }
 
-    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary)
+    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary)
     if (status != "pass") {
       exit 1
     }

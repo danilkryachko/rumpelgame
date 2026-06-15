@@ -89,9 +89,11 @@ require_token "$CLIENT_SOURCE" 'enum NetworkReaderEvent'
 require_token "$CLIENT_SOURCE" 'fn record_network_reader_error'
 require_token "$CLIENT_SOURCE" 'fn client_lifecycle_allows_outbound'
 require_token "$CLIENT_SOURCE" 'client_state={}'
+require_token "$CLIENT_SOURCE" 'reconnect_successes={}'
 require_token "$CLIENT_SOURCE" 'network_reader_errors={}'
 require_token "$CLIENT_SOURCE" 'client_lifecycle_connects_waits_spawns_and_becomes_active'
 require_token "$CLIENT_SOURCE" 'client_lifecycle_reconnects_from_connect_and_network_errors'
+require_token "$CLIENT_SOURCE" 'client_lifecycle_rebootstrap_returns_to_active'
 require_token "$CLIENT_SOURCE" 'client_lifecycle_shutdown_is_terminal'
 require_token "$CLIENT_SOURCE" 'client_lifecycle_rejects_out_of_order_startup_events'
 require_token "$CLIENT_SOURCE" 'client_lifecycle_outbound_is_active_only'
@@ -115,11 +117,13 @@ esac
 reconnect_smoke_status="deferred"
 reconnect_smoke_client_state="missing"
 reconnect_smoke_reader_errors="0"
+reconnect_smoke_successes="0"
 reconnect_smoke_protocol_change="0"
 if [ -s "$RECONNECT_SMOKE_SUMMARY" ]; then
   reconnect_smoke_status="$(field_metric status "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_client_state="$(field_metric client_state "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SMOKE_SUMMARY")"
+  reconnect_smoke_successes="$(field_metric reconnect_successes "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SMOKE_SUMMARY")"
 fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
@@ -140,6 +144,7 @@ awk \
   -v reconnect_smoke_status="${reconnect_smoke_status:-deferred}" \
   -v reconnect_smoke_client_state="${reconnect_smoke_client_state:-missing}" \
   -v reconnect_smoke_reader_errors="${reconnect_smoke_reader_errors:-0}" \
+  -v reconnect_smoke_successes="${reconnect_smoke_successes:-0}" \
   -v reconnect_smoke_protocol_change="${reconnect_smoke_protocol_change:-0}" \
   -v reconnect_smoke_required="$RUN_RECONNECT_SMOKE" \
   -v proto_diff_count="$proto_diff_count" \
@@ -151,11 +156,12 @@ awk \
     status = "pass"
     reason = "ok"
     reconnect_ok = reconnect_smoke_status == "pass" &&
-      reconnect_smoke_client_state == "reconnecting" &&
+      reconnect_smoke_client_state == "active" &&
       reconnect_smoke_reader_errors + 0 >= 1 &&
+      reconnect_smoke_successes + 0 >= 1 &&
       reconnect_smoke_protocol_change + 0 == 0
     state_machine_status = reconnect_ok ? "runtime_guarded" : "unit_guarded"
-    runtime_reconnect = reconnect_ok ? "live_disconnect_guarded" : "deferred"
+    runtime_reconnect = reconnect_ok ? "live_rebootstrap_guarded" : "deferred"
     state_telemetry = reconnect_ok ? "live_marker_guarded" : "source_guarded"
     active_protocol_change = proto_diff_count + 0
 
@@ -176,7 +182,7 @@ awk \
       reason = "client_lifecycle_tests_failed"
     }
 
-    printf("client_state_machine_hardening status=%s reason=%s state_machine_status=%s active_protocol_change=%d client_lifecycle_tests=%s runtime_reconnect=%s state_telemetry=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d networking_status=%s networking_protocol_change=%d design_doc=%s networking_summary=%s reconnect_smoke_summary=%s\n", status, reason, state_machine_status, active_protocol_change, client_lifecycle_tests, runtime_reconnect, state_telemetry, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, networking_status, networking_protocol_change, design_doc, networking_summary, reconnect_smoke_summary)
+    printf("client_state_machine_hardening status=%s reason=%s state_machine_status=%s active_protocol_change=%d client_lifecycle_tests=%s runtime_reconnect=%s state_telemetry=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d networking_status=%s networking_protocol_change=%d design_doc=%s networking_summary=%s reconnect_smoke_summary=%s\n", status, reason, state_machine_status, active_protocol_change, client_lifecycle_tests, runtime_reconnect, state_telemetry, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, networking_status, networking_protocol_change, design_doc, networking_summary, reconnect_smoke_summary)
     if (status != "pass") {
       exit 1
     }

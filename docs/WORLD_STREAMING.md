@@ -207,19 +207,19 @@ Fresh check:
 
 ## Networking Robustness
 
-The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, closed initial probes, bounded slow-reader timeout evidence, and live disconnect detection into `client_state=reconnecting`. Retry/rebootstrap, overload, and backpressure policy remain deferred.
+The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, closed initial probes, bounded slow-reader timeout evidence, and live disconnect/server-restart/rebootstrap recovery back to `client_state=active`. Stale-packet, overload, and backpressure policy remain deferred.
 
 Fresh check:
 
-- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `reconnect_status=live_disconnect_guarded`, `slow_client_status=live_guarded`, `multi_client_live_status=pass`, `overload_status=deferred`, and `active_protocol_change=0`.
+- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `reconnect_status=live_rebootstrap_guarded`, `slow_client_status=live_guarded`, `multi_client_live_status=pass`, `overload_status=deferred`, and `active_protocol_change=0`.
 
 ## Client State Machine
 
-The client lifecycle is now modeled explicitly as `connecting`, `waiting_chunks`, `spawning`, `active`, `reconnecting`, and `shutdown`. The model is unit-guarded and wired to current connect success/failure, startup chunk readiness, player spawn, synchronous send errors, reader-thread network errors, and shutdown cleanup. The current runtime smoke proves disconnect detection and marker telemetry; retry/backoff/rebootstrap remains deferred.
+The client lifecycle is now modeled explicitly as `connecting`, `waiting_chunks`, `spawning`, `active`, `reconnecting`, and `shutdown`. The model is unit-guarded and wired to current connect success/failure, startup chunk readiness, player spawn, synchronous send errors, reader-thread network errors, minimal retry/backoff, rebootstrap position send, and shutdown cleanup. The current runtime smoke proves disconnect detection, server restart recovery, reconnect success, and return to `active`; stale-packet and queue-reset policy remain deferred.
 
 Fresh check:
 
-- `logs/client_state_machine_hardening_current/client-state-machine-hardening-summary.txt` reported `status=pass`, `client_lifecycle_tests=pass`, `runtime_reconnect=live_disconnect_guarded`, `state_telemetry=live_marker_guarded`, `reconnect_smoke_status=pass`, `reconnect_smoke_client_state=reconnecting`, and `active_protocol_change=0`.
+- `logs/client_state_machine_hardening_current/client-state-machine-hardening-summary.txt` reported `status=pass`, `client_lifecycle_tests=pass`, `runtime_reconnect=live_rebootstrap_guarded`, `state_telemetry=live_marker_guarded`, `reconnect_smoke_status=pass`, `reconnect_smoke_client_state=active`, `reconnect_smoke_successes=1`, and `active_protocol_change=0`.
 
 ## Gameplay Loop Foundation
 
@@ -346,7 +346,7 @@ Fresh check:
 - Worldgen determinism is covered by focused `server/pkg/world` tests; generation behavior, chunk dimensions, serialization order, protocol, and storage remain unchanged.
 - Chunk serialization compatibility is guarded by focused `server/pkg/api`, `server/pkg/world`, and `server/pkg/network` tests for field numbers, enum values, raw defaults, RLE wire vectors, and protobuf unknown fields.
 - Networking robustness is guarded by focused Go and Rust packet-boundary tests; reconnect, slow-client, overload, and backpressure policy remain deferred and must not change the wire contract without a protocol task.
-- Client lifecycle state is modeled as connecting, waiting chunks, spawning, active, reconnecting, and shutdown; reconnect execution and state telemetry remain deferred until a separate task defines stale packet and reset behavior.
+- Client lifecycle state is modeled as connecting, waiting chunks, spawning, active, reconnecting, and shutdown; minimal reconnect/rebootstrap execution and state telemetry are guarded, while stale packet and reset behavior remain deferred.
 - Gameplay foundation keeps mining/building on `BlockAction` and `World.SetBlockGlobal`; local hotbar inventory is client-only and full edit reload persistence is deferred to the block-edit persistence gate.
 - Block edit persistence has a world-level save/reload guard for place and destroy edits; runtime persisted-reload visual/collision/GPU smoke is still a heavier deferred check.
 - Dirty update scalability has a mass dirty unit guard and syntax-checked edge dirty runtime wrappers; heavy runtime mass-edit evidence remains separate from normal checks.
