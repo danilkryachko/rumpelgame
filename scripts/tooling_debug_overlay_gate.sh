@@ -74,7 +74,7 @@ for token in \
 done
 
 for token in \
-  'Overlay:\n%s' \
+  'GPU/render overlay:' \
   'func get_debug_overlay_text() -> String:' \
   'get_client_text("get_debug_overlay_text", "")' \
   'overlay=\"%s\"' \
