@@ -19,6 +19,9 @@ ATTACH_DELAY_SEC="${RUMPELMC_SHADOW_XCTRACE_ATTACH_DELAY_SEC:-2}"
 EXPORT_TABLES="${RUMPELMC_SHADOW_XCTRACE_EXPORT_TABLES:-1}"
 GPU_SHADOW_PASS_MS="${RUMPELMC_SHADOW_XCTRACE_GPU_SHADOW_PASS_MS:-}"
 PLAN_ARTIFACT_ROOT="${RUMPELMC_SHADOW_XCTRACE_PLAN_ARTIFACT_ROOT:-logs/gpu_shadow_radius_matrix_wide}"
+EXPECTED_GPU_PROFILER_BREADCRUMB="1381256515"
+EXPECTED_GPU_PROFILER_SHADER="rumpel_gpu_terrain_render_shader"
+EXPECTED_GPU_PROFILER_PIPELINE="rumpel_gpu_terrain_compositor_pipeline"
 
 SUMMARY_PATH="$OUT_DIR/shadow-xctrace-attach-capture-summary.txt"
 TRACE_PATH="$OUT_DIR/shadow-xctrace-attach.trace"
@@ -81,6 +84,24 @@ validate_positive_integer() {
     ''|*[!0-9]*) return 1 ;;
   esac
   [ "$value" -gt 0 ]
+}
+
+marker_value() {
+  key="$1"
+  path="$2"
+  awk -v key="$key" '
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ ("^" key "=")) {
+          sub("^[^=]*=", "", $i)
+          gsub(/^"/, "", $i)
+          gsub(/"$/, "", $i)
+          print $i
+          exit
+        }
+      }
+    }
+  ' "$path"
 }
 
 run_xctrace() {
@@ -234,6 +255,19 @@ grep -q "shadow_mesh=$SHADOW_MESH" "$MARKER_PATH" || fail "unexpected shadow mes
 grep -q "smoke_err=0" "$MARKER_PATH" || fail "visual smoke failed"
 grep -q "gpu_upload_fail=0" "$MARKER_PATH" || fail "GPU upload failure present"
 grep -q "rust_ext_profile=release" "$MARKER_PATH" || fail "release Rust marker missing"
+gpu_profiler_breadcrumb="$(marker_value gpu_profiler_breadcrumb "$MARKER_PATH")"
+gpu_profiler_shader="$(marker_value gpu_profiler_shader "$MARKER_PATH")"
+gpu_profiler_pipeline="$(marker_value gpu_profiler_pipeline "$MARKER_PATH")"
+validate_positive_integer "$gpu_profiler_breadcrumb" || fail "missing GPU profiler breadcrumb marker"
+if [ "$gpu_profiler_breadcrumb" != "$EXPECTED_GPU_PROFILER_BREADCRUMB" ]; then
+  fail "unexpected GPU profiler breadcrumb marker $gpu_profiler_breadcrumb"
+fi
+if [ "$gpu_profiler_shader" != "$EXPECTED_GPU_PROFILER_SHADER" ]; then
+  fail "unexpected GPU profiler shader marker $gpu_profiler_shader"
+fi
+if [ "$gpu_profiler_pipeline" != "$EXPECTED_GPU_PROFILER_PIPELINE" ]; then
+  fail "unexpected GPU profiler pipeline marker $gpu_profiler_pipeline"
+fi
 
 export_status="skipped"
 command_buffer_export_summary="skipped"
@@ -266,7 +300,7 @@ if [ -n "$GPU_SHADOW_PASS_MS" ]; then
 fi
 
 {
-  printf 'shadow_xctrace_attach_capture status=pass trace_status=captured trace_env_sanitized=1 result_row_status=%s radius=%s shadow_mesh=%s profiler_tool=xcode_metal profiler_artifact=%s marker=%s command_buffer_export=%s encoder_export=%s export_status=%s gpu_shadow_pass_ms_status=%s\n' \
+  printf 'shadow_xctrace_attach_capture status=pass trace_status=captured trace_env_sanitized=1 result_row_status=%s radius=%s shadow_mesh=%s profiler_tool=xcode_metal profiler_artifact=%s marker=%s command_buffer_export=%s encoder_export=%s export_status=%s gpu_profiler_breadcrumb=%s gpu_profiler_shader=%s gpu_profiler_pipeline=%s gpu_shadow_pass_ms_status=%s\n' \
     "$result_row_status" \
     "$RADIUS" \
     "$SHADOW_MESH" \
@@ -275,6 +309,9 @@ fi
     "$command_buffer_export_summary" \
     "$encoder_export_summary" \
     "$export_status" \
+    "$gpu_profiler_breadcrumb" \
+    "$gpu_profiler_shader" \
+    "$gpu_profiler_pipeline" \
     "$(if [ -n "$GPU_SHADOW_PASS_MS" ]; then printf 'provided'; else printf 'missing'; fi)"
   printf 'plan_match priority=%s artifact=%s result_row=%s\n' \
     "$(plan_priority)" \

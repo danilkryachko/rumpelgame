@@ -41,6 +41,12 @@ const DEFAULT_TERRAIN_AMBIENT: f32 = 0.55;
 const DEFAULT_TERRAIN_LIGHT_ENERGY: f32 = 0.45;
 const GPU_TERRAIN_TIMESTAMP_BEGIN: &str = "rumpel_gpu_terrain_begin";
 const GPU_TERRAIN_TIMESTAMP_END: &str = "rumpel_gpu_terrain_end";
+const GPU_TERRAIN_PROFILER_SHADER_LABEL: &str = "rumpel_gpu_terrain_render_shader";
+const GPU_TERRAIN_COMPOSITOR_PIPELINE_LABEL: &str = "rumpel_gpu_terrain_compositor_pipeline";
+const GPU_TERRAIN_OFFSCREEN_PIPELINE_LABEL: &str = "rumpel_gpu_terrain_offscreen_pipeline";
+const GPU_TERRAIN_FACES_BUFFER_LABEL: &str = "rumpel_gpu_terrain_faces_buffer";
+const GPU_TERRAIN_INDIRECT_BUFFER_LABEL: &str = "rumpel_gpu_terrain_indirect_draw_buffer";
+const GPU_TERRAIN_COMPOSITOR_BREADCRUMB: u32 = 0x5254_4D43;
 const GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT_ENV: &str = "RUMPELMC_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT";
 const MAX_GPU_TERRAIN_COMPOSITOR_DRAW_REPEAT: u32 = 64;
 const GPU_TERRAIN_CULL_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_CULL_MODE";
@@ -1496,6 +1502,9 @@ pub struct GpuTerrainStats {
     pub draw_command_stride_bytes: usize,
     pub compositor_draw_repeat: u32,
     pub compositor_effective_draw_count: usize,
+    pub compositor_breadcrumb: u32,
+    pub profiler_shader_label: &'static str,
+    pub compositor_pipeline_label: &'static str,
     pub compositor_frames: u64,
     pub scene_target_create_count: u64,
     pub scene_target_reuse_count: u64,
@@ -1865,6 +1874,8 @@ impl GpuTerrainBufferPool {
             .storage_buffer_create_ex(indirect_bytes)
             .usage(StorageBufferUsage::DISPATCH_INDIRECT)
             .done();
+        rd.set_resource_name(faces_buffer_rid, GPU_TERRAIN_FACES_BUFFER_LABEL);
+        rd.set_resource_name(indirect_buffer_rid, GPU_TERRAIN_INDIRECT_BUFFER_LABEL);
         let render_pipeline = if enable_debug_render {
             Self::create_debug_render_pipeline(&mut rd, faces_buffer_rid)
         } else {
@@ -2058,6 +2069,9 @@ impl GpuTerrainBufferPool {
             compositor_effective_draw_count: self
                 .draw_count
                 .saturating_mul(gpu_terrain_compositor_draw_repeat() as usize),
+            compositor_breadcrumb: GPU_TERRAIN_COMPOSITOR_BREADCRUMB,
+            profiler_shader_label: GPU_TERRAIN_PROFILER_SHADER_LABEL,
+            compositor_pipeline_label: GPU_TERRAIN_COMPOSITOR_PIPELINE_LABEL,
             compositor_frames: self.compositor_frames,
             scene_target_create_count: self.scene_target_create_count,
             scene_target_reuse_count: self.scene_target_reuse_count,
@@ -2674,7 +2688,11 @@ impl GpuTerrainBufferPool {
         phase_start = Instant::now();
 
         self.rd.capture_timestamp(GPU_TERRAIN_TIMESTAMP_BEGIN);
-        let draw_list = self.rd.draw_list_begin(framebuffer_rid);
+        let draw_list = self
+            .rd
+            .draw_list_begin_ex(framebuffer_rid)
+            .breadcrumb(GPU_TERRAIN_COMPOSITOR_BREADCRUMB)
+            .done();
         if draw_list < 0 {
             return;
         }
@@ -2788,6 +2806,7 @@ impl GpuTerrainBufferPool {
             framebuffer_format,
             vertex_format,
             depth_texture_rid.is_valid(),
+            GPU_TERRAIN_COMPOSITOR_PIPELINE_LABEL,
         )?;
 
         let pipeline = self.render_pipeline.as_mut()?;
@@ -3009,11 +3028,15 @@ impl GpuTerrainBufferPool {
             }
         };
 
-        let shader_rid = rd.shader_create_from_spirv(&spirv);
+        let shader_rid = rd
+            .shader_create_from_spirv_ex(&spirv)
+            .name(GPU_TERRAIN_PROFILER_SHADER_LABEL)
+            .done();
         if shader_rid.is_invalid() {
             godot_print!("GPU terrain: shader_create_from_spirv returned an invalid RID");
             return None;
         }
+        rd.set_resource_name(shader_rid, GPU_TERRAIN_PROFILER_SHADER_LABEL);
         let Some((framebuffer_rid, color_texture_rid, framebuffer_format)) =
             create_debug_offscreen_framebuffer(rd)
         else {
@@ -3029,9 +3052,14 @@ impl GpuTerrainBufferPool {
         }
 
         let vertex_format = rd.vertex_format_create(&Array::new());
-        let Some(render_pipeline_rid) =
-            create_render_pipeline(rd, shader_rid, framebuffer_format, vertex_format, false)
-        else {
+        let Some(render_pipeline_rid) = create_render_pipeline(
+            rd,
+            shader_rid,
+            framebuffer_format,
+            vertex_format,
+            false,
+            GPU_TERRAIN_OFFSCREEN_PIPELINE_LABEL,
+        ) else {
             rd.free_rid(framebuffer_rid);
             rd.free_rid(color_texture_rid);
             rd.free_rid(shader_rid);
@@ -3263,6 +3291,7 @@ fn create_render_pipeline(
     framebuffer_format: i64,
     vertex_format: i64,
     enable_depth: bool,
+    profiler_label: &'static str,
 ) -> Option<Rid> {
     if framebuffer_format < 0 {
         godot_print!("GPU terrain: framebuffer format is unavailable");
@@ -3287,6 +3316,7 @@ fn create_render_pipeline(
         godot_print!("GPU terrain: render pipeline is invalid");
         return None;
     }
+    rd.set_resource_name(render_pipeline_rid, profiler_label);
 
     Some(render_pipeline_rid)
 }
@@ -3916,6 +3946,19 @@ mod tests {
             polygon_front_face_label(PolygonFrontFace::COUNTER_CLOCKWISE),
             "counter_clockwise"
         );
+    }
+
+    #[test]
+    fn terrain_profiler_identifiers_are_stable_for_external_tools() {
+        assert_eq!(
+            GPU_TERRAIN_PROFILER_SHADER_LABEL,
+            "rumpel_gpu_terrain_render_shader"
+        );
+        assert_eq!(
+            GPU_TERRAIN_COMPOSITOR_PIPELINE_LABEL,
+            "rumpel_gpu_terrain_compositor_pipeline"
+        );
+        assert_eq!(GPU_TERRAIN_COMPOSITOR_BREADCRUMB, 0x5254_4D43);
     }
 
     #[test]
