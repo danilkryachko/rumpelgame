@@ -341,6 +341,52 @@ write_summary() {
   startup_first_mesh_collision_work_ms="$(float_metric startup_first_mesh_collision_work_ms "$marker_path")"
   startup_collision_ms="$(float_metric startup_collision_ms "$marker_path")"
   startup_player_spawn_ms="$(float_metric startup_player_spawn_ms "$marker_path")"
+  packet_q_frames="$(metric packet_q_frames "$marker_path")"
+  packet_q_nonempty="$(metric packet_q_nonempty "$marker_path")"
+  packet_q_drained="$(metric packet_q_drained "$marker_path")"
+  packet_q_chunk_drained="$(metric packet_q_chunk_drained "$marker_path")"
+  packet_q_last_drain="$(metric packet_q_last_drain "$marker_path")"
+  packet_q_max_drain="$(metric packet_q_max_drain "$marker_path")"
+  packet_q_last_chunk_drain="$(metric packet_q_last_chunk_drain "$marker_path")"
+  packet_q_max_chunk_drain="$(metric packet_q_max_chunk_drain "$marker_path")"
+  packet_q_lag_last="$(default_float "$(perf_triplet_value packet_q_lag_ms "$marker_path" 1)")"
+  packet_q_lag_avg="$(default_float "$(perf_triplet_value packet_q_lag_ms "$marker_path" 2)")"
+  packet_q_lag_max="$(default_float "$(perf_triplet_value packet_q_lag_ms "$marker_path" 3)")"
+  packet_q_read_work_last="$(default_float "$(perf_triplet_value packet_q_read_work_ms "$marker_path" 1)")"
+  packet_q_read_work_avg="$(default_float "$(perf_triplet_value packet_q_read_work_ms "$marker_path" 2)")"
+  packet_q_read_work_max="$(default_float "$(perf_triplet_value packet_q_read_work_ms "$marker_path" 3)")"
+  packet_q_decode_work_last="$(default_float "$(perf_triplet_value packet_q_decode_work_ms "$marker_path" 1)")"
+  packet_q_decode_work_avg="$(default_float "$(perf_triplet_value packet_q_decode_work_ms "$marker_path" 2)")"
+  packet_q_decode_work_max="$(default_float "$(perf_triplet_value packet_q_decode_work_ms "$marker_path" 3)")"
+  packet_q_reader_elapsed_last="$(default_float "$(perf_pair_value packet_q_reader_elapsed_ms "$marker_path" 1)")"
+  packet_q_reader_elapsed_max="$(default_float "$(perf_pair_value packet_q_reader_elapsed_ms "$marker_path" 2)")"
+  chunk_unload_scans="$(metric chunk_unload_scans "$marker_path")"
+  chunk_unload_scanned="$(metric chunk_unload_scanned "$marker_path")"
+  chunk_unload_grace_kept="$(metric chunk_unload_grace_kept "$marker_path")"
+  chunk_unload_total="$(metric chunk_unload_total "$marker_path")"
+  chunk_unload_neighbor_refresh="$(metric chunk_unload_neighbor_refresh "$marker_path")"
+  chunk_unload_last="$(metric chunk_unload_last "$marker_path")"
+  chunk_unload_last_grace_kept="$(metric chunk_unload_last_grace_kept "$marker_path")"
+  chunk_unload_last_neighbor_refresh="$(metric chunk_unload_last_neighbor_refresh "$marker_path")"
+  chunk_unload_max="$(metric chunk_unload_max "$marker_path")"
+  chunk_unload_max_grace_kept="$(metric chunk_unload_max_grace_kept "$marker_path")"
+  chunk_unload_max_neighbor_refresh="$(metric chunk_unload_max_neighbor_refresh "$marker_path")"
+  popin_frames="$(metric popin_frames "$marker_path")"
+  popin_complete_frames="$(metric popin_complete_frames "$marker_path")"
+  popin_missing_frames="$(metric popin_missing_frames "$marker_path")"
+  popin_collision_missing_frames="$(metric popin_collision_missing_frames "$marker_path")"
+  popin_missing_chunks="$(metric popin_missing_chunks "$marker_path")"
+  popin_collision_missing_chunks="$(metric popin_collision_missing_chunks "$marker_path")"
+  popin_probe_last="$(metric popin_probe_last "$marker_path")"
+  popin_missing_last="$(metric popin_missing_last "$marker_path")"
+  popin_collision_missing_last="$(metric popin_collision_missing_last "$marker_path")"
+  popin_missing_max="$(metric popin_missing_max "$marker_path")"
+  popin_collision_missing_max="$(metric popin_collision_missing_max "$marker_path")"
+  popin_probe_radius="$(metric popin_probe_radius "$marker_path")"
+  current_chunk_loaded="$(metric current_chunk_loaded "$marker_path")"
+  current_chunk_submeshes="$(metric current_chunk_submeshes "$marker_path")"
+  current_chunk_collision="$(metric current_chunk_collision "$marker_path")"
+  ground_misses="$(metric ground_misses "$marker_path")"
   frame_p95="$(float_metric frame_p95_ms "$marker_path")"
   fps_p05="$(float_metric fps_p05 "$marker_path")"
   process_wall_p95="$(float_metric process_wall_p95_ms "$marker_path")"
@@ -465,6 +511,25 @@ write_summary() {
   test -n "$startup_first_mesh_phase_ms" || fail "missing startup_first_mesh_phase_ms in $marker_path"
   require_positive_float startup_collision_ms "$startup_collision_ms"
   require_positive_float startup_player_spawn_ms "$startup_player_spawn_ms"
+  test -n "$packet_q_frames" || fail "missing packet_q_frames in $marker_path"
+  test -n "$packet_q_nonempty" || fail "missing packet_q_nonempty in $marker_path"
+  test -n "$packet_q_drained" || fail "missing packet_q_drained in $marker_path"
+  test -n "$packet_q_chunk_drained" || fail "missing packet_q_chunk_drained in $marker_path"
+  test -n "$packet_q_max_drain" || fail "missing packet_q_max_drain in $marker_path"
+  test -n "$chunk_unload_scans" || fail "missing chunk_unload_scans in $marker_path"
+  test -n "$chunk_unload_scanned" || fail "missing chunk_unload_scanned in $marker_path"
+  test -n "$chunk_unload_grace_kept" || fail "missing chunk_unload_grace_kept in $marker_path"
+  test -n "$chunk_unload_total" || fail "missing chunk_unload_total in $marker_path"
+  test -n "$chunk_unload_neighbor_refresh" || fail "missing chunk_unload_neighbor_refresh in $marker_path"
+  test -n "$popin_frames" || fail "missing popin_frames in $marker_path"
+  test -n "$popin_complete_frames" || fail "missing popin_complete_frames in $marker_path"
+  test -n "$popin_missing_chunks" || fail "missing popin_missing_chunks in $marker_path"
+  test -n "$popin_collision_missing_chunks" || fail "missing popin_collision_missing_chunks in $marker_path"
+  test -n "$popin_probe_radius" || fail "missing popin_probe_radius in $marker_path"
+  test -n "$current_chunk_loaded" || fail "missing current_chunk_loaded in $marker_path"
+  test -n "$current_chunk_submeshes" || fail "missing current_chunk_submeshes in $marker_path"
+  test -n "$current_chunk_collision" || fail "missing current_chunk_collision in $marker_path"
+  test -n "$ground_misses" || fail "missing ground_misses in $marker_path"
   require_startup_timing_order "$startup_chunk_packet_ms" "$startup_chunk_inserted_ms" "$startup_chunk_loaded_ms" "$startup_mesh_queued_ms" "$startup_mesh_dispatched_ms" "$startup_first_mesh_ms" "$startup_collision_ms" "$startup_player_spawn_ms"
   awk \
     -v budget="$budget_ms" \
@@ -641,6 +706,52 @@ write_summary() {
     -v startup_first_mesh_collision_work_ms="${startup_first_mesh_collision_work_ms:-0}" \
     -v startup_collision_ms="$startup_collision_ms" \
     -v startup_player_spawn_ms="$startup_player_spawn_ms" \
+    -v packet_q_frames="${packet_q_frames:-0}" \
+    -v packet_q_nonempty="${packet_q_nonempty:-0}" \
+    -v packet_q_drained="${packet_q_drained:-0}" \
+    -v packet_q_chunk_drained="${packet_q_chunk_drained:-0}" \
+    -v packet_q_last_drain="${packet_q_last_drain:-0}" \
+    -v packet_q_max_drain="${packet_q_max_drain:-0}" \
+    -v packet_q_last_chunk_drain="${packet_q_last_chunk_drain:-0}" \
+    -v packet_q_max_chunk_drain="${packet_q_max_chunk_drain:-0}" \
+    -v packet_q_lag_last="$packet_q_lag_last" \
+    -v packet_q_lag_avg="$packet_q_lag_avg" \
+    -v packet_q_lag_max="$packet_q_lag_max" \
+    -v packet_q_read_work_last="$packet_q_read_work_last" \
+    -v packet_q_read_work_avg="$packet_q_read_work_avg" \
+    -v packet_q_read_work_max="$packet_q_read_work_max" \
+    -v packet_q_decode_work_last="$packet_q_decode_work_last" \
+    -v packet_q_decode_work_avg="$packet_q_decode_work_avg" \
+    -v packet_q_decode_work_max="$packet_q_decode_work_max" \
+    -v packet_q_reader_elapsed_last="$packet_q_reader_elapsed_last" \
+    -v packet_q_reader_elapsed_max="$packet_q_reader_elapsed_max" \
+    -v chunk_unload_scans="${chunk_unload_scans:-0}" \
+    -v chunk_unload_scanned="${chunk_unload_scanned:-0}" \
+    -v chunk_unload_grace_kept="${chunk_unload_grace_kept:-0}" \
+    -v chunk_unload_total="${chunk_unload_total:-0}" \
+    -v chunk_unload_neighbor_refresh="${chunk_unload_neighbor_refresh:-0}" \
+    -v chunk_unload_last="${chunk_unload_last:-0}" \
+    -v chunk_unload_last_grace_kept="${chunk_unload_last_grace_kept:-0}" \
+    -v chunk_unload_last_neighbor_refresh="${chunk_unload_last_neighbor_refresh:-0}" \
+    -v chunk_unload_max="${chunk_unload_max:-0}" \
+    -v chunk_unload_max_grace_kept="${chunk_unload_max_grace_kept:-0}" \
+    -v chunk_unload_max_neighbor_refresh="${chunk_unload_max_neighbor_refresh:-0}" \
+    -v popin_frames="${popin_frames:-0}" \
+    -v popin_complete_frames="${popin_complete_frames:-0}" \
+    -v popin_missing_frames="${popin_missing_frames:-0}" \
+    -v popin_collision_missing_frames="${popin_collision_missing_frames:-0}" \
+    -v popin_missing_chunks="${popin_missing_chunks:-0}" \
+    -v popin_collision_missing_chunks="${popin_collision_missing_chunks:-0}" \
+    -v popin_probe_last="${popin_probe_last:-0}" \
+    -v popin_missing_last="${popin_missing_last:-0}" \
+    -v popin_collision_missing_last="${popin_collision_missing_last:-0}" \
+    -v popin_missing_max="${popin_missing_max:-0}" \
+    -v popin_collision_missing_max="${popin_collision_missing_max:-0}" \
+    -v popin_probe_radius="${popin_probe_radius:-0}" \
+    -v current_chunk_loaded="${current_chunk_loaded:-0}" \
+    -v current_chunk_submeshes="${current_chunk_submeshes:-0}" \
+    -v current_chunk_collision="${current_chunk_collision:-0}" \
+    -v ground_misses="${ground_misses:-0}" \
     -v frame_p95="$frame_p95" \
     -v fps_p05="$fps_p05" \
     -v process_wall_p95="$process_wall_p95" '
@@ -654,6 +765,10 @@ write_summary() {
         printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f queue_uploads_avg=%.2f queue_uploads_max=%.0f queue_upload_kb_avg=%.1f queue_upload_kb_max=%.1f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_effective_draws=%d gpu_draw_repeat=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_scene_target_create=%d gpu_scene_target_reuse=%d gpu_scene_target_replace=%d gpu_uniform_set_create=%d gpu_atlas_texture_create=%d gpu_atlas_sampler_create=%d gpu_push_constant_bytes=%d gpu_push_constant_updates=%d gpu_push_constant_total_bytes=%d gpu_push_constant_avg_bytes=%.1f gpu_push_constant_camera_bytes=%d gpu_push_constant_lighting_bytes=%d gpu_push_constant_atlas_bytes=%d gpu_light_dir=%s gpu_light_color=%s gpu_light_energy=%.3f gpu_light_ambient=%.3f gpu_cull=%s gpu_front_face=%s gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d gpu_free_ranges=%d gpu_free_faces=%d gpu_largest_free=%d gpu_fragmented_free_faces=%d gpu_fragmentation_pct=%.1f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, terrain_queue_uploads_avg, terrain_queue_uploads_max, terrain_queue_upload_kb_avg, terrain_queue_upload_kb_max, mesh_avg, mesh_max, coll_avg, coll_max, gpu_effective_draws, gpu_draw_repeat, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_scene_target_create, gpu_scene_target_reuse, gpu_scene_target_replace, gpu_uniform_set_create, gpu_atlas_texture_create, gpu_atlas_sampler_create, gpu_push_constant_bytes, gpu_push_constant_updates, gpu_push_constant_total_bytes, gpu_push_constant_avg_bytes, gpu_push_constant_camera_bytes, gpu_push_constant_lighting_bytes, gpu_push_constant_atlas_bytes, gpu_light_dir, gpu_light_color, gpu_light_energy, gpu_light_ambient, gpu_cull, gpu_front_face, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, gpu_free_ranges, gpu_free_faces, gpu_largest_free, gpu_fragmented_free_faces, gpu_fragmentation_pct, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
         printf("movement_native_shadow requested=%d active=%d fallback=%d implemented=%d resource_status=%s resource_width=%d resource_height=%d resource_layers=%d resource_bytes_per_texel=%d resource_bytes=%d resource_format=%s resource_usage=%s pass_load_op=%s pass_store_op=%s pass_clear_depth_milli=%d depth_attachment_status=%s depth_attachment_binding_count=%d depth_attachment_clear_count=%d resource_barrier_status=%s resource_transition_count=%d resource_barrier_error_count=%d framebuffer_status=%s framebuffer_rid_allocated=%d framebuffer_attachment_count=%d framebuffer_pass_compat_status=%s framebuffer_pass_compat_error_count=%d framebuffer_depth_only_enabled=%d framebuffer_color_attachment_count=%d framebuffer_attachment_owned=%d framebuffer_attachment_reuse_count=%d framebuffer_descriptor_valid=%d framebuffer_descriptor_error_count=%d framebuffer_bind_ready=%d framebuffer_bind_error_count=%d pass_descriptor_valid=%d pass_descriptor_error_count=%d pass_status=%s pass_rid_allocated=%d pass_submit_status=%s pass_lifecycle_ready=%d pass_lifecycle_error_count=%d pass_begin_count=%d pass_end_count=%d command_buffer_status=%s command_buffer_record_ready=%d command_buffer_record_error_count=%d command_buffer_submit_ready=%d command_buffer_submit_error_count=%d command_buffer_submit_count=%d command_buffer_error_count=%d sampler_filter=%s sampler_address=%s sampler_compare_op=%s sampler_compare_enabled=%d depth_bias_constant_milli=%d depth_bias_slope_milli=%d depth_bias_clamp_milli=%d viewport_x_px=%d viewport_y_px=%d viewport_width_px=%d viewport_height_px=%d viewport_min_depth_milli=%d viewport_max_depth_milli=%d pipeline_depth_test_enabled=%d pipeline_depth_write_enabled=%d pipeline_cull_mode=%s pipeline_front_face=%s draw_source=%s draw_primitive=%s draw_face_stride_bytes=%d draw_command_stride_bytes=%d draw_indirect_enabled=%d draw_status=%s draw_call_count=%d draw_face_count=%d uniform_set_index=%d face_buffer_binding=%d push_constant_bytes=%d texture_sampling_enabled=%d shader_language=%s shader_entry=%s shader_depth_output_enabled=%d shader_color_output_enabled=%d shader_source_bytes=%d shader_source_checksum=%d shader_module_status=%s shader_module_rid_allocated=%d light_source=%s light_space=%s cascade_count=%d light_matrix_bytes=%d depth_clip_space=%s depth_range_source=%s depth_near_milli=%d depth_far_chunks=%d resource_creates=%d resource_reuses=%d resource_replaces=%d resource_releases=%d covered_chunks=%d covered_subchunks=%d native_shadow_requested=%d native_shadow_active=%d native_shadow_fallback=%d native_shadow_implemented=%d native_shadow_resource_width=%d native_shadow_resource_height=%d native_shadow_resource_layers=%d native_shadow_resource_bytes_per_texel=%d native_shadow_resource_bytes=%d native_shadow_pass_clear_depth_milli=%d native_shadow_depth_attachment_binding_count=%d native_shadow_depth_attachment_clear_count=%d native_shadow_resource_transition_count=%d native_shadow_resource_barrier_error_count=%d native_shadow_framebuffer_rid_allocated=%d native_shadow_framebuffer_attachment_count=%d native_shadow_framebuffer_pass_compat_error_count=%d native_shadow_framebuffer_depth_only_enabled=%d native_shadow_framebuffer_color_attachment_count=%d native_shadow_framebuffer_attachment_owned=%d native_shadow_framebuffer_attachment_reuse_count=%d native_shadow_framebuffer_descriptor_valid=%d native_shadow_framebuffer_descriptor_error_count=%d native_shadow_framebuffer_bind_ready=%d native_shadow_framebuffer_bind_error_count=%d native_shadow_pass_descriptor_valid=%d native_shadow_pass_descriptor_error_count=%d native_shadow_pass_lifecycle_ready=%d native_shadow_pass_lifecycle_error_count=%d native_shadow_pass_rid_allocated=%d native_shadow_pass_begin_count=%d native_shadow_pass_end_count=%d native_shadow_command_buffer_record_ready=%d native_shadow_command_buffer_record_error_count=%d native_shadow_command_buffer_submit_ready=%d native_shadow_command_buffer_submit_error_count=%d native_shadow_command_buffer_submit_count=%d native_shadow_command_buffer_error_count=%d native_shadow_sampler_compare_enabled=%d native_shadow_depth_bias_constant_milli=%d native_shadow_depth_bias_slope_milli=%d native_shadow_depth_bias_clamp_milli=%d native_shadow_viewport_x_px=%d native_shadow_viewport_y_px=%d native_shadow_viewport_width_px=%d native_shadow_viewport_height_px=%d native_shadow_viewport_min_depth_milli=%d native_shadow_viewport_max_depth_milli=%d native_shadow_pipeline_depth_test_enabled=%d native_shadow_pipeline_depth_write_enabled=%d native_shadow_draw_face_stride_bytes=%d native_shadow_draw_command_stride_bytes=%d native_shadow_draw_indirect_enabled=%d native_shadow_draw_call_count=%d native_shadow_draw_face_count=%d native_shadow_uniform_set_index=%d native_shadow_face_buffer_binding=%d native_shadow_push_constant_bytes=%d native_shadow_texture_sampling_enabled=%d native_shadow_shader_depth_output_enabled=%d native_shadow_shader_color_output_enabled=%d native_shadow_shader_source_bytes=%d native_shadow_shader_source_checksum=%d native_shadow_shader_module_rid_allocated=%d native_shadow_cascade_count=%d native_shadow_light_matrix_bytes=%d native_shadow_depth_near_milli=%d native_shadow_depth_far_chunks=%d native_shadow_resource_creates=%d native_shadow_resource_reuses=%d native_shadow_resource_replaces=%d native_shadow_resource_releases=%d native_shadow_covered_chunks=%d native_shadow_covered_subchunks=%d\n", native_shadow_requested, native_shadow_active, native_shadow_fallback, native_shadow_implemented, native_shadow_resource_status, native_shadow_resource_width, native_shadow_resource_height, native_shadow_resource_layers, native_shadow_resource_bytes_per_texel, native_shadow_resource_bytes, native_shadow_resource_format, native_shadow_resource_usage, native_shadow_pass_load_op, native_shadow_pass_store_op, native_shadow_pass_clear_depth_milli, native_shadow_depth_attachment_status, native_shadow_depth_attachment_binding_count, native_shadow_depth_attachment_clear_count, native_shadow_resource_barrier_status, native_shadow_resource_transition_count, native_shadow_resource_barrier_error_count, native_shadow_framebuffer_status, native_shadow_framebuffer_rid_allocated, native_shadow_framebuffer_attachment_count, native_shadow_framebuffer_pass_compat_status, native_shadow_framebuffer_pass_compat_error_count, native_shadow_framebuffer_depth_only_enabled, native_shadow_framebuffer_color_attachment_count, native_shadow_framebuffer_attachment_owned, native_shadow_framebuffer_attachment_reuse_count, native_shadow_framebuffer_descriptor_valid, native_shadow_framebuffer_descriptor_error_count, native_shadow_framebuffer_bind_ready, native_shadow_framebuffer_bind_error_count, native_shadow_pass_descriptor_valid, native_shadow_pass_descriptor_error_count, native_shadow_pass_status, native_shadow_pass_rid_allocated, native_shadow_pass_submit_status, native_shadow_pass_lifecycle_ready, native_shadow_pass_lifecycle_error_count, native_shadow_pass_begin_count, native_shadow_pass_end_count, native_shadow_command_buffer_status, native_shadow_command_buffer_record_ready, native_shadow_command_buffer_record_error_count, native_shadow_command_buffer_submit_ready, native_shadow_command_buffer_submit_error_count, native_shadow_command_buffer_submit_count, native_shadow_command_buffer_error_count, native_shadow_sampler_filter, native_shadow_sampler_address, native_shadow_sampler_compare_op, native_shadow_sampler_compare_enabled, native_shadow_depth_bias_constant_milli, native_shadow_depth_bias_slope_milli, native_shadow_depth_bias_clamp_milli, native_shadow_viewport_x_px, native_shadow_viewport_y_px, native_shadow_viewport_width_px, native_shadow_viewport_height_px, native_shadow_viewport_min_depth_milli, native_shadow_viewport_max_depth_milli, native_shadow_pipeline_depth_test_enabled, native_shadow_pipeline_depth_write_enabled, native_shadow_pipeline_cull_mode, native_shadow_pipeline_front_face, native_shadow_draw_source, native_shadow_draw_primitive, native_shadow_draw_face_stride_bytes, native_shadow_draw_command_stride_bytes, native_shadow_draw_indirect_enabled, native_shadow_draw_status, native_shadow_draw_call_count, native_shadow_draw_face_count, native_shadow_uniform_set_index, native_shadow_face_buffer_binding, native_shadow_push_constant_bytes, native_shadow_texture_sampling_enabled, native_shadow_shader_language, native_shadow_shader_entry, native_shadow_shader_depth_output_enabled, native_shadow_shader_color_output_enabled, native_shadow_shader_source_bytes, native_shadow_shader_source_checksum, native_shadow_shader_module_status, native_shadow_shader_module_rid_allocated, native_shadow_light_source, native_shadow_light_space, native_shadow_cascade_count, native_shadow_light_matrix_bytes, native_shadow_depth_clip_space, native_shadow_depth_range_source, native_shadow_depth_near_milli, native_shadow_depth_far_chunks, native_shadow_resource_creates, native_shadow_resource_reuses, native_shadow_resource_replaces, native_shadow_resource_releases, native_shadow_covered_chunks, native_shadow_covered_subchunks, native_shadow_requested, native_shadow_active, native_shadow_fallback, native_shadow_implemented, native_shadow_resource_width, native_shadow_resource_height, native_shadow_resource_layers, native_shadow_resource_bytes_per_texel, native_shadow_resource_bytes, native_shadow_pass_clear_depth_milli, native_shadow_depth_attachment_binding_count, native_shadow_depth_attachment_clear_count, native_shadow_resource_transition_count, native_shadow_resource_barrier_error_count, native_shadow_framebuffer_rid_allocated, native_shadow_framebuffer_attachment_count, native_shadow_framebuffer_pass_compat_error_count, native_shadow_framebuffer_depth_only_enabled, native_shadow_framebuffer_color_attachment_count, native_shadow_framebuffer_attachment_owned, native_shadow_framebuffer_attachment_reuse_count, native_shadow_framebuffer_descriptor_valid, native_shadow_framebuffer_descriptor_error_count, native_shadow_framebuffer_bind_ready, native_shadow_framebuffer_bind_error_count, native_shadow_pass_descriptor_valid, native_shadow_pass_descriptor_error_count, native_shadow_pass_lifecycle_ready, native_shadow_pass_lifecycle_error_count, native_shadow_pass_rid_allocated, native_shadow_pass_begin_count, native_shadow_pass_end_count, native_shadow_command_buffer_record_ready, native_shadow_command_buffer_record_error_count, native_shadow_command_buffer_submit_ready, native_shadow_command_buffer_submit_error_count, native_shadow_command_buffer_submit_count, native_shadow_command_buffer_error_count, native_shadow_sampler_compare_enabled, native_shadow_depth_bias_constant_milli, native_shadow_depth_bias_slope_milli, native_shadow_depth_bias_clamp_milli, native_shadow_viewport_x_px, native_shadow_viewport_y_px, native_shadow_viewport_width_px, native_shadow_viewport_height_px, native_shadow_viewport_min_depth_milli, native_shadow_viewport_max_depth_milli, native_shadow_pipeline_depth_test_enabled, native_shadow_pipeline_depth_write_enabled, native_shadow_draw_face_stride_bytes, native_shadow_draw_command_stride_bytes, native_shadow_draw_indirect_enabled, native_shadow_draw_call_count, native_shadow_draw_face_count, native_shadow_uniform_set_index, native_shadow_face_buffer_binding, native_shadow_push_constant_bytes, native_shadow_texture_sampling_enabled, native_shadow_shader_depth_output_enabled, native_shadow_shader_color_output_enabled, native_shadow_shader_source_bytes, native_shadow_shader_source_checksum, native_shadow_shader_module_rid_allocated, native_shadow_cascade_count, native_shadow_light_matrix_bytes, native_shadow_depth_near_milli, native_shadow_depth_far_chunks, native_shadow_resource_creates, native_shadow_resource_reuses, native_shadow_resource_replaces, native_shadow_resource_releases, native_shadow_covered_chunks, native_shadow_covered_subchunks)
         printf("movement_startup packet_ms=%.3f packet_read_work_ms=%.3f packet_decode_work_ms=%.3f packet_reader_elapsed_ms=%.3f packet_queue_lag_ms=%.3f chunk_decode_work_ms=%.3f chunk_inserted_ms=%.3f chunk_loaded_ms=%.3f mesh_queued_ms=%.3f mesh_dispatched_ms=%.3f first_mesh_ms=%.3f first_mesh_work_ms=%.3f first_mesh_phase_ms=%s first_mesh_collision_work_ms=%.3f collision_ms=%.3f player_spawn_ms=%.3f\n", startup_chunk_packet_ms, startup_packet_read_work_ms, startup_packet_decode_work_ms, startup_packet_reader_elapsed_ms, startup_packet_queue_lag_ms, startup_chunk_decode_work_ms, startup_chunk_inserted_ms, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_mesh_dispatched_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_phase_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms)
+        printf("movement_packet_queue frames=%d nonempty_frames=%d drained=%d chunk_drained=%d last_drain=%d max_drain=%d last_chunk_drain=%d max_chunk_drain=%d lag_last_ms=%.3f lag_avg_ms=%.3f lag_max_ms=%.3f read_work_last_ms=%.3f read_work_avg_ms=%.3f read_work_max_ms=%.3f decode_work_last_ms=%.3f decode_work_avg_ms=%.3f decode_work_max_ms=%.3f reader_elapsed_last_ms=%.3f reader_elapsed_max_ms=%.3f\n", packet_q_frames, packet_q_nonempty, packet_q_drained, packet_q_chunk_drained, packet_q_last_drain, packet_q_max_drain, packet_q_last_chunk_drain, packet_q_max_chunk_drain, packet_q_lag_last, packet_q_lag_avg, packet_q_lag_max, packet_q_read_work_last, packet_q_read_work_avg, packet_q_read_work_max, packet_q_decode_work_last, packet_q_decode_work_avg, packet_q_decode_work_max, packet_q_reader_elapsed_last, packet_q_reader_elapsed_max)
+        printf("movement_chunk_unload scans=%d scanned=%d grace_kept=%d unloaded=%d neighbor_refreshes=%d last_unloaded=%d last_grace_kept=%d last_neighbor_refreshes=%d max_unloaded=%d max_grace_kept=%d max_neighbor_refreshes=%d\n", chunk_unload_scans, chunk_unload_scanned, chunk_unload_grace_kept, chunk_unload_total, chunk_unload_neighbor_refresh, chunk_unload_last, chunk_unload_last_grace_kept, chunk_unload_last_neighbor_refresh, chunk_unload_max, chunk_unload_max_grace_kept, chunk_unload_max_neighbor_refresh)
+        printf("movement_popin frames=%d complete_frames=%d missing_frames=%d collision_missing_frames=%d missing_chunks=%d collision_missing_chunks=%d probe_last=%d missing_last=%d collision_missing_last=%d missing_max=%d collision_missing_max=%d probe_radius=%d\n", popin_frames, popin_complete_frames, popin_missing_frames, popin_collision_missing_frames, popin_missing_chunks, popin_collision_missing_chunks, popin_probe_last, popin_missing_last, popin_collision_missing_last, popin_missing_max, popin_collision_missing_max, popin_probe_radius)
+        printf("movement_readiness current_chunk_loaded=%d current_render_ready=%d current_chunk_submeshes=%d current_collision_ready=%d current_chunk_collision=%d ground_misses=%d popin_collision_missing_max=%d startup_collision_ms=%.3f startup_player_spawn_ms=%.3f\n", current_chunk_loaded, current_chunk_submeshes > 0, current_chunk_submeshes, current_chunk_collision > 0, current_chunk_collision, ground_misses, popin_collision_missing_max, startup_collision_ms, startup_player_spawn_ms)
       }
     ' > "$summary_path"
   cat "$summary_path"

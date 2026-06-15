@@ -185,7 +185,7 @@ for repeat in $REPEATS $REPORT_ONLY_REPEATS; do
     SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
     GODOT_QUIT_AFTER_FRAMES="$GODOT_QUIT_AFTER_FRAMES" \
     GODOT_TIMEOUT_SEC="$GODOT_TIMEOUT_SEC" \
-    "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$case_dir" > "$case_dir.run.log" 2>&1 || run_status=$?
+    /bin/sh "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$case_dir" > "$case_dir.run.log" 2>&1 || run_status=$?
   marker_path="$case_dir/gpu-terrain-movement-stress.png.txt"
   if [ "$run_status" -ne 0 ] || [ ! -s "$marker_path" ]; then
     if [ "$report_only" -eq 1 ]; then

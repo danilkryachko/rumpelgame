@@ -6,6 +6,8 @@ const SERVER_PORT = 25565
 const SERVER_CONNECT_TIMEOUT_MS = 250
 const SERVER_START_TIMEOUT_MS = 5000
 const SERVER_START_POLL_SEC = 0.1
+const CLIENT_ATTACH_DELAY_ENV = "RUMPELMC_CLIENT_ATTACH_DELAY_SEC"
+const CLIENT_ATTACH_DEFAULT_DELAY_SEC = 0.0
 const VISUAL_SMOKE_PATH_ENV = "RUMPELMC_VISUAL_SMOKE_PATH"
 const VISUAL_SMOKE_DELAY_ENV = "RUMPELMC_VISUAL_SMOKE_DELAY_SEC"
 const VISUAL_SMOKE_HIDE_HUD_ENV = "RUMPELMC_VISUAL_SMOKE_HIDE_HUD"
@@ -72,7 +74,11 @@ func _ready():
 		start_local_server()
 		await wait_for_server_listening()
 
-	await get_tree().create_timer(1.0).timeout
+	var attach_delay_sec = max(env_float(CLIENT_ATTACH_DELAY_ENV, CLIENT_ATTACH_DEFAULT_DELAY_SEC), 0.0)
+	if attach_delay_sec > 0.0:
+		await get_tree().create_timer(attach_delay_sec).timeout
+	else:
+		await get_tree().process_frame
 
 	log_event("Adding GameClient node...")
 	var client = ClassDB.instantiate("GameClient")
@@ -651,7 +657,7 @@ func apply_visual_smoke_look_at(player: Node3D, camera: Camera3D, position: Vect
 func run_visual_smoke_motion(motion_name: String):
 	visual_smoke_motion_steps = 0
 	visual_smoke_motion_chunks.clear()
-	if motion_name != "chunk_walk" and motion_name != "chunk_walk_long" and motion_name != "chunk_walk_extended" and motion_name != "chunk_fly_out_back" and motion_name != "chunk_fly_snap_back":
+	if motion_name != "chunk_walk" and motion_name != "chunk_walk_long" and motion_name != "chunk_walk_extended" and motion_name != "chunk_fly_out_back" and motion_name != "chunk_fly_snap_back" and motion_name != "chunk_spiral" and motion_name != "chunk_fast_turn":
 		return
 
 	var player = get_tree().root.find_child("Player", true, false) as Node3D
@@ -667,7 +673,7 @@ func run_visual_smoke_motion(motion_name: String):
 		visual_smoke_motion_steps += 1
 		visual_smoke_motion_chunks[visual_smoke_chunk_key(position)] = true
 		if camera:
-			apply_visual_smoke_look_at(player, camera, position, position + Vector3(24.0, -10.0, -28.0))
+			apply_visual_smoke_look_at(player, camera, position, visual_smoke_motion_target(motion_name, index, position))
 		await get_tree().process_frame
 		if motion_name == "chunk_fly_snap_back" and index == positions.size() - 1:
 			await get_tree().process_frame
@@ -677,6 +683,19 @@ func run_visual_smoke_motion(motion_name: String):
 	var settle_sec = max(env_float(VISUAL_SMOKE_MOTION_SETTLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_MOTION_SETTLE_SEC), 0.0)
 	if settle_sec > 0.0:
 		await get_tree().create_timer(settle_sec).timeout
+
+func visual_smoke_motion_target(motion_name: String, index: int, position: Vector3) -> Vector3:
+	if motion_name == "chunk_fast_turn":
+		var offsets: Array[Vector3] = [
+			Vector3(24.0, -8.0, 0.0),
+			Vector3(0.0, -8.0, 24.0),
+			Vector3(-24.0, -8.0, 0.0),
+			Vector3(0.0, -8.0, -24.0)
+		]
+		return position + offsets[index % offsets.size()]
+	if motion_name == "chunk_spiral":
+		return Vector3(80.0, 63.0, 80.0)
+	return position + Vector3(24.0, -10.0, -28.0)
 
 func visual_smoke_motion_positions(motion_name: String) -> Array[Vector3]:
 	var positions: Array[Vector3] = [
@@ -726,6 +745,29 @@ func visual_smoke_motion_positions(motion_name: String) -> Array[Vector3]:
 			Vector3(496.0, 84.0, -384.0),
 			Vector3(576.0, 84.0, -448.0),
 			Vector3(16.0, 74.0, 16.0)
+		]
+	if motion_name == "chunk_spiral":
+		return [
+			Vector3(16.0, 74.0, 16.0),
+			Vector3(48.0, 74.0, 16.0),
+			Vector3(48.0, 74.0, 48.0),
+			Vector3(16.0, 74.0, 48.0),
+			Vector3(-16.0, 74.0, 48.0),
+			Vector3(-16.0, 74.0, -16.0),
+			Vector3(80.0, 74.0, -16.0),
+			Vector3(80.0, 74.0, 80.0),
+			Vector3(16.0, 74.0, 80.0)
+		]
+	if motion_name == "chunk_fast_turn":
+		return [
+			Vector3(80.0, 74.0, 80.0),
+			Vector3(80.0, 74.0, 80.0),
+			Vector3(80.0, 74.0, 80.0),
+			Vector3(80.0, 74.0, 80.0),
+			Vector3(80.0, 74.0, 80.0),
+			Vector3(80.0, 74.0, 80.0),
+			Vector3(80.0, 74.0, 80.0),
+			Vector3(80.0, 74.0, 80.0)
 		]
 	return positions
 

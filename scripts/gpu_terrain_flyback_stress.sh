@@ -108,6 +108,31 @@ write_summary() {
       "$(metric terrain_samples "$marker_path")" \
       "$(metric smoke_err "$marker_path")" \
       "$(metric gpu_upload_fail "$marker_path")"
+    printf 'flyback_unload scans=%s scanned=%s grace_kept=%s unloaded=%s neighbor_refreshes=%s last_unloaded=%s last_grace_kept=%s last_neighbor_refreshes=%s max_unloaded=%s max_grace_kept=%s max_neighbor_refreshes=%s\n' \
+      "$(metric chunk_unload_scans "$marker_path")" \
+      "$(metric chunk_unload_scanned "$marker_path")" \
+      "$(metric chunk_unload_grace_kept "$marker_path")" \
+      "$(metric chunk_unload_total "$marker_path")" \
+      "$(metric chunk_unload_neighbor_refresh "$marker_path")" \
+      "$(metric chunk_unload_last "$marker_path")" \
+      "$(metric chunk_unload_last_grace_kept "$marker_path")" \
+      "$(metric chunk_unload_last_neighbor_refresh "$marker_path")" \
+      "$(metric chunk_unload_max "$marker_path")" \
+      "$(metric chunk_unload_max_grace_kept "$marker_path")" \
+      "$(metric chunk_unload_max_neighbor_refresh "$marker_path")"
+    printf 'flyback_popin frames=%s complete_frames=%s missing_frames=%s collision_missing_frames=%s missing_chunks=%s collision_missing_chunks=%s probe_last=%s missing_last=%s collision_missing_last=%s missing_max=%s collision_missing_max=%s probe_radius=%s\n' \
+      "$(metric popin_frames "$marker_path")" \
+      "$(metric popin_complete_frames "$marker_path")" \
+      "$(metric popin_missing_frames "$marker_path")" \
+      "$(metric popin_collision_missing_frames "$marker_path")" \
+      "$(metric popin_missing_chunks "$marker_path")" \
+      "$(metric popin_collision_missing_chunks "$marker_path")" \
+      "$(metric popin_probe_last "$marker_path")" \
+      "$(metric popin_missing_last "$marker_path")" \
+      "$(metric popin_collision_missing_last "$marker_path")" \
+      "$(metric popin_missing_max "$marker_path")" \
+      "$(metric popin_collision_missing_max "$marker_path")" \
+      "$(metric popin_probe_radius "$marker_path")"
   } > "$summary_path"
   cat "$summary_path"
 }
