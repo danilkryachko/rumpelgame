@@ -20,10 +20,65 @@ use std::sync::{
     mpsc::{Receiver, channel},
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClientLifecycleState {
+    Connecting,
+    WaitingChunks,
+    Spawning,
+    Active,
+    Reconnecting,
+    Shutdown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClientLifecycleEvent {
+    ConnectSucceeded,
+    ConnectFailed,
+    StartupChunkReady,
+    SpawnComplete,
+    NetworkError,
+    ShutdownRequested,
+}
+
+fn client_lifecycle_transition(
+    state: ClientLifecycleState,
+    event: ClientLifecycleEvent,
+) -> Option<ClientLifecycleState> {
+    use ClientLifecycleEvent::*;
+    use ClientLifecycleState::*;
+
+    match (state, event) {
+        (_, ShutdownRequested) => Some(Shutdown),
+        (Shutdown, _) => None,
+        (Connecting, ConnectSucceeded) => Some(WaitingChunks),
+        (Connecting, ConnectFailed) => Some(Reconnecting),
+        (WaitingChunks, StartupChunkReady) => Some(Spawning),
+        (WaitingChunks, NetworkError) => Some(Reconnecting),
+        (Spawning, SpawnComplete) => Some(Active),
+        (Spawning, NetworkError) => Some(Reconnecting),
+        (Active, NetworkError) => Some(Reconnecting),
+        (Reconnecting, ConnectSucceeded) => Some(WaitingChunks),
+        (Reconnecting, ConnectFailed) => Some(Reconnecting),
+        _ => None,
+    }
+}
+
+fn client_lifecycle_state_label(state: ClientLifecycleState) -> &'static str {
+    match state {
+        ClientLifecycleState::Connecting => "connecting",
+        ClientLifecycleState::WaitingChunks => "waiting_chunks",
+        ClientLifecycleState::Spawning => "spawning",
+        ClientLifecycleState::Active => "active",
+        ClientLifecycleState::Reconnecting => "reconnecting",
+        ClientLifecycleState::Shutdown => "shutdown",
+    }
+}
+
 #[derive(GodotClass)]
 #[class(base=Node)]
 pub struct GameClient {
     base: Base<Node>,
+    client_state: ClientLifecycleState,
     mesher: Option<meshing::ComputeMesher>,
     gpu_terrain: Option<gpu_terrain::GpuTerrainBufferPool>,
     gpu_terrain_compositor: Option<gpu_terrain::GpuTerrainCompositor>,
@@ -58,6 +113,7 @@ impl INode for GameClient {
     fn init(base: Base<Node>) -> Self {
         Self {
             base,
+            client_state: ClientLifecycleState::Connecting,
             mesher: None,
             gpu_terrain: None,
             gpu_terrain_compositor: None,
@@ -138,6 +194,7 @@ impl INode for GameClient {
                 };
                 if let Err(err) = client.send_packet(&initial_position) {
                     self.emit_debug_log(&format!("Failed to send initial position: {err}"));
+                    self.record_client_lifecycle_event(ClientLifecycleEvent::ConnectFailed);
                     return;
                 }
 
@@ -145,6 +202,7 @@ impl INode for GameClient {
                     Ok(stream) => stream,
                     Err(err) => {
                         self.emit_debug_log(&format!("Failed to clone TCP stream: {err}"));
+                        self.record_client_lifecycle_event(ClientLifecycleEvent::ConnectFailed);
                         return;
                     }
                 };
@@ -155,6 +213,7 @@ impl INode for GameClient {
                 let (tx, rx) = channel();
                 self.packet_receiver = Some(rx);
                 self.network = Some(client);
+                self.record_client_lifecycle_event(ClientLifecycleEvent::ConnectSucceeded);
 
                 std::thread::spawn(move || {
                     let reader_start = Instant::now();
@@ -175,6 +234,7 @@ impl INode for GameClient {
             }
             Err(e) => {
                 self.emit_debug_log(&format!("Failed to connect to server: {e}"));
+                self.record_client_lifecycle_event(ClientLifecycleEvent::ConnectFailed);
             }
         }
 
@@ -197,8 +257,35 @@ impl INode for GameClient {
                 packets.push(packet);
             }
         }
-        for mut record in packets {
+        let mut packet_queue_max_lag_ms: f64 = 0.0;
+        let mut packet_read_work_ms: f64 = 0.0;
+        let mut packet_decode_work_ms: f64 = 0.0;
+        let mut packet_reader_elapsed_ms: f64 = 0.0;
+        let mut chunk_packets = 0;
+        for record in &mut packets {
             record.timing.queue_lag_ms = elapsed_ms(record.received_at);
+            packet_queue_max_lag_ms =
+                packet_queue_max_lag_ms.max(record.timing.queue_lag_ms.max(0.0));
+            packet_read_work_ms += record.timing.read_ms.max(0.0);
+            packet_decode_work_ms += record.timing.decode_ms.max(0.0);
+            packet_reader_elapsed_ms =
+                packet_reader_elapsed_ms.max(record.timing.reader_elapsed_ms.max(0.0));
+            if matches!(
+                record.packet.payload.as_ref(),
+                Some(crate::api::packet::Payload::Chunk(_))
+            ) {
+                chunk_packets += 1;
+            }
+        }
+        self.perf.record_packet_queue_frame(
+            packets.len(),
+            chunk_packets,
+            packet_queue_max_lag_ms,
+            packet_read_work_ms,
+            packet_decode_work_ms,
+            packet_reader_elapsed_ms,
+        );
+        for record in packets {
             if let Some(crate::api::packet::Payload::Chunk(chunk)) = record.packet.payload {
                 self.update_chunk(chunk, record.timing);
             }
@@ -218,6 +305,7 @@ impl INode for GameClient {
             mesh_frame.gpu_uploads,
             mesh_frame.gpu_upload_bytes,
         );
+        self.record_pop_in_probe();
         self.sync_gpu_terrain_lighting();
         self.update_gpu_native_shadow_resources();
         self.update_gpu_visible_transition();
@@ -234,7 +322,14 @@ impl INode for GameClient {
 }
 
 impl GameClient {
+    fn record_client_lifecycle_event(&mut self, event: ClientLifecycleEvent) {
+        if let Some(next_state) = client_lifecycle_transition(self.client_state, event) {
+            self.client_state = next_state;
+        }
+    }
+
     fn shutdown_runtime_resources(&mut self) {
+        self.record_client_lifecycle_event(ClientLifecycleEvent::ShutdownRequested);
         if let Some(compositor) = &mut self.gpu_terrain_compositor {
             compositor.detach_from_camera();
         }
@@ -272,6 +367,7 @@ impl GameClient {
             .add_child(&player_node.upcast::<godot::classes::Node>());
 
         self.player_spawned = true;
+        self.record_client_lifecycle_event(ClientLifecycleEvent::SpawnComplete);
         self.perf
             .record_startup_player_spawn(self.client_runtime_sec);
         self.emit_debug_log("Player spawned after chunk collision was created");
@@ -407,6 +503,7 @@ impl GameClient {
                 self.client_runtime_sec,
                 self.chunk_node_counts(initial_player_chunk()),
             );
+            self.record_client_lifecycle_event(ClientLifecycleEvent::StartupChunkReady);
             self.spawn_player();
         }
     }
@@ -1162,6 +1259,7 @@ impl GameClient {
 
         if let Err(e) = network.send_packet(packet) {
             godot_print!("Failed to send BlockAction: {}", e);
+            self.record_client_lifecycle_event(ClientLifecycleEvent::NetworkError);
         }
     }
 
@@ -1275,7 +1373,11 @@ impl GameClient {
     }
 
     fn subchunk_needs_collision(&self, key: SubchunkKey) -> bool {
-        subchunk_needs_collision(key, self.current_player_chunk)
+        subchunk_needs_collision(
+            key,
+            self.current_player_chunk,
+            client_collision_chunk_distance(),
+        )
     }
 
     fn subchunk_needs_cpu_proxy(&self, key: SubchunkKey) -> bool {
@@ -1322,8 +1424,9 @@ impl GameClient {
 
     fn enqueue_collision_refresh(&mut self, previous: Option<(i32, i32)>, current: (i32, i32)) {
         let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
+        let collision_distance = client_collision_chunk_distance();
         for coord in loaded_chunks {
-            if !chunk_needs_collision_refresh(coord, previous, current) {
+            if !chunk_needs_collision_refresh(coord, previous, current, collision_distance) {
                 continue;
             }
             for sub_y in 0..SUBCHUNKS_PER_CHUNK {
@@ -1350,8 +1453,15 @@ impl GameClient {
             gpu_terrain_native_shadow_active(),
         );
         let loaded_chunks: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
+        let collision_distance = client_collision_chunk_distance();
         for coord in loaded_chunks {
-            if chunk_needs_cpu_proxy_refresh(coord, previous, current, shadow_radius) {
+            if chunk_needs_cpu_proxy_refresh(
+                coord,
+                previous,
+                current,
+                shadow_radius,
+                collision_distance,
+            ) {
                 self.enqueue_proxy_refresh_subchunks(coord.0, coord.1);
             }
         }
@@ -1449,29 +1559,35 @@ impl GameClient {
     fn unload_far_chunks(&mut self, center: (i32, i32)) {
         let now_sec = self.client_runtime_sec;
         let keep_distance = client_keep_chunk_distance();
-        for coord in self.chunk_blocks.keys().copied() {
+        let loaded_coords: Vec<(i32, i32)> = self.chunk_blocks.keys().copied().collect();
+        for coord in loaded_coords.iter().copied() {
             if chunk_within_radius(coord, center, keep_distance) {
                 self.chunk_last_seen_sec.insert(coord, now_sec);
             }
         }
 
         let grace_sec = client_chunk_unload_grace_sec();
-        let to_unload: Vec<(i32, i32)> = self
-            .chunk_blocks
-            .keys()
-            .copied()
-            .filter(|coord| {
-                should_unload_chunk(
-                    *coord,
-                    center,
-                    keep_distance,
-                    self.chunk_last_seen_sec.get(coord).copied(),
-                    now_sec,
-                    grace_sec,
-                )
-            })
-            .collect();
+        let mut grace_kept_chunks = 0usize;
+        let mut to_unload = Vec::new();
+        for coord in loaded_coords.iter().copied() {
+            match chunk_unload_decision(
+                coord,
+                center,
+                keep_distance,
+                self.chunk_last_seen_sec.get(&coord).copied(),
+                now_sec,
+                grace_sec,
+            ) {
+                ChunkUnloadDecision::KeepWithinRadius => {}
+                ChunkUnloadDecision::KeepGrace => grace_kept_chunks += 1,
+                ChunkUnloadDecision::Unload => to_unload.push(coord),
+            }
+        }
+
+        let unloaded_chunks = to_unload.len();
         if to_unload.is_empty() {
+            self.perf
+                .record_chunk_unload_scan(loaded_coords.len(), grace_kept_chunks, 0, 0);
             return;
         }
 
@@ -1490,6 +1606,15 @@ impl GameClient {
                 }
             }
         }
+
+        let neighbor_refreshes = rerender.len();
+        self.perf.record_chunk_unload_scan(
+            loaded_coords.len(),
+            grace_kept_chunks,
+            unloaded_chunks,
+            neighbor_refreshes,
+        );
+        self.perf.chunk_bytes_loaded = self.total_chunk_bytes_loaded();
 
         for (x, z) in rerender {
             self.enqueue_chunk_subchunks(x, z);
@@ -1575,6 +1700,20 @@ impl GameClient {
             return NodePerfCounts::default();
         };
         self.chunk_node_counts((chunk_x, chunk_z))
+    }
+
+    fn record_pop_in_probe(&mut self) {
+        let center = self
+            .current_player_chunk
+            .unwrap_or_else(initial_player_chunk);
+        let radius = client_pop_in_probe_radius();
+        let counts = pop_in_probe_counts(
+            center,
+            radius,
+            |coord| self.chunk_blocks.contains_key(&coord),
+            |coord| self.chunk_node_counts(coord).total_collision_bodies > 0,
+        );
+        self.perf.record_pop_in_probe(counts);
     }
 
     fn chunk_node_counts(&self, (chunk_x, chunk_z): (i32, i32)) -> NodePerfCounts {
@@ -2048,6 +2187,13 @@ fn subchunk_chunk_distance_sq(key: SubchunkKey, center: (i32, i32)) -> i64 {
     dx * dx + dz * dz
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct PopInProbeCounts {
+    probe_chunks: usize,
+    missing_chunks: usize,
+    missing_collision_chunks: usize,
+}
+
 #[derive(Default)]
 struct PerfStats {
     mesh_queue_depth: usize,
@@ -2135,6 +2281,47 @@ struct PerfStats {
     chunk_bytes_loaded: usize,
     chunk_initial_loads: u64,
     chunk_replacement_updates: u64,
+    chunk_unload_scans: u64,
+    chunk_unload_scanned_chunks: u64,
+    chunk_unload_grace_kept_chunks: u64,
+    chunk_unloads: u64,
+    chunk_unload_neighbor_refreshes: u64,
+    last_chunk_unload_count: usize,
+    last_chunk_unload_grace_kept: usize,
+    last_chunk_unload_neighbor_refreshes: usize,
+    max_chunk_unload_count: usize,
+    max_chunk_unload_grace_kept: usize,
+    max_chunk_unload_neighbor_refreshes: usize,
+    pop_in_probe_frames: u64,
+    pop_in_complete_frames: u64,
+    pop_in_missing_chunk_frames: u64,
+    pop_in_missing_collision_frames: u64,
+    pop_in_missing_chunks: u64,
+    pop_in_missing_collision_chunks: u64,
+    last_pop_in_probe_chunks: usize,
+    last_pop_in_missing_chunks: usize,
+    last_pop_in_missing_collision_chunks: usize,
+    max_pop_in_missing_chunks: usize,
+    max_pop_in_missing_collision_chunks: usize,
+    packet_queue_frames: u64,
+    packet_queue_nonempty_frames: u64,
+    packet_queue_packets_drained: u64,
+    packet_queue_chunk_packets_drained: u64,
+    last_packet_queue_drain: usize,
+    max_packet_queue_drain: usize,
+    last_packet_queue_chunk_drain: usize,
+    max_packet_queue_chunk_drain: usize,
+    last_packet_queue_lag_ms: f64,
+    avg_packet_queue_lag_ms: f64,
+    max_packet_queue_lag_ms: f64,
+    last_packet_queue_read_work_ms: f64,
+    avg_packet_queue_read_work_ms: f64,
+    max_packet_queue_read_work_ms: f64,
+    last_packet_queue_decode_work_ms: f64,
+    avg_packet_queue_decode_work_ms: f64,
+    max_packet_queue_decode_work_ms: f64,
+    last_packet_queue_reader_elapsed_ms: f64,
+    max_packet_queue_reader_elapsed_ms: f64,
     startup_chunk_packet_ms: f64,
     startup_packet_read_work_ms: f64,
     startup_packet_decode_work_ms: f64,
@@ -2406,6 +2593,52 @@ impl NodePerfCounts {
 }
 
 impl PerfStats {
+    fn record_packet_queue_frame(
+        &mut self,
+        drained: usize,
+        chunk_drained: usize,
+        max_queue_lag_ms: f64,
+        read_work_ms: f64,
+        decode_work_ms: f64,
+        max_reader_elapsed_ms: f64,
+    ) {
+        self.packet_queue_frames += 1;
+        self.packet_queue_packets_drained += drained as u64;
+        self.packet_queue_chunk_packets_drained += chunk_drained as u64;
+        self.last_packet_queue_drain = drained;
+        self.max_packet_queue_drain = self.max_packet_queue_drain.max(drained);
+        self.last_packet_queue_chunk_drain = chunk_drained;
+        self.max_packet_queue_chunk_drain = self.max_packet_queue_chunk_drain.max(chunk_drained);
+        self.last_packet_queue_lag_ms = max_queue_lag_ms.max(0.0);
+        self.max_packet_queue_lag_ms = self
+            .max_packet_queue_lag_ms
+            .max(self.last_packet_queue_lag_ms);
+        self.last_packet_queue_read_work_ms = read_work_ms.max(0.0);
+        self.max_packet_queue_read_work_ms = self
+            .max_packet_queue_read_work_ms
+            .max(self.last_packet_queue_read_work_ms);
+        self.last_packet_queue_decode_work_ms = decode_work_ms.max(0.0);
+        self.max_packet_queue_decode_work_ms = self
+            .max_packet_queue_decode_work_ms
+            .max(self.last_packet_queue_decode_work_ms);
+        self.last_packet_queue_reader_elapsed_ms = max_reader_elapsed_ms.max(0.0);
+        self.max_packet_queue_reader_elapsed_ms = self
+            .max_packet_queue_reader_elapsed_ms
+            .max(self.last_packet_queue_reader_elapsed_ms);
+        if drained == 0 {
+            return;
+        }
+
+        self.packet_queue_nonempty_frames += 1;
+        let n = self.packet_queue_nonempty_frames as f64;
+        self.avg_packet_queue_lag_ms +=
+            (self.last_packet_queue_lag_ms - self.avg_packet_queue_lag_ms) / n;
+        self.avg_packet_queue_read_work_ms +=
+            (self.last_packet_queue_read_work_ms - self.avg_packet_queue_read_work_ms) / n;
+        self.avg_packet_queue_decode_work_ms +=
+            (self.last_packet_queue_decode_work_ms - self.avg_packet_queue_decode_work_ms) / n;
+    }
+
     fn record_startup_chunk_packet(
         &mut self,
         runtime_sec: f64,
@@ -2505,6 +2738,61 @@ impl PerfStats {
             }
         } else {
             self.chunk_initial_loads += 1;
+        }
+    }
+
+    fn record_chunk_unload_scan(
+        &mut self,
+        scanned_chunks: usize,
+        grace_kept_chunks: usize,
+        unloaded_chunks: usize,
+        neighbor_refreshes: usize,
+    ) {
+        self.chunk_unload_scans += 1;
+        self.chunk_unload_scanned_chunks = self
+            .chunk_unload_scanned_chunks
+            .saturating_add(scanned_chunks as u64);
+        self.chunk_unload_grace_kept_chunks = self
+            .chunk_unload_grace_kept_chunks
+            .saturating_add(grace_kept_chunks as u64);
+        self.chunk_unloads = self.chunk_unloads.saturating_add(unloaded_chunks as u64);
+        self.chunk_unload_neighbor_refreshes = self
+            .chunk_unload_neighbor_refreshes
+            .saturating_add(neighbor_refreshes as u64);
+        self.last_chunk_unload_count = unloaded_chunks;
+        self.last_chunk_unload_grace_kept = grace_kept_chunks;
+        self.last_chunk_unload_neighbor_refreshes = neighbor_refreshes;
+        self.max_chunk_unload_count = self.max_chunk_unload_count.max(unloaded_chunks);
+        self.max_chunk_unload_grace_kept = self.max_chunk_unload_grace_kept.max(grace_kept_chunks);
+        self.max_chunk_unload_neighbor_refreshes = self
+            .max_chunk_unload_neighbor_refreshes
+            .max(neighbor_refreshes);
+    }
+
+    fn record_pop_in_probe(&mut self, counts: PopInProbeCounts) {
+        self.pop_in_probe_frames += 1;
+        self.last_pop_in_probe_chunks = counts.probe_chunks;
+        self.last_pop_in_missing_chunks = counts.missing_chunks;
+        self.last_pop_in_missing_collision_chunks = counts.missing_collision_chunks;
+        self.pop_in_missing_chunks = self
+            .pop_in_missing_chunks
+            .saturating_add(counts.missing_chunks as u64);
+        self.pop_in_missing_collision_chunks = self
+            .pop_in_missing_collision_chunks
+            .saturating_add(counts.missing_collision_chunks as u64);
+        self.max_pop_in_missing_chunks = self.max_pop_in_missing_chunks.max(counts.missing_chunks);
+        self.max_pop_in_missing_collision_chunks = self
+            .max_pop_in_missing_collision_chunks
+            .max(counts.missing_collision_chunks);
+
+        if counts.missing_chunks == 0 && counts.missing_collision_chunks == 0 {
+            self.pop_in_complete_frames += 1;
+        }
+        if counts.missing_chunks > 0 {
+            self.pop_in_missing_chunk_frames += 1;
+        }
+        if counts.missing_collision_chunks > 0 {
+            self.pop_in_missing_collision_frames += 1;
         }
     }
 
@@ -2782,7 +3070,10 @@ const CLIENT_KEEP_CHUNK_DISTANCE: i32 = 10;
 const MAX_CLIENT_KEEP_CHUNK_DISTANCE: i32 = 16;
 const CLIENT_CHUNK_UNLOAD_GRACE_SEC: f64 = 20.0;
 const MAX_CLIENT_CHUNK_UNLOAD_GRACE_SEC: f64 = 120.0;
-const COLLISION_CHUNK_DISTANCE: i32 = 1;
+const CLIENT_POP_IN_PROBE_RADIUS: i32 = 1;
+const MAX_CLIENT_POP_IN_PROBE_RADIUS: i32 = 4;
+const CLIENT_COLLISION_CHUNK_DISTANCE: i32 = 1;
+const MAX_CLIENT_COLLISION_CHUNK_DISTANCE: i32 = 4;
 const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_DISTANCE: f32 = 160.0;
 const DEFAULT_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE: i32 = 5;
 const MAX_MESH_JOBS_PER_FRAME: usize = 1;
@@ -2802,6 +3093,8 @@ const CPU_ARRAY_MESH_PACKED_FACES_ENV: &str = "RUMPELMC_CPU_ARRAY_MESH_PACKED_FA
 const CPU_ARRAY_MESH_PACKED_FACES_DEFAULT_ENABLED: bool = true;
 const CLIENT_KEEP_CHUNK_DISTANCE_ENV: &str = "RUMPELMC_CLIENT_KEEP_CHUNK_DISTANCE";
 const CLIENT_CHUNK_UNLOAD_GRACE_SEC_ENV: &str = "RUMPELMC_CLIENT_CHUNK_UNLOAD_GRACE_SEC";
+const CLIENT_POP_IN_PROBE_RADIUS_ENV: &str = "RUMPELMC_CLIENT_POP_IN_PROBE_RADIUS";
+const CLIENT_COLLISION_CHUNK_DISTANCE_ENV: &str = "RUMPELMC_CLIENT_COLLISION_CHUNK_DISTANCE";
 const GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_CHUNK_DISTANCE";
 const GPU_TERRAIN_SHADOW_PROXY_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE";
@@ -2982,6 +3275,59 @@ fn client_keep_chunk_distance() -> i32 {
     })
 }
 
+fn client_pop_in_probe_radius() -> i32 {
+    static PROBE_RADIUS: OnceLock<i32> = OnceLock::new();
+    *PROBE_RADIUS.get_or_init(|| {
+        std::env::var(CLIENT_POP_IN_PROBE_RADIUS_ENV)
+            .ok()
+            .and_then(|value| value.trim().parse::<i32>().ok())
+            .filter(|radius| *radius >= 0)
+            .map(|radius| radius.clamp(0, MAX_CLIENT_POP_IN_PROBE_RADIUS))
+            .unwrap_or(CLIENT_POP_IN_PROBE_RADIUS)
+    })
+}
+
+fn client_collision_chunk_distance() -> i32 {
+    static COLLISION_DISTANCE: OnceLock<i32> = OnceLock::new();
+    *COLLISION_DISTANCE.get_or_init(|| {
+        std::env::var(CLIENT_COLLISION_CHUNK_DISTANCE_ENV)
+            .ok()
+            .and_then(|value| value.trim().parse::<i32>().ok())
+            .filter(|radius| *radius >= 0)
+            .map(|radius| radius.clamp(0, MAX_CLIENT_COLLISION_CHUNK_DISTANCE))
+            .unwrap_or(CLIENT_COLLISION_CHUNK_DISTANCE)
+    })
+}
+
+fn pop_in_probe_counts<Loaded, Collision>(
+    center: (i32, i32),
+    radius: i32,
+    mut is_loaded: Loaded,
+    mut has_collision: Collision,
+) -> PopInProbeCounts
+where
+    Loaded: FnMut((i32, i32)) -> bool,
+    Collision: FnMut((i32, i32)) -> bool,
+{
+    let radius = radius.max(0);
+    let mut counts = PopInProbeCounts::default();
+    for x in center.0 - radius..=center.0 + radius {
+        for z in center.1 - radius..=center.1 + radius {
+            let coord = (x, z);
+            if !chunk_within_radius(coord, center, radius) {
+                continue;
+            }
+            counts.probe_chunks += 1;
+            if !is_loaded(coord) {
+                counts.missing_chunks += 1;
+            } else if !has_collision(coord) {
+                counts.missing_collision_chunks += 1;
+            }
+        }
+    }
+    counts
+}
+
 fn initial_player_position() -> Vector3 {
     Vector3::new(INITIAL_PLAYER_X, INITIAL_PLAYER_Y, INITIAL_PLAYER_Z)
 }
@@ -3022,6 +3368,14 @@ fn client_chunk_unload_grace_sec() -> f64 {
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChunkUnloadDecision {
+    KeepWithinRadius,
+    KeepGrace,
+    Unload,
+}
+
+#[cfg(test)]
 fn should_unload_chunk(
     coord: (i32, i32),
     center: (i32, i32),
@@ -3030,26 +3384,59 @@ fn should_unload_chunk(
     now_sec: f64,
     grace_sec: f64,
 ) -> bool {
+    matches!(
+        chunk_unload_decision(
+            coord,
+            center,
+            keep_distance,
+            last_seen_sec,
+            now_sec,
+            grace_sec,
+        ),
+        ChunkUnloadDecision::Unload
+    )
+}
+
+fn chunk_unload_decision(
+    coord: (i32, i32),
+    center: (i32, i32),
+    keep_distance: i32,
+    last_seen_sec: Option<f64>,
+    now_sec: f64,
+    grace_sec: f64,
+) -> ChunkUnloadDecision {
     if chunk_within_radius(coord, center, keep_distance) {
-        return false;
+        return ChunkUnloadDecision::KeepWithinRadius;
     }
     if grace_sec <= 0.0 {
-        return true;
+        return ChunkUnloadDecision::Unload;
     }
 
     let Some(last_seen_sec) = last_seen_sec else {
-        return true;
+        return ChunkUnloadDecision::Unload;
     };
     let elapsed_sec = now_sec - last_seen_sec;
-    elapsed_sec.is_finite() && elapsed_sec >= grace_sec
+    if elapsed_sec.is_finite() && elapsed_sec >= grace_sec {
+        return ChunkUnloadDecision::Unload;
+    }
+
+    ChunkUnloadDecision::KeepGrace
 }
 
-fn subchunk_needs_collision(key: SubchunkKey, current_player_chunk: Option<(i32, i32)>) -> bool {
+fn subchunk_needs_collision(
+    key: SubchunkKey,
+    current_player_chunk: Option<(i32, i32)>,
+    collision_distance: i32,
+) -> bool {
     let Some(center) = current_player_chunk else {
         let center = initial_player_chunk();
         return (key.chunk_x, key.chunk_z) == center;
     };
-    chunk_within_radius((key.chunk_x, key.chunk_z), center, COLLISION_CHUNK_DISTANCE)
+    chunk_within_radius(
+        (key.chunk_x, key.chunk_z),
+        center,
+        collision_distance.max(0),
+    )
 }
 
 fn subchunk_needs_shadow_proxy(
@@ -3082,23 +3469,26 @@ fn chunk_needs_cpu_proxy_refresh(
     previous: Option<(i32, i32)>,
     current: (i32, i32),
     shadow_radius: i32,
+    collision_distance: i32,
 ) -> bool {
-    let current_role = chunk_cpu_proxy_role(coord, current, shadow_radius);
+    let current_role = chunk_cpu_proxy_role(coord, current, shadow_radius, collision_distance);
     let Some(previous) = previous else {
         return current_role != ChunkCpuProxyRole::None;
     };
 
-    chunk_cpu_proxy_role(coord, previous, shadow_radius) != current_role
+    chunk_cpu_proxy_role(coord, previous, shadow_radius, collision_distance) != current_role
 }
 
 fn chunk_needs_collision_refresh(
     coord: (i32, i32),
     previous: Option<(i32, i32)>,
     current: (i32, i32),
+    collision_distance: i32,
 ) -> bool {
+    let collision_distance = collision_distance.max(0);
     let was_near =
-        previous.is_some_and(|prev| chunk_within_radius(coord, prev, COLLISION_CHUNK_DISTANCE));
-    let is_near = chunk_within_radius(coord, current, COLLISION_CHUNK_DISTANCE);
+        previous.is_some_and(|prev| chunk_within_radius(coord, prev, collision_distance));
+    let is_near = chunk_within_radius(coord, current, collision_distance);
     was_near || is_near
 }
 
@@ -3114,8 +3504,9 @@ fn chunk_cpu_proxy_role(
     coord: (i32, i32),
     center: (i32, i32),
     shadow_radius: i32,
+    collision_distance: i32,
 ) -> ChunkCpuProxyRole {
-    let needs_collision = chunk_within_radius(coord, center, COLLISION_CHUNK_DISTANCE);
+    let needs_collision = chunk_within_radius(coord, center, collision_distance.max(0));
     let needs_shadow = shadow_radius > 0 && chunk_within_radius(coord, center, shadow_radius);
     match (needs_collision, needs_shadow) {
         (false, false) => ChunkCpuProxyRole::None,
@@ -5168,6 +5559,67 @@ impl GameClient {
         GString::from(self.last_save_event.as_str())
     }
 
+    #[func]
+    fn get_debug_overlay_text(&self) -> GString {
+        let state = client_lifecycle_state_label(self.client_state);
+        let current_chunk = self
+            .current_player_chunk
+            .map(|(x, z)| format!("{x},{z}"))
+            .unwrap_or_else(|| "n/a".to_string());
+        let current_loaded = self
+            .current_player_chunk
+            .is_some_and(|coord| self.chunk_blocks.contains_key(&coord));
+        let current_counts = self.current_chunk_node_counts();
+        let dirty_bounds = dirty_bounds_label(self.perf.last_dirty_bounds);
+        let dirty_edges = dirty_edge_label(self.perf.last_dirty_edge_mask);
+        let gpu_text = self.gpu_terrain.as_ref().map_or_else(
+            || "off".to_string(),
+            |pool| {
+                let stats = pool.stats();
+                format!(
+                    "subchunks={} draws={} faces={} upload_fail={} mem={:.1}MB frag={:.1}%",
+                    stats.subchunks,
+                    stats.draw_count,
+                    stats.faces,
+                    stats.upload_failures,
+                    stats.bytes as f64 / (1024.0 * 1024.0),
+                    stats.fragmentation_pct
+                )
+            },
+        );
+        let text = format!(
+            "State: {state}\nStreaming: chunks={} current={} loaded={} mesh_q={}/{} packet_drain={}/{}\nRender/GPU: submeshes={} current_submeshes={} gpu={}\nCollision: bodies={} current_bodies={} refresh_q={}/{} last={}/{}\nDirty/storage: chunks={} blocks={} last_blocks={} rebuild_subchunks={} partial={}/{} bounds={} edges={} save={}\nEvents: chunk={} block={}",
+            self.chunk_blocks.len(),
+            current_chunk,
+            u8::from(current_loaded),
+            self.perf.mesh_queue_depth,
+            self.perf.max_mesh_queue_depth,
+            self.perf.last_packet_queue_drain,
+            self.perf.max_packet_queue_drain,
+            self.perf.node_counts.rendered_submeshes,
+            current_counts.rendered_submeshes,
+            gpu_text,
+            self.perf.node_counts.total_collision_bodies,
+            current_counts.total_collision_bodies,
+            self.perf.collision_refresh_queue_depth,
+            self.perf.max_collision_refresh_queue_depth,
+            self.perf.last_collision_refresh_checked,
+            self.perf.last_collision_refresh_rebuilt,
+            self.perf.dirty_chunk_updates,
+            self.perf.dirty_block_changes,
+            self.perf.last_dirty_block_changes,
+            self.perf.last_dirty_rebuild_subchunks,
+            self.perf.last_dirty_partial_subchunks,
+            self.perf.last_dirty_partial_saved_subchunks,
+            dirty_bounds,
+            dirty_edges,
+            self.last_save_event,
+            self.last_chunk_event,
+            self.last_block_action
+        );
+        GString::from(text.as_str())
+    }
+
     fn gpu_terrain_perf_text(&self) -> String {
         self
             .gpu_terrain
@@ -5528,7 +5980,7 @@ impl GameClient {
         let dirty_bounds = dirty_bounds_label(self.perf.last_dirty_bounds);
         let dirty_edges = dirty_edge_label(self.perf.last_dirty_edge_mask);
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_depth_attachment_status={} native_shadow_depth_attachment_binding_count={} native_shadow_depth_attachment_clear_count={} native_shadow_resource_barrier_status={} native_shadow_resource_transition_count={} native_shadow_resource_barrier_error_count={} native_shadow_framebuffer_status={} native_shadow_framebuffer_rid_allocated={} native_shadow_framebuffer_attachment_count={} native_shadow_framebuffer_pass_compat_status={} native_shadow_framebuffer_pass_compat_error_count={} native_shadow_framebuffer_depth_only_enabled={} native_shadow_framebuffer_color_attachment_count={} native_shadow_framebuffer_attachment_owned={} native_shadow_framebuffer_attachment_reuse_count={} native_shadow_framebuffer_descriptor_valid={} native_shadow_framebuffer_descriptor_error_count={} native_shadow_framebuffer_bind_ready={} native_shadow_framebuffer_bind_error_count={} native_shadow_pass_descriptor_valid={} native_shadow_pass_descriptor_error_count={} native_shadow_pass_status={} native_shadow_pass_rid_allocated={} native_shadow_pass_submit_status={} native_shadow_pass_lifecycle_ready={} native_shadow_pass_lifecycle_error_count={} native_shadow_pass_begin_count={} native_shadow_pass_end_count={} native_shadow_command_buffer_status={} native_shadow_command_buffer_record_ready={} native_shadow_command_buffer_record_error_count={} native_shadow_command_buffer_submit_ready={} native_shadow_command_buffer_submit_error_count={} native_shadow_command_buffer_submit_count={} native_shadow_command_buffer_error_count={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_draw_status={} native_shadow_draw_call_count={} native_shadow_draw_face_count={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_shader_source_bytes={} native_shadow_shader_source_checksum={} native_shadow_shader_module_status={} native_shadow_shader_module_rid_allocated={} native_shadow_light_source={} native_shadow_light_space={} native_shadow_cascade_count={} native_shadow_light_matrix_bytes={} native_shadow_depth_clip_space={} native_shadow_depth_range_source={} native_shadow_depth_near_milli={} native_shadow_depth_far_chunks={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_depth_attachment_status={} native_shadow_depth_attachment_binding_count={} native_shadow_depth_attachment_clear_count={} native_shadow_resource_barrier_status={} native_shadow_resource_transition_count={} native_shadow_resource_barrier_error_count={} native_shadow_framebuffer_status={} native_shadow_framebuffer_rid_allocated={} native_shadow_framebuffer_attachment_count={} native_shadow_framebuffer_pass_compat_status={} native_shadow_framebuffer_pass_compat_error_count={} native_shadow_framebuffer_depth_only_enabled={} native_shadow_framebuffer_color_attachment_count={} native_shadow_framebuffer_attachment_owned={} native_shadow_framebuffer_attachment_reuse_count={} native_shadow_framebuffer_descriptor_valid={} native_shadow_framebuffer_descriptor_error_count={} native_shadow_framebuffer_bind_ready={} native_shadow_framebuffer_bind_error_count={} native_shadow_pass_descriptor_valid={} native_shadow_pass_descriptor_error_count={} native_shadow_pass_status={} native_shadow_pass_rid_allocated={} native_shadow_pass_submit_status={} native_shadow_pass_lifecycle_ready={} native_shadow_pass_lifecycle_error_count={} native_shadow_pass_begin_count={} native_shadow_pass_end_count={} native_shadow_command_buffer_status={} native_shadow_command_buffer_record_ready={} native_shadow_command_buffer_record_error_count={} native_shadow_command_buffer_submit_ready={} native_shadow_command_buffer_submit_error_count={} native_shadow_command_buffer_submit_count={} native_shadow_command_buffer_error_count={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_draw_status={} native_shadow_draw_call_count={} native_shadow_draw_face_count={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_shader_source_bytes={} native_shadow_shader_source_checksum={} native_shadow_shader_module_status={} native_shadow_shader_module_rid_allocated={} native_shadow_light_source={} native_shadow_light_space={} native_shadow_cascade_count={} native_shadow_light_matrix_bytes={} native_shadow_depth_clip_space={} native_shadow_depth_range_source={} native_shadow_depth_near_milli={} native_shadow_depth_far_chunks={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} chunk_unload_scans={} chunk_unload_scanned={} chunk_unload_grace_kept={} chunk_unload_total={} chunk_unload_neighbor_refresh={} chunk_unload_last={} chunk_unload_last_grace_kept={} chunk_unload_last_neighbor_refresh={} chunk_unload_max={} chunk_unload_max_grace_kept={} chunk_unload_max_neighbor_refresh={} popin_frames={} popin_complete_frames={} popin_missing_frames={} popin_collision_missing_frames={} popin_missing_chunks={} popin_collision_missing_chunks={} popin_probe_last={} popin_missing_last={} popin_collision_missing_last={} popin_missing_max={} popin_collision_missing_max={} popin_probe_radius={} packet_q_frames={} packet_q_nonempty={} packet_q_drained={} packet_q_chunk_drained={} packet_q_last_drain={} packet_q_max_drain={} packet_q_last_chunk_drain={} packet_q_max_chunk_drain={} packet_q_lag_ms={:.3}/{:.3}/{:.3} packet_q_read_work_ms={:.3}/{:.3}/{:.3} packet_q_decode_work_ms={:.3}/{:.3}/{:.3} packet_q_reader_elapsed_ms={:.3}/{:.3} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -5705,6 +6157,48 @@ impl GameClient {
             self.perf.last_collision_refresh_queue_missing_chunk_drops,
             self.perf.chunk_initial_loads,
             self.perf.chunk_replacement_updates,
+            self.perf.chunk_unload_scans,
+            self.perf.chunk_unload_scanned_chunks,
+            self.perf.chunk_unload_grace_kept_chunks,
+            self.perf.chunk_unloads,
+            self.perf.chunk_unload_neighbor_refreshes,
+            self.perf.last_chunk_unload_count,
+            self.perf.last_chunk_unload_grace_kept,
+            self.perf.last_chunk_unload_neighbor_refreshes,
+            self.perf.max_chunk_unload_count,
+            self.perf.max_chunk_unload_grace_kept,
+            self.perf.max_chunk_unload_neighbor_refreshes,
+            self.perf.pop_in_probe_frames,
+            self.perf.pop_in_complete_frames,
+            self.perf.pop_in_missing_chunk_frames,
+            self.perf.pop_in_missing_collision_frames,
+            self.perf.pop_in_missing_chunks,
+            self.perf.pop_in_missing_collision_chunks,
+            self.perf.last_pop_in_probe_chunks,
+            self.perf.last_pop_in_missing_chunks,
+            self.perf.last_pop_in_missing_collision_chunks,
+            self.perf.max_pop_in_missing_chunks,
+            self.perf.max_pop_in_missing_collision_chunks,
+            client_pop_in_probe_radius(),
+            self.perf.packet_queue_frames,
+            self.perf.packet_queue_nonempty_frames,
+            self.perf.packet_queue_packets_drained,
+            self.perf.packet_queue_chunk_packets_drained,
+            self.perf.last_packet_queue_drain,
+            self.perf.max_packet_queue_drain,
+            self.perf.last_packet_queue_chunk_drain,
+            self.perf.max_packet_queue_chunk_drain,
+            self.perf.last_packet_queue_lag_ms,
+            self.perf.avg_packet_queue_lag_ms,
+            self.perf.max_packet_queue_lag_ms,
+            self.perf.last_packet_queue_read_work_ms,
+            self.perf.avg_packet_queue_read_work_ms,
+            self.perf.max_packet_queue_read_work_ms,
+            self.perf.last_packet_queue_decode_work_ms,
+            self.perf.avg_packet_queue_decode_work_ms,
+            self.perf.max_packet_queue_decode_work_ms,
+            self.perf.last_packet_queue_reader_elapsed_ms,
+            self.perf.max_packet_queue_reader_elapsed_ms,
             self.perf.startup_chunk_packet_ms,
             self.perf.startup_packet_read_work_ms,
             self.perf.startup_packet_decode_work_ms,
@@ -5952,6 +6446,110 @@ mod tests {
     }
 
     #[test]
+    fn client_lifecycle_connects_waits_spawns_and_becomes_active() {
+        let mut state = ClientLifecycleState::Connecting;
+
+        state = client_lifecycle_transition(state, ClientLifecycleEvent::ConnectSucceeded).unwrap();
+        assert_eq!(state, ClientLifecycleState::WaitingChunks);
+
+        state =
+            client_lifecycle_transition(state, ClientLifecycleEvent::StartupChunkReady).unwrap();
+        assert_eq!(state, ClientLifecycleState::Spawning);
+
+        state = client_lifecycle_transition(state, ClientLifecycleEvent::SpawnComplete).unwrap();
+        assert_eq!(state, ClientLifecycleState::Active);
+    }
+
+    #[test]
+    fn client_lifecycle_reconnects_from_connect_and_network_errors() {
+        assert_eq!(
+            client_lifecycle_transition(
+                ClientLifecycleState::Connecting,
+                ClientLifecycleEvent::ConnectFailed,
+            ),
+            Some(ClientLifecycleState::Reconnecting)
+        );
+        assert_eq!(
+            client_lifecycle_transition(
+                ClientLifecycleState::Active,
+                ClientLifecycleEvent::NetworkError,
+            ),
+            Some(ClientLifecycleState::Reconnecting)
+        );
+        assert_eq!(
+            client_lifecycle_transition(
+                ClientLifecycleState::Reconnecting,
+                ClientLifecycleEvent::ConnectSucceeded,
+            ),
+            Some(ClientLifecycleState::WaitingChunks)
+        );
+    }
+
+    #[test]
+    fn client_lifecycle_shutdown_is_terminal() {
+        assert_eq!(
+            client_lifecycle_transition(
+                ClientLifecycleState::WaitingChunks,
+                ClientLifecycleEvent::ShutdownRequested,
+            ),
+            Some(ClientLifecycleState::Shutdown)
+        );
+        assert_eq!(
+            client_lifecycle_transition(
+                ClientLifecycleState::Shutdown,
+                ClientLifecycleEvent::ConnectSucceeded,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn client_lifecycle_rejects_out_of_order_startup_events() {
+        assert_eq!(
+            client_lifecycle_transition(
+                ClientLifecycleState::Connecting,
+                ClientLifecycleEvent::StartupChunkReady,
+            ),
+            None
+        );
+        assert_eq!(
+            client_lifecycle_transition(
+                ClientLifecycleState::WaitingChunks,
+                ClientLifecycleEvent::SpawnComplete,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn client_lifecycle_state_labels_are_overlay_stable() {
+        assert_eq!(
+            client_lifecycle_state_label(ClientLifecycleState::Connecting),
+            "connecting"
+        );
+        assert_eq!(
+            client_lifecycle_state_label(ClientLifecycleState::WaitingChunks),
+            "waiting_chunks"
+        );
+        assert_eq!(
+            client_lifecycle_state_label(ClientLifecycleState::Spawning),
+            "spawning"
+        );
+        assert_eq!(
+            client_lifecycle_state_label(ClientLifecycleState::Active),
+            "active"
+        );
+        assert_eq!(
+            client_lifecycle_state_label(ClientLifecycleState::Reconnecting),
+            "reconnecting"
+        );
+        assert_eq!(
+            client_lifecycle_state_label(ClientLifecycleState::Shutdown),
+            "shutdown"
+        );
+    }
+
+    #[test]
     fn subchunk_key_from_mesh_name_parses_expected_format() {
         let key = subchunk_key_from_mesh_name("SubchunkMesh_-2_7_3").expect("valid subchunk key");
 
@@ -6052,6 +6650,97 @@ mod tests {
             100.0,
             0.0
         ));
+    }
+
+    #[test]
+    fn chunk_unload_decision_distinguishes_grace_from_unload() {
+        assert_eq!(
+            chunk_unload_decision((3, 0), (0, 0), 4, Some(0.0), 100.0, 20.0),
+            ChunkUnloadDecision::KeepWithinRadius
+        );
+        assert_eq!(
+            chunk_unload_decision((5, 0), (0, 0), 4, Some(85.0), 100.0, 20.0),
+            ChunkUnloadDecision::KeepGrace
+        );
+        assert_eq!(
+            chunk_unload_decision((5, 0), (0, 0), 4, Some(79.0), 100.0, 20.0),
+            ChunkUnloadDecision::Unload
+        );
+        assert_eq!(
+            chunk_unload_decision((5, 0), (0, 0), 4, None, 100.0, 20.0),
+            ChunkUnloadDecision::Unload
+        );
+        assert_eq!(
+            chunk_unload_decision((5, 0), (0, 0), 4, Some(f64::NAN), 100.0, 20.0),
+            ChunkUnloadDecision::KeepGrace
+        );
+    }
+
+    #[test]
+    fn perf_records_chunk_unload_churn() {
+        let mut perf = PerfStats::default();
+        perf.record_chunk_unload_scan(10, 3, 2, 4);
+        perf.record_chunk_unload_scan(6, 1, 5, 2);
+
+        assert_eq!(perf.chunk_unload_scans, 2);
+        assert_eq!(perf.chunk_unload_scanned_chunks, 16);
+        assert_eq!(perf.chunk_unload_grace_kept_chunks, 4);
+        assert_eq!(perf.chunk_unloads, 7);
+        assert_eq!(perf.chunk_unload_neighbor_refreshes, 6);
+        assert_eq!(perf.last_chunk_unload_count, 5);
+        assert_eq!(perf.last_chunk_unload_grace_kept, 1);
+        assert_eq!(perf.last_chunk_unload_neighbor_refreshes, 2);
+        assert_eq!(perf.max_chunk_unload_count, 5);
+        assert_eq!(perf.max_chunk_unload_grace_kept, 3);
+        assert_eq!(perf.max_chunk_unload_neighbor_refreshes, 4);
+    }
+
+    #[test]
+    fn pop_in_probe_counts_missing_loaded_and_collision_chunks() {
+        let loaded = HashSet::from([(0, 0), (1, 0), (0, 1)]);
+        let collision = HashSet::from([(0, 0), (1, 0)]);
+        let counts = pop_in_probe_counts(
+            (0, 0),
+            1,
+            |coord| loaded.contains(&coord),
+            |coord| collision.contains(&coord),
+        );
+
+        assert_eq!(
+            counts,
+            PopInProbeCounts {
+                probe_chunks: 5,
+                missing_chunks: 2,
+                missing_collision_chunks: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn perf_records_pop_in_probe_frames() {
+        let mut perf = PerfStats::default();
+        perf.record_pop_in_probe(PopInProbeCounts {
+            probe_chunks: 5,
+            missing_chunks: 0,
+            missing_collision_chunks: 0,
+        });
+        perf.record_pop_in_probe(PopInProbeCounts {
+            probe_chunks: 5,
+            missing_chunks: 2,
+            missing_collision_chunks: 1,
+        });
+
+        assert_eq!(perf.pop_in_probe_frames, 2);
+        assert_eq!(perf.pop_in_complete_frames, 1);
+        assert_eq!(perf.pop_in_missing_chunk_frames, 1);
+        assert_eq!(perf.pop_in_missing_collision_frames, 1);
+        assert_eq!(perf.pop_in_missing_chunks, 2);
+        assert_eq!(perf.pop_in_missing_collision_chunks, 1);
+        assert_eq!(perf.last_pop_in_probe_chunks, 5);
+        assert_eq!(perf.last_pop_in_missing_chunks, 2);
+        assert_eq!(perf.last_pop_in_missing_collision_chunks, 1);
+        assert_eq!(perf.max_pop_in_missing_chunks, 2);
+        assert_eq!(perf.max_pop_in_missing_collision_chunks, 1);
     }
 
     #[test]
@@ -6941,10 +7630,28 @@ mod tests {
             chunk_z: -7,
         };
 
-        assert!(subchunk_needs_collision(origin, None));
-        assert!(!subchunk_needs_collision(near, None));
-        assert!(subchunk_needs_collision(near, Some((5, -7))));
-        assert!(!subchunk_needs_collision(far, Some((5, -7))));
+        assert!(subchunk_needs_collision(
+            origin,
+            None,
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(!subchunk_needs_collision(
+            near,
+            None,
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(subchunk_needs_collision(
+            near,
+            Some((5, -7)),
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(!subchunk_needs_collision(
+            far,
+            Some((5, -7)),
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(!subchunk_needs_collision(near, Some((5, -7)), 0));
+        assert!(subchunk_needs_collision(far, Some((5, -7)), 3));
     }
 
     #[test]
@@ -6960,7 +7667,11 @@ mod tests {
 
         for key in initial_spawn_mesh_subchunks() {
             assert_eq!((key.chunk_x, key.chunk_z), spawn_chunk);
-            assert!(subchunk_needs_collision(key, None));
+            assert!(subchunk_needs_collision(
+                key,
+                None,
+                CLIENT_COLLISION_CHUNK_DISTANCE
+            ));
             assert!(subchunk_needs_shadow_proxy(
                 key,
                 None,
@@ -6972,13 +7683,45 @@ mod tests {
 
     #[test]
     fn chunk_collision_refresh_tracks_old_or_new_player_radius() {
-        assert!(chunk_needs_collision_refresh((0, 0), None, (0, 0)));
-        assert!(chunk_needs_collision_refresh((1, 0), None, (0, 0)));
-        assert!(!chunk_needs_collision_refresh((2, 0), None, (0, 0)));
+        assert!(chunk_needs_collision_refresh(
+            (0, 0),
+            None,
+            (0, 0),
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(chunk_needs_collision_refresh(
+            (1, 0),
+            None,
+            (0, 0),
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(!chunk_needs_collision_refresh(
+            (2, 0),
+            None,
+            (0, 0),
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
 
-        assert!(chunk_needs_collision_refresh((0, 0), Some((0, 0)), (3, 0)));
-        assert!(chunk_needs_collision_refresh((3, 0), Some((0, 0)), (3, 0)));
-        assert!(!chunk_needs_collision_refresh((6, 0), Some((0, 0)), (3, 0)));
+        assert!(chunk_needs_collision_refresh(
+            (0, 0),
+            Some((0, 0)),
+            (3, 0),
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(chunk_needs_collision_refresh(
+            (3, 0),
+            Some((0, 0)),
+            (3, 0),
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(!chunk_needs_collision_refresh(
+            (6, 0),
+            Some((0, 0)),
+            (3, 0),
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(!chunk_needs_collision_refresh((1, 0), None, (0, 0), 0));
+        assert!(chunk_needs_collision_refresh((2, 0), None, (0, 0), 2));
     }
 
     #[test]
@@ -7042,42 +7785,72 @@ mod tests {
 
     #[test]
     fn cpu_proxy_refresh_tracks_collision_and_shadow_radius_edges() {
-        assert!(chunk_needs_cpu_proxy_refresh((1, 0), None, (0, 0), 0));
-        assert!(!chunk_needs_cpu_proxy_refresh((2, 0), None, (0, 0), 0));
+        assert!(chunk_needs_cpu_proxy_refresh(
+            (1, 0),
+            None,
+            (0, 0),
+            0,
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(!chunk_needs_cpu_proxy_refresh(
+            (2, 0),
+            None,
+            (0, 0),
+            0,
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
 
         assert!(chunk_needs_cpu_proxy_refresh(
             (1, 0),
             Some((0, 0)),
             (4, 0),
-            0
+            0,
+            CLIENT_COLLISION_CHUNK_DISTANCE
         ));
         assert!(chunk_needs_cpu_proxy_refresh(
             (4, 0),
             Some((0, 0)),
             (3, 0),
-            0
+            0,
+            CLIENT_COLLISION_CHUNK_DISTANCE
         ));
 
-        assert!(chunk_needs_cpu_proxy_refresh((4, 0), None, (0, 0), 5));
-        assert!(!chunk_needs_cpu_proxy_refresh((4, 0), None, (0, 0), 0));
+        assert!(chunk_needs_cpu_proxy_refresh(
+            (4, 0),
+            None,
+            (0, 0),
+            5,
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
+        assert!(!chunk_needs_cpu_proxy_refresh(
+            (4, 0),
+            None,
+            (0, 0),
+            0,
+            CLIENT_COLLISION_CHUNK_DISTANCE
+        ));
         assert!(!chunk_needs_cpu_proxy_refresh(
             (4, 0),
             Some((0, 0)),
             (1, 0),
-            5
+            5,
+            CLIENT_COLLISION_CHUNK_DISTANCE
         ));
         assert!(chunk_needs_cpu_proxy_refresh(
             (2, 0),
             Some((0, 0)),
             (1, 0),
-            5
+            5,
+            CLIENT_COLLISION_CHUNK_DISTANCE
         ));
         assert!(!chunk_needs_cpu_proxy_refresh(
             (8, 0),
             Some((0, 0)),
             (1, 0),
-            5
+            5,
+            CLIENT_COLLISION_CHUNK_DISTANCE
         ));
+        assert!(!chunk_needs_cpu_proxy_refresh((1, 0), None, (0, 0), 0, 0));
     }
 
     #[test]
@@ -7580,6 +8353,35 @@ mod tests {
     }
 
     #[test]
+    fn perf_records_packet_queue_frames() {
+        let mut perf = PerfStats::default();
+
+        perf.record_packet_queue_frame(0, 0, 0.0, 0.0, 0.0, 0.0);
+        perf.record_packet_queue_frame(3, 2, 12.5, 1.25, 0.75, 40.0);
+        perf.record_packet_queue_frame(1, 1, 4.5, 0.50, 0.25, 45.0);
+
+        assert_eq!(perf.packet_queue_frames, 3);
+        assert_eq!(perf.packet_queue_nonempty_frames, 2);
+        assert_eq!(perf.packet_queue_packets_drained, 4);
+        assert_eq!(perf.packet_queue_chunk_packets_drained, 3);
+        assert_eq!(perf.last_packet_queue_drain, 1);
+        assert_eq!(perf.max_packet_queue_drain, 3);
+        assert_eq!(perf.last_packet_queue_chunk_drain, 1);
+        assert_eq!(perf.max_packet_queue_chunk_drain, 2);
+        assert_eq!(perf.last_packet_queue_lag_ms, 4.5);
+        assert_eq!(perf.max_packet_queue_lag_ms, 12.5);
+        assert!((perf.avg_packet_queue_lag_ms - 8.5).abs() < f64::EPSILON);
+        assert_eq!(perf.last_packet_queue_read_work_ms, 0.50);
+        assert_eq!(perf.max_packet_queue_read_work_ms, 1.25);
+        assert!((perf.avg_packet_queue_read_work_ms - 0.875).abs() < f64::EPSILON);
+        assert_eq!(perf.last_packet_queue_decode_work_ms, 0.25);
+        assert_eq!(perf.max_packet_queue_decode_work_ms, 0.75);
+        assert!((perf.avg_packet_queue_decode_work_ms - 0.5).abs() < f64::EPSILON);
+        assert_eq!(perf.last_packet_queue_reader_elapsed_ms, 45.0);
+        assert_eq!(perf.max_packet_queue_reader_elapsed_ms, 45.0);
+    }
+
+    #[test]
     fn collision_refresh_phase_timing_records_component_maxima() {
         let mut timing = CollisionRefreshPhaseTiming::default();
 
@@ -7945,6 +8747,60 @@ mod tests {
         assert_eq!(perf.dirty_edge_chunk_updates, 1);
         assert_eq!(perf.last_dirty_block_changes, 4);
         assert_eq!(perf.last_dirty_rebuild_subchunks, 3);
+    }
+
+    #[test]
+    fn mass_dirty_update_tracks_all_edges_and_partial_scope() {
+        let mut previous = vec![0u8; CHUNK_W * CHUNK_H * CHUNK_D * BLOCK_BYTES];
+        let mut current = previous.clone();
+
+        for (x, y, z, block_id) in [
+            (0, 64, 0, 1u16),
+            (CHUNK_W - 1, 65, CHUNK_D - 1, 2u16),
+            (12, SUBCHUNK_H, 8, 3u16),
+            (20, CHUNK_H - 1, 15, 4u16),
+        ] {
+            let index = chunk_byte_index(x, y, z);
+            current[index..index + BLOCK_BYTES].copy_from_slice(&block_id.to_le_bytes());
+        }
+        let replaced_index = chunk_byte_index(20, CHUNK_H - 1, 15);
+        previous[replaced_index..replaced_index + BLOCK_BYTES].copy_from_slice(&9u16.to_le_bytes());
+
+        let update = chunk_dirty_update(&previous, &current);
+
+        assert_eq!(update.changed_blocks, 4);
+        assert_eq!(
+            update.changed_subchunk_mask,
+            (1u32 << 1) | (1u32 << 2) | (1u32 << (SUBCHUNKS_PER_CHUNK - 1))
+        );
+        assert_eq!(
+            update.rebuild_subchunk_mask,
+            (1u32 << 0) | (1u32 << 1) | (1u32 << 2) | (1u32 << (SUBCHUNKS_PER_CHUNK - 1))
+        );
+        assert_eq!(
+            update.edge_mask,
+            DIRTY_EDGE_NEG_X | DIRTY_EDGE_POS_X | DIRTY_EDGE_NEG_Z | DIRTY_EDGE_POS_Z
+        );
+        assert_eq!(
+            dirty_edge_neighbors(10, -3, update.edge_mask),
+            vec![(9, -3), (11, -3), (10, -4), (10, -2)]
+        );
+        assert_eq!(
+            dirty_partial_subchunk_count(
+                valid_subchunk_mask(),
+                valid_subchunk_mask(),
+                update.rebuild_subchunk_mask,
+            ),
+            4
+        );
+        assert_eq!(
+            dirty_partial_saved_subchunks(
+                valid_subchunk_mask(),
+                valid_subchunk_mask(),
+                update.rebuild_subchunk_mask,
+            ),
+            SUBCHUNKS_PER_CHUNK as usize - 4
+        );
     }
 
     #[test]

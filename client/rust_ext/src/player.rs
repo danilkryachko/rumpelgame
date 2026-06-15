@@ -17,10 +17,18 @@ const FLY_DISABLE_GROUND_CHECK_DISTANCE: f32 = 160.0;
 const FLY_DISABLE_MIN_FLOOR_NORMAL_Y: f32 = 0.7;
 const GROUND_SAFETY_RAYCAST_NAME: &str = "GroundSafetyRayCast";
 const VISUAL_SMOKE_DISABLE_PLAYER_INPUT_ENV: &str = "RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT";
+const PLAYER_HOTBAR_SLOTS: usize = 5;
+const CREATIVE_HOTBAR_STACK_COUNT: u32 = 999;
 
 struct BlockHit {
     block: (i32, i32, i32),
     adjacent: (i32, i32, i32),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct InventorySlot {
+    block_id: crate::blocks::BlockId,
+    count: u32,
 }
 
 #[derive(GodotClass)]
@@ -31,6 +39,7 @@ pub struct Player {
     selection_outline: Option<Gd<MeshInstance3D>>,
     mouse_sensitivity: f32,
     selected_block: i32,
+    hotbar: [InventorySlot; PLAYER_HOTBAR_SLOTS],
     fly_mode: bool,
     default_collision_layer: u32,
     default_collision_mask: u32,
@@ -45,6 +54,7 @@ impl ICharacterBody3D for Player {
             selection_outline: None,
             mouse_sensitivity: 0.002,
             selected_block: 1,
+            hotbar: initial_hotbar_inventory(),
             fly_mode: false,
             default_collision_layer: 1,
             default_collision_mask: 1,
@@ -186,7 +196,7 @@ impl ICharacterBody3D for Player {
                             return;
                         }
                         let block_id = self.selected_block;
-                        if !crate::blocks::is_placeable(block_id as u32) {
+                        if !inventory_has_placeable_block(&self.hotbar, block_id as u32) {
                             self.emit_debug_log(&format!("Skipped invalid block id={block_id}"));
                             return;
                         }
@@ -341,18 +351,13 @@ impl Player {
     }
 
     fn update_selected_block_from_hotbar(&mut self, input: &Gd<Input>) {
-        for (slot, block_id) in crate::blocks::PLACEABLE_BLOCKS.iter().enumerate() {
-            let key = match slot {
-                0 => Key::KEY_1,
-                1 => Key::KEY_2,
-                2 => Key::KEY_3,
-                3 => Key::KEY_4,
-                4 => Key::KEY_5,
-                _ => continue,
+        for (slot, item) in self.hotbar.iter().enumerate() {
+            let Some(key) = hotbar_key_for_slot(slot) else {
+                continue;
             };
 
-            if input.is_physical_key_pressed(key) {
-                self.selected_block = *block_id as i32;
+            if input.is_physical_key_pressed(key) && inventory_slot_can_place(item) {
+                self.selected_block = item.block_id as i32;
             }
         }
     }
@@ -417,6 +422,45 @@ impl Player {
         } else {
             outline.set_visible(false);
         }
+    }
+}
+
+fn initial_hotbar_inventory() -> [InventorySlot; PLAYER_HOTBAR_SLOTS] {
+    std::array::from_fn(|slot| {
+        let block_id = crate::blocks::PLACEABLE_BLOCKS
+            .get(slot)
+            .copied()
+            .unwrap_or(crate::blocks::AIR);
+        let count = if crate::blocks::is_placeable(block_id) {
+            CREATIVE_HOTBAR_STACK_COUNT
+        } else {
+            0
+        };
+        InventorySlot { block_id, count }
+    })
+}
+
+fn inventory_slot_can_place(slot: &InventorySlot) -> bool {
+    slot.count > 0 && crate::blocks::is_placeable(slot.block_id)
+}
+
+fn inventory_has_placeable_block(
+    hotbar: &[InventorySlot],
+    block_id: crate::blocks::BlockId,
+) -> bool {
+    hotbar
+        .iter()
+        .any(|slot| slot.block_id == block_id && inventory_slot_can_place(slot))
+}
+
+fn hotbar_key_for_slot(slot: usize) -> Option<Key> {
+    match slot {
+        0 => Some(Key::KEY_1),
+        1 => Some(Key::KEY_2),
+        2 => Some(Key::KEY_3),
+        3 => Some(Key::KEY_4),
+        4 => Some(Key::KEY_5),
+        _ => None,
     }
 }
 
@@ -500,4 +544,58 @@ impl Player {
 
     #[signal]
     fn debug_log(message: GString);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn initial_hotbar_inventory_contains_placeable_blocks() {
+        let hotbar = initial_hotbar_inventory();
+
+        assert_eq!(hotbar.len(), PLAYER_HOTBAR_SLOTS);
+        for (slot, block_id) in crate::blocks::PLACEABLE_BLOCKS.iter().copied().enumerate() {
+            assert_eq!(hotbar[slot].block_id, block_id);
+            assert_eq!(hotbar[slot].count, CREATIVE_HOTBAR_STACK_COUNT);
+            assert!(inventory_slot_can_place(&hotbar[slot]));
+        }
+    }
+
+    #[test]
+    fn inventory_slot_can_place_requires_count_and_placeable_block() {
+        assert!(!inventory_slot_can_place(&InventorySlot {
+            block_id: crate::blocks::STONE,
+            count: 0,
+        }));
+        assert!(!inventory_slot_can_place(&InventorySlot {
+            block_id: crate::blocks::AIR,
+            count: CREATIVE_HOTBAR_STACK_COUNT,
+        }));
+        assert!(inventory_slot_can_place(&InventorySlot {
+            block_id: crate::blocks::STONE,
+            count: 1,
+        }));
+    }
+
+    #[test]
+    fn inventory_has_placeable_block_accepts_only_available_hotbar_blocks() {
+        let hotbar = initial_hotbar_inventory();
+
+        assert!(inventory_has_placeable_block(&hotbar, crate::blocks::STONE));
+        assert!(inventory_has_placeable_block(
+            &hotbar,
+            crate::blocks::LEAVES
+        ));
+        assert!(!inventory_has_placeable_block(&hotbar, crate::blocks::AIR));
+        assert!(!inventory_has_placeable_block(&hotbar, u32::MAX));
+    }
+
+    #[test]
+    fn hotbar_key_mapping_is_bounded_to_inventory_slots() {
+        for slot in 0..PLAYER_HOTBAR_SLOTS {
+            assert!(hotbar_key_for_slot(slot).is_some());
+        }
+        assert!(hotbar_key_for_slot(PLAYER_HOTBAR_SLOTS).is_none());
+    }
 }

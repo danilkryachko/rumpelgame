@@ -5,6 +5,7 @@ const DEV_UPDATE_INTERVAL = 0.15
 const PERF_LOG_INTERVAL = 1.0
 const PERF_LOG_MAX_BYTES = 2 * 1024 * 1024
 const PERF_LOG_PATH = "res://../logs/perf.log"
+const RUN_ID_ENV = "RUMPELMC_RUN_ID"
 
 var selected_block: int = 1
 var block_names = {
@@ -23,6 +24,7 @@ var dev_logs: Array[String] = []
 var dev_update_timer: float = 0.0
 var perf_log_timer: float = 0.0
 var perf_log_path: String = ""
+var perf_run_id: String = ""
 var last_window_size: Vector2i = Vector2i.ZERO
 
 func _ready():
@@ -181,12 +183,7 @@ func update_dev_menu():
 		"Mouse: %s" % mouse_mode,
 		"Fly: %s" % get_player_fly_text(),
 		"Texture stand: %s" % get_texture_debug_stand_text(),
-		"Chunks: %s" % get_chunk_debug_text(),
-		"Perf: %s" % get_client_text("get_perf_text", "n/a"),
-		"Current chunk: %s" % get_client_text("get_current_chunk_text", "n/a"),
-		"Chunk event: %s" % get_client_text("get_last_chunk_event_text", "n/a"),
-		"Block action: %s" % get_client_text("get_last_block_action_text", "n/a"),
-		"Last save: %s" % get_client_text("get_last_save_text", "n/a"),
+		"Overlay:\n%s" % get_debug_overlay_text(),
 		"Selected: %d %s" % [selected_block, get_block_name(selected_block)],
 		"Player: %s" % player_pos
 	])
@@ -259,6 +256,24 @@ func get_client_text(method: String, fallback: String) -> String:
 		return str(client.call(method))
 	return fallback
 
+func get_debug_overlay_text() -> String:
+	var overlay = get_client_text("get_debug_overlay_text", "")
+	if not overlay.is_empty():
+		return overlay
+
+	return "\n".join([
+		"Streaming: chunks=%s current=%s" % [
+			get_chunk_debug_text(),
+			get_client_text("get_current_chunk_text", "n/a")
+		],
+		"Perf: %s" % get_client_text("get_perf_text", "n/a"),
+		"Events: chunk=%s block=%s save=%s" % [
+			get_client_text("get_last_chunk_event_text", "n/a"),
+			get_client_text("get_last_block_action_text", "n/a"),
+			get_client_text("get_last_save_text", "n/a")
+		]
+	])
+
 func get_block_name(block_id: int) -> String:
 	var client = get_tree().root.find_child("GameClient", true, false)
 	if client and client.has_method("get_block_name"):
@@ -298,19 +313,26 @@ func get_selected_block() -> int:
 
 func setup_perf_log():
 	perf_log_path = ProjectSettings.globalize_path(PERF_LOG_PATH)
+	perf_run_id = observability_run_id()
 	var dir_path = perf_log_path.get_base_dir()
 	DirAccess.make_dir_recursive_absolute(dir_path)
 	if not FileAccess.file_exists(perf_log_path):
 		var file = FileAccess.open(perf_log_path, FileAccess.WRITE)
 		if file:
-			file.store_line("# RUMPELMC perf log started at %.2f" % (Time.get_ticks_msec() / 1000.0))
+			file.store_line("# RUMPELMC perf log started at %.2f run_id=%s" % [
+				Time.get_ticks_msec() / 1000.0,
+				perf_run_id
+			])
 		return
 
 	var size = FileAccess.get_file_as_bytes(perf_log_path).size()
 	if size > PERF_LOG_MAX_BYTES:
 		var file = FileAccess.open(perf_log_path, FileAccess.WRITE)
 		if file:
-			file.store_line("# RUMPELMC perf log rotated at %.2f" % (Time.get_ticks_msec() / 1000.0))
+			file.store_line("# RUMPELMC perf log rotated at %.2f run_id=%s" % [
+				Time.get_ticks_msec() / 1000.0,
+				perf_run_id
+			])
 
 func write_perf_log_sample():
 	if perf_log_path.is_empty():
@@ -319,11 +341,13 @@ func write_perf_log_sample():
 	var client = get_tree().root.find_child("GameClient", true, false)
 	var fps = Engine.get_frames_per_second()
 	var frame_ms = 1000.0 / max(float(fps), 1.0)
-	var line = "t=%.2f fps=%d frame_ms=%.2f chunks=\"%s\" perf=\"%s\" current_chunk=\"%s\" player=\"%s\"" % [
+	var line = "run_id=%s t=%.2f fps=%d frame_ms=%.2f chunks=\"%s\" overlay=\"%s\" perf=\"%s\" current_chunk=\"%s\" player=\"%s\"" % [
+		perf_run_id,
 		Time.get_ticks_msec() / 1000.0,
 		fps,
 		frame_ms,
 		get_chunk_debug_text(),
+		get_debug_overlay_text().replace("\n", " | "),
 		get_client_text("get_perf_text", "n/a"),
 		get_client_text("get_current_chunk_text", "n/a"),
 		get_player_position_text()
@@ -340,3 +364,15 @@ func write_perf_log_sample():
 		return
 	file.seek_end()
 	file.store_line(line)
+
+func observability_run_id() -> String:
+	var env_run_id = OS.get_environment(RUN_ID_ENV).strip_edges()
+	if not env_run_id.is_empty():
+		return sanitize_observability_token(env_run_id)
+	return "godot-%d" % int(Time.get_unix_time_from_system())
+
+func sanitize_observability_token(value: String) -> String:
+	var sanitized = value
+	for token in [" ", "\t", "\n", "\r", "\"", "'", "\\"]:
+		sanitized = sanitized.replace(token, "_")
+	return sanitized
