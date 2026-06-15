@@ -91,7 +91,10 @@ func (s *RocksChunkStore) LoadChunk(x, z int32) (*world.Chunk, bool, error) {
 func (s *RocksChunkStore) SaveChunk(chunk *world.Chunk) error {
 	key := chunkKey(chunk.X, chunk.Z)
 	data := chunk.Serialize()
+	return s.putChunkData(key, data)
+}
 
+func (s *RocksChunkStore) putChunkData(key, data []byte) error {
 	var cErr *C.char
 	C.rocksdb_put(
 		s.db,

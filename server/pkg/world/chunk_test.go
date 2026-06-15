@@ -152,3 +152,28 @@ func TestSerializeUsesLittleEndianBlockIDs(t *testing.T) {
 		t.Fatalf("serialized buffer changed after chunk mutation: %v, want %v", got, Leaves)
 	}
 }
+
+func TestDeserializeChunkRoundTripPreservesCoordinatesAndBlocks(t *testing.T) {
+	chunk := NewChunk(-8, 11)
+	chunk.SetBlock(0, 0, 0, Stone)
+	chunk.SetBlock(ChunkWidth-1, ChunkHeight-1, ChunkDepth-1, Leaves)
+	chunk.SetBlock(7, 63, 9, BlockID(0x1234))
+
+	roundTrip, err := DeserializeChunk(chunk.X, chunk.Z, chunk.Serialize())
+	if err != nil {
+		t.Fatalf("DeserializeChunk() error = %v", err)
+	}
+
+	if roundTrip.X != chunk.X || roundTrip.Z != chunk.Z {
+		t.Fatalf("round-trip coordinates = (%d, %d), want (%d, %d)", roundTrip.X, roundTrip.Z, chunk.X, chunk.Z)
+	}
+	for _, pos := range [][4]int{
+		{0, 0, 0, int(Stone)},
+		{ChunkWidth - 1, ChunkHeight - 1, ChunkDepth - 1, int(Leaves)},
+		{7, 63, 9, 0x1234},
+	} {
+		if got := roundTrip.GetBlock(pos[0], pos[1], pos[2]); got != BlockID(pos[3]) {
+			t.Fatalf("round-trip block at (%d, %d, %d) = %v, want %v", pos[0], pos[1], pos[2], got, BlockID(pos[3]))
+		}
+	}
+}

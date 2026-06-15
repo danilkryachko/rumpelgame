@@ -60,6 +60,36 @@ func TestEncodeSerializedChunkRLEPreservesEditedChunk(t *testing.T) {
 	}
 }
 
+func TestEncodeSerializedChunkRLEUsesStableWireVector(t *testing.T) {
+	raw := make([]byte, SerializedChunkSize)
+	writeSerializedBlock(raw, 0, Stone)
+	writeSerializedBlock(raw, 1, Stone)
+	writeSerializedBlock(raw, 2, Dirt)
+	writeSerializedBlock(raw, 3, Grass)
+	writeSerializedBlock(raw, 4, Grass)
+
+	encoded, err := EncodeSerializedChunkRLE(raw)
+	if err != nil {
+		t.Fatalf("EncodeSerializedChunkRLE() error = %v", err)
+	}
+
+	expected := appendExpectedBlockRun(nil, Stone, 2)
+	expected = appendExpectedBlockRun(expected, Dirt, 1)
+	expected = appendExpectedBlockRun(expected, Grass, 2)
+	expected = appendExpectedBlockRun(expected, Air, uint64(SerializedChunkSize/2-5))
+	if !bytes.Equal(encoded, expected) {
+		t.Fatalf("encoded RLE vector mismatch:\n got: %v\nwant: %v", encoded, expected)
+	}
+
+	decoded, err := DecodeSerializedChunkRLE(encoded)
+	if err != nil {
+		t.Fatalf("DecodeSerializedChunkRLE() error = %v", err)
+	}
+	if !bytes.Equal(decoded, raw) {
+		t.Fatal("decoded stable wire vector differs from raw chunk")
+	}
+}
+
 func TestEncodeSerializedChunkRLERejectsWrongLength(t *testing.T) {
 	if _, err := EncodeSerializedChunkRLE(make([]byte, SerializedChunkSize-2)); err == nil {
 		t.Fatal("EncodeSerializedChunkRLE() error = nil, want wrong length error")
@@ -91,4 +121,15 @@ func singleRun(block BlockID, runLength uint64) []byte {
 	encoded := binary.LittleEndian.AppendUint16(nil, uint16(block))
 	n := binary.PutUvarint(runBuf[:], runLength)
 	return append(encoded, runBuf[:n]...)
+}
+
+func writeSerializedBlock(raw []byte, blockIndex int, block BlockID) {
+	binary.LittleEndian.PutUint16(raw[blockIndex*2:], uint16(block))
+}
+
+func appendExpectedBlockRun(dst []byte, block BlockID, runLength uint64) []byte {
+	var runBuf [binary.MaxVarintLen64]byte
+	dst = binary.LittleEndian.AppendUint16(dst, uint16(block))
+	n := binary.PutUvarint(runBuf[:], runLength)
+	return append(dst, runBuf[:n]...)
 }

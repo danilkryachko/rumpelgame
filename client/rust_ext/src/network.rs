@@ -148,4 +148,38 @@ mod tests {
 
         assert_eq!(err.kind(), ErrorKind::InvalidData);
     }
+
+    #[test]
+    fn receive_returns_unexpected_eof_on_short_length_prefix() {
+        let (mut sender, mut receiver) = connected_clients();
+        sender.stream.write_all(&[0x02, 0x00]).unwrap();
+        drop(sender);
+
+        let err = receiver.receive_packet().unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn receive_returns_unexpected_eof_on_short_payload() {
+        let (mut sender, mut receiver) = connected_clients();
+        sender.stream.write_all(&2u32.to_le_bytes()).unwrap();
+        sender.stream.write_all(&[0xff]).unwrap();
+        drop(sender);
+
+        let err = receiver.receive_packet().unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn receive_rejects_malformed_payload() {
+        let (mut sender, mut receiver) = connected_clients();
+        sender.stream.write_all(&1u32.to_le_bytes()).unwrap();
+        sender.stream.write_all(&[0xff]).unwrap();
+
+        let err = receiver.receive_packet().unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
 }

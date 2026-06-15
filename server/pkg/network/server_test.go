@@ -165,6 +165,43 @@ func TestConfiguredChunkEncodingParsesSupportedValues(t *testing.T) {
 	}
 }
 
+func TestConfiguredChunkOrderModeParsesSupportedValues(t *testing.T) {
+	t.Setenv(chunkOrderEnv, "")
+	if got := configuredChunkOrderMode(); got != chunkOrderNearest {
+		t.Fatalf("configuredChunkOrderMode() = %v, want default nearest", got)
+	}
+
+	t.Setenv(chunkOrderEnv, "nearest")
+	if got := configuredChunkOrderMode(); got != chunkOrderNearest {
+		t.Fatalf("configuredChunkOrderMode() = %v, want nearest", got)
+	}
+
+	t.Setenv(chunkOrderEnv, "directional")
+	if got := configuredChunkOrderMode(); got != chunkOrderDirectional {
+		t.Fatalf("configuredChunkOrderMode() = %v, want directional", got)
+	}
+
+	t.Setenv(chunkOrderEnv, "invalid")
+	if got := configuredChunkOrderMode(); got != chunkOrderNearest {
+		t.Fatalf("configuredChunkOrderMode() = %v, want nearest fallback", got)
+	}
+}
+
+func TestClientChunkStreamStateDirectionalOrderTracksChunkMovement(t *testing.T) {
+	streamState := clientChunkStreamState{}
+	if got := streamState.chunkOrderForCenter(world.ChunkCoord{X: 1, Z: 0}, chunkOrderDirectional); got != (world.ChunkOrder{}) {
+		t.Fatalf("chunkOrderForCenter() before last center = %+v, want zero order", got)
+	}
+
+	streamState.recordCenter(world.ChunkCoord{X: 0, Z: 0})
+	if got := streamState.chunkOrderForCenter(world.ChunkCoord{X: 2, Z: -3}, chunkOrderDirectional); got != (world.ChunkOrder{DirectionX: 1, DirectionZ: -1}) {
+		t.Fatalf("chunkOrderForCenter() = %+v, want +X/-Z direction", got)
+	}
+	if got := streamState.chunkOrderForCenter(world.ChunkCoord{X: 2, Z: -3}, chunkOrderNearest); got != (world.ChunkOrder{}) {
+		t.Fatalf("chunkOrderForCenter() nearest mode = %+v, want zero order", got)
+	}
+}
+
 func TestFramedPacketSizeIncludesLengthPrefix(t *testing.T) {
 	packet := &api.Packet{
 		Payload: &api.Packet_Chunk{
@@ -250,6 +287,45 @@ func TestSendChunksAroundWithRadiusLimitsBootstrapArea(t *testing.T) {
 		if !world.ChunkWithinRadius(coord, 0, 0, 1) {
 			t.Fatalf("sent out-of-bootstrap-radius chunk %+v", coord)
 		}
+	}
+}
+
+func TestSendChunksAroundKeepsPerClientSentStateIndependent(t *testing.T) {
+	gameWorld := world.NewWorld(nil)
+	server := NewServer(":0", gameWorld)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RLE
+	server.chunksPerUpdate = 1
+
+	firstClientSent := map[world.ChunkCoord]bool{}
+	firstClientConn := &recordingConn{}
+	if err := server.sendChunksAroundWithRadius(firstClientConn, 0, 0, 1, firstClientSent); err != nil {
+		t.Fatalf("first client sendChunksAroundWithRadius() error = %v", err)
+	}
+	if len(firstClientSent) != 1 || !firstClientSent[world.ChunkCoord{X: 0, Z: 0}] {
+		t.Fatalf("first client sent chunks = %+v, want only current chunk", firstClientSent)
+	}
+
+	secondClientSent := map[world.ChunkCoord]bool{}
+	secondClientConn := &recordingConn{}
+	if err := server.sendChunksAroundWithRadius(secondClientConn, 0, 0, 1, secondClientSent); err != nil {
+		t.Fatalf("second client sendChunksAroundWithRadius() error = %v", err)
+	}
+	if len(secondClientSent) != 1 || !secondClientSent[world.ChunkCoord{X: 0, Z: 0}] {
+		t.Fatalf("second client sent chunks = %+v, want independent current chunk", secondClientSent)
+	}
+	if firstClientConn.written == 0 || secondClientConn.written == 0 {
+		t.Fatalf("client writes = first:%d second:%d, want both nonzero", firstClientConn.written, secondClientConn.written)
+	}
+
+	firstClientNextConn := &recordingConn{}
+	if err := server.sendChunksAroundWithRadius(firstClientNextConn, 0, 0, 1, firstClientSent); err != nil {
+		t.Fatalf("first client next sendChunksAroundWithRadius() error = %v", err)
+	}
+	if len(firstClientSent) != 2 {
+		t.Fatalf("first client sent chunks after next batch = %+v, want 2 chunks", firstClientSent)
+	}
+	if len(secondClientSent) != 1 {
+		t.Fatalf("second client sent chunks changed after first client progress: %+v", secondClientSent)
 	}
 }
 

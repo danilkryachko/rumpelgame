@@ -26,7 +26,15 @@ const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
 const bootstrapRadiusEnv = "RUMPELMC_SERVER_BOOTSTRAP_RADIUS"
 const chunkStreamMetricsEnv = "RUMPELMC_SERVER_CHUNK_STREAM_METRICS"
 const chunkEncodingEnv = "RUMPELMC_SERVER_CHUNK_ENCODING"
+const chunkOrderEnv = "RUMPELMC_SERVER_CHUNK_ORDER"
 const initialClientPacketTimeout = 250 * time.Millisecond
+
+type chunkOrderMode string
+
+const (
+	chunkOrderNearest     chunkOrderMode = "nearest"
+	chunkOrderDirectional chunkOrderMode = "directional"
+)
 
 type Server struct {
 	address         string
@@ -35,6 +43,7 @@ type Server struct {
 	bootstrapRadius int32
 	chunksPerUpdate int
 	chunkEncoding   api.ChunkEncoding
+	chunkOrderMode  chunkOrderMode
 }
 
 func NewServer(address string, gameWorld *world.World) *Server {
@@ -46,6 +55,7 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		bootstrapRadius: configuredBootstrapRadius(viewDistance),
 		chunksPerUpdate: configuredChunksPerUpdate(),
 		chunkEncoding:   configuredChunkEncoding(),
+		chunkOrderMode:  configuredChunkOrderMode(),
 	}
 }
 
@@ -73,19 +83,21 @@ func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 	log.Printf("Client connected: %s", conn.RemoteAddr())
 
-	sentChunks := make(map[world.ChunkCoord]bool)
+	streamState := clientChunkStreamState{
+		sentChunks: make(map[world.ChunkCoord]bool),
+	}
 	firstPacket, hasFirstPacket, err := s.receiveInitialClientPacket(conn)
 	if err != nil {
 		log.Printf("Client disconnected before initial chunk stream: %v", err)
 		return
 	}
 	if hasFirstPacket {
-		if err := s.handleInitialClientPacket(conn, firstPacket, sentChunks); err != nil {
+		if err := s.handleInitialClientPacketWithState(conn, firstPacket, &streamState); err != nil {
 			log.Printf("Failed to handle initial client packet: %v", err)
 			return
 		}
 	} else {
-		if err := s.sendChunksAroundWithRadius(conn, 0, 0, s.bootstrapRadius, sentChunks); err != nil {
+		if err := s.sendChunksAroundWithRadius(conn, 0, 0, s.bootstrapRadius, streamState.sentChunks); err != nil {
 			log.Printf("Failed to send initial chunks: %v", err)
 			return
 		}
@@ -100,7 +112,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 			return
 		}
 
-		if err := s.handleClientPacket(conn, clientPacket, sentChunks); err != nil {
+		if err := s.handleClientPacketWithState(conn, clientPacket, &streamState); err != nil {
 			log.Printf("Failed to handle client packet: %v", err)
 			return
 		}
@@ -108,27 +120,40 @@ func (s *Server) handleConnection(conn net.Conn) {
 }
 
 func (s *Server) handleInitialClientPacket(conn net.Conn, clientPacket *api.Packet, sentChunks map[world.ChunkCoord]bool) error {
+	streamState := clientChunkStreamState{sentChunks: sentChunks}
+	return s.handleInitialClientPacketWithState(conn, clientPacket, &streamState)
+}
+
+func (s *Server) handleInitialClientPacketWithState(conn net.Conn, clientPacket *api.Packet, streamState *clientChunkStreamState) error {
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
 		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
-		forgetFarSentChunks(sentChunks, center.X, center.Z, s.viewDistance+1)
-		if err := s.sendChunksAroundWithRadius(conn, center.X, center.Z, s.bootstrapRadius, sentChunks); err != nil {
+		forgetFarSentChunks(streamState.sentChunks, center.X, center.Z, s.viewDistance+1)
+		if err := s.sendChunksAroundWithRadius(conn, center.X, center.Z, s.bootstrapRadius, streamState.sentChunks); err != nil {
 			return fmt.Errorf("send bootstrap chunks around %d,%d: %w", center.X, center.Z, err)
 		}
+		streamState.recordCenter(center)
 		return nil
 	default:
-		return s.handleClientPacket(conn, clientPacket, sentChunks)
+		return s.handleClientPacketWithState(conn, clientPacket, streamState)
 	}
 }
 
 func (s *Server) handleClientPacket(conn net.Conn, clientPacket *api.Packet, sentChunks map[world.ChunkCoord]bool) error {
+	streamState := clientChunkStreamState{sentChunks: sentChunks}
+	return s.handleClientPacketWithState(conn, clientPacket, &streamState)
+}
+
+func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Packet, streamState *clientChunkStreamState) error {
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
 		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
-		forgetFarSentChunks(sentChunks, center.X, center.Z, s.viewDistance+1)
-		if err := s.sendChunksAround(conn, center.X, center.Z, sentChunks); err != nil {
+		order := streamState.chunkOrderForCenter(center, s.chunkOrderMode)
+		forgetFarSentChunks(streamState.sentChunks, center.X, center.Z, s.viewDistance+1)
+		if err := s.sendChunksAroundOrdered(conn, center.X, center.Z, streamState.sentChunks, order); err != nil {
 			return fmt.Errorf("send chunks around %d,%d: %w", center.X, center.Z, err)
 		}
+		streamState.recordCenter(center)
 
 	case *api.Packet_BlockAction:
 		action := p.BlockAction
@@ -160,6 +185,37 @@ func (s *Server) handleClientPacket(conn net.Conn, clientPacket *api.Packet, sen
 	return nil
 }
 
+type clientChunkStreamState struct {
+	sentChunks    map[world.ChunkCoord]bool
+	lastCenter    world.ChunkCoord
+	hasLastCenter bool
+}
+
+func (s *clientChunkStreamState) chunkOrderForCenter(center world.ChunkCoord, mode chunkOrderMode) world.ChunkOrder {
+	if mode != chunkOrderDirectional || !s.hasLastCenter {
+		return world.ChunkOrder{}
+	}
+	return world.ChunkOrder{
+		DirectionX: directionComponent(center.X - s.lastCenter.X),
+		DirectionZ: directionComponent(center.Z - s.lastCenter.Z),
+	}
+}
+
+func (s *clientChunkStreamState) recordCenter(center world.ChunkCoord) {
+	s.lastCenter = center
+	s.hasLastCenter = true
+}
+
+func directionComponent(delta int32) int32 {
+	if delta < 0 {
+		return -1
+	}
+	if delta > 0 {
+		return 1
+	}
+	return 0
+}
+
 func forgetFarSentChunks(sentChunks map[world.ChunkCoord]bool, centerX, centerZ, distance int32) {
 	for coord := range sentChunks {
 		if !world.ChunkWithinRadius(coord, centerX, centerZ, distance) {
@@ -172,9 +228,17 @@ func (s *Server) sendChunksAround(conn net.Conn, centerX, centerZ int32, sentChu
 	return s.sendChunksAroundWithRadius(conn, centerX, centerZ, s.viewDistance, sentChunks)
 }
 
+func (s *Server) sendChunksAroundOrdered(conn net.Conn, centerX, centerZ int32, sentChunks map[world.ChunkCoord]bool, order world.ChunkOrder) error {
+	return s.sendChunksAroundWithRadiusOrdered(conn, centerX, centerZ, s.viewDistance, sentChunks, order)
+}
+
 func (s *Server) sendChunksAroundWithRadius(conn net.Conn, centerX, centerZ, radius int32, sentChunks map[world.ChunkCoord]bool) error {
+	return s.sendChunksAroundWithRadiusOrdered(conn, centerX, centerZ, radius, sentChunks, world.ChunkOrder{})
+}
+
+func (s *Server) sendChunksAroundWithRadiusOrdered(conn net.Conn, centerX, centerZ, radius int32, sentChunks map[world.ChunkCoord]bool, order world.ChunkOrder) error {
 	started := time.Now()
-	chunks, err := s.world.ChunksAround(centerX, centerZ, radius, sentChunks, s.chunksPerUpdate)
+	chunks, err := s.world.ChunksAroundOrdered(centerX, centerZ, radius, sentChunks, s.chunksPerUpdate, order)
 	if err != nil {
 		return err
 	}
@@ -189,10 +253,13 @@ func (s *Server) sendChunksAroundWithRadius(conn net.Conn, centerX, centerZ, rad
 	if chunkStreamMetricsEnabled() && batch.chunks > 0 {
 		elapsed := time.Since(started)
 		log.Printf(
-			"Chunk stream batch center=%d,%d radius=%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d elapsed_ms=%.3f chunks_per_sec=%.2f",
+			"Chunk stream batch center=%d,%d radius=%d order=%s direction=%d,%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d elapsed_ms=%.3f chunks_per_sec=%.2f",
 			centerX,
 			centerZ,
 			radius,
+			s.chunkOrderMode,
+			order.DirectionX,
+			order.DirectionZ,
 			batch.chunks,
 			batch.rawBytes,
 			batch.payloadBytes,
@@ -277,6 +344,19 @@ func configuredChunkEncoding() api.ChunkEncoding {
 	default:
 		log.Printf("Ignoring invalid %s=%q; using rle", chunkEncodingEnv, value)
 		return api.ChunkEncoding_CHUNK_ENCODING_RLE
+	}
+}
+
+func configuredChunkOrderMode() chunkOrderMode {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(chunkOrderEnv)))
+	switch value {
+	case "", string(chunkOrderNearest):
+		return chunkOrderNearest
+	case string(chunkOrderDirectional):
+		return chunkOrderDirectional
+	default:
+		log.Printf("Ignoring invalid %s=%q; using nearest", chunkOrderEnv, value)
+		return chunkOrderNearest
 	}
 }
 

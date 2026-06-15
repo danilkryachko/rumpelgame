@@ -7,6 +7,9 @@
 - Rust client protocol handling lives under `client/rust_ext/src`.
 - Go server framing lives in `server/pkg/network`.
 - Rust generated protocol code is produced at Cargo build time from `api/schema/packets.proto`.
+- Streaming protocol evolution planning lives in `docs/STREAMING_PROTOCOL_EVOLUTION_PLAN.md`.
+- Chunk payload and schema compatibility guards live in `docs/CHUNK_SERIALIZATION_COMPATIBILITY.md`.
+- Packet boundary robustness guards live in `docs/NETWORKING_ROBUSTNESS_PROGRAM.md`.
 
 ## Rules
 
@@ -45,6 +48,8 @@
 - A full chunk payload currently contains `32 * 32 * 512 * 2` block bytes.
 - RLE chunk payloads are a sequence of runs. Each run is a 2-byte little-endian block ID followed by an unsigned protobuf-style varint run length in blocks.
 - RLE chunk payloads are the server default. `RUMPELMC_SERVER_CHUNK_ENCODING=raw` enables the raw full-chunk rollback path.
+- Compatibility tests guard raw default fields, RLE run-vector stability, schema field numbers, enum wire values, and unknown `ChunkData` fields.
+- Block material metadata is registry-derived behavior. Do not add render, collision, liquid, emissive, or material flags into `ChunkData.blocks`; if metadata ever needs to cross the wire, add new protobuf fields with new field numbers and compatibility tests.
 
 ## Block Actions
 
@@ -57,4 +62,6 @@
 - Client/server startup and connection flow.
 - Chunk data packet shape and coordinate semantics.
 - Block IDs, chunk dimensions, and serialization assumptions.
+- Block material metadata compatibility; `block_id` remains the only current wire/storage identity for voxel contents.
 - Error handling for malformed, partial, or unknown packets.
+- Reconnect, slow-client timeout, overload, and backpressure behavior are policy work; do not change packet framing or schema for them without an explicit protocol task.

@@ -1,6 +1,9 @@
 package world
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestChunksAroundUsesCircularRadius(t *testing.T) {
 	w := NewWorld(nil)
@@ -28,6 +31,105 @@ func TestChunksAroundUsesCircularRadius(t *testing.T) {
 	}
 }
 
+func TestChunksAroundOrderedKeepsCurrentChunkFirst(t *testing.T) {
+	w := NewWorld(nil)
+
+	chunks, err := w.ChunksAroundOrdered(0, 0, 1, map[ChunkCoord]bool{}, 1, ChunkOrder{DirectionX: 1})
+	if err != nil {
+		t.Fatalf("ChunksAroundOrdered() error = %v", err)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("ChunksAroundOrdered() returned %d chunks, want 1", len(chunks))
+	}
+	if got := (ChunkCoord{X: chunks[0].X, Z: chunks[0].Z}); got != (ChunkCoord{X: 0, Z: 0}) {
+		t.Fatalf("first chunk = %+v, want current chunk", got)
+	}
+}
+
+func TestChunksAroundOrderedUsesDirectionTieBreak(t *testing.T) {
+	w := NewWorld(nil)
+
+	alreadySent := map[ChunkCoord]bool{{X: 0, Z: 0}: true}
+	chunks, err := w.ChunksAroundOrdered(0, 0, 1, alreadySent, 1, ChunkOrder{DirectionX: 1})
+	if err != nil {
+		t.Fatalf("ChunksAroundOrdered() error = %v", err)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("ChunksAroundOrdered() returned %d chunks, want 1", len(chunks))
+	}
+	if got := (ChunkCoord{X: chunks[0].X, Z: chunks[0].Z}); got != (ChunkCoord{X: 1, Z: 0}) {
+		t.Fatalf("first directional chunk = %+v, want +X chunk", got)
+	}
+}
+
+func TestChunkSnapshotIsDeterministicAcrossWorldInstances(t *testing.T) {
+	firstWorld := NewWorld(nil)
+	secondWorld := NewWorld(nil)
+
+	first, err := firstWorld.ChunkSnapshot(-3, 5)
+	if err != nil {
+		t.Fatalf("first ChunkSnapshot() error = %v", err)
+	}
+	second, err := secondWorld.ChunkSnapshot(-3, 5)
+	if err != nil {
+		t.Fatalf("second ChunkSnapshot() error = %v", err)
+	}
+
+	if first.X != -3 || first.Z != 5 {
+		t.Fatalf("first snapshot coordinates = (%d, %d), want (-3, 5)", first.X, first.Z)
+	}
+	if second.X != -3 || second.Z != 5 {
+		t.Fatalf("second snapshot coordinates = (%d, %d), want (-3, 5)", second.X, second.Z)
+	}
+	if !bytes.Equal(first.Blocks, second.Blocks) {
+		t.Fatal("ChunkSnapshot() bytes differ across independent worlds for identical coordinates")
+	}
+
+	again, err := firstWorld.ChunkSnapshot(-3, 5)
+	if err != nil {
+		t.Fatalf("repeat ChunkSnapshot() error = %v", err)
+	}
+	if !bytes.Equal(first.Blocks, again.Blocks) {
+		t.Fatal("ChunkSnapshot() bytes changed between repeated snapshots of the same generated chunk")
+	}
+}
+
+func TestSetBlockGlobalPersistsEditedChunkForReload(t *testing.T) {
+	store := newSerializedChunkStore()
+	blockX, blockY, blockZ := int32(35), int32(64), int32(-2)
+	chunkX, localX := GlobalToChunkLocal(blockX, ChunkWidth)
+	chunkZ, localZ := GlobalToChunkLocal(blockZ, ChunkDepth)
+
+	editWorld := NewWorld(store)
+	if _, err := editWorld.SetBlockGlobal(blockX, blockY, blockZ, Wood); err != nil {
+		t.Fatalf("SetBlockGlobal(place) error = %v", err)
+	}
+	if store.saves != 1 {
+		t.Fatalf("store saves after place = %d, want 1", store.saves)
+	}
+
+	placedWorld := NewWorld(store)
+	placedSnapshot, err := placedWorld.ChunkSnapshot(chunkX, chunkZ)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot(placed reload) error = %v", err)
+	}
+	assertSnapshotBlock(t, placedSnapshot, localX, int(blockY), localZ, Wood)
+
+	if _, err := placedWorld.SetBlockGlobal(blockX, blockY, blockZ, Air); err != nil {
+		t.Fatalf("SetBlockGlobal(destroy) error = %v", err)
+	}
+	if store.saves != 2 {
+		t.Fatalf("store saves after destroy = %d, want 2", store.saves)
+	}
+
+	destroyedWorld := NewWorld(store)
+	destroyedSnapshot, err := destroyedWorld.ChunkSnapshot(chunkX, chunkZ)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot(destroy reload) error = %v", err)
+	}
+	assertSnapshotBlock(t, destroyedSnapshot, localX, int(blockY), localZ, Air)
+}
+
 func TestChunkWithinRadius(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -47,5 +149,46 @@ func TestChunkWithinRadius(t *testing.T) {
 				t.Fatalf("ChunkWithinRadius(%+v, radius=%d) = %v, want %v", tt.coord, tt.radius, got, tt.want)
 			}
 		})
+	}
+}
+
+type serializedChunkStore struct {
+	data  map[ChunkCoord][]byte
+	saves int
+}
+
+func newSerializedChunkStore() *serializedChunkStore {
+	return &serializedChunkStore{data: make(map[ChunkCoord][]byte)}
+}
+
+func (s *serializedChunkStore) LoadChunk(x, z int32) (*Chunk, bool, error) {
+	data, ok := s.data[ChunkCoord{X: x, Z: z}]
+	if !ok {
+		return nil, false, nil
+	}
+	chunk, err := DeserializeChunk(x, z, data)
+	if err != nil {
+		return nil, false, err
+	}
+	return chunk, true, nil
+}
+
+func (s *serializedChunkStore) SaveChunk(chunk *Chunk) error {
+	s.data[ChunkCoord{X: chunk.X, Z: chunk.Z}] = append([]byte(nil), chunk.Serialize()...)
+	s.saves++
+	return nil
+}
+
+func (s *serializedChunkStore) Close() {}
+
+func assertSnapshotBlock(t *testing.T, snapshot ChunkSnapshot, x, y, z int, want BlockID) {
+	t.Helper()
+
+	chunk, err := DeserializeChunk(snapshot.X, snapshot.Z, snapshot.Blocks)
+	if err != nil {
+		t.Fatalf("DeserializeChunk(snapshot) error = %v", err)
+	}
+	if got := chunk.GetBlock(x, y, z); got != want {
+		t.Fatalf("snapshot block at (%d, %d, %d) = %v, want %v", x, y, z, got, want)
 	}
 }

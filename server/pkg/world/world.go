@@ -18,6 +18,11 @@ type World struct {
 	store  ChunkStore
 }
 
+type ChunkOrder struct {
+	DirectionX int32
+	DirectionZ int32
+}
+
 func NewWorld(store ChunkStore) *World {
 	return &World{
 		chunks: make(map[ChunkCoord]*Chunk),
@@ -43,6 +48,10 @@ func (w *World) ChunkSnapshot(x, z int32) (ChunkSnapshot, error) {
 }
 
 func (w *World) ChunksAround(centerX, centerZ, radius int32, alreadySent map[ChunkCoord]bool, limit int) ([]ChunkSnapshot, error) {
+	return w.ChunksAroundOrdered(centerX, centerZ, radius, alreadySent, limit, ChunkOrder{})
+}
+
+func (w *World) ChunksAroundOrdered(centerX, centerZ, radius int32, alreadySent map[ChunkCoord]bool, limit int, order ChunkOrder) ([]ChunkSnapshot, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -66,6 +75,13 @@ func (w *World) ChunksAround(centerX, centerZ, radius int32, alreadySent map[Chu
 		b := chunkDistanceSquared(coords[j], centerX, centerZ)
 		if a != b {
 			return a < b
+		}
+		if order.DirectionX != 0 || order.DirectionZ != 0 {
+			aDirection := chunkDirectionScore(coords[i], centerX, centerZ, order)
+			bDirection := chunkDirectionScore(coords[j], centerX, centerZ, order)
+			if aDirection != bDirection {
+				return aDirection > bDirection
+			}
 		}
 		if coords[i].X != coords[j].X {
 			return coords[i].X < coords[j].X
@@ -97,6 +113,12 @@ func chunkDistanceSquared(coord ChunkCoord, centerX, centerZ int32) int64 {
 	dx := int64(coord.X - centerX)
 	dz := int64(coord.Z - centerZ)
 	return dx*dx + dz*dz
+}
+
+func chunkDirectionScore(coord ChunkCoord, centerX, centerZ int32, order ChunkOrder) int64 {
+	dx := int64(coord.X - centerX)
+	dz := int64(coord.Z - centerZ)
+	return dx*int64(order.DirectionX) + dz*int64(order.DirectionZ)
 }
 
 func (w *World) SetBlockGlobal(x, y, z int32, block BlockID) (ChunkSnapshot, error) {
