@@ -137,7 +137,7 @@ sh scripts/performance_baseline_governance.sh
 
 The check writes `performance-baseline-governance-summary.txt`; see `docs/PERFORMANCE_BASELINE_GOVERNANCE.md`.
 
-Use native-shadow prototype preflight before any task tries to move from marker/descriptor scaffolding to a real RenderingDevice shadow pass. It requires clean env-on Godot-proxy fallback markers, clean resource lifecycle, and a passing performance baseline. While `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`, the expected result is deferred:
+Use native-shadow prototype preflight before any task tries to move from marker/descriptor scaffolding to a real RenderingDevice shadow pass. It requires clean env-on Godot-proxy fallback markers, disabled-clean framebuffer/pass/command-buffer readiness markers from the full native-shadow movement summary, clean resource lifecycle, and a passing performance baseline. While `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`, the expected result is deferred:
 
 ```sh
 sh scripts/gpu_native_shadow_prototype_preflight.sh logs/gpu_native_shadow_prototype_preflight_current

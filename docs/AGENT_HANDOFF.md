@@ -4,7 +4,11 @@ This file is the current continuation state for Codex threads. Update it after n
 
 ## Latest Snapshot
 
-Date: 2026-06-15
+Date: 2026-06-16
+
+Fresh 2026-06-16 status:
+
+- Current workspace slice strengthens the native-shadow prototype preflight without changing renderer behavior. `scripts/gpu_native_shadow_prototype_preflight.sh` now defaults to `logs/gpu_native_shadow_command_buffer_submit_contract_20260614/movement-stress-summary.txt`, requires the full fallback row to include framebuffer/pass/command-buffer readiness fields, and reports `fallback_readiness_fields`, `fallback_readiness_status`, missing-field count, readiness error count, and disabled boundary fields in `gpu-native-shadow-prototype-preflight-summary.txt`. Fresh `sh scripts/gpu_native_shadow_prototype_preflight.sh logs/gpu_native_shadow_prototype_preflight_current` returned `status=deferred`, `active_prototype_allowed=0`, `reason=implementation_gate_false`, `fallback_readiness_fields=present`, `fallback_readiness_status=disabled_clean`, `fallback_readiness_missing=0`, and `fallback_readiness_errors=0`. A negative override against the old compact summary failed with `reason=fallback_summary_missing_readiness_fields`. Docs updated: `docs/NATIVE_SHADOW_PROTOTYPE_PREFLIGHT.md`, `docs/GPU_SHADOW_PATH.md`, `docs/GPU_PROFILING.md`, `docs/AGENT_MEMORY.md`, and `docs/GPU_TRENDS.md`. This is a preflight/report guard only; no native shadow implementation, RenderingDevice RID allocation, pass submission, command buffer recording/submission, Godot proxy fallback behavior, shader visuals, draw distance, lighting, shadow quality, protocol, storage, worldgen, or chunk serialization changed.
 
 Fresh 2026-06-15 status:
 

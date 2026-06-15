@@ -1,6 +1,6 @@
 # Native Shadow Prototype Preflight
 
-Date: 2026-06-15
+Date: 2026-06-16
 
 Scope: block 26 of the world streaming architecture plan. The requested goal is to move from native-shadow marker/descriptor scaffolding toward a real RenderingDevice shadow path behind a flag.
 
@@ -27,7 +27,7 @@ sh scripts/gpu_native_shadow_prototype_preflight.sh logs/gpu_native_shadow_proto
 
 The gate reads:
 
-- Native-shadow env-on fallback summary: `logs/gpu_native_shadow_summary_fields_20260614/movement-stress-summary.txt`
+- Native-shadow env-on fallback summary: `logs/gpu_native_shadow_command_buffer_submit_contract_20260614/movement-stress-summary.txt`
 - RenderingDevice resource lifecycle summary: `logs/gpu_terrain_upload_pressure_smoke/gpu-resource-lifecycle-audit-summary.txt`
 - Performance baseline summary: `logs/performance_baseline_governance_current/performance-baseline-governance-summary.txt`
 - Implementation gate source: `client/rust_ext/src/lib.rs`
@@ -39,8 +39,12 @@ Fresh local evidence:
 - Reason: `implementation_gate_false`
 - `active_prototype_allowed=0`
 - Fallback markers: `requested=1`, `active=0`, `fallback=1`, `implemented=0`, `resource_status=disabled`
+- Fallback readiness markers: `fallback_readiness_fields=present`, `fallback_readiness_status=disabled_clean`, `fallback_readiness_missing=0`, and `fallback_readiness_errors=0`
+- Disabled native path boundaries: framebuffer/pass/command-buffer statuses remain `none`, readiness flags remain `0`, begin/end/submit counts remain `0`
 - Resource lifecycle: `resource_status=pass`, `native_shadow_active=0`, native-shadow framebuffer/pass/command-buffer errors `0`
 - Baseline governance: `baseline_status=pass`, `baseline_warning_status=ok`
+
+Older compact fallback summaries without framebuffer/pass/command-buffer readiness fields must not be used for this gate; they should fail with `reason=fallback_summary_missing_readiness_fields`.
 
 ## Promotion Requirements
 

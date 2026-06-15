@@ -171,7 +171,7 @@ Block 26, Native Shadow Rendering Prototype, is currently deferred by a local pr
 sh scripts/gpu_native_shadow_prototype_preflight.sh logs/gpu_native_shadow_prototype_preflight_current
 ```
 
-Fresh evidence in `logs/gpu_native_shadow_prototype_preflight_current/gpu-native-shadow-prototype-preflight-summary.txt` reports `status=deferred`, `active_prototype_allowed=0`, and `reason=implementation_gate_false`. The checked fallback row still has `requested=1`, `active=0`, `fallback=1`, `implemented=0`, `resource_status=disabled`, zero lifecycle counters, zero coverage counters, clean resource lifecycle status, and a passing performance baseline.
+Fresh evidence in `logs/gpu_native_shadow_prototype_preflight_current/gpu-native-shadow-prototype-preflight-summary.txt` reports `status=deferred`, `active_prototype_allowed=0`, and `reason=implementation_gate_false`. The checked fallback row is the full command-buffer submit contract summary, with `requested=1`, `active=0`, `fallback=1`, `implemented=0`, `resource_status=disabled`, zero lifecycle counters, zero coverage counters, `fallback_readiness_fields=present`, `fallback_readiness_status=disabled_clean`, zero framebuffer/pass/command-buffer readiness errors, clean resource lifecycle status, and a passing performance baseline. Older compact fallback summaries without readiness fields are rejected as stale evidence.
 
 ## Block 27 Parity
 
