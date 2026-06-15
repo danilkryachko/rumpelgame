@@ -109,6 +109,20 @@ Fresh check:
 
 - `logs/world_streaming_resident_set_growth_radius16_check/resident-set-growth-summary.txt` passed with `server_view_distance=16`, `client_keep_chunk_distance=16`, `max_gpu_subchunks=2482`, `max_gpu_draws=2482`, `max_gpu_faces=3296`, `max_gpu_draw_cmd_bytes=39712`, `max_gpu_draw_cmd_capacity_bytes=131072`, `max_terrain_queue_ms=3.453`, `max_process_wall_p95_ms=0.052`, `max_gpu_compositor_submit_ms=0.207`, and `gpu_upload_fail=0`.
 
+## Resident Set Matrix
+
+The resident-set matrix wrapper records a trend-oriented summary over one or more resident-set growth summaries. By default it is summary-only and validates the existing radius-16 artifact; set `RUMPELMC_RESIDENT_SET_MATRIX_RUN=1` plus `RUMPELMC_RESIDENT_SET_MATRIX_RADII="16 18"` only when a task intentionally needs fresh heavy Godot runs.
+
+Use the summary-only path for normal planning:
+
+```sh
+sh scripts/world_streaming_resident_set_matrix.sh logs/world_streaming_resident_set_matrix_current
+```
+
+Expected current result includes `status=pass`, `mode=summary`, `max_gpu_draws>=2000`, `max_draw_cmd_occupancy_pct>=25.0`, and zero GPU upload failures. The summary also records the best radius, max subchunks/draws/faces, draw-command occupancy/headroom, terrain queue max, process wall p95, and compositor submit max.
+
+This wrapper is still measurement-only. It must not be used to change default draw distance, unload policy, GPU buffer repack behavior, allocator policy, protocol, storage, world generation, or chunk serialization by itself.
+
 ## Chunk Unload Churn
 
 The default client unload policy remains keep-distance plus grace-period based. `RUMPELMC_CLIENT_CHUNK_UNLOAD_GRACE_SEC=0` is still the immediate-unload rollback/control path.

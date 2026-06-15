@@ -13,8 +13,11 @@ DESIGN_DOC="${RUMPELMC_SERVER_SCALABILITY_DOC:-"$ROOT_DIR/docs/SERVER_SCALABILIT
 PROTOCOL_DOC="${RUMPELMC_SERVER_SCALABILITY_PROTOCOL_DOC:-"$ROOT_DIR/docs/PROTOCOL.md"}"
 SERVER_SOURCE="${RUMPELMC_SERVER_SCALABILITY_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
 SERVER_TEST="${RUMPELMC_SERVER_SCALABILITY_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
+LIVE_SMOKE_SCRIPT="${RUMPELMC_SERVER_SCALABILITY_LIVE_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_multi_client_smoke.sh"}"
+LIVE_SMOKE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_LIVE_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_multi_client_smoke_current/server-multi-client-smoke-summary.txt"}"
 WORLDGEN_QUALITY_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_WORLDGEN_QUALITY_SUMMARY:-"$ROOT_DIR/logs/world_generation_quality_current/world-generation-quality-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_SERVER_SCALABILITY_RUN_GO_TESTS:-1}"
+RUN_LIVE_SMOKE="${RUMPELMC_SERVER_SCALABILITY_RUN_LIVE_SMOKE:-0}"
 
 mkdir -p "$OUT_DIR"
 
@@ -49,7 +52,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$WORLDGEN_QUALITY_SUMMARY"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$LIVE_SMOKE_SCRIPT" "$WORLDGEN_QUALITY_SUMMARY"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -76,9 +79,28 @@ require_token "$SERVER_TEST" "second client sent chunks changed after first clie
 require_token "$SERVER_TEST" "TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients"
 require_token "$SERVER_TEST" "TestBroadcastDisconnectsFailedInterestedClient"
 require_token "$SERVER_TEST" "TestSendChunkToSessionSetsAndClearsWriteDeadline"
+require_token "$LIVE_SMOKE_SCRIPT" "server_multi_client_smoke status=pass"
+
+case "$RUN_LIVE_SMOKE" in
+  0) ;;
+  1)
+    "$LIVE_SMOKE_SCRIPT" "$OUT_DIR/live_multi_client_smoke" > "$OUT_DIR/live-smoke-run.txt" 2>&1 || {
+      cat "$OUT_DIR/live-smoke-run.txt" >&2 || true
+      fail "live multi-client smoke failed"
+    }
+    LIVE_SMOKE_SUMMARY="$OUT_DIR/live_multi_client_smoke/server-multi-client-smoke-summary.txt"
+    ;;
+  *)
+    fail "unsupported RUMPELMC_SERVER_SCALABILITY_RUN_LIVE_SMOKE=$RUN_LIVE_SMOKE"
+    ;;
+esac
 
 worldgen_quality_status="$(field_metric status "$WORLDGEN_QUALITY_SUMMARY")"
 worldgen_runtime_quality="$(field_metric runtime_quality_pass "$WORLDGEN_QUALITY_SUMMARY")"
+live_load_status="deferred"
+if [ -s "$LIVE_SMOKE_SUMMARY" ]; then
+  live_load_status="$(field_metric status "$LIVE_SMOKE_SUMMARY")"
+fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 network_tests="skipped"
@@ -95,8 +117,11 @@ awk \
   -v worldgen_quality_status="${worldgen_quality_status:-missing}" \
   -v worldgen_runtime_quality="${worldgen_runtime_quality:-active}" \
   -v proto_diff_count="$proto_diff_count" \
+  -v live_load_status="${live_load_status:-missing}" \
+  -v live_required="$RUN_LIVE_SMOKE" \
   -v network_tests="$network_tests" \
   -v design_doc="$DESIGN_DOC" \
+  -v live_smoke_summary="$LIVE_SMOKE_SUMMARY" \
   -v worldgen_quality_summary="$WORLDGEN_QUALITY_SUMMARY" '
   BEGIN {
     status = "pass"
@@ -106,15 +131,18 @@ awk \
     block_edit_fanout = "interested_clients_guarded"
     slow_client_write_timeout = "guarded"
     disconnect_cleanup_status = "failed_broadcast_guarded"
-    live_load_status = "deferred"
     active_protocol_change = proto_diff_count + 0
 
     deps_ok = worldgen_quality_status == "pass" && worldgen_runtime_quality == "deferred"
     tests_ok = network_tests == "pass" || network_tests == "skipped"
+    live_ok = live_load_status == "pass" || live_required != "1"
 
     if (active_protocol_change != 0) {
       status = "fail"
       reason = "protocol_diff_present"
+    } else if (!live_ok) {
+      status = "fail"
+      reason = "live_multi_client_smoke_failed"
     } else if (!deps_ok) {
       status = "fail"
       reason = "worldgen_quality_gate_not_clean"
@@ -123,7 +151,7 @@ awk \
       reason = "network_tests_failed"
     }
 
-    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, active_protocol_change, disconnect_cleanup_status, live_load_status, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, worldgen_quality_summary)
+    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, active_protocol_change, disconnect_cleanup_status, live_load_status, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, worldgen_quality_summary)
     if (status != "pass") {
       exit 1
     }

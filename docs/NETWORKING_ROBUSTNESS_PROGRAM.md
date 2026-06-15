@@ -26,11 +26,12 @@ Scope:
 - Add focused Rust client unit coverage for short length prefixes, short payloads, and malformed protobuf payloads.
 - Keep the current server framing tests as the server-side packet-boundary robustness guard.
 - Add server session-write timeout and failed-broadcast cleanup guards.
+- Consume the server scalability live two-client fanout smoke as networking runtime evidence when available.
 - Define reconnect, live slow-reader, and overload gaps before broader runtime policy changes.
 
 Out of scope:
 
-- No protobuf schema change, new packet type, wire framing change, reconnect state machine, write backpressure queue, server admission control, packet retry layer, queue drop behavior, or live load harness.
+- No protobuf schema change, new packet type, wire framing change, reconnect state machine, write backpressure queue, server admission control, packet retry layer, queue drop behavior, or slow-reader/load harness.
 
 Assumptions:
 
@@ -59,6 +60,7 @@ Checks:
 - Server `sendPacket` writes the length prefix and payload through `writeFull`, which rejects zero-byte writes with `io.ErrShortWrite`.
 - Live session chunk writes set and clear a bounded write deadline using `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS`; `0` disables it as a rollback/control.
 - Failed non-origin block-update broadcasts close and unregister the failed client.
+- The server scalability live smoke validates two real TCP clients receiving bootstrap chunk data and the same block-edit update through the existing frame/protobuf path.
 - Rust `NetworkClient::receive_packet_with_timing_since` reads the exact length prefix, rejects lengths above `MAX_PACKET_LENGTH`, reads the exact payload, then decodes one protobuf `Packet`.
 - Rust `NetworkClient::send_packet` rejects encoded packets larger than `MAX_PACKET_LENGTH` before writing.
 
@@ -90,6 +92,8 @@ These complement the existing Rust oversized-length test and the Go server frami
 - interested-client block-update fanout
 - failed interested-client broadcast disconnect cleanup
 
+`scripts/server_multi_client_smoke.sh` complements those unit guards with a bounded live two-client fanout smoke. It is not a slow-reader, reconnect, or overload harness.
+
 ## Deferred Robustness Work
 
 Still needed before claiming a full networking robustness program:
@@ -118,7 +122,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `active_protocol_change=0`, `reconnect_status=deferred`, `slow_client_status=unit_guarded`, and `overload_status=deferred`.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `active_protocol_change=0`, `reconnect_status=deferred`, `slow_client_status=unit_guarded`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
 
 The gate checks that:
 
@@ -126,8 +130,9 @@ The gate checks that:
 - Server and client sources still enforce max packet sizes and exact reads.
 - Go server framing/network tests pass.
 - Rust network tests pass.
+- The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
 - Protocol schema/generated files are unchanged.
 
 ## Current Status
 
-This block is complete as a packet-boundary and unit-guarded write-timeout checkpoint. Reconnect, live slow-reader validation, overload handling, and runtime telemetry remain future work.
+This block is complete as a packet-boundary and unit-guarded write-timeout checkpoint with optional two-client live fanout evidence from the server scalability smoke. Reconnect, live slow-reader validation, overload handling, and runtime telemetry remain future work.

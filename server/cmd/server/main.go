@@ -21,13 +21,23 @@ func main() {
 	gameWorld := world.NewWorld(store)
 	defer gameWorld.Close()
 
-	server := network.NewServer(":25565", gameWorld)
+	server := network.NewServer(configuredServerAddress(), gameWorld)
 	if err := server.Start(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
 
+func configuredServerAddress() string {
+	if address := os.Getenv("RUMPELMC_SERVER_ADDRESS"); address != "" {
+		return address
+	}
+	return ":25565"
+}
+
 func defaultRocksDBPath() string {
+	if path := os.Getenv("RUMPELMC_SERVER_ROCKSDB_PATH"); path != "" {
+		return path
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return filepath.Join("data", "rocksdb")

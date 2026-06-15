@@ -187,6 +187,14 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 
 The gate requires thousands of subchunks/draws/faces and nontrivial draw-command occupancy; see `docs/GPU_TERRAIN_LOAD_SCALING.md`.
 
+Use the resident-set matrix wrapper when planning needs a compact trend summary over resident-set growth artifacts without rerunning heavy captures:
+
+```sh
+sh scripts/world_streaming_resident_set_matrix.sh logs/world_streaming_resident_set_matrix_current
+```
+
+Set `RUMPELMC_RESIDENT_SET_MATRIX_RUN=1` only when fresh heavy captures are intended.
+
 Use the compact proxy benchmark for focused shadow-proxy measurements. It writes `compact-proxy-benchmark-summary.txt` and, in capture mode, requires a free local `25565` server port:
 
 ```sh

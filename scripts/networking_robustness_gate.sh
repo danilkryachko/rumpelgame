@@ -98,6 +98,7 @@ require_token "$CLIENT_SOURCE" 'receive_rejects_malformed_payload'
 server_scalability_status="$(field_metric status "$SERVER_SCALABILITY_SUMMARY")"
 server_scalability_protocol_change="$(field_metric active_protocol_change "$SERVER_SCALABILITY_SUMMARY")"
 server_scalability_slow_client="$(field_metric slow_client_write_timeout "$SERVER_SCALABILITY_SUMMARY")"
+server_scalability_live_load="$(field_metric live_load_status "$SERVER_SCALABILITY_SUMMARY")"
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 server_boundary_tests="skipped"
@@ -124,6 +125,7 @@ awk \
   -v server_scalability_status="${server_scalability_status:-missing}" \
   -v server_scalability_protocol_change="${server_scalability_protocol_change:-1}" \
   -v server_scalability_slow_client="${server_scalability_slow_client:-deferred}" \
+  -v server_scalability_live_load="${server_scalability_live_load:-deferred}" \
   -v proto_diff_count="$proto_diff_count" \
   -v server_boundary_tests="$server_boundary_tests" \
   -v client_boundary_tests="$client_boundary_tests" \
@@ -135,6 +137,7 @@ awk \
     robustness_status = "unit_guarded"
     reconnect_status = "deferred"
     slow_client_status = server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred"
+    multi_client_live_status = server_scalability_live_load
     overload_status = "deferred"
     active_protocol_change = proto_diff_count + 0
 
@@ -156,7 +159,7 @@ awk \
       reason = "client_boundary_tests_failed"
     }
 
-    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s reconnect_status=%s slow_client_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, reconnect_status, slow_client_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary)
+    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s reconnect_status=%s slow_client_status=%s multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, reconnect_status, slow_client_status, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary)
     if (status != "pass") {
       exit 1
     }
