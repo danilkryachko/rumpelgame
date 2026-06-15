@@ -1,11 +1,70 @@
 # Architecture
 
 ## Stack
-- **Client**: Godot Engine (UI, Rendering, Scene management).
-- **Client Logic**: Rust via GDExtension (`godot-rust`). Handles network communication with the server and orchestrates GPU compute shaders for meshing.
-- **Server**: Go. Headless server handling world generation, block updates, and networking.
 
-## Data Flow
-- Client starts -> Godot launches Server binary -> Godot connects to localhost TCP/UDP.
-- Server generates terrain -> sends Chunk Data (32x32x512) to Client.
-- Rust receives Chunk Data -> passes it to Godot `RenderingDevice` -> Compute Shader meshes the chunk.
+- **Godot client**: owns the scene tree, window setup, HUD, local server lifecycle helper, lighting, visual smoke harness, and user input surface.
+- **Rust GDExtension client logic**: owns TCP networking, packet decode, chunk residency, dirty-update detection, meshing queues, collision refresh queues, GPU terrain upload/render orchestration, local player gameplay glue, debug overlay getters, and perf telemetry.
+- **Go server**: owns authoritative world state, chunk generation/loading, block edits, chunk streaming, packet framing, and storage integration.
+- **Storage**: RocksDB is the implemented chunk persistence backend. PostgreSQL is approved but has no current implemented role.
+- **Protocol**: protobuf packets over TCP with a 4-byte little-endian payload length prefix.
+
+## Current Runtime Flow
+
+1. `client/main.gd` starts or reuses a local Go server, then adds `GameClient` and the HUD.
+2. `server/cmd/server/main.go` opens RocksDB, creates `world.World`, creates `network.Server`, and starts the TCP listener.
+3. `GameClient` connects to the server and sends `ClientPosition`.
+4. The server streams chunks around the client. The first startup stream uses the configured bootstrap radius, then normal updates stream nearest chunks around the player.
+5. Chunk packets are framed protobuf `Packet` values. `ChunkData` is RLE by default with a raw rollback path.
+6. The Rust client decodes chunk bytes into the full serialized chunk buffer, records dirty-update counters for replacements, and updates chunk residency.
+7. Geometry, GPU upload, CPU proxy, and collision work are queued from chunk/subchunk state.
+8. Player spawn remains collision-gated on startup readiness.
+
+## Server World And Storage
+
+- `world.World` is the authoritative in-memory world owner.
+- `World.ChunksAround` selects chunk coordinates, loads or generates chunks, and returns serialized snapshots for networking.
+- `World.SetBlockGlobal` applies block edits and persists dirty chunks through the configured `ChunkStore`.
+- RocksDB chunk keys use the stable `c` prefix plus sortable signed big-endian chunk coordinates.
+- Persisted chunk payloads are the exact output of `world.Chunk.Serialize()`.
+- Current generation is still deterministic flat terrain. Future biome/quality work is documented but not active runtime behavior.
+
+## Protocol Contract
+
+- Current packet payload variants are `ChunkData`, `ClientPosition`, and `BlockAction`.
+- `ChunkData.blocks` carries either raw serialized chunk bytes or RLE runs over the same serialized bytes.
+- `ChunkData.encoding` and `ChunkData.uncompressed_size` are compatibility fields for encoded chunks.
+- Block IDs remain the only current wire/storage identity for voxel contents.
+- Block material metadata, transparent material behavior, liquid/emissive traits, and future protocol deltas are planning work unless new protobuf fields and compatibility tests are added explicitly.
+
+## Client Rust GDExtension
+
+- The client lifecycle model tracks connecting, waiting_chunks, spawning, active, reconnecting, and shutdown.
+- The packet reader feeds the main-thread packet queue; packet queue metrics are observational and do not implement backpressure or dropping.
+- Chunk replacements run through dirty-update detection. Partial dirty GPU upload is default-on; `RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD=0` is the full-rebuild rollback path.
+- Local creative hotbar state is client-side gameplay foundation. Server authority for block edits still flows through `BlockAction` and `World.SetBlockGlobal`.
+- Reconnect execution, slow-client policy, overload behavior, and block-edit broadcast fanout remain deferred policy work.
+
+## GPU Terrain Contract
+
+- The visible terrain path uses GPU terrain buffers and RenderingDevice submission through the Rust extension.
+- CPU proxy meshes remain responsible for collision and current Godot shadow participation where required.
+- Compact proxy and partial dirty paths reduce work while preserving current visible quality.
+- Native terrain shadows are scaffolded but inactive while `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`.
+- Transparent terrain is scaffolded/planned but inactive while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
+- Existing lighting, texture atlas, draw distance, shadows, collision coverage, and texture quality must not be reduced for performance gates unless explicitly requested.
+
+## Observability And Handoff
+
+- `GameClient.get_perf_text()` remains the full machine-readable perf stream for scripts.
+- `GameClient.get_debug_overlay_text()` is the compact in-client dev overlay summary.
+- HUD perf logs include `run_id=`, `overlay=`, and preserved `perf=` fields.
+- Current summary artifacts are indexed by `scripts/observability_logs_cleanup_gate.sh`.
+- `scripts/handoff.sh` prints required handoff inputs, current git state, and the current observability artifact index.
+
+## Guardrails
+
+- Do not hand-edit generated protocol files.
+- Do not introduce storage engines beyond RocksDB/PostgreSQL without explicit approval.
+- Do not change chunk serialization, world generation determinism, packet field meanings, or RocksDB key format without a focused task and tests.
+- Do not reformat Godot scene/resource/import files casually.
+- Run the narrowest relevant checks for small changes, `./scripts/check.sh fast` for normal code changes, and full/diff guard for broad or sensitive changes.

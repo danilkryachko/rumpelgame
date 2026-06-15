@@ -1,0 +1,1131 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+OUT_DIR="${1:-"$ROOT_DIR/logs/gpu_terrain_visual_smoke/movement_stress"}"
+case "$OUT_DIR" in
+  /*) ;;
+  *) OUT_DIR="$ROOT_DIR/$OUT_DIR" ;;
+esac
+GODOT_BIN="${GODOT_BIN:-/opt/homebrew/bin/godot}"
+TIMEOUT_BIN="${TIMEOUT_BIN:-/opt/homebrew/bin/timeout}"
+GODOT_TIMEOUT_SEC="${GODOT_TIMEOUT_SEC:-120}"
+GODOT_QUIT_AFTER_FRAMES="${GODOT_QUIT_AFTER_FRAMES:-30000}"
+SMOKE_DELAY_SEC="${SMOKE_DELAY_SEC:-5.0}"
+FRAME_SAMPLE_SEC="${RUMPELMC_MOVEMENT_STRESS_FRAME_SAMPLE_SEC:-5.0}"
+SMOKE_POSE="${RUMPELMC_VISUAL_SMOKE_POSE:-}"
+MOTION_NAME="${RUMPELMC_MOVEMENT_STRESS_MOTION:-chunk_walk}"
+MOTION_STEP_SEC="${RUMPELMC_MOVEMENT_STRESS_STEP_SEC:-0.55}"
+MOTION_SETTLE_SEC="${RUMPELMC_MOVEMENT_STRESS_SETTLE_SEC:-4.0}"
+MIN_MOTION_CHUNKS="${RUMPELMC_MOVEMENT_STRESS_MIN_CHUNKS:-4}"
+EXPECTED_CURRENT_CHUNK="${RUMPELMC_MOVEMENT_STRESS_EXPECTED_CHUNK:-3,2}"
+TARGET_FPS="${RUMPELMC_MOVEMENT_STRESS_TARGET_FPS:-150}"
+BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE:-enforce}"
+PROCESS_WALL_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE:-enforce}"
+GPU_COMPOSITOR_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_GPU_COMPOSITOR_BUDGET_MODE:-enforce}"
+GPU_TIMESTAMP_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_GPU_TIMESTAMP_BUDGET_MODE:-report}"
+
+mkdir -p "$OUT_DIR"
+
+fail() {
+  echo "gpu_terrain_movement_stress: $*" >&2
+  exit 1
+}
+
+. "$ROOT_DIR/scripts/godot_rust_ext_profile.sh"
+
+metric() {
+  key="$1"
+  marker_path="$2"
+  sed -n "s/.*$key=\([0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
+float_metric() {
+  key="$1"
+  marker_path="$2"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
+text_metric() {
+  key="$1"
+  marker_path="$2"
+  sed -n "s/.*$key=\([^ ]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
+perf_triplet_value() {
+  key="$1"
+  marker_path="$2"
+  index="$3"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\).*/\1 \2 \3/p" "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+perf_count_triplet_value() {
+  key="$1"
+  marker_path="$2"
+  index="$3"
+  sed -n "s/.*$key=\([0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\).*/\1 \2 \3/p" "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+perf_pair_value() {
+  key="$1"
+  marker_path="$2"
+  index="$3"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\).*/\1 \2/p" "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+perf_quad_value() {
+  key="$1"
+  marker_path="$2"
+  index="$3"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\).*/\1 \2 \3 \4/p" "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+default_float() {
+  value="$1"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+  else
+    printf '0.000\n'
+  fi
+}
+
+require_positive_float() {
+  key="$1"
+  value="$2"
+  test -n "$value" || fail "missing $key in $marker_path"
+  awk -v key="$key" -v value="$value" '
+    BEGIN {
+      if (value <= 0.0) {
+        printf("gpu_terrain_movement_stress: %s %.3f must be positive\n", key, value) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
+require_startup_timing_order() {
+  packet_ms="$1"
+  chunk_inserted_ms="$2"
+  chunk_loaded_ms="$3"
+  mesh_queued_ms="$4"
+  mesh_dispatched_ms="$5"
+  first_mesh_ms="$6"
+  collision_ms="$7"
+  player_spawn_ms="$8"
+  awk \
+    -v packet_ms="$packet_ms" \
+    -v chunk_inserted_ms="$chunk_inserted_ms" \
+    -v chunk_loaded_ms="$chunk_loaded_ms" \
+    -v mesh_queued_ms="$mesh_queued_ms" \
+    -v mesh_dispatched_ms="$mesh_dispatched_ms" \
+    -v first_mesh_ms="$first_mesh_ms" \
+    -v collision_ms="$collision_ms" \
+    -v player_spawn_ms="$player_spawn_ms" '
+    BEGIN {
+      if (packet_ms > chunk_inserted_ms || chunk_inserted_ms > chunk_loaded_ms || chunk_loaded_ms > mesh_queued_ms || mesh_queued_ms > mesh_dispatched_ms || mesh_dispatched_ms > first_mesh_ms || first_mesh_ms > collision_ms || collision_ms > player_spawn_ms) {
+        printf("gpu_terrain_movement_stress: startup timings out of order packet_ms=%.3f chunk_inserted_ms=%.3f chunk_loaded_ms=%.3f mesh_queued_ms=%.3f mesh_dispatched_ms=%.3f first_mesh_ms=%.3f collision_ms=%.3f player_spawn_ms=%.3f\n", packet_ms, chunk_inserted_ms, chunk_loaded_ms, mesh_queued_ms, mesh_dispatched_ms, first_mesh_ms, collision_ms, player_spawn_ms) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
+mesh_triplet_value() {
+  marker_path="$1"
+  index="$2"
+  sed -n 's/.* mesh \([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)ms .*/\1 \2 \3/p' "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+collision_triplet_value() {
+  marker_path="$1"
+  index="$2"
+  sed -n 's/.* coll \([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)ms .*/\1 \2 \3/p' "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
+frame_budget_ms() {
+  awk -v fps="$TARGET_FPS" '
+    BEGIN {
+      if (fps <= 0.0) {
+        fps = 150.0
+      }
+      printf("%.3f\n", 1000.0 / fps)
+    }
+  '
+}
+
+write_summary() {
+  summary_path="$OUT_DIR/movement-stress-summary.txt"
+  budget_ms="$(frame_budget_ms)"
+  terrain_queue_avg="$(perf_triplet_value terrain_queue_work_ms "$marker_path" 2)"
+  terrain_queue_max="$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)"
+  terrain_queue_max_mesh="$(default_float "$(perf_pair_value terrain_queue_work_max_parts "$marker_path" 1)")"
+  terrain_queue_max_coll="$(default_float "$(perf_pair_value terrain_queue_work_max_parts "$marker_path" 2)")"
+  terrain_queue_uploads_avg="$(default_float "$(perf_count_triplet_value terrain_queue_gpu_uploads "$marker_path" 2)")"
+  terrain_queue_uploads_max="$(default_float "$(perf_count_triplet_value terrain_queue_gpu_uploads "$marker_path" 3)")"
+  terrain_queue_upload_kb_avg="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_kb "$marker_path" 2)")"
+  terrain_queue_upload_kb_max="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_kb "$marker_path" 3)")"
+  mesh_avg="$(mesh_triplet_value "$marker_path" 2)"
+  mesh_max="$(mesh_triplet_value "$marker_path" 3)"
+  coll_avg="$(collision_triplet_value "$marker_path" 2)"
+  coll_max="$(collision_triplet_value "$marker_path" 3)"
+  compositor_submit_avg="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 2)")"
+  compositor_submit_max="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 3)")"
+  compositor_submit_max_setup="$(default_float "$(perf_quad_value gpu_compositor_submit_max_parts "$marker_path" 1)")"
+  compositor_submit_max_target="$(default_float "$(perf_quad_value gpu_compositor_submit_max_parts "$marker_path" 2)")"
+  compositor_submit_max_constants="$(default_float "$(perf_quad_value gpu_compositor_submit_max_parts "$marker_path" 3)")"
+  compositor_submit_max_draw="$(default_float "$(perf_quad_value gpu_compositor_submit_max_parts "$marker_path" 4)")"
+  compositor_gpu_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 2)")"
+  compositor_gpu_max="$(default_float "$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 3)")"
+  compositor_gpu_us_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 2)")"
+  compositor_gpu_us_max="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 3)")"
+  compositor_gpu_samples="$(metric gpu_compositor_gpu_samples "$marker_path")"
+  gpu_effective_draws="$(metric gpu_effective_draws "$marker_path")"
+  gpu_draw_repeat="$(metric gpu_draw_repeat "$marker_path")"
+  gpu_draw_cmd_bytes="$(metric gpu_draw_cmd_bytes "$marker_path")"
+  gpu_draw_cmd_capacity_bytes="$(metric gpu_draw_cmd_capacity_bytes "$marker_path")"
+  gpu_draw_cmd_stride="$(metric gpu_draw_cmd_stride "$marker_path")"
+  gpu_scene_target_create="$(metric gpu_scene_target_create "$marker_path")"
+  gpu_scene_target_reuse="$(metric gpu_scene_target_reuse "$marker_path")"
+  gpu_scene_target_replace="$(metric gpu_scene_target_replace "$marker_path")"
+  gpu_uniform_set_create="$(metric gpu_uniform_set_create "$marker_path")"
+  gpu_atlas_texture_create="$(metric gpu_atlas_texture_create "$marker_path")"
+  gpu_atlas_sampler_create="$(metric gpu_atlas_sampler_create "$marker_path")"
+  gpu_push_constant_bytes="$(metric gpu_push_constant_bytes "$marker_path")"
+  gpu_push_constant_updates="$(metric gpu_push_constant_updates "$marker_path")"
+  gpu_push_constant_total_bytes="$(metric gpu_push_constant_total_bytes "$marker_path")"
+  gpu_push_constant_avg_bytes="$(default_float "$(float_metric gpu_push_constant_avg_bytes "$marker_path")")"
+  gpu_push_constant_camera_bytes="$(metric gpu_push_constant_camera_bytes "$marker_path")"
+  gpu_push_constant_lighting_bytes="$(metric gpu_push_constant_lighting_bytes "$marker_path")"
+  gpu_push_constant_atlas_bytes="$(metric gpu_push_constant_atlas_bytes "$marker_path")"
+  gpu_light_dir="$(text_metric gpu_light_dir "$marker_path")"
+  gpu_light_color="$(text_metric gpu_light_color "$marker_path")"
+  gpu_light_energy="$(float_metric gpu_light_energy "$marker_path")"
+  gpu_light_ambient="$(float_metric gpu_light_ambient "$marker_path")"
+  native_shadow_requested="$(metric native_shadow_requested "$marker_path")"
+  native_shadow_active="$(metric native_shadow_active "$marker_path")"
+  native_shadow_fallback="$(metric native_shadow_fallback "$marker_path")"
+  native_shadow_implemented="$(metric native_shadow_implemented "$marker_path")"
+  native_shadow_resource_status="$(text_metric native_shadow_resource_status "$marker_path")"
+  native_shadow_resource_width="$(metric native_shadow_resource_width "$marker_path")"
+  native_shadow_resource_height="$(metric native_shadow_resource_height "$marker_path")"
+  native_shadow_resource_layers="$(metric native_shadow_resource_layers "$marker_path")"
+  native_shadow_resource_bytes_per_texel="$(metric native_shadow_resource_bytes_per_texel "$marker_path")"
+  native_shadow_resource_bytes="$(metric native_shadow_resource_bytes "$marker_path")"
+  native_shadow_resource_format="$(text_metric native_shadow_resource_format "$marker_path")"
+  native_shadow_resource_usage="$(text_metric native_shadow_resource_usage "$marker_path")"
+  native_shadow_pass_load_op="$(text_metric native_shadow_pass_load_op "$marker_path")"
+  native_shadow_pass_store_op="$(text_metric native_shadow_pass_store_op "$marker_path")"
+  native_shadow_pass_clear_depth_milli="$(metric native_shadow_pass_clear_depth_milli "$marker_path")"
+  native_shadow_depth_attachment_status="$(text_metric native_shadow_depth_attachment_status "$marker_path")"
+  native_shadow_depth_attachment_binding_count="$(metric native_shadow_depth_attachment_binding_count "$marker_path")"
+  native_shadow_depth_attachment_clear_count="$(metric native_shadow_depth_attachment_clear_count "$marker_path")"
+  native_shadow_resource_barrier_status="$(text_metric native_shadow_resource_barrier_status "$marker_path")"
+  native_shadow_resource_transition_count="$(metric native_shadow_resource_transition_count "$marker_path")"
+  native_shadow_resource_barrier_error_count="$(metric native_shadow_resource_barrier_error_count "$marker_path")"
+  native_shadow_framebuffer_status="$(text_metric native_shadow_framebuffer_status "$marker_path")"
+  native_shadow_framebuffer_rid_allocated="$(metric native_shadow_framebuffer_rid_allocated "$marker_path")"
+  native_shadow_framebuffer_attachment_count="$(metric native_shadow_framebuffer_attachment_count "$marker_path")"
+  native_shadow_framebuffer_pass_compat_status="$(text_metric native_shadow_framebuffer_pass_compat_status "$marker_path")"
+  native_shadow_framebuffer_pass_compat_error_count="$(metric native_shadow_framebuffer_pass_compat_error_count "$marker_path")"
+  native_shadow_framebuffer_depth_only_enabled="$(metric native_shadow_framebuffer_depth_only_enabled "$marker_path")"
+  native_shadow_framebuffer_color_attachment_count="$(metric native_shadow_framebuffer_color_attachment_count "$marker_path")"
+  native_shadow_framebuffer_attachment_owned="$(metric native_shadow_framebuffer_attachment_owned "$marker_path")"
+  native_shadow_framebuffer_attachment_reuse_count="$(metric native_shadow_framebuffer_attachment_reuse_count "$marker_path")"
+  native_shadow_framebuffer_descriptor_valid="$(metric native_shadow_framebuffer_descriptor_valid "$marker_path")"
+  native_shadow_framebuffer_descriptor_error_count="$(metric native_shadow_framebuffer_descriptor_error_count "$marker_path")"
+  native_shadow_framebuffer_bind_ready="$(metric native_shadow_framebuffer_bind_ready "$marker_path")"
+  native_shadow_framebuffer_bind_error_count="$(metric native_shadow_framebuffer_bind_error_count "$marker_path")"
+  native_shadow_pass_descriptor_valid="$(metric native_shadow_pass_descriptor_valid "$marker_path")"
+  native_shadow_pass_descriptor_error_count="$(metric native_shadow_pass_descriptor_error_count "$marker_path")"
+  native_shadow_pass_status="$(text_metric native_shadow_pass_status "$marker_path")"
+  native_shadow_pass_rid_allocated="$(metric native_shadow_pass_rid_allocated "$marker_path")"
+  native_shadow_pass_submit_status="$(text_metric native_shadow_pass_submit_status "$marker_path")"
+  native_shadow_pass_lifecycle_ready="$(metric native_shadow_pass_lifecycle_ready "$marker_path")"
+  native_shadow_pass_lifecycle_error_count="$(metric native_shadow_pass_lifecycle_error_count "$marker_path")"
+  native_shadow_pass_begin_count="$(metric native_shadow_pass_begin_count "$marker_path")"
+  native_shadow_pass_end_count="$(metric native_shadow_pass_end_count "$marker_path")"
+  native_shadow_command_buffer_status="$(text_metric native_shadow_command_buffer_status "$marker_path")"
+  native_shadow_command_buffer_record_ready="$(metric native_shadow_command_buffer_record_ready "$marker_path")"
+  native_shadow_command_buffer_record_error_count="$(metric native_shadow_command_buffer_record_error_count "$marker_path")"
+  native_shadow_command_buffer_submit_ready="$(metric native_shadow_command_buffer_submit_ready "$marker_path")"
+  native_shadow_command_buffer_submit_error_count="$(metric native_shadow_command_buffer_submit_error_count "$marker_path")"
+  native_shadow_command_buffer_submit_count="$(metric native_shadow_command_buffer_submit_count "$marker_path")"
+  native_shadow_command_buffer_error_count="$(metric native_shadow_command_buffer_error_count "$marker_path")"
+  native_shadow_sampler_filter="$(text_metric native_shadow_sampler_filter "$marker_path")"
+  native_shadow_sampler_address="$(text_metric native_shadow_sampler_address "$marker_path")"
+  native_shadow_sampler_compare_op="$(text_metric native_shadow_sampler_compare_op "$marker_path")"
+  native_shadow_sampler_compare_enabled="$(metric native_shadow_sampler_compare_enabled "$marker_path")"
+  native_shadow_depth_bias_constant_milli="$(metric native_shadow_depth_bias_constant_milli "$marker_path")"
+  native_shadow_depth_bias_slope_milli="$(metric native_shadow_depth_bias_slope_milli "$marker_path")"
+  native_shadow_depth_bias_clamp_milli="$(metric native_shadow_depth_bias_clamp_milli "$marker_path")"
+  native_shadow_viewport_x_px="$(metric native_shadow_viewport_x_px "$marker_path")"
+  native_shadow_viewport_y_px="$(metric native_shadow_viewport_y_px "$marker_path")"
+  native_shadow_viewport_width_px="$(metric native_shadow_viewport_width_px "$marker_path")"
+  native_shadow_viewport_height_px="$(metric native_shadow_viewport_height_px "$marker_path")"
+  native_shadow_viewport_min_depth_milli="$(metric native_shadow_viewport_min_depth_milli "$marker_path")"
+  native_shadow_viewport_max_depth_milli="$(metric native_shadow_viewport_max_depth_milli "$marker_path")"
+  native_shadow_pipeline_depth_test_enabled="$(metric native_shadow_pipeline_depth_test_enabled "$marker_path")"
+  native_shadow_pipeline_depth_write_enabled="$(metric native_shadow_pipeline_depth_write_enabled "$marker_path")"
+  native_shadow_pipeline_cull_mode="$(text_metric native_shadow_pipeline_cull_mode "$marker_path")"
+  native_shadow_pipeline_front_face="$(text_metric native_shadow_pipeline_front_face "$marker_path")"
+  native_shadow_draw_source="$(text_metric native_shadow_draw_source "$marker_path")"
+  native_shadow_draw_primitive="$(text_metric native_shadow_draw_primitive "$marker_path")"
+  native_shadow_draw_face_stride_bytes="$(metric native_shadow_draw_face_stride_bytes "$marker_path")"
+  native_shadow_draw_command_stride_bytes="$(metric native_shadow_draw_command_stride_bytes "$marker_path")"
+  native_shadow_draw_indirect_enabled="$(metric native_shadow_draw_indirect_enabled "$marker_path")"
+  native_shadow_draw_status="$(text_metric native_shadow_draw_status "$marker_path")"
+  native_shadow_draw_call_count="$(metric native_shadow_draw_call_count "$marker_path")"
+  native_shadow_draw_face_count="$(metric native_shadow_draw_face_count "$marker_path")"
+  native_shadow_uniform_set_index="$(metric native_shadow_uniform_set_index "$marker_path")"
+  native_shadow_face_buffer_binding="$(metric native_shadow_face_buffer_binding "$marker_path")"
+  native_shadow_push_constant_bytes="$(metric native_shadow_push_constant_bytes "$marker_path")"
+  native_shadow_texture_sampling_enabled="$(metric native_shadow_texture_sampling_enabled "$marker_path")"
+  native_shadow_shader_language="$(text_metric native_shadow_shader_language "$marker_path")"
+  native_shadow_shader_entry="$(text_metric native_shadow_shader_entry "$marker_path")"
+  native_shadow_shader_depth_output_enabled="$(metric native_shadow_shader_depth_output_enabled "$marker_path")"
+  native_shadow_shader_color_output_enabled="$(metric native_shadow_shader_color_output_enabled "$marker_path")"
+  native_shadow_shader_source_bytes="$(metric native_shadow_shader_source_bytes "$marker_path")"
+  native_shadow_shader_source_checksum="$(metric native_shadow_shader_source_checksum "$marker_path")"
+  native_shadow_shader_module_status="$(text_metric native_shadow_shader_module_status "$marker_path")"
+  native_shadow_shader_module_rid_allocated="$(metric native_shadow_shader_module_rid_allocated "$marker_path")"
+  native_shadow_light_source="$(text_metric native_shadow_light_source "$marker_path")"
+  native_shadow_light_space="$(text_metric native_shadow_light_space "$marker_path")"
+  native_shadow_cascade_count="$(metric native_shadow_cascade_count "$marker_path")"
+  native_shadow_light_matrix_bytes="$(metric native_shadow_light_matrix_bytes "$marker_path")"
+  native_shadow_depth_clip_space="$(text_metric native_shadow_depth_clip_space "$marker_path")"
+  native_shadow_depth_range_source="$(text_metric native_shadow_depth_range_source "$marker_path")"
+  native_shadow_depth_near_milli="$(metric native_shadow_depth_near_milli "$marker_path")"
+  native_shadow_depth_far_chunks="$(metric native_shadow_depth_far_chunks "$marker_path")"
+  native_shadow_resource_creates="$(metric native_shadow_resource_creates "$marker_path")"
+  native_shadow_resource_reuses="$(metric native_shadow_resource_reuses "$marker_path")"
+  native_shadow_resource_replaces="$(metric native_shadow_resource_replaces "$marker_path")"
+  native_shadow_resource_releases="$(metric native_shadow_resource_releases "$marker_path")"
+  native_shadow_covered_chunks="$(metric native_shadow_covered_chunks "$marker_path")"
+  native_shadow_covered_subchunks="$(metric native_shadow_covered_subchunks "$marker_path")"
+  smoke_pose="$(text_metric pose "$marker_path")"
+  lighting_variant="$(text_metric lighting_variant "$marker_path")"
+  gpu_cull="$(text_metric gpu_cull "$marker_path")"
+  gpu_front_face="$(text_metric gpu_front_face "$marker_path")"
+  gpu_upload_fail_capacity="$(metric gpu_upload_fail_capacity "$marker_path")"
+  gpu_upload_fail_fragmented="$(metric gpu_upload_fail_fragmented "$marker_path")"
+  gpu_free_ranges="$(metric gpu_free_ranges "$marker_path")"
+  gpu_free_faces="$(metric gpu_free_faces "$marker_path")"
+  gpu_largest_free="$(metric gpu_largest_free "$marker_path")"
+  gpu_fragmented_free_faces="$(metric gpu_fragmented_free_faces "$marker_path")"
+  gpu_fragmentation_pct="$(float_metric gpu_fragmentation_pct "$marker_path")"
+  startup_chunk_packet_ms="$(float_metric startup_chunk_packet_ms "$marker_path")"
+  startup_packet_read_work_ms="$(float_metric startup_packet_read_work_ms "$marker_path")"
+  startup_packet_decode_work_ms="$(float_metric startup_packet_decode_work_ms "$marker_path")"
+  startup_packet_reader_elapsed_ms="$(float_metric startup_packet_reader_elapsed_ms "$marker_path")"
+  startup_packet_queue_lag_ms="$(float_metric startup_packet_queue_lag_ms "$marker_path")"
+  startup_chunk_decode_work_ms="$(float_metric startup_chunk_decode_work_ms "$marker_path")"
+  startup_chunk_inserted_ms="$(float_metric startup_chunk_inserted_ms "$marker_path")"
+  startup_chunk_loaded_ms="$(float_metric startup_chunk_loaded_ms "$marker_path")"
+  startup_mesh_queued_ms="$(float_metric startup_mesh_queued_ms "$marker_path")"
+  startup_mesh_dispatched_ms="$(float_metric startup_mesh_dispatched_ms "$marker_path")"
+  startup_first_mesh_ms="$(float_metric startup_first_mesh_ms "$marker_path")"
+  startup_first_mesh_work_ms="$(float_metric startup_first_mesh_work_ms "$marker_path")"
+  startup_first_mesh_phase_ms="$(text_metric startup_first_mesh_phase_ms "$marker_path")"
+  startup_first_mesh_collision_work_ms="$(float_metric startup_first_mesh_collision_work_ms "$marker_path")"
+  startup_collision_ms="$(float_metric startup_collision_ms "$marker_path")"
+  startup_player_spawn_ms="$(float_metric startup_player_spawn_ms "$marker_path")"
+  packet_q_frames="$(metric packet_q_frames "$marker_path")"
+  packet_q_nonempty="$(metric packet_q_nonempty "$marker_path")"
+  packet_q_drained="$(metric packet_q_drained "$marker_path")"
+  packet_q_chunk_drained="$(metric packet_q_chunk_drained "$marker_path")"
+  packet_q_last_drain="$(metric packet_q_last_drain "$marker_path")"
+  packet_q_max_drain="$(metric packet_q_max_drain "$marker_path")"
+  packet_q_last_chunk_drain="$(metric packet_q_last_chunk_drain "$marker_path")"
+  packet_q_max_chunk_drain="$(metric packet_q_max_chunk_drain "$marker_path")"
+  packet_q_lag_last="$(default_float "$(perf_triplet_value packet_q_lag_ms "$marker_path" 1)")"
+  packet_q_lag_avg="$(default_float "$(perf_triplet_value packet_q_lag_ms "$marker_path" 2)")"
+  packet_q_lag_max="$(default_float "$(perf_triplet_value packet_q_lag_ms "$marker_path" 3)")"
+  packet_q_read_work_last="$(default_float "$(perf_triplet_value packet_q_read_work_ms "$marker_path" 1)")"
+  packet_q_read_work_avg="$(default_float "$(perf_triplet_value packet_q_read_work_ms "$marker_path" 2)")"
+  packet_q_read_work_max="$(default_float "$(perf_triplet_value packet_q_read_work_ms "$marker_path" 3)")"
+  packet_q_decode_work_last="$(default_float "$(perf_triplet_value packet_q_decode_work_ms "$marker_path" 1)")"
+  packet_q_decode_work_avg="$(default_float "$(perf_triplet_value packet_q_decode_work_ms "$marker_path" 2)")"
+  packet_q_decode_work_max="$(default_float "$(perf_triplet_value packet_q_decode_work_ms "$marker_path" 3)")"
+  packet_q_reader_elapsed_last="$(default_float "$(perf_pair_value packet_q_reader_elapsed_ms "$marker_path" 1)")"
+  packet_q_reader_elapsed_max="$(default_float "$(perf_pair_value packet_q_reader_elapsed_ms "$marker_path" 2)")"
+  chunk_unload_scans="$(metric chunk_unload_scans "$marker_path")"
+  chunk_unload_scanned="$(metric chunk_unload_scanned "$marker_path")"
+  chunk_unload_grace_kept="$(metric chunk_unload_grace_kept "$marker_path")"
+  chunk_unload_total="$(metric chunk_unload_total "$marker_path")"
+  chunk_unload_neighbor_refresh="$(metric chunk_unload_neighbor_refresh "$marker_path")"
+  chunk_unload_last="$(metric chunk_unload_last "$marker_path")"
+  chunk_unload_last_grace_kept="$(metric chunk_unload_last_grace_kept "$marker_path")"
+  chunk_unload_last_neighbor_refresh="$(metric chunk_unload_last_neighbor_refresh "$marker_path")"
+  chunk_unload_max="$(metric chunk_unload_max "$marker_path")"
+  chunk_unload_max_grace_kept="$(metric chunk_unload_max_grace_kept "$marker_path")"
+  chunk_unload_max_neighbor_refresh="$(metric chunk_unload_max_neighbor_refresh "$marker_path")"
+  popin_frames="$(metric popin_frames "$marker_path")"
+  popin_complete_frames="$(metric popin_complete_frames "$marker_path")"
+  popin_missing_frames="$(metric popin_missing_frames "$marker_path")"
+  popin_collision_missing_frames="$(metric popin_collision_missing_frames "$marker_path")"
+  popin_missing_chunks="$(metric popin_missing_chunks "$marker_path")"
+  popin_collision_missing_chunks="$(metric popin_collision_missing_chunks "$marker_path")"
+  popin_probe_last="$(metric popin_probe_last "$marker_path")"
+  popin_missing_last="$(metric popin_missing_last "$marker_path")"
+  popin_collision_missing_last="$(metric popin_collision_missing_last "$marker_path")"
+  popin_missing_max="$(metric popin_missing_max "$marker_path")"
+  popin_collision_missing_max="$(metric popin_collision_missing_max "$marker_path")"
+  popin_probe_radius="$(metric popin_probe_radius "$marker_path")"
+  current_chunk_loaded="$(metric current_chunk_loaded "$marker_path")"
+  current_chunk_submeshes="$(metric current_chunk_submeshes "$marker_path")"
+  current_chunk_collision="$(metric current_chunk_collision "$marker_path")"
+  ground_misses="$(metric ground_misses "$marker_path")"
+  frame_p95="$(float_metric frame_p95_ms "$marker_path")"
+  fps_p05="$(float_metric fps_p05 "$marker_path")"
+  process_wall_p95="$(float_metric process_wall_p95_ms "$marker_path")"
+  test -n "$terrain_queue_avg" || fail "missing terrain_queue_work_ms in $marker_path"
+  test -n "$mesh_avg" || fail "missing mesh triplet in $marker_path"
+  test -n "$coll_avg" || fail "missing coll triplet in $marker_path"
+  test -n "$process_wall_p95" || fail "missing process_wall_p95_ms in $marker_path"
+  test -n "$gpu_light_dir" || fail "missing gpu_light_dir in $marker_path"
+  test -n "$gpu_light_color" || fail "missing gpu_light_color in $marker_path"
+  test -n "$gpu_light_energy" || fail "missing gpu_light_energy in $marker_path"
+  test -n "$gpu_light_ambient" || fail "missing gpu_light_ambient in $marker_path"
+  test -n "$gpu_upload_fail_capacity" || fail "missing gpu_upload_fail_capacity in $marker_path"
+  test -n "$gpu_upload_fail_fragmented" || fail "missing gpu_upload_fail_fragmented in $marker_path"
+  test -n "$gpu_free_ranges" || fail "missing gpu_free_ranges in $marker_path"
+  test -n "$gpu_free_faces" || fail "missing gpu_free_faces in $marker_path"
+  test -n "$gpu_largest_free" || fail "missing gpu_largest_free in $marker_path"
+  test -n "$gpu_fragmented_free_faces" || fail "missing gpu_fragmented_free_faces in $marker_path"
+  test -n "$gpu_fragmentation_pct" || fail "missing gpu_fragmentation_pct in $marker_path"
+  test -n "$native_shadow_resource_status" || fail "missing native_shadow_resource_status in $marker_path"
+  test -n "$native_shadow_resource_width" || fail "missing native_shadow_resource_width in $marker_path"
+  test -n "$native_shadow_resource_height" || fail "missing native_shadow_resource_height in $marker_path"
+  test -n "$native_shadow_resource_layers" || fail "missing native_shadow_resource_layers in $marker_path"
+  test -n "$native_shadow_resource_bytes_per_texel" || fail "missing native_shadow_resource_bytes_per_texel in $marker_path"
+  test -n "$native_shadow_resource_bytes" || fail "missing native_shadow_resource_bytes in $marker_path"
+  test -n "$native_shadow_resource_format" || fail "missing native_shadow_resource_format in $marker_path"
+  test -n "$native_shadow_resource_usage" || fail "missing native_shadow_resource_usage in $marker_path"
+  test -n "$native_shadow_pass_load_op" || fail "missing native_shadow_pass_load_op in $marker_path"
+  test -n "$native_shadow_pass_store_op" || fail "missing native_shadow_pass_store_op in $marker_path"
+  test -n "$native_shadow_pass_clear_depth_milli" || fail "missing native_shadow_pass_clear_depth_milli in $marker_path"
+  test -n "$native_shadow_depth_attachment_status" || fail "missing native_shadow_depth_attachment_status in $marker_path"
+  test -n "$native_shadow_depth_attachment_binding_count" || fail "missing native_shadow_depth_attachment_binding_count in $marker_path"
+  test -n "$native_shadow_depth_attachment_clear_count" || fail "missing native_shadow_depth_attachment_clear_count in $marker_path"
+  test -n "$native_shadow_resource_barrier_status" || fail "missing native_shadow_resource_barrier_status in $marker_path"
+  test -n "$native_shadow_resource_transition_count" || fail "missing native_shadow_resource_transition_count in $marker_path"
+  test -n "$native_shadow_resource_barrier_error_count" || fail "missing native_shadow_resource_barrier_error_count in $marker_path"
+  test -n "$native_shadow_framebuffer_status" || fail "missing native_shadow_framebuffer_status in $marker_path"
+  test -n "$native_shadow_framebuffer_rid_allocated" || fail "missing native_shadow_framebuffer_rid_allocated in $marker_path"
+  test -n "$native_shadow_framebuffer_attachment_count" || fail "missing native_shadow_framebuffer_attachment_count in $marker_path"
+  test -n "$native_shadow_framebuffer_pass_compat_status" || fail "missing native_shadow_framebuffer_pass_compat_status in $marker_path"
+  test -n "$native_shadow_framebuffer_pass_compat_error_count" || fail "missing native_shadow_framebuffer_pass_compat_error_count in $marker_path"
+  test -n "$native_shadow_framebuffer_depth_only_enabled" || fail "missing native_shadow_framebuffer_depth_only_enabled in $marker_path"
+  test -n "$native_shadow_framebuffer_color_attachment_count" || fail "missing native_shadow_framebuffer_color_attachment_count in $marker_path"
+  test -n "$native_shadow_framebuffer_attachment_owned" || fail "missing native_shadow_framebuffer_attachment_owned in $marker_path"
+  test -n "$native_shadow_framebuffer_attachment_reuse_count" || fail "missing native_shadow_framebuffer_attachment_reuse_count in $marker_path"
+  test -n "$native_shadow_framebuffer_descriptor_valid" || fail "missing native_shadow_framebuffer_descriptor_valid in $marker_path"
+  test -n "$native_shadow_framebuffer_descriptor_error_count" || fail "missing native_shadow_framebuffer_descriptor_error_count in $marker_path"
+  test -n "$native_shadow_framebuffer_bind_ready" || fail "missing native_shadow_framebuffer_bind_ready in $marker_path"
+  test -n "$native_shadow_framebuffer_bind_error_count" || fail "missing native_shadow_framebuffer_bind_error_count in $marker_path"
+  test -n "$native_shadow_pass_descriptor_valid" || fail "missing native_shadow_pass_descriptor_valid in $marker_path"
+  test -n "$native_shadow_pass_descriptor_error_count" || fail "missing native_shadow_pass_descriptor_error_count in $marker_path"
+  test -n "$native_shadow_pass_status" || fail "missing native_shadow_pass_status in $marker_path"
+  test -n "$native_shadow_pass_rid_allocated" || fail "missing native_shadow_pass_rid_allocated in $marker_path"
+  test -n "$native_shadow_pass_submit_status" || fail "missing native_shadow_pass_submit_status in $marker_path"
+  test -n "$native_shadow_pass_lifecycle_ready" || fail "missing native_shadow_pass_lifecycle_ready in $marker_path"
+  test -n "$native_shadow_pass_lifecycle_error_count" || fail "missing native_shadow_pass_lifecycle_error_count in $marker_path"
+  test -n "$native_shadow_pass_begin_count" || fail "missing native_shadow_pass_begin_count in $marker_path"
+  test -n "$native_shadow_pass_end_count" || fail "missing native_shadow_pass_end_count in $marker_path"
+  test -n "$native_shadow_command_buffer_status" || fail "missing native_shadow_command_buffer_status in $marker_path"
+  test -n "$native_shadow_command_buffer_record_ready" || fail "missing native_shadow_command_buffer_record_ready in $marker_path"
+  test -n "$native_shadow_command_buffer_record_error_count" || fail "missing native_shadow_command_buffer_record_error_count in $marker_path"
+  test -n "$native_shadow_command_buffer_submit_ready" || fail "missing native_shadow_command_buffer_submit_ready in $marker_path"
+  test -n "$native_shadow_command_buffer_submit_error_count" || fail "missing native_shadow_command_buffer_submit_error_count in $marker_path"
+  test -n "$native_shadow_command_buffer_submit_count" || fail "missing native_shadow_command_buffer_submit_count in $marker_path"
+  test -n "$native_shadow_command_buffer_error_count" || fail "missing native_shadow_command_buffer_error_count in $marker_path"
+  test -n "$native_shadow_sampler_filter" || fail "missing native_shadow_sampler_filter in $marker_path"
+  test -n "$native_shadow_sampler_address" || fail "missing native_shadow_sampler_address in $marker_path"
+  test -n "$native_shadow_sampler_compare_op" || fail "missing native_shadow_sampler_compare_op in $marker_path"
+  test -n "$native_shadow_sampler_compare_enabled" || fail "missing native_shadow_sampler_compare_enabled in $marker_path"
+  test -n "$native_shadow_depth_bias_constant_milli" || fail "missing native_shadow_depth_bias_constant_milli in $marker_path"
+  test -n "$native_shadow_depth_bias_slope_milli" || fail "missing native_shadow_depth_bias_slope_milli in $marker_path"
+  test -n "$native_shadow_depth_bias_clamp_milli" || fail "missing native_shadow_depth_bias_clamp_milli in $marker_path"
+  test -n "$native_shadow_viewport_x_px" || fail "missing native_shadow_viewport_x_px in $marker_path"
+  test -n "$native_shadow_viewport_y_px" || fail "missing native_shadow_viewport_y_px in $marker_path"
+  test -n "$native_shadow_viewport_width_px" || fail "missing native_shadow_viewport_width_px in $marker_path"
+  test -n "$native_shadow_viewport_height_px" || fail "missing native_shadow_viewport_height_px in $marker_path"
+  test -n "$native_shadow_viewport_min_depth_milli" || fail "missing native_shadow_viewport_min_depth_milli in $marker_path"
+  test -n "$native_shadow_viewport_max_depth_milli" || fail "missing native_shadow_viewport_max_depth_milli in $marker_path"
+  test -n "$native_shadow_pipeline_depth_test_enabled" || fail "missing native_shadow_pipeline_depth_test_enabled in $marker_path"
+  test -n "$native_shadow_pipeline_depth_write_enabled" || fail "missing native_shadow_pipeline_depth_write_enabled in $marker_path"
+  test -n "$native_shadow_pipeline_cull_mode" || fail "missing native_shadow_pipeline_cull_mode in $marker_path"
+  test -n "$native_shadow_pipeline_front_face" || fail "missing native_shadow_pipeline_front_face in $marker_path"
+  test -n "$native_shadow_draw_source" || fail "missing native_shadow_draw_source in $marker_path"
+  test -n "$native_shadow_draw_primitive" || fail "missing native_shadow_draw_primitive in $marker_path"
+  test -n "$native_shadow_draw_face_stride_bytes" || fail "missing native_shadow_draw_face_stride_bytes in $marker_path"
+  test -n "$native_shadow_draw_command_stride_bytes" || fail "missing native_shadow_draw_command_stride_bytes in $marker_path"
+  test -n "$native_shadow_draw_indirect_enabled" || fail "missing native_shadow_draw_indirect_enabled in $marker_path"
+  test -n "$native_shadow_draw_status" || fail "missing native_shadow_draw_status in $marker_path"
+  test -n "$native_shadow_draw_call_count" || fail "missing native_shadow_draw_call_count in $marker_path"
+  test -n "$native_shadow_draw_face_count" || fail "missing native_shadow_draw_face_count in $marker_path"
+  test -n "$native_shadow_uniform_set_index" || fail "missing native_shadow_uniform_set_index in $marker_path"
+  test -n "$native_shadow_face_buffer_binding" || fail "missing native_shadow_face_buffer_binding in $marker_path"
+  test -n "$native_shadow_push_constant_bytes" || fail "missing native_shadow_push_constant_bytes in $marker_path"
+  test -n "$native_shadow_texture_sampling_enabled" || fail "missing native_shadow_texture_sampling_enabled in $marker_path"
+  test -n "$native_shadow_shader_language" || fail "missing native_shadow_shader_language in $marker_path"
+  test -n "$native_shadow_shader_entry" || fail "missing native_shadow_shader_entry in $marker_path"
+  test -n "$native_shadow_shader_depth_output_enabled" || fail "missing native_shadow_shader_depth_output_enabled in $marker_path"
+  test -n "$native_shadow_shader_color_output_enabled" || fail "missing native_shadow_shader_color_output_enabled in $marker_path"
+  test -n "$native_shadow_shader_source_bytes" || fail "missing native_shadow_shader_source_bytes in $marker_path"
+  test -n "$native_shadow_shader_source_checksum" || fail "missing native_shadow_shader_source_checksum in $marker_path"
+  test -n "$native_shadow_shader_module_status" || fail "missing native_shadow_shader_module_status in $marker_path"
+  test -n "$native_shadow_shader_module_rid_allocated" || fail "missing native_shadow_shader_module_rid_allocated in $marker_path"
+  test -n "$native_shadow_light_source" || fail "missing native_shadow_light_source in $marker_path"
+  test -n "$native_shadow_light_space" || fail "missing native_shadow_light_space in $marker_path"
+  test -n "$native_shadow_cascade_count" || fail "missing native_shadow_cascade_count in $marker_path"
+  test -n "$native_shadow_light_matrix_bytes" || fail "missing native_shadow_light_matrix_bytes in $marker_path"
+  test -n "$native_shadow_depth_clip_space" || fail "missing native_shadow_depth_clip_space in $marker_path"
+  test -n "$native_shadow_depth_range_source" || fail "missing native_shadow_depth_range_source in $marker_path"
+  test -n "$native_shadow_depth_near_milli" || fail "missing native_shadow_depth_near_milli in $marker_path"
+  test -n "$native_shadow_depth_far_chunks" || fail "missing native_shadow_depth_far_chunks in $marker_path"
+  require_positive_float startup_chunk_packet_ms "$startup_chunk_packet_ms"
+  test -n "$startup_packet_read_work_ms" || fail "missing startup_packet_read_work_ms in $marker_path"
+  test -n "$startup_packet_decode_work_ms" || fail "missing startup_packet_decode_work_ms in $marker_path"
+  test -n "$startup_packet_reader_elapsed_ms" || fail "missing startup_packet_reader_elapsed_ms in $marker_path"
+  test -n "$startup_packet_queue_lag_ms" || fail "missing startup_packet_queue_lag_ms in $marker_path"
+  test -n "$startup_chunk_decode_work_ms" || fail "missing startup_chunk_decode_work_ms in $marker_path"
+  require_positive_float startup_chunk_inserted_ms "$startup_chunk_inserted_ms"
+  require_positive_float startup_chunk_loaded_ms "$startup_chunk_loaded_ms"
+  require_positive_float startup_mesh_queued_ms "$startup_mesh_queued_ms"
+  require_positive_float startup_mesh_dispatched_ms "$startup_mesh_dispatched_ms"
+  require_positive_float startup_first_mesh_ms "$startup_first_mesh_ms"
+  require_positive_float startup_first_mesh_work_ms "$startup_first_mesh_work_ms"
+  test -n "$startup_first_mesh_phase_ms" || fail "missing startup_first_mesh_phase_ms in $marker_path"
+  require_positive_float startup_collision_ms "$startup_collision_ms"
+  require_positive_float startup_player_spawn_ms "$startup_player_spawn_ms"
+  test -n "$packet_q_frames" || fail "missing packet_q_frames in $marker_path"
+  test -n "$packet_q_nonempty" || fail "missing packet_q_nonempty in $marker_path"
+  test -n "$packet_q_drained" || fail "missing packet_q_drained in $marker_path"
+  test -n "$packet_q_chunk_drained" || fail "missing packet_q_chunk_drained in $marker_path"
+  test -n "$packet_q_max_drain" || fail "missing packet_q_max_drain in $marker_path"
+  test -n "$chunk_unload_scans" || fail "missing chunk_unload_scans in $marker_path"
+  test -n "$chunk_unload_scanned" || fail "missing chunk_unload_scanned in $marker_path"
+  test -n "$chunk_unload_grace_kept" || fail "missing chunk_unload_grace_kept in $marker_path"
+  test -n "$chunk_unload_total" || fail "missing chunk_unload_total in $marker_path"
+  test -n "$chunk_unload_neighbor_refresh" || fail "missing chunk_unload_neighbor_refresh in $marker_path"
+  test -n "$popin_frames" || fail "missing popin_frames in $marker_path"
+  test -n "$popin_complete_frames" || fail "missing popin_complete_frames in $marker_path"
+  test -n "$popin_missing_chunks" || fail "missing popin_missing_chunks in $marker_path"
+  test -n "$popin_collision_missing_chunks" || fail "missing popin_collision_missing_chunks in $marker_path"
+  test -n "$popin_probe_radius" || fail "missing popin_probe_radius in $marker_path"
+  test -n "$current_chunk_loaded" || fail "missing current_chunk_loaded in $marker_path"
+  test -n "$current_chunk_submeshes" || fail "missing current_chunk_submeshes in $marker_path"
+  test -n "$current_chunk_collision" || fail "missing current_chunk_collision in $marker_path"
+  test -n "$ground_misses" || fail "missing ground_misses in $marker_path"
+  require_startup_timing_order "$startup_chunk_packet_ms" "$startup_chunk_inserted_ms" "$startup_chunk_loaded_ms" "$startup_mesh_queued_ms" "$startup_mesh_dispatched_ms" "$startup_first_mesh_ms" "$startup_collision_ms" "$startup_player_spawn_ms"
+  awk \
+    -v budget="$budget_ms" \
+    -v terrain_queue_avg="$terrain_queue_avg" \
+    -v terrain_queue_max="$terrain_queue_max" \
+    -v terrain_queue_max_mesh="$terrain_queue_max_mesh" \
+    -v terrain_queue_max_coll="$terrain_queue_max_coll" \
+    -v terrain_queue_uploads_avg="$terrain_queue_uploads_avg" \
+    -v terrain_queue_uploads_max="$terrain_queue_uploads_max" \
+    -v terrain_queue_upload_kb_avg="$terrain_queue_upload_kb_avg" \
+    -v terrain_queue_upload_kb_max="$terrain_queue_upload_kb_max" \
+    -v mesh_avg="$mesh_avg" \
+    -v mesh_max="$mesh_max" \
+    -v coll_avg="$coll_avg" \
+    -v coll_max="$coll_max" \
+    -v compositor_submit_avg="$compositor_submit_avg" \
+    -v compositor_submit_max="$compositor_submit_max" \
+    -v compositor_submit_max_setup="$compositor_submit_max_setup" \
+    -v compositor_submit_max_target="$compositor_submit_max_target" \
+    -v compositor_submit_max_constants="$compositor_submit_max_constants" \
+    -v compositor_submit_max_draw="$compositor_submit_max_draw" \
+    -v compositor_gpu_avg="$compositor_gpu_avg" \
+    -v compositor_gpu_max="$compositor_gpu_max" \
+    -v compositor_gpu_us_avg="$compositor_gpu_us_avg" \
+    -v compositor_gpu_us_max="$compositor_gpu_us_max" \
+    -v compositor_gpu_samples="${compositor_gpu_samples:-0}" \
+    -v gpu_effective_draws="${gpu_effective_draws:-0}" \
+    -v gpu_draw_repeat="${gpu_draw_repeat:-1}" \
+    -v gpu_draw_cmd_bytes="${gpu_draw_cmd_bytes:-0}" \
+    -v gpu_draw_cmd_capacity_bytes="${gpu_draw_cmd_capacity_bytes:-0}" \
+    -v gpu_draw_cmd_stride="${gpu_draw_cmd_stride:-0}" \
+    -v gpu_scene_target_create="${gpu_scene_target_create:-0}" \
+    -v gpu_scene_target_reuse="${gpu_scene_target_reuse:-0}" \
+    -v gpu_scene_target_replace="${gpu_scene_target_replace:-0}" \
+    -v gpu_uniform_set_create="${gpu_uniform_set_create:-0}" \
+    -v gpu_atlas_texture_create="${gpu_atlas_texture_create:-0}" \
+    -v gpu_atlas_sampler_create="${gpu_atlas_sampler_create:-0}" \
+    -v gpu_push_constant_bytes="${gpu_push_constant_bytes:-0}" \
+    -v gpu_push_constant_updates="${gpu_push_constant_updates:-0}" \
+    -v gpu_push_constant_total_bytes="${gpu_push_constant_total_bytes:-0}" \
+    -v gpu_push_constant_avg_bytes="$gpu_push_constant_avg_bytes" \
+    -v gpu_push_constant_camera_bytes="${gpu_push_constant_camera_bytes:-0}" \
+    -v gpu_push_constant_lighting_bytes="${gpu_push_constant_lighting_bytes:-0}" \
+    -v gpu_push_constant_atlas_bytes="${gpu_push_constant_atlas_bytes:-0}" \
+    -v gpu_light_dir="${gpu_light_dir:-n/a}" \
+    -v gpu_light_color="${gpu_light_color:-n/a}" \
+    -v gpu_light_energy="${gpu_light_energy:-0}" \
+    -v gpu_light_ambient="${gpu_light_ambient:-0}" \
+    -v gpu_upload_fail_capacity="${gpu_upload_fail_capacity:-0}" \
+    -v gpu_upload_fail_fragmented="${gpu_upload_fail_fragmented:-0}" \
+    -v gpu_free_ranges="${gpu_free_ranges:-0}" \
+    -v gpu_free_faces="${gpu_free_faces:-0}" \
+    -v gpu_largest_free="${gpu_largest_free:-0}" \
+    -v gpu_fragmented_free_faces="${gpu_fragmented_free_faces:-0}" \
+    -v gpu_fragmentation_pct="${gpu_fragmentation_pct:-0}" \
+    -v native_shadow_requested="${native_shadow_requested:-0}" \
+    -v native_shadow_active="${native_shadow_active:-0}" \
+    -v native_shadow_fallback="${native_shadow_fallback:-0}" \
+    -v native_shadow_implemented="${native_shadow_implemented:-0}" \
+    -v native_shadow_resource_status="${native_shadow_resource_status:-n/a}" \
+    -v native_shadow_resource_width="${native_shadow_resource_width:-0}" \
+    -v native_shadow_resource_height="${native_shadow_resource_height:-0}" \
+    -v native_shadow_resource_layers="${native_shadow_resource_layers:-0}" \
+    -v native_shadow_resource_bytes_per_texel="${native_shadow_resource_bytes_per_texel:-0}" \
+    -v native_shadow_resource_bytes="${native_shadow_resource_bytes:-0}" \
+    -v native_shadow_resource_format="${native_shadow_resource_format:-n/a}" \
+    -v native_shadow_resource_usage="${native_shadow_resource_usage:-n/a}" \
+    -v native_shadow_pass_load_op="${native_shadow_pass_load_op:-n/a}" \
+    -v native_shadow_pass_store_op="${native_shadow_pass_store_op:-n/a}" \
+    -v native_shadow_pass_clear_depth_milli="${native_shadow_pass_clear_depth_milli:-0}" \
+    -v native_shadow_depth_attachment_status="${native_shadow_depth_attachment_status:-n/a}" \
+    -v native_shadow_depth_attachment_binding_count="${native_shadow_depth_attachment_binding_count:-0}" \
+    -v native_shadow_depth_attachment_clear_count="${native_shadow_depth_attachment_clear_count:-0}" \
+    -v native_shadow_resource_barrier_status="${native_shadow_resource_barrier_status:-n/a}" \
+    -v native_shadow_resource_transition_count="${native_shadow_resource_transition_count:-0}" \
+    -v native_shadow_resource_barrier_error_count="${native_shadow_resource_barrier_error_count:-0}" \
+    -v native_shadow_framebuffer_status="${native_shadow_framebuffer_status:-n/a}" \
+    -v native_shadow_framebuffer_rid_allocated="${native_shadow_framebuffer_rid_allocated:-0}" \
+    -v native_shadow_framebuffer_attachment_count="${native_shadow_framebuffer_attachment_count:-0}" \
+    -v native_shadow_framebuffer_pass_compat_status="${native_shadow_framebuffer_pass_compat_status:-n/a}" \
+    -v native_shadow_framebuffer_pass_compat_error_count="${native_shadow_framebuffer_pass_compat_error_count:-0}" \
+    -v native_shadow_framebuffer_depth_only_enabled="${native_shadow_framebuffer_depth_only_enabled:-0}" \
+    -v native_shadow_framebuffer_color_attachment_count="${native_shadow_framebuffer_color_attachment_count:-0}" \
+    -v native_shadow_framebuffer_attachment_owned="${native_shadow_framebuffer_attachment_owned:-0}" \
+    -v native_shadow_framebuffer_attachment_reuse_count="${native_shadow_framebuffer_attachment_reuse_count:-0}" \
+    -v native_shadow_framebuffer_descriptor_valid="${native_shadow_framebuffer_descriptor_valid:-0}" \
+    -v native_shadow_framebuffer_descriptor_error_count="${native_shadow_framebuffer_descriptor_error_count:-0}" \
+    -v native_shadow_framebuffer_bind_ready="${native_shadow_framebuffer_bind_ready:-0}" \
+    -v native_shadow_framebuffer_bind_error_count="${native_shadow_framebuffer_bind_error_count:-0}" \
+    -v native_shadow_pass_descriptor_valid="${native_shadow_pass_descriptor_valid:-0}" \
+    -v native_shadow_pass_descriptor_error_count="${native_shadow_pass_descriptor_error_count:-0}" \
+    -v native_shadow_pass_status="${native_shadow_pass_status:-n/a}" \
+    -v native_shadow_pass_rid_allocated="${native_shadow_pass_rid_allocated:-0}" \
+    -v native_shadow_pass_submit_status="${native_shadow_pass_submit_status:-n/a}" \
+    -v native_shadow_pass_lifecycle_ready="${native_shadow_pass_lifecycle_ready:-0}" \
+    -v native_shadow_pass_lifecycle_error_count="${native_shadow_pass_lifecycle_error_count:-0}" \
+    -v native_shadow_pass_begin_count="${native_shadow_pass_begin_count:-0}" \
+    -v native_shadow_pass_end_count="${native_shadow_pass_end_count:-0}" \
+    -v native_shadow_command_buffer_status="${native_shadow_command_buffer_status:-n/a}" \
+    -v native_shadow_command_buffer_record_ready="${native_shadow_command_buffer_record_ready:-0}" \
+    -v native_shadow_command_buffer_record_error_count="${native_shadow_command_buffer_record_error_count:-0}" \
+    -v native_shadow_command_buffer_submit_ready="${native_shadow_command_buffer_submit_ready:-0}" \
+    -v native_shadow_command_buffer_submit_error_count="${native_shadow_command_buffer_submit_error_count:-0}" \
+    -v native_shadow_command_buffer_submit_count="${native_shadow_command_buffer_submit_count:-0}" \
+    -v native_shadow_command_buffer_error_count="${native_shadow_command_buffer_error_count:-0}" \
+    -v native_shadow_sampler_filter="${native_shadow_sampler_filter:-n/a}" \
+    -v native_shadow_sampler_address="${native_shadow_sampler_address:-n/a}" \
+    -v native_shadow_sampler_compare_op="${native_shadow_sampler_compare_op:-n/a}" \
+    -v native_shadow_sampler_compare_enabled="${native_shadow_sampler_compare_enabled:-0}" \
+    -v native_shadow_depth_bias_constant_milli="${native_shadow_depth_bias_constant_milli:-0}" \
+    -v native_shadow_depth_bias_slope_milli="${native_shadow_depth_bias_slope_milli:-0}" \
+    -v native_shadow_depth_bias_clamp_milli="${native_shadow_depth_bias_clamp_milli:-0}" \
+    -v native_shadow_viewport_x_px="${native_shadow_viewport_x_px:-0}" \
+    -v native_shadow_viewport_y_px="${native_shadow_viewport_y_px:-0}" \
+    -v native_shadow_viewport_width_px="${native_shadow_viewport_width_px:-0}" \
+    -v native_shadow_viewport_height_px="${native_shadow_viewport_height_px:-0}" \
+    -v native_shadow_viewport_min_depth_milli="${native_shadow_viewport_min_depth_milli:-0}" \
+    -v native_shadow_viewport_max_depth_milli="${native_shadow_viewport_max_depth_milli:-0}" \
+    -v native_shadow_pipeline_depth_test_enabled="${native_shadow_pipeline_depth_test_enabled:-0}" \
+    -v native_shadow_pipeline_depth_write_enabled="${native_shadow_pipeline_depth_write_enabled:-0}" \
+    -v native_shadow_pipeline_cull_mode="${native_shadow_pipeline_cull_mode:-n/a}" \
+    -v native_shadow_pipeline_front_face="${native_shadow_pipeline_front_face:-n/a}" \
+    -v native_shadow_draw_source="${native_shadow_draw_source:-n/a}" \
+    -v native_shadow_draw_primitive="${native_shadow_draw_primitive:-n/a}" \
+    -v native_shadow_draw_face_stride_bytes="${native_shadow_draw_face_stride_bytes:-0}" \
+    -v native_shadow_draw_command_stride_bytes="${native_shadow_draw_command_stride_bytes:-0}" \
+    -v native_shadow_draw_indirect_enabled="${native_shadow_draw_indirect_enabled:-0}" \
+    -v native_shadow_draw_status="${native_shadow_draw_status:-n/a}" \
+    -v native_shadow_draw_call_count="${native_shadow_draw_call_count:-0}" \
+    -v native_shadow_draw_face_count="${native_shadow_draw_face_count:-0}" \
+    -v native_shadow_uniform_set_index="${native_shadow_uniform_set_index:-0}" \
+    -v native_shadow_face_buffer_binding="${native_shadow_face_buffer_binding:-0}" \
+    -v native_shadow_push_constant_bytes="${native_shadow_push_constant_bytes:-0}" \
+    -v native_shadow_texture_sampling_enabled="${native_shadow_texture_sampling_enabled:-0}" \
+    -v native_shadow_shader_language="${native_shadow_shader_language:-n/a}" \
+    -v native_shadow_shader_entry="${native_shadow_shader_entry:-n/a}" \
+    -v native_shadow_shader_depth_output_enabled="${native_shadow_shader_depth_output_enabled:-0}" \
+    -v native_shadow_shader_color_output_enabled="${native_shadow_shader_color_output_enabled:-0}" \
+    -v native_shadow_shader_source_bytes="${native_shadow_shader_source_bytes:-0}" \
+    -v native_shadow_shader_source_checksum="${native_shadow_shader_source_checksum:-0}" \
+    -v native_shadow_shader_module_status="${native_shadow_shader_module_status:-n/a}" \
+    -v native_shadow_shader_module_rid_allocated="${native_shadow_shader_module_rid_allocated:-0}" \
+    -v native_shadow_light_source="${native_shadow_light_source:-n/a}" \
+    -v native_shadow_light_space="${native_shadow_light_space:-n/a}" \
+    -v native_shadow_cascade_count="${native_shadow_cascade_count:-0}" \
+    -v native_shadow_light_matrix_bytes="${native_shadow_light_matrix_bytes:-0}" \
+    -v native_shadow_depth_clip_space="${native_shadow_depth_clip_space:-n/a}" \
+    -v native_shadow_depth_range_source="${native_shadow_depth_range_source:-n/a}" \
+    -v native_shadow_depth_near_milli="${native_shadow_depth_near_milli:-0}" \
+    -v native_shadow_depth_far_chunks="${native_shadow_depth_far_chunks:-0}" \
+    -v native_shadow_resource_creates="${native_shadow_resource_creates:-0}" \
+    -v native_shadow_resource_reuses="${native_shadow_resource_reuses:-0}" \
+    -v native_shadow_resource_replaces="${native_shadow_resource_replaces:-0}" \
+    -v native_shadow_resource_releases="${native_shadow_resource_releases:-0}" \
+    -v native_shadow_covered_chunks="${native_shadow_covered_chunks:-0}" \
+    -v native_shadow_covered_subchunks="${native_shadow_covered_subchunks:-0}" \
+    -v smoke_pose="${smoke_pose:-n/a}" \
+    -v lighting_variant="${lighting_variant:-n/a}" \
+    -v gpu_cull="${gpu_cull:-n/a}" \
+    -v gpu_front_face="${gpu_front_face:-n/a}" \
+    -v startup_chunk_packet_ms="$startup_chunk_packet_ms" \
+    -v startup_packet_read_work_ms="${startup_packet_read_work_ms:-0}" \
+    -v startup_packet_decode_work_ms="${startup_packet_decode_work_ms:-0}" \
+    -v startup_packet_reader_elapsed_ms="${startup_packet_reader_elapsed_ms:-0}" \
+    -v startup_packet_queue_lag_ms="${startup_packet_queue_lag_ms:-0}" \
+    -v startup_chunk_decode_work_ms="${startup_chunk_decode_work_ms:-0}" \
+    -v startup_chunk_inserted_ms="$startup_chunk_inserted_ms" \
+    -v startup_chunk_loaded_ms="$startup_chunk_loaded_ms" \
+    -v startup_mesh_queued_ms="$startup_mesh_queued_ms" \
+    -v startup_mesh_dispatched_ms="$startup_mesh_dispatched_ms" \
+    -v startup_first_mesh_ms="$startup_first_mesh_ms" \
+    -v startup_first_mesh_work_ms="$startup_first_mesh_work_ms" \
+    -v startup_first_mesh_phase_ms="$startup_first_mesh_phase_ms" \
+    -v startup_first_mesh_collision_work_ms="${startup_first_mesh_collision_work_ms:-0}" \
+    -v startup_collision_ms="$startup_collision_ms" \
+    -v startup_player_spawn_ms="$startup_player_spawn_ms" \
+    -v packet_q_frames="${packet_q_frames:-0}" \
+    -v packet_q_nonempty="${packet_q_nonempty:-0}" \
+    -v packet_q_drained="${packet_q_drained:-0}" \
+    -v packet_q_chunk_drained="${packet_q_chunk_drained:-0}" \
+    -v packet_q_last_drain="${packet_q_last_drain:-0}" \
+    -v packet_q_max_drain="${packet_q_max_drain:-0}" \
+    -v packet_q_last_chunk_drain="${packet_q_last_chunk_drain:-0}" \
+    -v packet_q_max_chunk_drain="${packet_q_max_chunk_drain:-0}" \
+    -v packet_q_lag_last="$packet_q_lag_last" \
+    -v packet_q_lag_avg="$packet_q_lag_avg" \
+    -v packet_q_lag_max="$packet_q_lag_max" \
+    -v packet_q_read_work_last="$packet_q_read_work_last" \
+    -v packet_q_read_work_avg="$packet_q_read_work_avg" \
+    -v packet_q_read_work_max="$packet_q_read_work_max" \
+    -v packet_q_decode_work_last="$packet_q_decode_work_last" \
+    -v packet_q_decode_work_avg="$packet_q_decode_work_avg" \
+    -v packet_q_decode_work_max="$packet_q_decode_work_max" \
+    -v packet_q_reader_elapsed_last="$packet_q_reader_elapsed_last" \
+    -v packet_q_reader_elapsed_max="$packet_q_reader_elapsed_max" \
+    -v chunk_unload_scans="${chunk_unload_scans:-0}" \
+    -v chunk_unload_scanned="${chunk_unload_scanned:-0}" \
+    -v chunk_unload_grace_kept="${chunk_unload_grace_kept:-0}" \
+    -v chunk_unload_total="${chunk_unload_total:-0}" \
+    -v chunk_unload_neighbor_refresh="${chunk_unload_neighbor_refresh:-0}" \
+    -v chunk_unload_last="${chunk_unload_last:-0}" \
+    -v chunk_unload_last_grace_kept="${chunk_unload_last_grace_kept:-0}" \
+    -v chunk_unload_last_neighbor_refresh="${chunk_unload_last_neighbor_refresh:-0}" \
+    -v chunk_unload_max="${chunk_unload_max:-0}" \
+    -v chunk_unload_max_grace_kept="${chunk_unload_max_grace_kept:-0}" \
+    -v chunk_unload_max_neighbor_refresh="${chunk_unload_max_neighbor_refresh:-0}" \
+    -v popin_frames="${popin_frames:-0}" \
+    -v popin_complete_frames="${popin_complete_frames:-0}" \
+    -v popin_missing_frames="${popin_missing_frames:-0}" \
+    -v popin_collision_missing_frames="${popin_collision_missing_frames:-0}" \
+    -v popin_missing_chunks="${popin_missing_chunks:-0}" \
+    -v popin_collision_missing_chunks="${popin_collision_missing_chunks:-0}" \
+    -v popin_probe_last="${popin_probe_last:-0}" \
+    -v popin_missing_last="${popin_missing_last:-0}" \
+    -v popin_collision_missing_last="${popin_collision_missing_last:-0}" \
+    -v popin_missing_max="${popin_missing_max:-0}" \
+    -v popin_collision_missing_max="${popin_collision_missing_max:-0}" \
+    -v popin_probe_radius="${popin_probe_radius:-0}" \
+    -v current_chunk_loaded="${current_chunk_loaded:-0}" \
+    -v current_chunk_submeshes="${current_chunk_submeshes:-0}" \
+    -v current_chunk_collision="${current_chunk_collision:-0}" \
+    -v ground_misses="${ground_misses:-0}" \
+    -v frame_p95="$frame_p95" \
+    -v fps_p05="$fps_p05" \
+    -v process_wall_p95="$process_wall_p95" '
+      BEGIN {
+        status = "pass"
+        over = terrain_queue_max - budget
+        if (over > 0.0) {
+          status = "fail"
+        }
+        printf("GPU terrain movement stress summary target_fps=%.0f budget_ms=%.3f smoke_pose=%s lighting_variant=%s\n", 1000.0 / budget, budget, smoke_pose, lighting_variant)
+        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f queue_uploads_avg=%.2f queue_uploads_max=%.0f queue_upload_kb_avg=%.1f queue_upload_kb_max=%.1f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_effective_draws=%d gpu_draw_repeat=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_scene_target_create=%d gpu_scene_target_reuse=%d gpu_scene_target_replace=%d gpu_uniform_set_create=%d gpu_atlas_texture_create=%d gpu_atlas_sampler_create=%d gpu_push_constant_bytes=%d gpu_push_constant_updates=%d gpu_push_constant_total_bytes=%d gpu_push_constant_avg_bytes=%.1f gpu_push_constant_camera_bytes=%d gpu_push_constant_lighting_bytes=%d gpu_push_constant_atlas_bytes=%d gpu_light_dir=%s gpu_light_color=%s gpu_light_energy=%.3f gpu_light_ambient=%.3f gpu_cull=%s gpu_front_face=%s gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d gpu_free_ranges=%d gpu_free_faces=%d gpu_largest_free=%d gpu_fragmented_free_faces=%d gpu_fragmentation_pct=%.1f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, terrain_queue_uploads_avg, terrain_queue_uploads_max, terrain_queue_upload_kb_avg, terrain_queue_upload_kb_max, mesh_avg, mesh_max, coll_avg, coll_max, gpu_effective_draws, gpu_draw_repeat, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_scene_target_create, gpu_scene_target_reuse, gpu_scene_target_replace, gpu_uniform_set_create, gpu_atlas_texture_create, gpu_atlas_sampler_create, gpu_push_constant_bytes, gpu_push_constant_updates, gpu_push_constant_total_bytes, gpu_push_constant_avg_bytes, gpu_push_constant_camera_bytes, gpu_push_constant_lighting_bytes, gpu_push_constant_atlas_bytes, gpu_light_dir, gpu_light_color, gpu_light_energy, gpu_light_ambient, gpu_cull, gpu_front_face, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, gpu_free_ranges, gpu_free_faces, gpu_largest_free, gpu_fragmented_free_faces, gpu_fragmentation_pct, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
+        printf("movement_native_shadow requested=%d active=%d fallback=%d implemented=%d resource_status=%s resource_width=%d resource_height=%d resource_layers=%d resource_bytes_per_texel=%d resource_bytes=%d resource_format=%s resource_usage=%s pass_load_op=%s pass_store_op=%s pass_clear_depth_milli=%d depth_attachment_status=%s depth_attachment_binding_count=%d depth_attachment_clear_count=%d resource_barrier_status=%s resource_transition_count=%d resource_barrier_error_count=%d framebuffer_status=%s framebuffer_rid_allocated=%d framebuffer_attachment_count=%d framebuffer_pass_compat_status=%s framebuffer_pass_compat_error_count=%d framebuffer_depth_only_enabled=%d framebuffer_color_attachment_count=%d framebuffer_attachment_owned=%d framebuffer_attachment_reuse_count=%d framebuffer_descriptor_valid=%d framebuffer_descriptor_error_count=%d framebuffer_bind_ready=%d framebuffer_bind_error_count=%d pass_descriptor_valid=%d pass_descriptor_error_count=%d pass_status=%s pass_rid_allocated=%d pass_submit_status=%s pass_lifecycle_ready=%d pass_lifecycle_error_count=%d pass_begin_count=%d pass_end_count=%d command_buffer_status=%s command_buffer_record_ready=%d command_buffer_record_error_count=%d command_buffer_submit_ready=%d command_buffer_submit_error_count=%d command_buffer_submit_count=%d command_buffer_error_count=%d sampler_filter=%s sampler_address=%s sampler_compare_op=%s sampler_compare_enabled=%d depth_bias_constant_milli=%d depth_bias_slope_milli=%d depth_bias_clamp_milli=%d viewport_x_px=%d viewport_y_px=%d viewport_width_px=%d viewport_height_px=%d viewport_min_depth_milli=%d viewport_max_depth_milli=%d pipeline_depth_test_enabled=%d pipeline_depth_write_enabled=%d pipeline_cull_mode=%s pipeline_front_face=%s draw_source=%s draw_primitive=%s draw_face_stride_bytes=%d draw_command_stride_bytes=%d draw_indirect_enabled=%d draw_status=%s draw_call_count=%d draw_face_count=%d uniform_set_index=%d face_buffer_binding=%d push_constant_bytes=%d texture_sampling_enabled=%d shader_language=%s shader_entry=%s shader_depth_output_enabled=%d shader_color_output_enabled=%d shader_source_bytes=%d shader_source_checksum=%d shader_module_status=%s shader_module_rid_allocated=%d light_source=%s light_space=%s cascade_count=%d light_matrix_bytes=%d depth_clip_space=%s depth_range_source=%s depth_near_milli=%d depth_far_chunks=%d resource_creates=%d resource_reuses=%d resource_replaces=%d resource_releases=%d covered_chunks=%d covered_subchunks=%d native_shadow_requested=%d native_shadow_active=%d native_shadow_fallback=%d native_shadow_implemented=%d native_shadow_resource_width=%d native_shadow_resource_height=%d native_shadow_resource_layers=%d native_shadow_resource_bytes_per_texel=%d native_shadow_resource_bytes=%d native_shadow_pass_clear_depth_milli=%d native_shadow_depth_attachment_binding_count=%d native_shadow_depth_attachment_clear_count=%d native_shadow_resource_transition_count=%d native_shadow_resource_barrier_error_count=%d native_shadow_framebuffer_rid_allocated=%d native_shadow_framebuffer_attachment_count=%d native_shadow_framebuffer_pass_compat_error_count=%d native_shadow_framebuffer_depth_only_enabled=%d native_shadow_framebuffer_color_attachment_count=%d native_shadow_framebuffer_attachment_owned=%d native_shadow_framebuffer_attachment_reuse_count=%d native_shadow_framebuffer_descriptor_valid=%d native_shadow_framebuffer_descriptor_error_count=%d native_shadow_framebuffer_bind_ready=%d native_shadow_framebuffer_bind_error_count=%d native_shadow_pass_descriptor_valid=%d native_shadow_pass_descriptor_error_count=%d native_shadow_pass_lifecycle_ready=%d native_shadow_pass_lifecycle_error_count=%d native_shadow_pass_rid_allocated=%d native_shadow_pass_begin_count=%d native_shadow_pass_end_count=%d native_shadow_command_buffer_record_ready=%d native_shadow_command_buffer_record_error_count=%d native_shadow_command_buffer_submit_ready=%d native_shadow_command_buffer_submit_error_count=%d native_shadow_command_buffer_submit_count=%d native_shadow_command_buffer_error_count=%d native_shadow_sampler_compare_enabled=%d native_shadow_depth_bias_constant_milli=%d native_shadow_depth_bias_slope_milli=%d native_shadow_depth_bias_clamp_milli=%d native_shadow_viewport_x_px=%d native_shadow_viewport_y_px=%d native_shadow_viewport_width_px=%d native_shadow_viewport_height_px=%d native_shadow_viewport_min_depth_milli=%d native_shadow_viewport_max_depth_milli=%d native_shadow_pipeline_depth_test_enabled=%d native_shadow_pipeline_depth_write_enabled=%d native_shadow_draw_face_stride_bytes=%d native_shadow_draw_command_stride_bytes=%d native_shadow_draw_indirect_enabled=%d native_shadow_draw_call_count=%d native_shadow_draw_face_count=%d native_shadow_uniform_set_index=%d native_shadow_face_buffer_binding=%d native_shadow_push_constant_bytes=%d native_shadow_texture_sampling_enabled=%d native_shadow_shader_depth_output_enabled=%d native_shadow_shader_color_output_enabled=%d native_shadow_shader_source_bytes=%d native_shadow_shader_source_checksum=%d native_shadow_shader_module_rid_allocated=%d native_shadow_cascade_count=%d native_shadow_light_matrix_bytes=%d native_shadow_depth_near_milli=%d native_shadow_depth_far_chunks=%d native_shadow_resource_creates=%d native_shadow_resource_reuses=%d native_shadow_resource_replaces=%d native_shadow_resource_releases=%d native_shadow_covered_chunks=%d native_shadow_covered_subchunks=%d\n", native_shadow_requested, native_shadow_active, native_shadow_fallback, native_shadow_implemented, native_shadow_resource_status, native_shadow_resource_width, native_shadow_resource_height, native_shadow_resource_layers, native_shadow_resource_bytes_per_texel, native_shadow_resource_bytes, native_shadow_resource_format, native_shadow_resource_usage, native_shadow_pass_load_op, native_shadow_pass_store_op, native_shadow_pass_clear_depth_milli, native_shadow_depth_attachment_status, native_shadow_depth_attachment_binding_count, native_shadow_depth_attachment_clear_count, native_shadow_resource_barrier_status, native_shadow_resource_transition_count, native_shadow_resource_barrier_error_count, native_shadow_framebuffer_status, native_shadow_framebuffer_rid_allocated, native_shadow_framebuffer_attachment_count, native_shadow_framebuffer_pass_compat_status, native_shadow_framebuffer_pass_compat_error_count, native_shadow_framebuffer_depth_only_enabled, native_shadow_framebuffer_color_attachment_count, native_shadow_framebuffer_attachment_owned, native_shadow_framebuffer_attachment_reuse_count, native_shadow_framebuffer_descriptor_valid, native_shadow_framebuffer_descriptor_error_count, native_shadow_framebuffer_bind_ready, native_shadow_framebuffer_bind_error_count, native_shadow_pass_descriptor_valid, native_shadow_pass_descriptor_error_count, native_shadow_pass_status, native_shadow_pass_rid_allocated, native_shadow_pass_submit_status, native_shadow_pass_lifecycle_ready, native_shadow_pass_lifecycle_error_count, native_shadow_pass_begin_count, native_shadow_pass_end_count, native_shadow_command_buffer_status, native_shadow_command_buffer_record_ready, native_shadow_command_buffer_record_error_count, native_shadow_command_buffer_submit_ready, native_shadow_command_buffer_submit_error_count, native_shadow_command_buffer_submit_count, native_shadow_command_buffer_error_count, native_shadow_sampler_filter, native_shadow_sampler_address, native_shadow_sampler_compare_op, native_shadow_sampler_compare_enabled, native_shadow_depth_bias_constant_milli, native_shadow_depth_bias_slope_milli, native_shadow_depth_bias_clamp_milli, native_shadow_viewport_x_px, native_shadow_viewport_y_px, native_shadow_viewport_width_px, native_shadow_viewport_height_px, native_shadow_viewport_min_depth_milli, native_shadow_viewport_max_depth_milli, native_shadow_pipeline_depth_test_enabled, native_shadow_pipeline_depth_write_enabled, native_shadow_pipeline_cull_mode, native_shadow_pipeline_front_face, native_shadow_draw_source, native_shadow_draw_primitive, native_shadow_draw_face_stride_bytes, native_shadow_draw_command_stride_bytes, native_shadow_draw_indirect_enabled, native_shadow_draw_status, native_shadow_draw_call_count, native_shadow_draw_face_count, native_shadow_uniform_set_index, native_shadow_face_buffer_binding, native_shadow_push_constant_bytes, native_shadow_texture_sampling_enabled, native_shadow_shader_language, native_shadow_shader_entry, native_shadow_shader_depth_output_enabled, native_shadow_shader_color_output_enabled, native_shadow_shader_source_bytes, native_shadow_shader_source_checksum, native_shadow_shader_module_status, native_shadow_shader_module_rid_allocated, native_shadow_light_source, native_shadow_light_space, native_shadow_cascade_count, native_shadow_light_matrix_bytes, native_shadow_depth_clip_space, native_shadow_depth_range_source, native_shadow_depth_near_milli, native_shadow_depth_far_chunks, native_shadow_resource_creates, native_shadow_resource_reuses, native_shadow_resource_replaces, native_shadow_resource_releases, native_shadow_covered_chunks, native_shadow_covered_subchunks, native_shadow_requested, native_shadow_active, native_shadow_fallback, native_shadow_implemented, native_shadow_resource_width, native_shadow_resource_height, native_shadow_resource_layers, native_shadow_resource_bytes_per_texel, native_shadow_resource_bytes, native_shadow_pass_clear_depth_milli, native_shadow_depth_attachment_binding_count, native_shadow_depth_attachment_clear_count, native_shadow_resource_transition_count, native_shadow_resource_barrier_error_count, native_shadow_framebuffer_rid_allocated, native_shadow_framebuffer_attachment_count, native_shadow_framebuffer_pass_compat_error_count, native_shadow_framebuffer_depth_only_enabled, native_shadow_framebuffer_color_attachment_count, native_shadow_framebuffer_attachment_owned, native_shadow_framebuffer_attachment_reuse_count, native_shadow_framebuffer_descriptor_valid, native_shadow_framebuffer_descriptor_error_count, native_shadow_framebuffer_bind_ready, native_shadow_framebuffer_bind_error_count, native_shadow_pass_descriptor_valid, native_shadow_pass_descriptor_error_count, native_shadow_pass_lifecycle_ready, native_shadow_pass_lifecycle_error_count, native_shadow_pass_rid_allocated, native_shadow_pass_begin_count, native_shadow_pass_end_count, native_shadow_command_buffer_record_ready, native_shadow_command_buffer_record_error_count, native_shadow_command_buffer_submit_ready, native_shadow_command_buffer_submit_error_count, native_shadow_command_buffer_submit_count, native_shadow_command_buffer_error_count, native_shadow_sampler_compare_enabled, native_shadow_depth_bias_constant_milli, native_shadow_depth_bias_slope_milli, native_shadow_depth_bias_clamp_milli, native_shadow_viewport_x_px, native_shadow_viewport_y_px, native_shadow_viewport_width_px, native_shadow_viewport_height_px, native_shadow_viewport_min_depth_milli, native_shadow_viewport_max_depth_milli, native_shadow_pipeline_depth_test_enabled, native_shadow_pipeline_depth_write_enabled, native_shadow_draw_face_stride_bytes, native_shadow_draw_command_stride_bytes, native_shadow_draw_indirect_enabled, native_shadow_draw_call_count, native_shadow_draw_face_count, native_shadow_uniform_set_index, native_shadow_face_buffer_binding, native_shadow_push_constant_bytes, native_shadow_texture_sampling_enabled, native_shadow_shader_depth_output_enabled, native_shadow_shader_color_output_enabled, native_shadow_shader_source_bytes, native_shadow_shader_source_checksum, native_shadow_shader_module_rid_allocated, native_shadow_cascade_count, native_shadow_light_matrix_bytes, native_shadow_depth_near_milli, native_shadow_depth_far_chunks, native_shadow_resource_creates, native_shadow_resource_reuses, native_shadow_resource_replaces, native_shadow_resource_releases, native_shadow_covered_chunks, native_shadow_covered_subchunks)
+        printf("movement_startup packet_ms=%.3f packet_read_work_ms=%.3f packet_decode_work_ms=%.3f packet_reader_elapsed_ms=%.3f packet_queue_lag_ms=%.3f chunk_decode_work_ms=%.3f chunk_inserted_ms=%.3f chunk_loaded_ms=%.3f mesh_queued_ms=%.3f mesh_dispatched_ms=%.3f first_mesh_ms=%.3f first_mesh_work_ms=%.3f first_mesh_phase_ms=%s first_mesh_collision_work_ms=%.3f collision_ms=%.3f player_spawn_ms=%.3f\n", startup_chunk_packet_ms, startup_packet_read_work_ms, startup_packet_decode_work_ms, startup_packet_reader_elapsed_ms, startup_packet_queue_lag_ms, startup_chunk_decode_work_ms, startup_chunk_inserted_ms, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_mesh_dispatched_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_phase_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms)
+        printf("movement_packet_queue frames=%d nonempty_frames=%d drained=%d chunk_drained=%d last_drain=%d max_drain=%d last_chunk_drain=%d max_chunk_drain=%d lag_last_ms=%.3f lag_avg_ms=%.3f lag_max_ms=%.3f read_work_last_ms=%.3f read_work_avg_ms=%.3f read_work_max_ms=%.3f decode_work_last_ms=%.3f decode_work_avg_ms=%.3f decode_work_max_ms=%.3f reader_elapsed_last_ms=%.3f reader_elapsed_max_ms=%.3f\n", packet_q_frames, packet_q_nonempty, packet_q_drained, packet_q_chunk_drained, packet_q_last_drain, packet_q_max_drain, packet_q_last_chunk_drain, packet_q_max_chunk_drain, packet_q_lag_last, packet_q_lag_avg, packet_q_lag_max, packet_q_read_work_last, packet_q_read_work_avg, packet_q_read_work_max, packet_q_decode_work_last, packet_q_decode_work_avg, packet_q_decode_work_max, packet_q_reader_elapsed_last, packet_q_reader_elapsed_max)
+        printf("movement_chunk_unload scans=%d scanned=%d grace_kept=%d unloaded=%d neighbor_refreshes=%d last_unloaded=%d last_grace_kept=%d last_neighbor_refreshes=%d max_unloaded=%d max_grace_kept=%d max_neighbor_refreshes=%d\n", chunk_unload_scans, chunk_unload_scanned, chunk_unload_grace_kept, chunk_unload_total, chunk_unload_neighbor_refresh, chunk_unload_last, chunk_unload_last_grace_kept, chunk_unload_last_neighbor_refresh, chunk_unload_max, chunk_unload_max_grace_kept, chunk_unload_max_neighbor_refresh)
+        printf("movement_popin frames=%d complete_frames=%d missing_frames=%d collision_missing_frames=%d missing_chunks=%d collision_missing_chunks=%d probe_last=%d missing_last=%d collision_missing_last=%d missing_max=%d collision_missing_max=%d probe_radius=%d\n", popin_frames, popin_complete_frames, popin_missing_frames, popin_collision_missing_frames, popin_missing_chunks, popin_collision_missing_chunks, popin_probe_last, popin_missing_last, popin_collision_missing_last, popin_missing_max, popin_collision_missing_max, popin_probe_radius)
+        printf("movement_readiness current_chunk_loaded=%d current_render_ready=%d current_chunk_submeshes=%d current_collision_ready=%d current_chunk_collision=%d ground_misses=%d popin_collision_missing_max=%d startup_collision_ms=%.3f startup_player_spawn_ms=%.3f\n", current_chunk_loaded, current_chunk_submeshes > 0, current_chunk_submeshes, current_chunk_collision > 0, current_chunk_collision, ground_misses, popin_collision_missing_max, startup_collision_ms, startup_player_spawn_ms)
+      }
+    ' > "$summary_path"
+  cat "$summary_path"
+}
+
+enforce_terrain_queue_budget() {
+  budget_ms="$(frame_budget_ms)"
+  terrain_queue_max="$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)"
+  test -n "$terrain_queue_max" || fail "missing terrain_queue_work_ms in $marker_path"
+  awk -v terrain_queue_max="$terrain_queue_max" -v budget="$budget_ms" '
+    BEGIN {
+      if (terrain_queue_max > budget) {
+        printf("gpu_terrain_movement_stress: terrain_queue_max_ms %.3f exceeds %.3f\n", terrain_queue_max, budget) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
+enforce_process_wall_budget() {
+  budget_ms="$(frame_budget_ms)"
+  p95_ms="$(float_metric process_wall_p95_ms "$marker_path")"
+  test -n "$p95_ms" || fail "missing process_wall_p95_ms in $marker_path"
+  awk -v p95="$p95_ms" -v budget="$budget_ms" '
+    BEGIN {
+      if (p95 > budget) {
+        printf("gpu_terrain_movement_stress: process_wall_p95_ms %.3f exceeds %.3f\n", p95, budget) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
+enforce_gpu_compositor_budget() {
+  budget_ms="$(frame_budget_ms)"
+  max_ms="$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 3)"
+  test -n "$max_ms" || fail "missing gpu_compositor_submit_ms in $marker_path"
+  awk -v max_ms="$max_ms" -v budget="$budget_ms" '
+    BEGIN {
+      if (max_ms > budget) {
+        printf("gpu_terrain_movement_stress: gpu_compositor_submit_max_ms %.3f exceeds %.3f\n", max_ms, budget) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
+enforce_gpu_timestamp_budget() {
+  budget_ms="$(frame_budget_ms)"
+  max_ms="$(perf_triplet_value gpu_compositor_gpu_ms "$marker_path" 3)"
+  test -n "$max_ms" || fail "missing gpu_compositor_gpu_ms in $marker_path"
+  awk -v max_ms="$max_ms" -v budget="$budget_ms" '
+    BEGIN {
+      if (max_ms > budget) {
+        printf("gpu_terrain_movement_stress: gpu_compositor_gpu_max_ms %.3f exceeds %.3f\n", max_ms, budget) > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
+require_metric_ge() {
+  marker_path="$1"
+  key="$2"
+  min_value="$3"
+  value="$(metric "$key" "$marker_path")"
+  test -n "$value" || fail "missing $key in $marker_path"
+  if [ "$value" -lt "$min_value" ]; then
+    fail "$key=$value is below $min_value in $marker_path"
+  fi
+}
+
+require_metric_eq() {
+  marker_path="$1"
+  key="$2"
+  expected="$3"
+  value="$(metric "$key" "$marker_path")"
+  test -n "$value" || fail "missing $key in $marker_path"
+  if [ "$value" -ne "$expected" ]; then
+    fail "$key=$value, expected $expected in $marker_path"
+  fi
+}
+
+env_flag_is_true() {
+  value="$1"
+  normalized="$(
+    printf '%s\n' "$value" \
+      | awk '{ gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print tolower($0); exit }'
+  )"
+  case "$normalized" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_transparent_fallback_marker_if_requested() {
+  marker_path="$1"
+  if ! env_flag_is_true "${RUMPELMC_GPU_TERRAIN_TRANSPARENT:-}"; then
+    return 0
+  fi
+
+  require_metric_eq "$marker_path" "transparent_requested" 1
+  require_metric_eq "$marker_path" "transparent_active" 0
+  require_metric_eq "$marker_path" "transparent_fallback" 1
+  require_metric_eq "$marker_path" "transparent_blocks" 0
+  require_metric_eq "$marker_path" "transparent_faces" 0
+  require_metric_eq "$marker_path" "transparent_draws" 0
+  require_metric_eq "$marker_path" "transparent_subchunks" 0
+
+  if env_flag_is_true "${RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY:-}"; then
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_requested" 1
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_active" 0
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_fallback" 1
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_roles" 5
+    require_metric_eq "$marker_path" "transparent_fixture_overlay_blocks" 5
+  fi
+}
+
+require_native_shadow_fallback_marker_if_requested() {
+  marker_path="$1"
+  if ! env_flag_is_true "${RUMPELMC_GPU_TERRAIN_NATIVE_SHADOW:-}"; then
+    return 0
+  fi
+
+  require_metric_eq "$marker_path" "native_shadow_requested" 1
+  require_metric_eq "$marker_path" "native_shadow_active" 0
+  require_metric_eq "$marker_path" "native_shadow_fallback" 1
+  require_metric_eq "$marker_path" "native_shadow_implemented" 0
+  test "$(text_metric native_shadow_resource_status "$marker_path")" = "disabled" \
+    || fail "native shadow fallback unexpectedly prepared resources in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_resource_radius" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_map" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_width" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_height" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_layers" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_bytes_per_texel" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_bytes" 0
+  test "$(text_metric native_shadow_pass_load_op "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared pass load op in $marker_path"
+  test "$(text_metric native_shadow_pass_store_op "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared pass store op in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_pass_clear_depth_milli" 0
+  test "$(text_metric native_shadow_depth_attachment_status "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly bound depth attachment in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_depth_attachment_binding_count" 0
+  require_metric_eq "$marker_path" "native_shadow_depth_attachment_clear_count" 0
+  test "$(text_metric native_shadow_resource_barrier_status "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly issued resource barrier in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_resource_transition_count" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_barrier_error_count" 0
+  test "$(text_metric native_shadow_framebuffer_status "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly created framebuffer in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_rid_allocated" 0
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_attachment_count" 0
+  test "$(text_metric native_shadow_framebuffer_pass_compat_status "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly validated framebuffer/pass compatibility in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_pass_compat_error_count" 0
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_depth_only_enabled" 0
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_color_attachment_count" 0
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_attachment_owned" 0
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_attachment_reuse_count" 0
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_descriptor_valid" 0
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_descriptor_error_count" 0
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_bind_ready" 0
+  require_metric_eq "$marker_path" "native_shadow_framebuffer_bind_error_count" 0
+  require_metric_eq "$marker_path" "native_shadow_pass_descriptor_valid" 0
+  require_metric_eq "$marker_path" "native_shadow_pass_descriptor_error_count" 0
+  test "$(text_metric native_shadow_pass_status "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared pass status in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_pass_rid_allocated" 0
+  test "$(text_metric native_shadow_pass_submit_status "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly submitted pass in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_pass_lifecycle_ready" 0
+  require_metric_eq "$marker_path" "native_shadow_pass_lifecycle_error_count" 0
+  require_metric_eq "$marker_path" "native_shadow_pass_begin_count" 0
+  require_metric_eq "$marker_path" "native_shadow_pass_end_count" 0
+  test "$(text_metric native_shadow_command_buffer_status "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly recorded command buffer in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_command_buffer_record_ready" 0
+  require_metric_eq "$marker_path" "native_shadow_command_buffer_record_error_count" 0
+  require_metric_eq "$marker_path" "native_shadow_command_buffer_submit_ready" 0
+  require_metric_eq "$marker_path" "native_shadow_command_buffer_submit_error_count" 0
+  require_metric_eq "$marker_path" "native_shadow_command_buffer_submit_count" 0
+  require_metric_eq "$marker_path" "native_shadow_command_buffer_error_count" 0
+  test "$(text_metric native_shadow_sampler_filter "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared sampler filter in $marker_path"
+  test "$(text_metric native_shadow_sampler_address "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared sampler address in $marker_path"
+  test "$(text_metric native_shadow_sampler_compare_op "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared sampler compare op in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_sampler_compare_enabled" 0
+  require_metric_eq "$marker_path" "native_shadow_depth_bias_constant_milli" 0
+  require_metric_eq "$marker_path" "native_shadow_depth_bias_slope_milli" 0
+  require_metric_eq "$marker_path" "native_shadow_depth_bias_clamp_milli" 0
+  require_metric_eq "$marker_path" "native_shadow_viewport_x_px" 0
+  require_metric_eq "$marker_path" "native_shadow_viewport_y_px" 0
+  require_metric_eq "$marker_path" "native_shadow_viewport_width_px" 0
+  require_metric_eq "$marker_path" "native_shadow_viewport_height_px" 0
+  require_metric_eq "$marker_path" "native_shadow_viewport_min_depth_milli" 0
+  require_metric_eq "$marker_path" "native_shadow_viewport_max_depth_milli" 0
+  require_metric_eq "$marker_path" "native_shadow_pipeline_depth_test_enabled" 0
+  require_metric_eq "$marker_path" "native_shadow_pipeline_depth_write_enabled" 0
+  test "$(text_metric native_shadow_pipeline_cull_mode "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared pipeline cull mode in $marker_path"
+  test "$(text_metric native_shadow_pipeline_front_face "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared pipeline front face in $marker_path"
+  test "$(text_metric native_shadow_draw_source "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared draw source in $marker_path"
+  test "$(text_metric native_shadow_draw_primitive "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared draw primitive in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_draw_face_stride_bytes" 0
+  require_metric_eq "$marker_path" "native_shadow_draw_command_stride_bytes" 0
+  require_metric_eq "$marker_path" "native_shadow_draw_indirect_enabled" 0
+  test "$(text_metric native_shadow_draw_status "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly submitted draw work in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_draw_call_count" 0
+  require_metric_eq "$marker_path" "native_shadow_draw_face_count" 0
+  require_metric_eq "$marker_path" "native_shadow_uniform_set_index" 0
+  require_metric_eq "$marker_path" "native_shadow_face_buffer_binding" 0
+  require_metric_eq "$marker_path" "native_shadow_push_constant_bytes" 0
+  require_metric_eq "$marker_path" "native_shadow_texture_sampling_enabled" 0
+  test "$(text_metric native_shadow_shader_language "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared shader language in $marker_path"
+  test "$(text_metric native_shadow_shader_entry "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared shader entry in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_shader_depth_output_enabled" 0
+  require_metric_eq "$marker_path" "native_shadow_shader_color_output_enabled" 0
+  require_metric_eq "$marker_path" "native_shadow_shader_source_bytes" 0
+  require_metric_eq "$marker_path" "native_shadow_shader_source_checksum" 0
+  test "$(text_metric native_shadow_shader_module_status "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared shader module status in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_shader_module_rid_allocated" 0
+  test "$(text_metric native_shadow_light_source "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared light source in $marker_path"
+  test "$(text_metric native_shadow_light_space "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared light space in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_cascade_count" 0
+  require_metric_eq "$marker_path" "native_shadow_light_matrix_bytes" 0
+  test "$(text_metric native_shadow_depth_clip_space "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared depth clip space in $marker_path"
+  test "$(text_metric native_shadow_depth_range_source "$marker_path")" = "none" \
+    || fail "native shadow fallback unexpectedly prepared depth range source in $marker_path"
+  require_metric_eq "$marker_path" "native_shadow_depth_near_milli" 0
+  require_metric_eq "$marker_path" "native_shadow_depth_far_chunks" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_creates" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_replaces" 0
+  require_metric_eq "$marker_path" "native_shadow_resource_releases" 0
+  require_metric_eq "$marker_path" "native_shadow_covered_chunks" 0
+  require_metric_eq "$marker_path" "native_shadow_covered_subchunks" 0
+  grep -q "shadow_path=godot_proxy" "$marker_path" || fail "native shadow fallback did not keep godot_proxy in $marker_path"
+}
+
+screenshot_path="$OUT_DIR/gpu-terrain-movement-stress.png"
+marker_path="$screenshot_path.txt"
+rm -f "$screenshot_path" "$marker_path"
+
+prepare_godot_rust_ext_profile "$ROOT_DIR"
+
+echo "==> GPU terrain movement stress"
+(
+  cd "$ROOT_DIR"
+  "$TIMEOUT_BIN" "$GODOT_TIMEOUT_SEC" /usr/bin/env \
+    RUMPELMC_GPU_TERRAIN_RENDER=1 \
+    RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD="${RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD:-1}" \
+    RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MODE=conservative \
+    RUMPELMC_GPU_TERRAIN_SHADOW_PROXY_MESH=compact \
+    RUMPELMC_VISUAL_SMOKE_POSE="$SMOKE_POSE" \
+    RUMPELMC_VISUAL_SMOKE_MOTION="$MOTION_NAME" \
+    RUMPELMC_VISUAL_SMOKE_MOTION_STEP_SEC="$MOTION_STEP_SEC" \
+    RUMPELMC_VISUAL_SMOKE_MOTION_SETTLE_SEC="$MOTION_SETTLE_SEC" \
+    RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT="${RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT:-}" \
+    RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_X="${RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_X:-}" \
+    RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_Y="${RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_Y:-}" \
+    RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_Z="${RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_Z:-}" \
+    RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_ID="${RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_ID:-}" \
+    RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_WAIT_SEC="${RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_WAIT_SEC:-}" \
+    RUMPELMC_VISUAL_SMOKE_PATH="$screenshot_path" \
+    RUMPELMC_VISUAL_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
+    RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC="$FRAME_SAMPLE_SEC" \
+    RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED="${RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED:-0}" \
+    RUMPELMC_VISUAL_SMOKE_HIDE_HUD=1 \
+    RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT=1 \
+    "$GODOT_BIN" --disable-vsync --max-fps 0 --path client --quit-after "$GODOT_QUIT_AFTER_FRAMES"
+)
+
+test -s "$screenshot_path" || fail "missing screenshot $screenshot_path"
+test -s "$marker_path" || fail "missing marker $marker_path"
+grep -q "Visual smoke screenshot saved" "$marker_path" || fail "missing smoke summary in $marker_path"
+if [ -n "$SMOKE_POSE" ]; then
+  grep -q "pose=\"$SMOKE_POSE\"" "$marker_path" || fail "unexpected pose in $marker_path"
+fi
+grep -q "motion=\"$MOTION_NAME\"" "$marker_path" || fail "unexpected motion in $marker_path"
+grep -q "current_chunk=\"$EXPECTED_CURRENT_CHUNK\"" "$marker_path" || fail "movement did not finish in chunk $EXPECTED_CURRENT_CHUNK"
+grep -q "smoke_err=0" "$marker_path" || fail "smoke_err is not 0 in $marker_path"
+require_godot_rust_ext_marker_profile "$marker_path"
+require_metric_ge "$marker_path" "motion_steps" 4
+require_metric_ge "$marker_path" "motion_chunks" "$MIN_MOTION_CHUNKS"
+require_metric_ge "$marker_path" "frame_samples" 10
+require_metric_ge "$marker_path" "terrain_samples" 1
+require_metric_ge "$marker_path" "queue_max" 1
+require_metric_ge "$marker_path" "queue_enq" 1
+require_metric_ge "$marker_path" "queue_drained" 1
+require_metric_ge "$marker_path" "queue_stale" 0
+require_metric_ge "$marker_path" "queue_missing" 0
+require_metric_ge "$marker_path" "proxy_refresh_reuse" 0
+require_metric_ge "$marker_path" "gpu_frames" 1
+require_metric_ge "$marker_path" "gpu_subchunks" 1
+require_metric_ge "$marker_path" "gpu_uploads" 1
+require_metric_eq "$marker_path" "gpu_upload_fail" 0
+require_metric_eq "$marker_path" "gpu_upload_fail_capacity" 0
+require_metric_eq "$marker_path" "gpu_upload_fail_fragmented" 0
+require_native_shadow_fallback_marker_if_requested "$marker_path"
+require_transparent_fallback_marker_if_requested "$marker_path"
+test -n "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)" || fail "missing terrain_queue_work_ms in $marker_path"
+
+write_summary
+case "$BUDGET_MODE" in
+  report|"") ;;
+  enforce)
+    enforce_terrain_queue_budget
+    ;;
+  *)
+    fail "unsupported RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE=$BUDGET_MODE"
+    ;;
+esac
+case "$PROCESS_WALL_BUDGET_MODE" in
+  report|"") ;;
+  enforce)
+    enforce_process_wall_budget
+    ;;
+  *)
+    fail "unsupported RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE=$PROCESS_WALL_BUDGET_MODE"
+    ;;
+esac
+case "$GPU_COMPOSITOR_BUDGET_MODE" in
+  report|"") ;;
+  enforce)
+    enforce_gpu_compositor_budget
+    ;;
+  *)
+    fail "unsupported RUMPELMC_MOVEMENT_STRESS_GPU_COMPOSITOR_BUDGET_MODE=$GPU_COMPOSITOR_BUDGET_MODE"
+    ;;
+esac
+case "$GPU_TIMESTAMP_BUDGET_MODE" in
+  report|"") ;;
+  enforce)
+    enforce_gpu_timestamp_budget
+    ;;
+  *)
+    fail "unsupported RUMPELMC_MOVEMENT_STRESS_GPU_TIMESTAMP_BUDGET_MODE=$GPU_TIMESTAMP_BUDGET_MODE"
+    ;;
+esac
+
+cat "$marker_path"
+
+if command -v sips >/dev/null 2>&1; then
+  sips -g pixelWidth -g pixelHeight "$screenshot_path"
+fi
+
+echo "GPU terrain movement stress artifacts: $OUT_DIR"

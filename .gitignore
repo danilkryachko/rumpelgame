@@ -3,4 +3,12 @@
 /android/
 target/
 tmp/
-
+server/data/
+logs/
+.ontoindex/
+.claude/settings.local.json
+.claude/skills/ontoindex/
+server/server
+server/server.exe
+*.import
+*.uid

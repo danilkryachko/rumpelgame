@@ -3,11 +3,18 @@ syntax = "proto3";
 package rumpelmc.api;
 option go_package = "rumpelmc/server/pkg/api";
 
+enum ChunkEncoding {
+  CHUNK_ENCODING_RAW = 0;
+  CHUNK_ENCODING_RLE = 1;
+}
+
 message ChunkData {
   int32 x = 1;
   int32 z = 2;
   // Compacted block IDs or full array
   bytes blocks = 3;
+  ChunkEncoding encoding = 4;
+  uint32 uncompressed_size = 5;
 }
 
 message ClientPosition {

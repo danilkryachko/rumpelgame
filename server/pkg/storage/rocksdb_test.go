@@ -1,0 +1,179 @@
+package storage
+
+import (
+	"bytes"
+	"testing"
+
+	"rumpelmc/server/pkg/world"
+)
+
+func TestChunkKeyFormatIsStable(t *testing.T) {
+	got := chunkKey(0, 0)
+	want := []byte{'c', 0x80, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("chunkKey(0, 0) = % x, want % x", got, want)
+	}
+}
+
+func TestChunkKeysSortBySignedCoordinates(t *testing.T) {
+	keys := [][]byte{
+		chunkKey(-2, 0),
+		chunkKey(-1, 0),
+		chunkKey(0, 0),
+		chunkKey(1, 0),
+		chunkKey(2, 0),
+	}
+
+	for i := 1; i < len(keys); i++ {
+		if bytes.Compare(keys[i-1], keys[i]) >= 0 {
+			t.Fatalf("key %d should sort before key %d", i-1, i)
+		}
+	}
+}
+
+func TestRocksChunkStoreRoundTrip(t *testing.T) {
+	path := t.TempDir()
+
+	store, err := OpenRocksChunkStore(path)
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+
+	chunk := world.NewChunk(-2, 3)
+	chunk.SetBlock(4, 63, 5, world.Grass)
+	chunk.SetBlock(6, 12, 7, world.Leaves)
+	if err := store.SaveChunk(chunk); err != nil {
+		t.Fatalf("SaveChunk() error = %v", err)
+	}
+	store.Close()
+
+	store, err = OpenRocksChunkStore(path)
+	if err != nil {
+		t.Fatalf("reopen OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	loaded, ok, err := store.LoadChunk(-2, 3)
+	if err != nil {
+		t.Fatalf("LoadChunk() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("LoadChunk() ok = false")
+	}
+	if loaded.X != -2 || loaded.Z != 3 {
+		t.Fatalf("loaded chunk coord = %d,%d, want -2,3", loaded.X, loaded.Z)
+	}
+	if got := loaded.GetBlock(4, 63, 5); got != world.Grass {
+		t.Fatalf("Grass block = %d, want %d", got, world.Grass)
+	}
+	if got := loaded.GetBlock(6, 12, 7); got != world.Leaves {
+		t.Fatalf("Leaves block = %d, want %d", got, world.Leaves)
+	}
+}
+
+func TestRocksChunkStoreMissingChunkReturnsNotFound(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	loaded, ok, err := store.LoadChunk(99, -100)
+	if err != nil {
+		t.Fatalf("LoadChunk() error = %v", err)
+	}
+	if ok {
+		t.Fatal("LoadChunk() ok = true, want false for missing chunk")
+	}
+	if loaded != nil {
+		t.Fatalf("LoadChunk() loaded = %v, want nil for missing chunk", loaded)
+	}
+}
+
+func TestRocksChunkStoreOverwriteKeepsNeighborChunk(t *testing.T) {
+	path := t.TempDir()
+
+	store, err := OpenRocksChunkStore(path)
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+
+	first := world.NewChunk(1, 1)
+	first.SetBlock(1, 1, 1, world.Stone)
+	if err := store.SaveChunk(first); err != nil {
+		t.Fatalf("SaveChunk(first) error = %v", err)
+	}
+	neighbor := world.NewChunk(1, 2)
+	neighbor.SetBlock(2, 2, 2, world.Leaves)
+	if err := store.SaveChunk(neighbor); err != nil {
+		t.Fatalf("SaveChunk(neighbor) error = %v", err)
+	}
+	overwrite := world.NewChunk(1, 1)
+	overwrite.SetBlock(1, 1, 1, world.Dirt)
+	overwrite.SetBlock(3, 3, 3, world.Wood)
+	if err := store.SaveChunk(overwrite); err != nil {
+		t.Fatalf("SaveChunk(overwrite) error = %v", err)
+	}
+	store.Close()
+
+	store, err = OpenRocksChunkStore(path)
+	if err != nil {
+		t.Fatalf("reopen OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	loaded, ok, err := store.LoadChunk(1, 1)
+	if err != nil {
+		t.Fatalf("LoadChunk(1,1) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("LoadChunk(1,1) ok = false")
+	}
+	if got := loaded.GetBlock(1, 1, 1); got != world.Dirt {
+		t.Fatalf("overwritten block = %d, want %d", got, world.Dirt)
+	}
+	if got := loaded.GetBlock(3, 3, 3); got != world.Wood {
+		t.Fatalf("new overwritten block = %d, want %d", got, world.Wood)
+	}
+
+	loadedNeighbor, ok, err := store.LoadChunk(1, 2)
+	if err != nil {
+		t.Fatalf("LoadChunk(1,2) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("LoadChunk(1,2) ok = false")
+	}
+	if got := loadedNeighbor.GetBlock(2, 2, 2); got != world.Leaves {
+		t.Fatalf("neighbor block = %d, want %d", got, world.Leaves)
+	}
+}
+
+func TestRocksChunkStoreRejectsCorruptChunkPayload(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	putRawChunkPayload(t, store, 4, -5, []byte{0x01, 0x02, 0x03})
+
+	loaded, ok, err := store.LoadChunk(4, -5)
+	if err == nil {
+		t.Fatal("LoadChunk() error = nil, want corrupt payload error")
+	}
+	if ok {
+		t.Fatal("LoadChunk() ok = true, want false for corrupt payload")
+	}
+	if loaded != nil {
+		t.Fatalf("LoadChunk() loaded = %v, want nil for corrupt payload", loaded)
+	}
+}
+
+func putRawChunkPayload(t *testing.T, store *RocksChunkStore, x, z int32, data []byte) {
+	t.Helper()
+
+	key := chunkKey(x, z)
+	if err := store.putChunkData(key, data); err != nil {
+		t.Fatal(err)
+	}
+}

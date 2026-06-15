@@ -1,0 +1,15 @@
+baseline_id=gpu_terrain_world_streaming_20260615
+baseline_status=accepted
+accepted_date=2026-06-15
+source_summary=logs/gpu_terrain_report_v2_current/gpu-terrain-report-v2-summary.txt
+required_report_v2_status=pass
+required_scoped_status=pass
+required_resource_status=pass
+required_memory_status=pass
+required_legacy_error_scan=clean
+min_historical_gpu_effective_draws=20000
+max_historical_gpu_upload_fail=0
+max_historical_gpu_fragmentation_pct=1.0
+max_historical_draw_cmd_occupancy_pct=75.0
+warning_max_frame_p95_ms=20.0
+warning_max_gpu_compositor_gpu_max_us=0.0

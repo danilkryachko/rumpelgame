@@ -1,0 +1,221 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+OUT_DIR="${1:-"$ROOT_DIR/logs/world_streaming_regression_pack"}"
+case "$OUT_DIR" in
+  /*) ;;
+  *) OUT_DIR="$ROOT_DIR/$OUT_DIR" ;;
+esac
+
+BOOTSTRAP_DIR="$OUT_DIR/bootstrap"
+BATCH_DIR="$OUT_DIR/batch"
+ENCODING_DIR="$OUT_DIR/encoding"
+RLE_DIR="$OUT_DIR/rle"
+SUMMARY_PATH="$OUT_DIR/world-streaming-regression-summary.txt"
+
+BOOTSTRAP_SUMMARY="$BOOTSTRAP_DIR/world-streaming-bootstrap-compare-summary.txt"
+BATCH_SUMMARY="$BATCH_DIR/world-streaming-batch-compare-summary.txt"
+ENCODING_SUMMARY="$ENCODING_DIR/world-streaming-encoding-compare-summary.txt"
+RLE_SUMMARY="$RLE_DIR/world-streaming-rle-summary.txt"
+
+mkdir -p "$OUT_DIR"
+
+fail() {
+  echo "world_streaming_regression_pack: $*" >&2
+  exit 1
+}
+
+sign_server_binary_if_possible() {
+  if command -v codesign >/dev/null 2>&1; then
+    codesign -s - --force ./server >/dev/null 2>&1 || true
+  fi
+}
+
+listener_pid() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -tiTCP:25565 -sTCP:LISTEN 2>/dev/null | sed -n '1p'
+  fi
+}
+
+wait_for_port_clear() {
+  tries=0
+  while [ "$tries" -lt 10 ]; do
+    pid="$(listener_pid || true)"
+    if [ -z "$pid" ]; then
+      return 0
+    fi
+    tries=$((tries + 1))
+    sleep 1
+  done
+  fail "port 25565 is still listening after cleanup"
+}
+
+cleanup_server() {
+  pid="$(listener_pid || true)"
+  if [ -n "$pid" ]; then
+    kill "$pid" 2>/dev/null || true
+    wait_for_port_clear
+  fi
+}
+
+metric() {
+  key="$1"
+  path="$2"
+  awk -v key="$key" '
+    {
+      prefix = key "="
+      for (i = 1; i <= NF; i++) {
+        if (index($i, prefix) == 1) {
+          value = substr($i, length(prefix) + 1)
+          gsub(/[^0-9.].*/, "", value)
+          print value
+          exit
+        }
+      }
+    }
+  ' "$path"
+}
+
+require_pass_summary() {
+  label="$1"
+  path="$2"
+  test -s "$path" || fail "missing $label summary $path"
+  grep -q "status=pass" "$path" || fail "$label summary did not pass: $path"
+}
+
+listener="$(listener_pid || true)"
+if [ -n "$listener" ]; then
+  fail "port 25565 is already in use; stop the existing server before regression pack"
+fi
+trap cleanup_server EXIT HUP INT TERM
+
+(
+  cd "$ROOT_DIR/server"
+  go build -o ./server ./cmd/server
+  sign_server_binary_if_possible
+)
+
+rm -rf "$BOOTSTRAP_DIR" "$BATCH_DIR" "$ENCODING_DIR" "$RLE_DIR"
+rm -f "$SUMMARY_PATH"
+
+RUMPELMC_WORLD_STREAMING_BOOTSTRAP_COMPARE_BUILD_SERVER=0 \
+  RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
+  RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
+  /bin/sh "$ROOT_DIR/scripts/world_streaming_bootstrap_compare.sh" "$BOOTSTRAP_DIR"
+
+RUMPELMC_WORLD_STREAMING_BATCH_COMPARE_BUILD_SERVER=0 \
+  RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
+  RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
+  /bin/sh "$ROOT_DIR/scripts/world_streaming_batch_compare.sh" "$BATCH_DIR"
+
+RUMPELMC_WORLD_STREAMING_COMPARE_BUILD_SERVER=0 \
+  RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
+  RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
+  /bin/sh "$ROOT_DIR/scripts/world_streaming_chunk_encoding_compare.sh" "$ENCODING_DIR"
+
+RUMPELMC_WORLD_STREAMING_SMOKE_BUILD_SERVER=0 \
+  RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
+  RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
+  /bin/sh "$ROOT_DIR/scripts/world_streaming_rle_movement_smoke.sh" "$RLE_DIR"
+
+require_pass_summary bootstrap "$BOOTSTRAP_SUMMARY"
+require_pass_summary batch "$BATCH_SUMMARY"
+require_pass_summary encoding "$ENCODING_SUMMARY"
+require_pass_summary rle "$RLE_SUMMARY"
+
+bootstrap_candidate_first_chunks="$(metric candidate_first_chunks "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_chunk_packet="$(metric candidate_startup_chunk_packet_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_packet_reader_elapsed="$(metric candidate_startup_packet_reader_elapsed_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_packet_queue_lag="$(metric candidate_startup_packet_queue_lag_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_chunk_decode_work="$(metric candidate_startup_chunk_decode_work_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_mesh_dispatched="$(metric candidate_startup_mesh_dispatched_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_player_spawn="$(metric candidate_startup_player_spawn_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_first_mesh="$(metric candidate_startup_first_mesh_ms "$BOOTSTRAP_SUMMARY")"
+bootstrap_candidate_startup_first_mesh_work="$(metric candidate_startup_first_mesh_work_ms "$BOOTSTRAP_SUMMARY")"
+batch_candidate_chunks="$(metric candidate_chunks "$BATCH_SUMMARY")"
+batch_candidate_batches="$(metric candidate_batches "$BATCH_SUMMARY")"
+batch_candidate_startup_chunk_packet="$(metric candidate_startup_chunk_packet_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_packet_reader_elapsed="$(metric candidate_startup_packet_reader_elapsed_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_packet_queue_lag="$(metric candidate_startup_packet_queue_lag_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_chunk_decode_work="$(metric candidate_startup_chunk_decode_work_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_mesh_dispatched="$(metric candidate_startup_mesh_dispatched_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_player_spawn="$(metric candidate_startup_player_spawn_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_first_mesh="$(metric candidate_startup_first_mesh_ms "$BATCH_SUMMARY")"
+batch_candidate_startup_first_mesh_work="$(metric candidate_startup_first_mesh_work_ms "$BATCH_SUMMARY")"
+encoding_rle_chunks="$(metric rle_chunks "$ENCODING_SUMMARY")"
+encoding_rle_wire_pct="$(metric rle_wire_pct "$ENCODING_SUMMARY")"
+encoding_rle_startup_chunk_packet="$(metric rle_startup_chunk_packet_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_packet_reader_elapsed="$(metric rle_startup_packet_reader_elapsed_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_packet_queue_lag="$(metric rle_startup_packet_queue_lag_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_chunk_decode_work="$(metric rle_startup_chunk_decode_work_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_mesh_dispatched="$(metric rle_startup_mesh_dispatched_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_player_spawn="$(metric rle_startup_player_spawn_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_first_mesh="$(metric rle_startup_first_mesh_ms "$ENCODING_SUMMARY")"
+encoding_rle_startup_first_mesh_work="$(metric rle_startup_first_mesh_work_ms "$ENCODING_SUMMARY")"
+rle_chunks="$(metric chunks "$RLE_SUMMARY")"
+rle_wire_pct="$(metric wire_pct "$RLE_SUMMARY")"
+rle_startup_chunk_packet="$(metric startup_chunk_packet_ms "$RLE_SUMMARY")"
+rle_startup_packet_reader_elapsed="$(metric startup_packet_reader_elapsed_ms "$RLE_SUMMARY")"
+rle_startup_packet_queue_lag="$(metric startup_packet_queue_lag_ms "$RLE_SUMMARY")"
+rle_startup_chunk_decode_work="$(metric startup_chunk_decode_work_ms "$RLE_SUMMARY")"
+rle_startup_mesh_dispatched="$(metric startup_mesh_dispatched_ms "$RLE_SUMMARY")"
+rle_startup_player_spawn="$(metric startup_player_spawn_ms "$RLE_SUMMARY")"
+rle_startup_first_mesh="$(metric startup_first_mesh_ms "$RLE_SUMMARY")"
+rle_startup_first_mesh_work="$(metric startup_first_mesh_work_ms "$RLE_SUMMARY")"
+
+test -n "$bootstrap_candidate_first_chunks" || fail "missing bootstrap candidate_first_chunks"
+test -n "$batch_candidate_chunks" || fail "missing batch candidate_chunks"
+test -n "$encoding_rle_chunks" || fail "missing encoding rle_chunks"
+test -n "$rle_chunks" || fail "missing rle chunks"
+
+awk \
+  -v bootstrap_candidate_first_chunks="$bootstrap_candidate_first_chunks" \
+  -v bootstrap_candidate_startup_chunk_packet="$bootstrap_candidate_startup_chunk_packet" \
+  -v bootstrap_candidate_startup_packet_reader_elapsed="$bootstrap_candidate_startup_packet_reader_elapsed" \
+  -v bootstrap_candidate_startup_packet_queue_lag="$bootstrap_candidate_startup_packet_queue_lag" \
+  -v bootstrap_candidate_startup_chunk_decode_work="$bootstrap_candidate_startup_chunk_decode_work" \
+  -v bootstrap_candidate_startup_mesh_dispatched="$bootstrap_candidate_startup_mesh_dispatched" \
+  -v bootstrap_candidate_startup_first_mesh="$bootstrap_candidate_startup_first_mesh" \
+  -v bootstrap_candidate_startup_first_mesh_work="$bootstrap_candidate_startup_first_mesh_work" \
+  -v bootstrap_candidate_startup_player_spawn="$bootstrap_candidate_startup_player_spawn" \
+  -v batch_candidate_chunks="$batch_candidate_chunks" \
+  -v batch_candidate_batches="$batch_candidate_batches" \
+  -v batch_candidate_startup_chunk_packet="$batch_candidate_startup_chunk_packet" \
+  -v batch_candidate_startup_packet_reader_elapsed="$batch_candidate_startup_packet_reader_elapsed" \
+  -v batch_candidate_startup_packet_queue_lag="$batch_candidate_startup_packet_queue_lag" \
+  -v batch_candidate_startup_chunk_decode_work="$batch_candidate_startup_chunk_decode_work" \
+  -v batch_candidate_startup_mesh_dispatched="$batch_candidate_startup_mesh_dispatched" \
+  -v batch_candidate_startup_first_mesh="$batch_candidate_startup_first_mesh" \
+  -v batch_candidate_startup_first_mesh_work="$batch_candidate_startup_first_mesh_work" \
+  -v batch_candidate_startup_player_spawn="$batch_candidate_startup_player_spawn" \
+  -v encoding_rle_chunks="$encoding_rle_chunks" \
+  -v encoding_rle_wire_pct="$encoding_rle_wire_pct" \
+  -v encoding_rle_startup_chunk_packet="$encoding_rle_startup_chunk_packet" \
+  -v encoding_rle_startup_packet_reader_elapsed="$encoding_rle_startup_packet_reader_elapsed" \
+  -v encoding_rle_startup_packet_queue_lag="$encoding_rle_startup_packet_queue_lag" \
+  -v encoding_rle_startup_chunk_decode_work="$encoding_rle_startup_chunk_decode_work" \
+  -v encoding_rle_startup_mesh_dispatched="$encoding_rle_startup_mesh_dispatched" \
+  -v encoding_rle_startup_first_mesh="$encoding_rle_startup_first_mesh" \
+  -v encoding_rle_startup_first_mesh_work="$encoding_rle_startup_first_mesh_work" \
+  -v encoding_rle_startup_player_spawn="$encoding_rle_startup_player_spawn" \
+  -v rle_chunks="$rle_chunks" \
+  -v rle_wire_pct="$rle_wire_pct" \
+  -v rle_startup_chunk_packet="$rle_startup_chunk_packet" \
+  -v rle_startup_packet_reader_elapsed="$rle_startup_packet_reader_elapsed" \
+  -v rle_startup_packet_queue_lag="$rle_startup_packet_queue_lag" \
+  -v rle_startup_chunk_decode_work="$rle_startup_chunk_decode_work" \
+  -v rle_startup_mesh_dispatched="$rle_startup_mesh_dispatched" \
+  -v rle_startup_first_mesh="$rle_startup_first_mesh" \
+  -v rle_startup_first_mesh_work="$rle_startup_first_mesh_work" \
+  -v rle_startup_player_spawn="$rle_startup_player_spawn" \
+  -v bootstrap_summary="$BOOTSTRAP_SUMMARY" \
+  -v batch_summary="$BATCH_SUMMARY" \
+  -v encoding_summary="$ENCODING_SUMMARY" \
+  -v rle_summary="$RLE_SUMMARY" '
+  BEGIN {
+    printf("world_streaming_regression status=pass bootstrap_candidate_first_chunks=%d bootstrap_candidate_startup_chunk_packet_ms=%.3f bootstrap_candidate_startup_packet_reader_elapsed_ms=%.3f bootstrap_candidate_startup_packet_queue_lag_ms=%.3f bootstrap_candidate_startup_chunk_decode_work_ms=%.3f bootstrap_candidate_startup_mesh_dispatched_ms=%.3f bootstrap_candidate_startup_first_mesh_ms=%.3f bootstrap_candidate_startup_first_mesh_work_ms=%.3f bootstrap_candidate_startup_player_spawn_ms=%.3f batch_candidate_chunks=%d batch_candidate_batches=%d batch_candidate_startup_chunk_packet_ms=%.3f batch_candidate_startup_packet_reader_elapsed_ms=%.3f batch_candidate_startup_packet_queue_lag_ms=%.3f batch_candidate_startup_chunk_decode_work_ms=%.3f batch_candidate_startup_mesh_dispatched_ms=%.3f batch_candidate_startup_first_mesh_ms=%.3f batch_candidate_startup_first_mesh_work_ms=%.3f batch_candidate_startup_player_spawn_ms=%.3f encoding_rle_chunks=%d encoding_rle_wire_pct=%.6f encoding_rle_startup_chunk_packet_ms=%.3f encoding_rle_startup_packet_reader_elapsed_ms=%.3f encoding_rle_startup_packet_queue_lag_ms=%.3f encoding_rle_startup_chunk_decode_work_ms=%.3f encoding_rle_startup_mesh_dispatched_ms=%.3f encoding_rle_startup_first_mesh_ms=%.3f encoding_rle_startup_first_mesh_work_ms=%.3f encoding_rle_startup_player_spawn_ms=%.3f rle_chunks=%d rle_wire_pct=%.6f rle_startup_chunk_packet_ms=%.3f rle_startup_packet_reader_elapsed_ms=%.3f rle_startup_packet_queue_lag_ms=%.3f rle_startup_chunk_decode_work_ms=%.3f rle_startup_mesh_dispatched_ms=%.3f rle_startup_first_mesh_ms=%.3f rle_startup_first_mesh_work_ms=%.3f rle_startup_player_spawn_ms=%.3f bootstrap_summary=%s batch_summary=%s encoding_summary=%s rle_summary=%s\n", bootstrap_candidate_first_chunks, bootstrap_candidate_startup_chunk_packet, bootstrap_candidate_startup_packet_reader_elapsed, bootstrap_candidate_startup_packet_queue_lag, bootstrap_candidate_startup_chunk_decode_work, bootstrap_candidate_startup_mesh_dispatched, bootstrap_candidate_startup_first_mesh, bootstrap_candidate_startup_first_mesh_work, bootstrap_candidate_startup_player_spawn, batch_candidate_chunks, batch_candidate_batches, batch_candidate_startup_chunk_packet, batch_candidate_startup_packet_reader_elapsed, batch_candidate_startup_packet_queue_lag, batch_candidate_startup_chunk_decode_work, batch_candidate_startup_mesh_dispatched, batch_candidate_startup_first_mesh, batch_candidate_startup_first_mesh_work, batch_candidate_startup_player_spawn, encoding_rle_chunks, encoding_rle_wire_pct, encoding_rle_startup_chunk_packet, encoding_rle_startup_packet_reader_elapsed, encoding_rle_startup_packet_queue_lag, encoding_rle_startup_chunk_decode_work, encoding_rle_startup_mesh_dispatched, encoding_rle_startup_first_mesh, encoding_rle_startup_first_mesh_work, encoding_rle_startup_player_spawn, rle_chunks, rle_wire_pct, rle_startup_chunk_packet, rle_startup_packet_reader_elapsed, rle_startup_packet_queue_lag, rle_startup_chunk_decode_work, rle_startup_mesh_dispatched, rle_startup_first_mesh, rle_startup_first_mesh_work, rle_startup_player_spawn, bootstrap_summary, batch_summary, encoding_summary, rle_summary)
+  }
+' > "$SUMMARY_PATH"
+
+cat "$SUMMARY_PATH"

@@ -2,6 +2,7 @@ package world
 
 import (
 	"encoding/binary"
+	"fmt"
 )
 
 const (
@@ -10,19 +11,21 @@ const (
 	ChunkHeight = 512
 )
 
-type BlockID uint16
-
-const (
-	Air BlockID = iota
-	Stone
-	Dirt
-	Grass
-)
-
 type Chunk struct {
 	X      int32
 	Z      int32
 	Blocks []BlockID
+}
+
+type ChunkCoord struct {
+	X int32
+	Z int32
+}
+
+type ChunkSnapshot struct {
+	X      int32
+	Z      int32
+	Blocks []byte
 }
 
 func NewChunk(x, z int32) *Chunk {
@@ -71,4 +74,17 @@ func (c *Chunk) Serialize() []byte {
 		binary.LittleEndian.PutUint16(buf[i*2:], uint16(b))
 	}
 	return buf
+}
+
+func DeserializeChunk(x, z int32, data []byte) (*Chunk, error) {
+	expected := ChunkWidth * ChunkHeight * ChunkDepth * 2
+	if len(data) != expected {
+		return nil, fmt.Errorf("chunk data length = %d, want %d", len(data), expected)
+	}
+
+	chunk := NewChunk(x, z)
+	for i := range chunk.Blocks {
+		chunk.Blocks[i] = BlockID(binary.LittleEndian.Uint16(data[i*2:]))
+	}
+	return chunk, nil
 }
