@@ -82,8 +82,52 @@ fn client_lifecycle_allows_outbound(state: ClientLifecycleState) -> bool {
 }
 
 enum NetworkReaderEvent {
-    Packet(network::PacketReadRecord),
-    Error(String),
+    Packet {
+        session_id: u64,
+        record: network::PacketReadRecord,
+    },
+    Error {
+        session_id: u64,
+        error: String,
+    },
+}
+
+#[derive(Default)]
+struct NetworkReaderDrain {
+    packets: Vec<network::PacketReadRecord>,
+    errors: Vec<String>,
+    stale_packets: usize,
+    stale_errors: usize,
+}
+
+fn drain_network_reader_events(
+    current_session_id: u64,
+    events: Vec<NetworkReaderEvent>,
+) -> NetworkReaderDrain {
+    let current_session_failed = events.iter().any(|event| match event {
+        NetworkReaderEvent::Error { session_id, .. } => *session_id == current_session_id,
+        NetworkReaderEvent::Packet { .. } => false,
+    });
+    let mut drain = NetworkReaderDrain::default();
+    for event in events {
+        match event {
+            NetworkReaderEvent::Packet { session_id, record } => {
+                if session_id == current_session_id && !current_session_failed {
+                    drain.packets.push(record);
+                } else {
+                    drain.stale_packets += 1;
+                }
+            }
+            NetworkReaderEvent::Error { session_id, error } => {
+                if session_id == current_session_id {
+                    drain.errors.push(error);
+                } else {
+                    drain.stale_errors += 1;
+                }
+            }
+        }
+    }
+    drain
 }
 
 #[derive(GodotClass)]
@@ -103,7 +147,11 @@ pub struct GameClient {
     gpu_visible_transition_applied: bool,
     network: Option<network::NetworkClient>,
     packet_receiver: Option<Receiver<NetworkReaderEvent>>,
+    network_session_id: u64,
     network_reader_errors: u64,
+    stale_network_reader_events: u64,
+    stale_network_reader_packets: u64,
+    stale_network_reader_errors: u64,
     last_network_error: String,
     player_spawned: bool,
     texture_debug_stand_visible: bool,
@@ -145,7 +193,11 @@ impl INode for GameClient {
             gpu_visible_transition_applied: false,
             network: None,
             packet_receiver: None,
+            network_session_id: 0,
             network_reader_errors: 0,
+            stale_network_reader_events: 0,
+            stale_network_reader_packets: 0,
+            stale_network_reader_errors: 0,
             last_network_error: "none".to_string(),
             player_spawned: false,
             texture_debug_stand_visible: false,
@@ -226,17 +278,20 @@ impl INode for GameClient {
             self.update_player_position_state();
         }
 
-        let mut packets = Vec::new();
-        let mut reader_errors = Vec::new();
+        let mut reader_events = Vec::new();
         if let Some(rx) = &self.packet_receiver {
             while let Ok(event) = rx.try_recv() {
-                match event {
-                    NetworkReaderEvent::Packet(packet) => packets.push(packet),
-                    NetworkReaderEvent::Error(error) => reader_errors.push(error),
-                }
+                reader_events.push(event);
             }
         }
-        for error in reader_errors {
+        let NetworkReaderDrain {
+            mut packets,
+            errors,
+            stale_packets,
+            stale_errors,
+        } = drain_network_reader_events(self.network_session_id, reader_events);
+        self.record_stale_network_reader_events(stale_packets, stale_errors);
+        for error in errors {
             self.record_network_reader_error(error);
         }
         let mut packet_queue_max_lag_ms: f64 = 0.0;
@@ -322,6 +377,18 @@ impl GameClient {
         self.record_network_failure(error);
     }
 
+    fn record_stale_network_reader_events(&mut self, stale_packets: usize, stale_errors: usize) {
+        self.stale_network_reader_packets = self
+            .stale_network_reader_packets
+            .saturating_add(stale_packets as u64);
+        self.stale_network_reader_errors = self
+            .stale_network_reader_errors
+            .saturating_add(stale_errors as u64);
+        self.stale_network_reader_events = self
+            .stale_network_reader_events
+            .saturating_add((stale_packets + stale_errors) as u64);
+    }
+
     fn record_network_failure(&mut self, error: String) {
         self.last_network_error = error;
         self.record_client_lifecycle_event(ClientLifecycleEvent::NetworkError);
@@ -374,6 +441,8 @@ impl GameClient {
             stream: stream_clone,
         };
 
+        let session_id = self.network_session_id.saturating_add(1);
+        self.network_session_id = session_id;
         let (tx, rx) = channel();
         self.packet_receiver = Some(rx);
         self.network = Some(client);
@@ -384,13 +453,19 @@ impl GameClient {
             loop {
                 match reader_client.receive_packet_with_timing_since(reader_start) {
                     Ok(record) => {
-                        if tx.send(NetworkReaderEvent::Packet(record)).is_err() {
+                        if tx
+                            .send(NetworkReaderEvent::Packet { session_id, record })
+                            .is_err()
+                        {
                             break;
                         }
                     }
                     Err(e) => {
                         println!("Network reader thread error: {}", e);
-                        let _ = tx.send(NetworkReaderEvent::Error(e.to_string()));
+                        let _ = tx.send(NetworkReaderEvent::Error {
+                            session_id,
+                            error: e.to_string(),
+                        });
                         break;
                     }
                 }
@@ -6097,7 +6172,7 @@ impl GameClient {
         let client_state = client_lifecycle_state_label(self.client_state);
         let last_network_error = metric_text_label(&self.last_network_error);
         let text = format!(
-            "rust_ext_profile={} client_state={} lifecycle_transitions={} reconnect_events={} reconnect_attempts={} reconnect_successes={} network_reader_errors={} last_network_error={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_depth_attachment_status={} native_shadow_depth_attachment_binding_count={} native_shadow_depth_attachment_clear_count={} native_shadow_resource_barrier_status={} native_shadow_resource_transition_count={} native_shadow_resource_barrier_error_count={} native_shadow_framebuffer_status={} native_shadow_framebuffer_rid_allocated={} native_shadow_framebuffer_attachment_count={} native_shadow_framebuffer_pass_compat_status={} native_shadow_framebuffer_pass_compat_error_count={} native_shadow_framebuffer_depth_only_enabled={} native_shadow_framebuffer_color_attachment_count={} native_shadow_framebuffer_attachment_owned={} native_shadow_framebuffer_attachment_reuse_count={} native_shadow_framebuffer_descriptor_valid={} native_shadow_framebuffer_descriptor_error_count={} native_shadow_framebuffer_bind_ready={} native_shadow_framebuffer_bind_error_count={} native_shadow_pass_descriptor_valid={} native_shadow_pass_descriptor_error_count={} native_shadow_pass_status={} native_shadow_pass_rid_allocated={} native_shadow_pass_submit_status={} native_shadow_pass_lifecycle_ready={} native_shadow_pass_lifecycle_error_count={} native_shadow_pass_begin_count={} native_shadow_pass_end_count={} native_shadow_command_buffer_status={} native_shadow_command_buffer_record_ready={} native_shadow_command_buffer_record_error_count={} native_shadow_command_buffer_submit_ready={} native_shadow_command_buffer_submit_error_count={} native_shadow_command_buffer_submit_count={} native_shadow_command_buffer_error_count={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_draw_status={} native_shadow_draw_call_count={} native_shadow_draw_face_count={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_shader_source_bytes={} native_shadow_shader_source_checksum={} native_shadow_shader_module_status={} native_shadow_shader_module_rid_allocated={} native_shadow_light_source={} native_shadow_light_space={} native_shadow_cascade_count={} native_shadow_light_matrix_bytes={} native_shadow_depth_clip_space={} native_shadow_depth_range_source={} native_shadow_depth_near_milli={} native_shadow_depth_far_chunks={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} chunk_unload_scans={} chunk_unload_scanned={} chunk_unload_grace_kept={} chunk_unload_total={} chunk_unload_neighbor_refresh={} chunk_unload_last={} chunk_unload_last_grace_kept={} chunk_unload_last_neighbor_refresh={} chunk_unload_max={} chunk_unload_max_grace_kept={} chunk_unload_max_neighbor_refresh={} popin_frames={} popin_complete_frames={} popin_missing_frames={} popin_collision_missing_frames={} popin_missing_chunks={} popin_collision_missing_chunks={} popin_probe_last={} popin_missing_last={} popin_collision_missing_last={} popin_missing_max={} popin_collision_missing_max={} popin_probe_radius={} packet_q_frames={} packet_q_nonempty={} packet_q_drained={} packet_q_chunk_drained={} packet_q_last_drain={} packet_q_max_drain={} packet_q_last_chunk_drain={} packet_q_max_chunk_drain={} packet_q_lag_ms={:.3}/{:.3}/{:.3} packet_q_read_work_ms={:.3}/{:.3}/{:.3} packet_q_decode_work_ms={:.3}/{:.3}/{:.3} packet_q_reader_elapsed_ms={:.3}/{:.3} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} client_state={} lifecycle_transitions={} reconnect_events={} reconnect_attempts={} reconnect_successes={} network_reader_errors={} network_session={} network_stale_events={} network_stale_packets={} network_stale_errors={} last_network_error={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_depth_attachment_status={} native_shadow_depth_attachment_binding_count={} native_shadow_depth_attachment_clear_count={} native_shadow_resource_barrier_status={} native_shadow_resource_transition_count={} native_shadow_resource_barrier_error_count={} native_shadow_framebuffer_status={} native_shadow_framebuffer_rid_allocated={} native_shadow_framebuffer_attachment_count={} native_shadow_framebuffer_pass_compat_status={} native_shadow_framebuffer_pass_compat_error_count={} native_shadow_framebuffer_depth_only_enabled={} native_shadow_framebuffer_color_attachment_count={} native_shadow_framebuffer_attachment_owned={} native_shadow_framebuffer_attachment_reuse_count={} native_shadow_framebuffer_descriptor_valid={} native_shadow_framebuffer_descriptor_error_count={} native_shadow_framebuffer_bind_ready={} native_shadow_framebuffer_bind_error_count={} native_shadow_pass_descriptor_valid={} native_shadow_pass_descriptor_error_count={} native_shadow_pass_status={} native_shadow_pass_rid_allocated={} native_shadow_pass_submit_status={} native_shadow_pass_lifecycle_ready={} native_shadow_pass_lifecycle_error_count={} native_shadow_pass_begin_count={} native_shadow_pass_end_count={} native_shadow_command_buffer_status={} native_shadow_command_buffer_record_ready={} native_shadow_command_buffer_record_error_count={} native_shadow_command_buffer_submit_ready={} native_shadow_command_buffer_submit_error_count={} native_shadow_command_buffer_submit_count={} native_shadow_command_buffer_error_count={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_draw_status={} native_shadow_draw_call_count={} native_shadow_draw_face_count={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_shader_source_bytes={} native_shadow_shader_source_checksum={} native_shadow_shader_module_status={} native_shadow_shader_module_rid_allocated={} native_shadow_light_source={} native_shadow_light_space={} native_shadow_cascade_count={} native_shadow_light_matrix_bytes={} native_shadow_depth_clip_space={} native_shadow_depth_range_source={} native_shadow_depth_near_milli={} native_shadow_depth_far_chunks={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} chunk_unload_scans={} chunk_unload_scanned={} chunk_unload_grace_kept={} chunk_unload_total={} chunk_unload_neighbor_refresh={} chunk_unload_last={} chunk_unload_last_grace_kept={} chunk_unload_last_neighbor_refresh={} chunk_unload_max={} chunk_unload_max_grace_kept={} chunk_unload_max_neighbor_refresh={} popin_frames={} popin_complete_frames={} popin_missing_frames={} popin_collision_missing_frames={} popin_missing_chunks={} popin_collision_missing_chunks={} popin_probe_last={} popin_missing_last={} popin_collision_missing_last={} popin_missing_max={} popin_collision_missing_max={} popin_probe_radius={} packet_q_frames={} packet_q_nonempty={} packet_q_drained={} packet_q_chunk_drained={} packet_q_last_drain={} packet_q_max_drain={} packet_q_last_chunk_drain={} packet_q_max_chunk_drain={} packet_q_lag_ms={:.3}/{:.3}/{:.3} packet_q_read_work_ms={:.3}/{:.3}/{:.3} packet_q_decode_work_ms={:.3}/{:.3}/{:.3} packet_q_reader_elapsed_ms={:.3}/{:.3} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             client_state,
             self.lifecycle_transition_count,
@@ -6105,6 +6180,10 @@ impl GameClient {
             self.reconnect_attempt_count,
             self.reconnect_success_count,
             self.network_reader_errors,
+            self.network_session_id,
+            self.stale_network_reader_events,
+            self.stale_network_reader_packets,
+            self.stale_network_reader_errors,
             last_network_error,
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -6567,6 +6646,68 @@ mod tests {
             value >>= 7;
         }
         encoded.push(value as u8);
+    }
+
+    fn test_packet_record() -> network::PacketReadRecord {
+        network::PacketReadRecord {
+            packet: crate::api::Packet { payload: None },
+            timing: network::PacketReadTiming {
+                read_ms: 0.0,
+                decode_ms: 0.0,
+                reader_elapsed_ms: 0.0,
+                queue_lag_ms: 0.0,
+            },
+            received_at: std::time::Instant::now(),
+        }
+    }
+
+    #[test]
+    fn network_reader_drain_discards_stale_session_events() {
+        let drain = drain_network_reader_events(
+            2,
+            vec![
+                NetworkReaderEvent::Packet {
+                    session_id: 1,
+                    record: test_packet_record(),
+                },
+                NetworkReaderEvent::Error {
+                    session_id: 1,
+                    error: "old session closed".to_string(),
+                },
+                NetworkReaderEvent::Packet {
+                    session_id: 2,
+                    record: test_packet_record(),
+                },
+            ],
+        );
+
+        assert_eq!(drain.packets.len(), 1);
+        assert!(drain.errors.is_empty());
+        assert_eq!(drain.stale_packets, 1);
+        assert_eq!(drain.stale_errors, 1);
+        assert_eq!(drain.stale_packets + drain.stale_errors, 2);
+    }
+
+    #[test]
+    fn network_reader_drain_resets_current_session_packets_on_error() {
+        let drain = drain_network_reader_events(
+            7,
+            vec![
+                NetworkReaderEvent::Packet {
+                    session_id: 7,
+                    record: test_packet_record(),
+                },
+                NetworkReaderEvent::Error {
+                    session_id: 7,
+                    error: "connection reset".to_string(),
+                },
+            ],
+        );
+
+        assert!(drain.packets.is_empty());
+        assert_eq!(drain.errors, vec!["connection reset"]);
+        assert_eq!(drain.stale_packets, 1);
+        assert_eq!(drain.stale_errors, 0);
     }
 
     #[test]

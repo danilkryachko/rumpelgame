@@ -15,6 +15,7 @@ SERVER_SOURCE="${RUMPELMC_NETWORKING_ROBUSTNESS_SERVER_SOURCE:-"$ROOT_DIR/server
 SERVER_TEST="${RUMPELMC_NETWORKING_ROBUSTNESS_SERVER_TEST:-"$ROOT_DIR/server/pkg/network/framing_test.go"}"
 SERVER_SESSION_TEST="${RUMPELMC_NETWORKING_ROBUSTNESS_SERVER_SESSION_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
 CLIENT_SOURCE="${RUMPELMC_NETWORKING_ROBUSTNESS_CLIENT_SOURCE:-"$ROOT_DIR/client/rust_ext/src/network.rs"}"
+CLIENT_RUNTIME_SOURCE="${RUMPELMC_NETWORKING_ROBUSTNESS_CLIENT_RUNTIME_SOURCE:-"$ROOT_DIR/client/rust_ext/src/lib.rs"}"
 SERVER_SCALABILITY_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_SERVER_SCALABILITY_SUMMARY:-"$ROOT_DIR/logs/server_scalability_pass_current/server-scalability-pass-summary.txt"}"
 SLOW_READER_SMOKE_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_SLOW_READER_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_slow_reader_smoke.sh"}"
 SLOW_READER_SMOKE_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_SLOW_READER_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_slow_reader_smoke_current/server-slow-reader-smoke-summary.txt"}"
@@ -61,13 +62,14 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$SERVER_SESSION_TEST" "$CLIENT_SOURCE" "$SERVER_SCALABILITY_SUMMARY" "$SLOW_READER_SMOKE_SCRIPT" "$RECONNECT_SMOKE_SCRIPT" "$RECONNECT_SOAK_SCRIPT"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$SERVER_SESSION_TEST" "$CLIENT_SOURCE" "$CLIENT_RUNTIME_SOURCE" "$SERVER_SCALABILITY_SUMMARY" "$SLOW_READER_SMOKE_SCRIPT" "$RECONNECT_SMOKE_SCRIPT" "$RECONNECT_SOAK_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
 for token in \
   'Current Robustness Contract' \
   'Added Client Guards' \
+  'Session/Stale Packet Policy' \
   'Existing Server Guards' \
   'Deferred Robustness Work' \
   'Compatibility Rules' \
@@ -107,6 +109,11 @@ require_token "$CLIENT_SOURCE" 'receive_rejects_oversized_packet_length'
 require_token "$CLIENT_SOURCE" 'receive_returns_unexpected_eof_on_short_length_prefix'
 require_token "$CLIENT_SOURCE" 'receive_returns_unexpected_eof_on_short_payload'
 require_token "$CLIENT_SOURCE" 'receive_rejects_malformed_payload'
+require_token "$CLIENT_RUNTIME_SOURCE" 'fn drain_network_reader_events'
+require_token "$CLIENT_RUNTIME_SOURCE" 'network_session_id'
+require_token "$CLIENT_RUNTIME_SOURCE" 'network_stale_events={}'
+require_token "$CLIENT_RUNTIME_SOURCE" 'network_reader_drain_discards_stale_session_events'
+require_token "$CLIENT_RUNTIME_SOURCE" 'network_reader_drain_resets_current_session_packets_on_error'
 
 server_scalability_status="$(field_metric status "$SERVER_SCALABILITY_SUMMARY")"
 server_scalability_protocol_change="$(field_metric active_protocol_change "$SERVER_SCALABILITY_SUMMARY")"
@@ -197,10 +204,15 @@ fi
 
 client_boundary_tests="skipped"
 if [ "$RUN_RUST_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/client/rust_ext" && cargo test --lib network::tests::receive > "$OUT_DIR/cargo-test-network.txt" 2>&1); then
+  if (
+    cd "$ROOT_DIR/client/rust_ext" &&
+      cargo test --lib network::tests::receive > "$OUT_DIR/cargo-test-network.txt" 2>&1 &&
+      cargo test --lib network_reader_drain > "$OUT_DIR/cargo-test-network-reader-drain.txt" 2>&1
+  ); then
     client_boundary_tests="pass"
   else
     cat "$OUT_DIR/cargo-test-network.txt" >&2 || true
+    cat "$OUT_DIR/cargo-test-network-reader-drain.txt" >&2 || true
     client_boundary_tests="fail"
   fi
 fi
@@ -250,6 +262,7 @@ awk \
       reconnect_soak_successes + 0 >= reconnect_soak_cycles + 0 &&
       reconnect_soak_protocol_change + 0 == 0
     reconnect_status = reconnect_soak_ok ? "repeated_live_rebootstrap_guarded" : (reconnect_ok ? "live_rebootstrap_guarded" : "deferred")
+    stale_packet_policy = client_boundary_tests == "pass" ? "session_guarded" : "source_guarded"
     slow_client_status = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1 ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred")
     multi_client_live_status = server_scalability_live_load
     overload_status = "deferred"
@@ -283,7 +296,7 @@ awk \
       reason = "client_boundary_tests_failed"
     }
 
-    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
+    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s stale_packet_policy=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, stale_packet_policy, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
     if (status != "pass") {
       exit 1
     }

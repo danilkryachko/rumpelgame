@@ -62,6 +62,7 @@ for token in \
   'State Contract' \
   'Transition Contract' \
   'Current Runtime Wiring' \
+  'Session/Stale Packet Policy' \
   'Deferred Work' \
   'Compatibility Rules' \
   'Reader-thread receive errors' \
@@ -90,6 +91,11 @@ require_token "$CLIENT_SOURCE" 'ClientLifecycleEvent::SpawnComplete'
 require_token "$CLIENT_SOURCE" 'ClientLifecycleEvent::NetworkError'
 require_token "$CLIENT_SOURCE" 'ClientLifecycleEvent::ShutdownRequested'
 require_token "$CLIENT_SOURCE" 'enum NetworkReaderEvent'
+require_token "$CLIENT_SOURCE" 'fn drain_network_reader_events'
+require_token "$CLIENT_SOURCE" 'network_session_id'
+require_token "$CLIENT_SOURCE" 'network_stale_events={}'
+require_token "$CLIENT_SOURCE" 'network_reader_drain_discards_stale_session_events'
+require_token "$CLIENT_SOURCE" 'network_reader_drain_resets_current_session_packets_on_error'
 require_token "$CLIENT_SOURCE" 'fn record_network_reader_error'
 require_token "$CLIENT_SOURCE" 'fn client_lifecycle_allows_outbound'
 require_token "$CLIENT_SOURCE" 'client_state={}'
@@ -162,10 +168,15 @@ proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.pr
 
 client_lifecycle_tests="skipped"
 if [ "$RUN_RUST_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/client/rust_ext" && cargo test --lib client_lifecycle > "$OUT_DIR/cargo-test-client-lifecycle.txt" 2>&1); then
+  if (
+    cd "$ROOT_DIR/client/rust_ext" &&
+      cargo test --lib client_lifecycle > "$OUT_DIR/cargo-test-client-lifecycle.txt" 2>&1 &&
+      cargo test --lib network_reader_drain > "$OUT_DIR/cargo-test-network-reader-drain.txt" 2>&1
+  ); then
     client_lifecycle_tests="pass"
   else
     cat "$OUT_DIR/cargo-test-client-lifecycle.txt" >&2 || true
+    cat "$OUT_DIR/cargo-test-network-reader-drain.txt" >&2 || true
     client_lifecycle_tests="fail"
   fi
 fi
@@ -209,6 +220,7 @@ awk \
     state_machine_status = reconnect_soak_ok ? "repeated_runtime_guarded" : (reconnect_ok ? "runtime_guarded" : "unit_guarded")
     runtime_reconnect = reconnect_soak_ok ? "repeated_live_rebootstrap_guarded" : (reconnect_ok ? "live_rebootstrap_guarded" : "deferred")
     state_telemetry = reconnect_ok ? "live_marker_guarded" : "source_guarded"
+    stale_packet_policy = client_lifecycle_tests == "pass" ? "session_guarded" : "source_guarded"
     active_protocol_change = proto_diff_count + 0
 
     networking_ok = networking_status == "pass" && networking_protocol_change + 0 == 0
@@ -231,7 +243,7 @@ awk \
       reason = "client_lifecycle_tests_failed"
     }
 
-    printf("client_state_machine_hardening status=%s reason=%s state_machine_status=%s active_protocol_change=%d client_lifecycle_tests=%s runtime_reconnect=%s state_telemetry=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d networking_status=%s networking_protocol_change=%d design_doc=%s networking_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, state_machine_status, active_protocol_change, client_lifecycle_tests, runtime_reconnect, state_telemetry, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, networking_status, networking_protocol_change, design_doc, networking_summary, reconnect_smoke_summary, reconnect_soak_summary)
+    printf("client_state_machine_hardening status=%s reason=%s state_machine_status=%s active_protocol_change=%d client_lifecycle_tests=%s stale_packet_policy=%s runtime_reconnect=%s state_telemetry=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d networking_status=%s networking_protocol_change=%d design_doc=%s networking_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, state_machine_status, active_protocol_change, client_lifecycle_tests, stale_packet_policy, runtime_reconnect, state_telemetry, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, networking_status, networking_protocol_change, design_doc, networking_summary, reconnect_smoke_summary, reconnect_soak_summary)
     if (status != "pass") {
       exit 1
     }

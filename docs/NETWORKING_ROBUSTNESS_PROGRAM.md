@@ -66,6 +66,7 @@ Checks:
 - The slow-reader smoke validates a real non-reading TCP client timing out during a large RAW bootstrap stream while a separate fast client still receives chunk `0,0`.
 - The client reconnect smoke validates a real Godot client detecting a server-side TCP disconnect, retrying after server restart, and exposing `client_state=active`, `reconnect_events`, `reconnect_successes`, and `network_reader_errors` in the perf marker.
 - The repeated reconnect soak validates multiple server-side TCP disconnect/restart/rebootstrap cycles in one Godot session with the client ending in `active`.
+- The Rust client tags reader-thread packet/error events with a session id, ignores events from stale sessions, and drops same-drain queued packets when the current session reports a reader error.
 - Rust `NetworkClient::receive_packet_with_timing_since` reads the exact length prefix, rejects lengths above `MAX_PACKET_LENGTH`, reads the exact payload, then decodes one protobuf `Packet`.
 - Rust `NetworkClient::send_packet` rejects encoded packets larger than `MAX_PACKET_LENGTH` before writing.
 
@@ -78,6 +79,14 @@ Checks:
 - `receive_rejects_malformed_payload`
 
 These complement the existing Rust oversized-length test and the Go server framing tests. The tests do not change runtime reconnect, queueing, decode, or send behavior.
+
+## Session/Stale Packet Policy
+
+Reconnect uses a client-side session generation guard without changing the wire format. Each successful connect/reconnect increments `network_session_id`, installs a new receiver, and spawns a reader thread whose events carry that id.
+
+The main thread treats reader events from older sessions as stale and ignores them. If an error for the current session is drained together with packets from that same session, those packets are also ignored; the error moves the lifecycle to `reconnecting` and the next successful reconnect performs a normal position bootstrap. Perf markers expose `network_session`, `network_stale_events`, `network_stale_packets`, and `network_stale_errors`.
+
+This policy prevents old reader errors or same-frame disconnect packets from mutating the current client state. It does not implement packet replay, backpressure, overloaded-client admission, or broad clearing of loaded chunks, mesh queues, collision queues, or GPU residency.
 
 ## Existing Server Guards
 
@@ -153,13 +162,13 @@ Expected summary:
 client_reconnect_soak status=pass reconnect_cycles=3 client_state=active reconnect_successes=3 network_reader_errors=3 ... active_protocol_change=0
 ```
 
-This is bounded repeated runtime evidence. It does not define stale-packet handling, packet replay, overload behavior, queue reset, or backpressure policy.
+This is bounded repeated runtime evidence. It does not define packet replay, overload behavior, broad loaded-state reset, or backpressure policy.
 
 ## Deferred Robustness Work
 
 Still needed before claiming a full networking robustness program:
 
-- Reconnect stale packet handling, state reset rules, packet replay policy, and longer reconnect failure/idle soak.
+- Broader reconnect state reset rules, packet replay policy, and longer reconnect failure/idle soak.
 - Broader multi-client slow-reader load evidence across more active clients, broadcast fanout, and longer runs.
 - Server overload/admission behavior and connection limits under load.
 - Packet error telemetry that classifies EOF, oversized frame, malformed protobuf, timeout, and short write causes.
@@ -170,8 +179,8 @@ Still needed before claiming a full networking robustness program:
 - Do not change `api/schema/packets.proto` for networking robustness instrumentation unless a protocol task approves it.
 - Do not change the 4-byte little-endian frame prefix.
 - Do not add packet retries or ordering semantics inside `ChunkData`.
-- Do not drop, coalesce, or reorder packets without an explicit queue/backpressure design.
-- Do not treat reconnect recovery as complete for adversarial networks until stale-packet handling, repeated reconnect behavior, and state reset policy are defined and tested.
+- Do not drop, coalesce, or reorder current-session packets outside the session-error reset policy without an explicit queue/backpressure design.
+- Do not treat reconnect recovery as complete for adversarial networks until repeated reconnect behavior, broader state reset policy, overload behavior, and backpressure are defined and tested.
 - Do not tighten slow-client timeout defaults without proving startup, bootstrap, and normal movement are not falsely terminated.
 
 ## Block 38 Gate
@@ -182,7 +191,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
 
 To run the slow-reader smoke inside the gate:
 
@@ -201,7 +210,7 @@ The gate checks that:
 - This document records the current robustness contract, added client guards, existing server guards, deferred robustness work, and compatibility rules.
 - Server and client sources still enforce max packet sizes and exact reads.
 - Go server framing/network tests pass.
-- Rust network tests pass.
+- Rust network and reader-drain session tests pass.
 - The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
 - The reconnect smoke and repeated reconnect soak summaries are clean when current artifacts exist or the runs are explicitly requested.
 - The slow-reader smoke script exists, and the gate carries its status when a current slow-reader summary exists or the smoke is explicitly run.
@@ -210,4 +219,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a packet-boundary, unit-guarded write-timeout, two-client live fanout, bounded slow-reader, and bounded repeated reconnect/rebootstrap checkpoint. Reconnect stale-packet policy, overload handling, broader live load, broadcast/backpressure policy, and runtime error classification telemetry remain future work.
+This block is complete as a packet-boundary, unit-guarded write-timeout, two-client live fanout, bounded slow-reader, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Overload handling, broader live load, broadcast/backpressure policy, broad reconnect state reset, packet replay, and runtime error classification telemetry remain future work.
