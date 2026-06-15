@@ -118,7 +118,7 @@ RUMPELMC_SHADOW_XCTRACE_SMOKE_DELAY_SEC=25 \
 sh scripts/gpu_terrain_shadow_xctrace_attach_capture.sh logs/gpu_shadow_xctrace_attach_current
 ```
 
-That helper launches Godot with a minimal environment, attaches `Metal System Trace` to the Godot process, exports Metal command-buffer and encoder tables, and writes `shadow-xctrace-attach-capture-summary.txt`. Its trace/XML outputs still require manual profiler review; they are not accepted rows until a positive `gpu_shadow_pass_ms` is explicitly recorded and validated against the plan.
+That helper launches Godot with a minimal environment, attaches `Metal System Trace` to the Godot process, requires core Metal command-buffer and encoder XML exports, best-effort exports the extended Metal review tables, scans XML for terrain profiler markers, and writes `shadow-xctrace-attach-capture-summary.txt`. Its trace/XML outputs still require manual profiler review; they are not accepted rows until a positive `gpu_shadow_pass_ms` is explicitly recorded and validated against the plan.
 
 ## Current Campaign Status
 
@@ -131,8 +131,8 @@ Fresh 2026-06-15 current artifact:
 - 2026-06-15 local Xcode/Metal attempts found that `xctrace --launch` against the shell workload failed with `Operation not permitted`, while an all-processes Metal trace grew to an unusable 13 GB before being killed and deleted. Targeted attach to a normally launched Godot process did work, so the sanitized attach helper now wraps that path.
 - The current targeted attach run at `logs/gpu_shadow_xctrace_attach_current` reported `shadow_xctrace_attach_capture status=pass`, `trace_status=captured`, `trace_env_sanitized=1`, `profiler_artifact=logs/gpu_shadow_xctrace_attach_current/shadow-xctrace-attach.trace`, and `gpu_shadow_pass_ms_status=missing`.
 - A later local marker-identification run at `logs/gpu_shadow_xctrace_attach_profiler_markers_current` reported `shadow_xctrace_attach_capture status=pass`, `trace_status=captured`, `trace_env_sanitized=1`, `profiler_artifact=logs/gpu_shadow_xctrace_attach_profiler_markers_current/shadow-xctrace-attach.trace`, `gpu_profiler_breadcrumb=1381256515`, `gpu_profiler_shader=rumpel_gpu_terrain_render_shader`, `gpu_profiler_pipeline=rumpel_gpu_terrain_compositor_pipeline`, and `gpu_shadow_pass_ms_status=missing`.
-- Additional `xcrun xctrace export` review artifacts were saved beside the trace for `metal-command-buffer-completed`, `metal-gpu-intervals`, `metal-command-buffer-frame-assignment`, `metal-gpu-submission-to-command-buffer-id`, `metal-application-event-interval`, `metal-object-label`, and `metal-shader-profiler-shader-list`.
-- CLI table inspection showed generic Godot/Xcode labels such as command-buffer render/blit commands, drawable present events, completion handlers, and shader entries. The newer terrain compositor markers were validated in the smoke marker and helper summary, but did not surface in exported CLI XML tables. Do not infer `gpu_shadow_pass_ms` from those rows.
+- A follow-up short helper smoke at `logs/gpu_shadow_xctrace_attach_extended_exports_smoke` reported `xml_export_count=10`, `xml_optional_export_count=8`, `xml_optional_export_status=written`, `profiler_marker_xml_status=missing`, `profiler_marker_xml_matches=0`, and `gpu_shadow_pass_ms_status=missing`.
+- CLI table inspection showed generic Godot/Xcode labels such as command-buffer render/blit commands, drawable present events, completion handlers, and shader entries. The terrain compositor markers are validated in the smoke marker and helper summary, but still do not surface in exported CLI XML tables. Do not infer `gpu_shadow_pass_ms` from those rows.
 - No accepted `gpu_shadow_pass_ms` has been reviewed from the targeted attach trace, and no result row has been copied into `shadow-radius-profiler-results.txt`.
 
 The campaign gate is still useful because it verifies:

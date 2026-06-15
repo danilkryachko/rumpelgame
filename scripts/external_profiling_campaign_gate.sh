@@ -143,7 +143,7 @@ fi
     "$(relative_path "$CAPTURE_PACK")" \
     "$(relative_path "$RESULTS_PATH")" \
     'scripts/gpu_terrain_shadow_profiler_results_check.sh'
-  printf 'capture_helper=macos_xctrace_attach command="RUMPELMC_SHADOW_XCTRACE_RECORD_SEC=10 RUMPELMC_SHADOW_XCTRACE_SMOKE_DELAY_SEC=25 sh scripts/gpu_terrain_shadow_xctrace_attach_capture.sh logs/gpu_shadow_xctrace_attach_current" status=operator_review_required result_row_status=manual_gpu_shadow_pass_ms_required\n'
+  printf 'capture_helper=macos_xctrace_attach command="RUMPELMC_SHADOW_XCTRACE_RECORD_SEC=10 RUMPELMC_SHADOW_XCTRACE_SMOKE_DELAY_SEC=25 sh scripts/gpu_terrain_shadow_xctrace_attach_capture.sh logs/gpu_shadow_xctrace_attach_current" status=operator_review_required result_row_status=manual_gpu_shadow_pass_ms_required xml_export_mode=core_required_optional_extended marker_xml_scan=navigation_only\n'
   printf 'lane=windows_gpu_shadow_proxy platform=windows tool=pix_renderdoc_or_vendor status=pending_external_machine workload=shadow_radius_matrix capture_pack=%s results=external_artifact_required validation=repeat_plan_and_record_driver_gpu_backend\n' \
     "$(relative_path "$CAPTURE_PACK")"
   printf 'lane=linux_vulkan_shadow_proxy platform=linux tool=renderdoc_or_vulkan_profiler status=deferred_optional workload=shadow_radius_matrix capture_pack=%s results=external_artifact_required validation=only_if_backend_available\n' \
@@ -167,7 +167,7 @@ fi
   printf 'command_capture_macos_xctrace_attach=RUMPELMC_SHADOW_XCTRACE_RECORD_SEC=10 RUMPELMC_SHADOW_XCTRACE_SMOKE_DELAY_SEC=25 sh scripts/gpu_terrain_shadow_xctrace_attach_capture.sh logs/gpu_shadow_xctrace_attach_current\n'
   printf 'trust_boundary template_status=%s template_rows_are_not_evidence=1 pending_capture_pack_is_not_evidence=1 local_fps_is_warning_only=1 godot_gpu_timestamp_is_warning_only=1\n' \
     "${results_template_status:-missing}"
-  printf 'trust_boundary xctrace_trace_requires_manual_review=1 xctrace_exports_are_not_result_rows=1 manual_gpu_shadow_pass_ms_required=1\n'
+  printf 'trust_boundary xctrace_trace_requires_manual_review=1 xctrace_exports_are_not_result_rows=1 xctrace_xml_marker_scan_is_navigation_only=1 manual_gpu_shadow_pass_ms_required=1\n'
   printf 'command_validate_results=sh scripts/gpu_terrain_shadow_profiler_results_check.sh %s %s %s\n' \
     "$(relative_path "$PLAN_INPUT")" \
     "$(relative_path "$RESULTS_PATH")" \

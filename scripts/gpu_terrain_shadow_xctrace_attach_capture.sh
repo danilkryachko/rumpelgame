@@ -22,6 +22,7 @@ PLAN_ARTIFACT_ROOT="${RUMPELMC_SHADOW_XCTRACE_PLAN_ARTIFACT_ROOT:-logs/gpu_shado
 EXPECTED_GPU_PROFILER_BREADCRUMB="1381256515"
 EXPECTED_GPU_PROFILER_SHADER="rumpel_gpu_terrain_render_shader"
 EXPECTED_GPU_PROFILER_PIPELINE="rumpel_gpu_terrain_compositor_pipeline"
+PROFILER_MARKER_XML_PATTERN="rumpel_gpu_terrain|1381256515|52544D43|52544d43|RTMC"
 
 SUMMARY_PATH="$OUT_DIR/shadow-xctrace-attach-capture-summary.txt"
 TRACE_PATH="$OUT_DIR/shadow-xctrace-attach.trace"
@@ -31,6 +32,14 @@ GODOT_LOG="$OUT_DIR/godot.log"
 XCTRACE_LOG="$OUT_DIR/xctrace.log"
 COMMAND_BUFFERS_XML="$OUT_DIR/metal-command-buffer-submissions.xml"
 ENCODERS_XML="$OUT_DIR/metal-application-encoders-list.xml"
+TRACE_TOC_XML="$OUT_DIR/trace-toc.xml"
+COMMAND_BUFFERS_COMPLETED_XML="$OUT_DIR/metal-command-buffer-completed.xml"
+GPU_INTERVALS_XML="$OUT_DIR/metal-gpu-intervals.xml"
+COMMAND_BUFFER_FRAME_ASSIGNMENT_XML="$OUT_DIR/metal-command-buffer-frame-assignment.xml"
+GPU_SUBMISSION_TO_COMMAND_BUFFER_ID_XML="$OUT_DIR/metal-gpu-submission-to-command-buffer-id.xml"
+APPLICATION_EVENT_INTERVAL_XML="$OUT_DIR/metal-application-event-interval.xml"
+OBJECT_LABEL_XML="$OUT_DIR/metal-object-label.xml"
+SHADER_LIST_XML="$OUT_DIR/metal-shader-profiler-shader-list.xml"
 RESULT_ROW_PATH="$OUT_DIR/shadow-xctrace-result-row.txt"
 
 mkdir -p "$OUT_DIR"
@@ -104,11 +113,67 @@ marker_value() {
   ' "$path"
 }
 
+append_csv() {
+  current="$1"
+  item="$2"
+  if [ "$current" = "none" ]; then
+    printf '%s\n' "$item"
+  else
+    printf '%s,%s\n' "$current" "$item"
+  fi
+}
+
 run_xctrace() {
   if [ "$(basename "$XCTRACE_BIN")" = "xcrun" ]; then
     xcrun xctrace "$@"
   else
     "$XCTRACE_BIN" "$@"
+  fi
+}
+
+export_xctrace_xml() {
+  xpath="$1"
+  output="$2"
+  label="$3"
+  run_xctrace export \
+    --input "$TRACE_PATH" \
+    --xpath "$xpath" \
+    --output "$output" > /dev/null 2>&1 || fail "failed to export $label"
+  test -s "$output" || fail "empty $label export"
+  xml_export_count=$((xml_export_count + 1))
+}
+
+try_export_xctrace_xml() {
+  xpath="$1"
+  output="$2"
+  label="$3"
+  if run_xctrace export \
+    --input "$TRACE_PATH" \
+    --xpath "$xpath" \
+    --output "$output" > /dev/null 2>&1 && test -s "$output"; then
+    xml_export_count=$((xml_export_count + 1))
+    xml_optional_export_count=$((xml_optional_export_count + 1))
+  else
+    rm -f "$output"
+    xml_optional_export_failures="$(append_csv "$xml_optional_export_failures" "$label")"
+  fi
+}
+
+scan_profiler_marker_xml() {
+  profiler_marker_xml_status="missing"
+  profiler_marker_xml_matches=0
+  profiler_marker_xml_files="none"
+  for xml_path in "$@"; do
+    test -s "$xml_path" || continue
+    if grep -Eq "$PROFILER_MARKER_XML_PATTERN" "$xml_path"; then
+      profiler_marker_xml_matches=$((profiler_marker_xml_matches + 1))
+      profiler_marker_xml_files="$(
+        append_csv "$profiler_marker_xml_files" "$(relative_path "$xml_path")"
+      )"
+    fi
+  done
+  if [ "$profiler_marker_xml_matches" -gt 0 ]; then
+    profiler_marker_xml_status="present"
   fi
 }
 
@@ -195,7 +260,11 @@ trap cleanup EXIT HUP INT TERM
 
 rm -rf "$TRACE_PATH"
 rm -f "$MARKER_PATH" "$SCREENSHOT_PATH" "$GODOT_LOG" "$XCTRACE_LOG" \
-  "$COMMAND_BUFFERS_XML" "$ENCODERS_XML" "$RESULT_ROW_PATH" "$SUMMARY_PATH"
+  "$COMMAND_BUFFERS_XML" "$ENCODERS_XML" "$TRACE_TOC_XML" \
+  "$COMMAND_BUFFERS_COMPLETED_XML" "$GPU_INTERVALS_XML" \
+  "$COMMAND_BUFFER_FRAME_ASSIGNMENT_XML" "$GPU_SUBMISSION_TO_COMMAND_BUFFER_ID_XML" \
+  "$APPLICATION_EVENT_INTERVAL_XML" "$OBJECT_LABEL_XML" "$SHADER_LIST_XML" \
+  "$RESULT_ROW_PATH" "$SUMMARY_PATH"
 
 radius_env="$(radius_env_value)"
 minimal_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
@@ -272,20 +341,52 @@ fi
 export_status="skipped"
 command_buffer_export_summary="skipped"
 encoder_export_summary="skipped"
+xml_export_count=0
+xml_optional_export_count=0
+xml_optional_export_status="skipped"
+xml_optional_export_failures="none"
+profiler_marker_xml_status="skipped"
+profiler_marker_xml_matches=0
+profiler_marker_xml_files="none"
 if [ "$EXPORT_TABLES" = "1" ]; then
-  run_xctrace export \
-    --input "$TRACE_PATH" \
-    --xpath '/trace-toc/run[@number="1"]/data/table[@schema="metal-application-command-buffer-submissions"]' \
-    --output "$COMMAND_BUFFERS_XML" > /dev/null 2>&1 || fail "failed to export command buffer submissions"
-  run_xctrace export \
-    --input "$TRACE_PATH" \
-    --xpath '/trace-toc/run[@number="1"]/data/table[@schema="metal-application-encoders-list"]' \
-    --output "$ENCODERS_XML" > /dev/null 2>&1 || fail "failed to export encoder list"
-  test -s "$COMMAND_BUFFERS_XML" || fail "empty command buffer export"
-  test -s "$ENCODERS_XML" || fail "empty encoder export"
+  export_xctrace_xml '/trace-toc/run[@number="1"]/data/table[@schema="metal-application-command-buffer-submissions"]' \
+    "$COMMAND_BUFFERS_XML" "command buffer submissions"
+  export_xctrace_xml '/trace-toc/run[@number="1"]/data/table[@schema="metal-application-encoders-list"]' \
+    "$ENCODERS_XML" "encoder list"
+  try_export_xctrace_xml '/trace-toc' \
+    "$TRACE_TOC_XML" "trace-toc"
+  try_export_xctrace_xml '/trace-toc/run[@number="1"]/data/table[@schema="metal-command-buffer-completed"]' \
+    "$COMMAND_BUFFERS_COMPLETED_XML" "command_buffer_completed"
+  try_export_xctrace_xml '/trace-toc/run[@number="1"]/data/table[@schema="metal-gpu-intervals"]' \
+    "$GPU_INTERVALS_XML" "gpu_intervals"
+  try_export_xctrace_xml '/trace-toc/run[@number="1"]/data/table[@schema="metal-command-buffer-frame-assignment"]' \
+    "$COMMAND_BUFFER_FRAME_ASSIGNMENT_XML" "command_buffer_frame_assignment"
+  try_export_xctrace_xml '/trace-toc/run[@number="1"]/data/table[@schema="metal-gpu-submission-to-command-buffer-id"]' \
+    "$GPU_SUBMISSION_TO_COMMAND_BUFFER_ID_XML" "gpu_submission_to_command_buffer_id"
+  try_export_xctrace_xml '/trace-toc/run[@number="1"]/data/table[@schema="metal-application-event-interval"]' \
+    "$APPLICATION_EVENT_INTERVAL_XML" "application_event_interval"
+  try_export_xctrace_xml '/trace-toc/run[@number="1"]/data/table[@schema="metal-object-label"]' \
+    "$OBJECT_LABEL_XML" "object_label"
+  try_export_xctrace_xml '/trace-toc/run[@number="1"]/data/table[@schema="metal-shader-profiler-shader-list"]' \
+    "$SHADER_LIST_XML" "shader_profiler_shader_list"
   export_status="written"
   command_buffer_export_summary="$(relative_path "$COMMAND_BUFFERS_XML")"
   encoder_export_summary="$(relative_path "$ENCODERS_XML")"
+  xml_optional_export_status="written"
+  if [ "$xml_optional_export_failures" != "none" ]; then
+    xml_optional_export_status="partial"
+  fi
+  scan_profiler_marker_xml \
+    "$COMMAND_BUFFERS_XML" \
+    "$ENCODERS_XML" \
+    "$TRACE_TOC_XML" \
+    "$COMMAND_BUFFERS_COMPLETED_XML" \
+    "$GPU_INTERVALS_XML" \
+    "$COMMAND_BUFFER_FRAME_ASSIGNMENT_XML" \
+    "$GPU_SUBMISSION_TO_COMMAND_BUFFER_ID_XML" \
+    "$APPLICATION_EVENT_INTERVAL_XML" \
+    "$OBJECT_LABEL_XML" \
+    "$SHADER_LIST_XML"
 fi
 
 result_row_status="manual_gpu_shadow_pass_ms_required"
@@ -300,7 +401,7 @@ if [ -n "$GPU_SHADOW_PASS_MS" ]; then
 fi
 
 {
-  printf 'shadow_xctrace_attach_capture status=pass trace_status=captured trace_env_sanitized=1 result_row_status=%s radius=%s shadow_mesh=%s profiler_tool=xcode_metal profiler_artifact=%s marker=%s command_buffer_export=%s encoder_export=%s export_status=%s gpu_profiler_breadcrumb=%s gpu_profiler_shader=%s gpu_profiler_pipeline=%s gpu_shadow_pass_ms_status=%s\n' \
+  printf 'shadow_xctrace_attach_capture status=pass trace_status=captured trace_env_sanitized=1 result_row_status=%s radius=%s shadow_mesh=%s profiler_tool=xcode_metal profiler_artifact=%s marker=%s command_buffer_export=%s encoder_export=%s export_status=%s xml_export_count=%s xml_optional_export_count=%s xml_optional_export_status=%s xml_optional_export_failures=%s profiler_marker_xml_status=%s profiler_marker_xml_matches=%s profiler_marker_xml_files=%s gpu_profiler_breadcrumb=%s gpu_profiler_shader=%s gpu_profiler_pipeline=%s gpu_shadow_pass_ms_status=%s\n' \
     "$result_row_status" \
     "$RADIUS" \
     "$SHADOW_MESH" \
@@ -309,6 +410,13 @@ fi
     "$command_buffer_export_summary" \
     "$encoder_export_summary" \
     "$export_status" \
+    "$xml_export_count" \
+    "$xml_optional_export_count" \
+    "$xml_optional_export_status" \
+    "$xml_optional_export_failures" \
+    "$profiler_marker_xml_status" \
+    "$profiler_marker_xml_matches" \
+    "$profiler_marker_xml_files" \
     "$gpu_profiler_breadcrumb" \
     "$gpu_profiler_shader" \
     "$gpu_profiler_pipeline" \
@@ -317,7 +425,7 @@ fi
     "$(plan_priority)" \
     "$(plan_artifact)" \
     "$(relative_path "$RESULT_ROW_PATH")"
-  printf 'trust_boundary generated_trace_requires_manual_review=1 exported_metal_tables_are_not_profiler_result_rows=1 candidate_row_requires_explicit_gpu_shadow_pass_ms=1\n'
+  printf 'trust_boundary generated_trace_requires_manual_review=1 exported_metal_tables_are_not_profiler_result_rows=1 xml_marker_scan_is_navigation_only=1 candidate_row_requires_explicit_gpu_shadow_pass_ms=1\n'
 } > "$SUMMARY_PATH"
 
 cat "$SUMMARY_PATH"
