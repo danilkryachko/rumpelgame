@@ -10,12 +10,14 @@ esac
 
 SUMMARY_PATH="$OUT_DIR/external-profiling-campaign-summary.txt"
 PLAN_PATH="$OUT_DIR/external-profiling-campaign-plan.txt"
+INTAKE_PATH="$OUT_DIR/external-profiling-results-intake.txt"
 DESIGN_DOC="${RUMPELMC_EXTERNAL_PROFILING_DOC:-"$ROOT_DIR/docs/EXTERNAL_PROFILING_CAMPAIGN.md"}"
 GPU_PROFILING_DOC="${RUMPELMC_EXTERNAL_PROFILING_GPU_DOC:-"$ROOT_DIR/docs/GPU_PROFILING.md"}"
 SHADOW_SUMMARY="${RUMPELMC_EXTERNAL_PROFILING_SHADOW_SUMMARY:-"$ROOT_DIR/logs/shadow_quality_parity_program_current/shadow-quality-parity-summary.txt"}"
 RC_SUMMARY="${RUMPELMC_EXTERNAL_PROFILING_RC_SUMMARY:-"$ROOT_DIR/logs/release_candidate_gate_current/release-candidate-gate-summary.txt"}"
 CAPTURE_PACK="${RUMPELMC_EXTERNAL_PROFILING_CAPTURE_PACK:-"$ROOT_DIR/logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-capture-pack.txt"}"
 PLAN_INPUT="${RUMPELMC_EXTERNAL_PROFILING_PLAN_INPUT:-"$ROOT_DIR/logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-plan.txt"}"
+RESULTS_TEMPLATE="${RUMPELMC_EXTERNAL_PROFILING_RESULTS_TEMPLATE:-"$ROOT_DIR/logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results-template.txt"}"
 RESULTS_PATH="${RUMPELMC_EXTERNAL_PROFILING_RESULTS:-"$ROOT_DIR/logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results.txt"}"
 RESULTS_SUMMARY="${RUMPELMC_EXTERNAL_PROFILING_RESULTS_SUMMARY:-"$ROOT_DIR/logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results-summary.txt"}"
 
@@ -65,7 +67,9 @@ for path in \
   "$GPU_PROFILING_DOC" \
   "$SHADOW_SUMMARY" \
   "$RC_SUMMARY" \
-  "$CAPTURE_PACK"; do
+  "$CAPTURE_PACK" \
+  "$PLAN_INPUT" \
+  "$RESULTS_TEMPLATE"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -99,12 +103,23 @@ rc_visual_smoke="$(field_metric visual_smoke "$RC_SUMMARY")"
 rc_perf_matrix="$(field_metric perf_matrix "$RC_SUMMARY")"
 capture_pack_status="$(field_metric capture_pack_status "$CAPTURE_PACK")"
 capture_pack_rows="$(field_metric rows "$CAPTURE_PACK")"
-results_file_status="$(field_metric results_file_status "$CAPTURE_PACK")"
+capture_pack_results_file_status="$(field_metric results_file_status "$CAPTURE_PACK")"
+results_template_status="$(field_metric template_status "$RESULTS_TEMPLATE")"
+rc_live_checks="$(field_metric live_checks "$RC_SUMMARY")"
+
+results_file_status="missing"
+if [ -s "$RESULTS_PATH" ]; then
+  results_file_status="present"
+fi
 
 external_profile_status="pending_external_profiler"
 results_check_status="missing"
 captured_rows="0"
 missing_rows="$capture_pack_rows"
+capture_readiness="ready_for_external_capture"
+if [ "${rc_live_checks:-skipped}" = "full" ]; then
+  capture_readiness="live_rc_ready_for_external_capture"
+fi
 
 if [ -s "$RESULTS_PATH" ]; then
   if sh "$ROOT_DIR/scripts/gpu_terrain_shadow_profiler_results_check.sh" "$PLAN_INPUT" "$RESULTS_PATH" "$RESULTS_SUMMARY" > "$OUT_DIR/shadow-profiler-results-check.txt" 2>&1; then
@@ -112,6 +127,7 @@ if [ -s "$RESULTS_PATH" ]; then
     external_profile_status="$(field_metric external_profile_status "$RESULTS_SUMMARY")"
     captured_rows="$(field_metric captured_rows "$RESULTS_SUMMARY")"
     missing_rows="$(field_metric missing_rows "$RESULTS_SUMMARY")"
+    capture_readiness="validated_results_ready"
   else
     cat "$OUT_DIR/shadow-profiler-results-check.txt" >&2 || true
     results_check_status="fail"
@@ -132,6 +148,32 @@ fi
   printf 'policy pending_capture_pack_is_not_evidence=1 local_fps_is_warning_only=1 godot_gpu_timestamp_is_warning_only=1\n'
 } > "$PLAN_PATH"
 
+{
+  printf 'external_profiling_results_intake status=prepared capture_readiness=%s\n' "$capture_readiness"
+  printf 'plan=%s\n' "$(relative_path "$PLAN_INPUT")"
+  printf 'capture_pack=%s\n' "$(relative_path "$CAPTURE_PACK")"
+  printf 'results_template=%s\n' "$(relative_path "$RESULTS_TEMPLATE")"
+  printf 'results=%s results_file_status=%s capture_pack_results_file_status=%s\n' \
+    "$(relative_path "$RESULTS_PATH")" \
+    "$results_file_status" \
+    "$capture_pack_results_file_status"
+  printf 'results_summary=%s results_check_status=%s\n' \
+    "$(relative_path "$RESULTS_SUMMARY")" \
+    "$results_check_status"
+  printf 'required_row_format=external_profile_status=captured priority=<plan_priority> radius=<plan_radius> artifact=<plan_artifact> profiler_tool=<xcode_metal|pix|renderdoc|vendor|vulkan> profiler_artifact=<real_trace_or_report_path> gpu_shadow_pass_ms=<positive_decimal>\n'
+  printf 'trust_boundary template_status=%s template_rows_are_not_evidence=1 pending_capture_pack_is_not_evidence=1 local_fps_is_warning_only=1 godot_gpu_timestamp_is_warning_only=1\n' \
+    "${results_template_status:-missing}"
+  printf 'command_validate_results=sh scripts/gpu_terrain_shadow_profiler_results_check.sh %s %s %s\n' \
+    "$(relative_path "$PLAN_INPUT")" \
+    "$(relative_path "$RESULTS_PATH")" \
+    "$(relative_path "$RESULTS_SUMMARY")"
+  printf 'command_validate_partial=RUMPELMC_SHADOW_PROFILER_RESULTS_ALLOW_PARTIAL=1 sh scripts/gpu_terrain_shadow_profiler_results_check.sh %s %s %s\n' \
+    "$(relative_path "$PLAN_INPUT")" \
+    "$(relative_path "$RESULTS_PATH")" \
+    "$(relative_path "$RESULTS_SUMMARY")"
+  printf 'operator_steps=copy_template_replace_TODO_remove_comment_prefix_run_validate_results_then_campaign_gate\n'
+} > "$INTAKE_PATH"
+
 awk \
   -v shadow_status="${shadow_status:-missing}" \
   -v shadow_profiler_status="${shadow_profiler_status:-missing}" \
@@ -139,15 +181,21 @@ awk \
   -v rc_status="${rc_status:-missing}" \
   -v rc_visual_smoke="${rc_visual_smoke:-missing}" \
   -v rc_perf_matrix="${rc_perf_matrix:-missing}" \
+  -v rc_live_checks="${rc_live_checks:-missing}" \
   -v capture_pack_status="${capture_pack_status:-missing}" \
   -v capture_pack_rows="${capture_pack_rows:-0}" \
+  -v capture_pack_results_file_status="${capture_pack_results_file_status:-missing}" \
   -v results_file_status="${results_file_status:-missing}" \
+  -v results_template_status="${results_template_status:-missing}" \
   -v external_profile_status="$external_profile_status" \
   -v results_check_status="$results_check_status" \
+  -v capture_readiness="$capture_readiness" \
   -v captured_rows="${captured_rows:-0}" \
   -v missing_rows="${missing_rows:-0}" \
   -v plan_path="$PLAN_PATH" \
+  -v intake_path="$INTAKE_PATH" \
   -v capture_pack="$CAPTURE_PACK" \
+  -v results_template="$RESULTS_TEMPLATE" \
   -v results_path="$RESULTS_PATH" \
   -v results_summary="$RESULTS_SUMMARY" \
   -v shadow_summary="$SHADOW_SUMMARY" \
@@ -169,6 +217,9 @@ awk \
     } else if (!(capture_pack_status == "pending_external_profiler" && capture_pack_rows + 0 >= 4)) {
       status = "fail"
       reason = "capture_pack_not_pending"
+    } else if (!(results_template_status == "todo")) {
+      status = "fail"
+      reason = "results_template_not_todo"
     } else if (results_check_status == "fail") {
       status = "fail"
       reason = "profiler_results_invalid"
@@ -182,7 +233,7 @@ awk \
       macos_metal_status = "captured"
     }
 
-    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d results_file_status=%s results_check_status=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s plan=%s capture_pack=%s results=%s results_summary=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, results_file_status, results_check_status, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, plan_path, capture_pack, results_path, results_summary, shadow_summary, rc_summary)
+    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s capture_readiness=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d capture_pack_results_file_status=%s results_file_status=%s results_template_status=%s results_check_status=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s rc_live_checks=%s plan=%s intake=%s capture_pack=%s results_template=%s results=%s results_summary=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, capture_readiness, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, capture_pack_results_file_status, results_file_status, results_template_status, results_check_status, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, rc_live_checks, plan_path, intake_path, capture_pack, results_template, results_path, results_summary, shadow_summary, rc_summary)
     if (status != "pass") {
       exit 1
     }

@@ -27,6 +27,7 @@ Scope:
 - Add this campaign document.
 - Validate the current pending capture pack and release-candidate evidence.
 - Generate a campaign plan artifact for external profiler operators.
+- Generate a results-intake artifact that records the trusted row format, validator command, and trust boundary.
 
 Out of scope:
 
@@ -42,14 +43,16 @@ Assumptions:
 
 Implementation plan:
 
-- Require current GPU profiling docs, shadow quality summary, release-candidate summary, and capture pack.
+- Require current GPU profiling docs, shadow quality summary, release-candidate summary, capture pack, capture plan, and results template.
 - Write a line-oriented campaign plan with platform, tool, workload, artifact, and status rows.
+- Write a line-oriented results-intake artifact for operators before any external profiler rows exist.
 - Keep summary status `pass` when the campaign is correctly prepared and external rows are pending.
 - If real profiler results exist, validate them with `scripts/gpu_terrain_shadow_profiler_results_check.sh` before marking captured evidence.
 
 Done when:
 
 - `scripts/external_profiling_campaign_gate.sh` emits `external-profiling-campaign-summary.txt`.
+- `scripts/external_profiling_campaign_gate.sh` emits `external-profiling-results-intake.txt`.
 - The summary records `external_profile_status=pending_external_profiler` unless real validated results exist.
 - Docs point future agents to the campaign gate.
 
@@ -72,7 +75,7 @@ Trusted external profiler evidence must include:
 - Positive GPU timing, such as `gpu_shadow_pass_ms`.
 - Matching workload identity from the current capture plan.
 
-Pending rows, commented template rows, capture packs, local FPS, and local macOS/Metal Godot timestamp samples are not profiler evidence.
+Pending rows, commented template rows, capture packs, results-intake files, local FPS, and local macOS/Metal Godot timestamp samples are not profiler evidence.
 
 ## Capture Matrix
 
@@ -97,9 +100,22 @@ sh scripts/gpu_terrain_shadow_profiler_results_check.sh \
   logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results-summary.txt
 ```
 
+The campaign gate also emits the current results-intake envelope:
+
+```text
+logs/external_profiling_campaign_current/external-profiling-results-intake.txt
+```
+
+That intake file is the handoff contract for external operators: it records the required captured row format, result/template paths, validation commands, and explicit trust boundary. It is not a profiler result.
+
 ## Current Campaign Status
 
 Current local status is expected to be `pending_external_profiler` because no real external profiler trace has been recorded in this workspace. This is a blocked external-lab step, not a local implementation failure.
+
+Fresh 2026-06-15 current artifact:
+
+- `logs/external_profiling_campaign_current/external-profiling-campaign-summary.txt` reported `status=pass`, `reason=external_profiler_pending`, `campaign_status=prepared`, `capture_readiness=live_rc_ready_for_external_capture`, `external_profile_status=pending_external_profiler`, `capture_pack_status=pending_external_profiler`, `capture_pack_rows=4`, `results_file_status=missing`, `results_template_status=todo`, `results_check_status=missing`, `captured_rows=0`, `missing_rows=4`, and `rc_live_checks=full`.
+- `logs/external_profiling_campaign_current/external-profiling-results-intake.txt` reported `status=prepared`, `capture_readiness=live_rc_ready_for_external_capture`, the strict captured row format, the full validator command, and `template_rows_are_not_evidence=1`.
 
 The campaign gate is still useful because it verifies:
 
