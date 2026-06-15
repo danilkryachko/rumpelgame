@@ -262,6 +262,8 @@ sh scripts/gpu_terrain_shadow_xctrace_attach_capture.sh logs/gpu_shadow_xctrace_
 
 The generated trace and exported Metal tables are review artifacts, not accepted profiler result rows. Only set `RUMPELMC_SHADOW_XCTRACE_GPU_SHADOW_PASS_MS=<positive_decimal>` after manual profiler review identifies the matching shadow-pass GPU time; the helper then writes a candidate row that still must be copied into `shadow-radius-profiler-results.txt` and validated with the results checker.
 
+When reviewing `xctrace` CLI exports, generic rows such as command-buffer render/blit commands, drawable present events, completion handlers, or shader-list entries are insufficient for `gpu_shadow_pass_ms` unless they can be tied to the exact shadow pass by a stable profiler label or manual Xcode/Instruments inspection. Treat exported XML tables as navigation aids only.
+
 Record external profiler rows separately from the pending plan. Each result row must start with `external_profile_status=captured` and include `priority`, `radius`, `artifact`, `profiler_tool`, `profiler_artifact`, and a positive `gpu_shadow_pass_ms`. Validate results against the plan before citing them; by default all planned rows must be captured, while partial handoff validation requires an explicit `RUMPELMC_SHADOW_PROFILER_RESULTS_ALLOW_PARTIAL=1`:
 
 ```sh
