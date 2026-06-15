@@ -260,11 +260,17 @@ RUMPELMC_SHADOW_XCTRACE_SMOKE_DELAY_SEC=25 \
 sh scripts/gpu_terrain_shadow_xctrace_attach_capture.sh logs/gpu_shadow_xctrace_attach_current
 ```
 
+After a capture exists, generate a compact review packet before opening the trace. The packet validates the capture summary, trace directory, marker, expected XML exports, runtime profiler identifiers, and XML marker-scan consistency, then writes `shadow-xctrace-review-packet.txt`:
+
+```sh
+sh scripts/gpu_terrain_shadow_xctrace_review_packet.sh logs/gpu_shadow_xctrace_attach_current
+```
+
 The generated trace and exported Metal tables are review artifacts, not accepted profiler result rows. Only set `RUMPELMC_SHADOW_XCTRACE_GPU_SHADOW_PASS_MS=<positive_decimal>` after manual profiler review identifies the matching shadow-pass GPU time; the helper then writes a candidate row that still must be copied into `shadow-radius-profiler-results.txt` and validated with the results checker.
 
 The helper validates the current GPU terrain compositor profiler markers from the runtime smoke marker before it reports pass: `gpu_profiler_breadcrumb=1381256515`, `gpu_profiler_shader=rumpel_gpu_terrain_render_shader`, and `gpu_profiler_pipeline=rumpel_gpu_terrain_compositor_pipeline`. These identify the terrain compositor runtime path, not the Godot shadow-proxy pass time.
 
-When reviewing `xctrace` CLI exports, generic rows such as command-buffer render/blit commands, drawable present events, completion handlers, or shader-list entries are insufficient for `gpu_shadow_pass_ms` unless they can be tied to the exact shadow pass by a stable profiler label or manual Xcode/Instruments inspection. Current helper summaries report `profiler_marker_xml_status=missing`, so treat exported XML tables and XML marker scans as navigation aids only.
+When reviewing `xctrace` CLI exports, generic rows such as command-buffer render/blit commands, drawable present events, completion handlers, or shader-list entries are insufficient for `gpu_shadow_pass_ms` unless they can be tied to the exact shadow pass by a stable profiler label or manual Xcode/Instruments inspection. Current helper summaries and review packets report `profiler_marker_xml_status=missing`, so treat exported XML tables, review packets, and XML marker scans as navigation aids only.
 
 Record external profiler rows separately from the pending plan. Each result row must start with `external_profile_status=captured` and include `priority`, `radius`, `artifact`, `profiler_tool`, `profiler_artifact`, and a positive `gpu_shadow_pass_ms`. Validate results against the plan before citing them; by default all planned rows must be captured, while partial handoff validation requires an explicit `RUMPELMC_SHADOW_PROFILER_RESULTS_ALLOW_PARTIAL=1`:
 
