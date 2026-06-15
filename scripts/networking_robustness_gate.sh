@@ -13,6 +13,7 @@ DESIGN_DOC="${RUMPELMC_NETWORKING_ROBUSTNESS_DOC:-"$ROOT_DIR/docs/NETWORKING_ROB
 PROTOCOL_DOC="${RUMPELMC_NETWORKING_ROBUSTNESS_PROTOCOL_DOC:-"$ROOT_DIR/docs/PROTOCOL.md"}"
 SERVER_SOURCE="${RUMPELMC_NETWORKING_ROBUSTNESS_SERVER_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
 SERVER_TEST="${RUMPELMC_NETWORKING_ROBUSTNESS_SERVER_TEST:-"$ROOT_DIR/server/pkg/network/framing_test.go"}"
+SERVER_SESSION_TEST="${RUMPELMC_NETWORKING_ROBUSTNESS_SERVER_SESSION_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
 CLIENT_SOURCE="${RUMPELMC_NETWORKING_ROBUSTNESS_CLIENT_SOURCE:-"$ROOT_DIR/client/rust_ext/src/network.rs"}"
 SERVER_SCALABILITY_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_SERVER_SCALABILITY_SUMMARY:-"$ROOT_DIR/logs/server_scalability_pass_current/server-scalability-pass-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_GO_TESTS:-1}"
@@ -51,7 +52,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$CLIENT_SOURCE" "$SERVER_SCALABILITY_SUMMARY"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$SERVER_SESSION_TEST" "$CLIENT_SOURCE" "$SERVER_SCALABILITY_SUMMARY"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -62,7 +63,7 @@ for token in \
   'Deferred Robustness Work' \
   'Compatibility Rules' \
   'Client reconnect state machine' \
-  'Slow-client send timeout' \
+  'Live multi-client slow-reader harness' \
   'Server overload/admission behavior'; do
   require_token "$DESIGN_DOC" "$token"
 done
@@ -76,9 +77,14 @@ require_token "$SERVER_SOURCE" 'io.ReadFull(conn, dataBuf)'
 require_token "$SERVER_SOURCE" 'packet too large'
 require_token "$SERVER_SOURCE" 'func writeFull(writer io.Writer, data []byte) error'
 require_token "$SERVER_SOURCE" 'io.ErrShortWrite'
+require_token "$SERVER_SOURCE" 'SetWriteDeadline'
+require_token "$SERVER_SOURCE" 'disconnectClient'
 require_token "$SERVER_TEST" 'TestReceivePacketReturnsOnShortFrame'
 require_token "$SERVER_TEST" 'TestReceivePacketRejectsOversizedLength'
 require_token "$SERVER_TEST" 'TestReceivePacketRejectsMalformedPayload'
+require_token "$SERVER_SESSION_TEST" 'TestConfiguredClientWriteTimeoutParsesSupportedValues'
+require_token "$SERVER_SESSION_TEST" 'TestSendChunkToSessionSetsAndClearsWriteDeadline'
+require_token "$SERVER_SESSION_TEST" 'TestBroadcastDisconnectsFailedInterestedClient'
 
 require_token "$CLIENT_SOURCE" 'const MAX_PACKET_LENGTH: usize = 16 * 1024 * 1024;'
 require_token "$CLIENT_SOURCE" 'self.stream.read_exact(&mut len_buf)?;'
@@ -91,6 +97,7 @@ require_token "$CLIENT_SOURCE" 'receive_rejects_malformed_payload'
 
 server_scalability_status="$(field_metric status "$SERVER_SCALABILITY_SUMMARY")"
 server_scalability_protocol_change="$(field_metric active_protocol_change "$SERVER_SCALABILITY_SUMMARY")"
+server_scalability_slow_client="$(field_metric slow_client_write_timeout "$SERVER_SCALABILITY_SUMMARY")"
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 server_boundary_tests="skipped"
@@ -116,6 +123,7 @@ fi
 awk \
   -v server_scalability_status="${server_scalability_status:-missing}" \
   -v server_scalability_protocol_change="${server_scalability_protocol_change:-1}" \
+  -v server_scalability_slow_client="${server_scalability_slow_client:-deferred}" \
   -v proto_diff_count="$proto_diff_count" \
   -v server_boundary_tests="$server_boundary_tests" \
   -v client_boundary_tests="$client_boundary_tests" \
@@ -126,7 +134,7 @@ awk \
     reason = "ok"
     robustness_status = "unit_guarded"
     reconnect_status = "deferred"
-    slow_client_status = "deferred"
+    slow_client_status = server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred"
     overload_status = "deferred"
     active_protocol_change = proto_diff_count + 0
 

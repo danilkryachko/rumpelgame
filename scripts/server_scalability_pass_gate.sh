@@ -56,7 +56,7 @@ done
 for token in \
   'per-client sent-chunk state isolation' \
   'Scalability Gaps' \
-  'Slow-client handling evidence' \
+  'Live slow-client handling evidence' \
   'Do not change `api/schema/packets.proto`' \
   'Live multi-client load'; do
   require_token "$DESIGN_DOC" "$token"
@@ -68,8 +68,14 @@ require_token "$SERVER_SOURCE" "defer conn.Close()"
 require_token "$SERVER_SOURCE" "clientChunkStreamState"
 require_token "$SERVER_SOURCE" "sentChunks: make(map[world.ChunkCoord]bool)"
 require_token "$SERVER_SOURCE" "forgetFarSentChunks"
+require_token "$SERVER_SOURCE" "broadcastChunkUpdate"
+require_token "$SERVER_SOURCE" "disconnectClient"
+require_token "$SERVER_SOURCE" "SetWriteDeadline"
 require_token "$SERVER_TEST" "TestSendChunksAroundKeepsPerClientSentStateIndependent"
 require_token "$SERVER_TEST" "second client sent chunks changed after first client progress"
+require_token "$SERVER_TEST" "TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients"
+require_token "$SERVER_TEST" "TestBroadcastDisconnectsFailedInterestedClient"
+require_token "$SERVER_TEST" "TestSendChunkToSessionSetsAndClearsWriteDeadline"
 
 worldgen_quality_status="$(field_metric status "$WORLDGEN_QUALITY_SUMMARY")"
 worldgen_runtime_quality="$(field_metric runtime_quality_pass "$WORLDGEN_QUALITY_SUMMARY")"
@@ -97,7 +103,9 @@ awk \
     reason = "ok"
     scalability_status = "unit_guarded"
     multi_client_sent_state = "guarded"
-    disconnect_cleanup_status = "conn_defer_only"
+    block_edit_fanout = "interested_clients_guarded"
+    slow_client_write_timeout = "guarded"
+    disconnect_cleanup_status = "failed_broadcast_guarded"
     live_load_status = "deferred"
     active_protocol_change = proto_diff_count + 0
 
@@ -115,7 +123,7 @@ awk \
       reason = "network_tests_failed"
     }
 
-    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, active_protocol_change, disconnect_cleanup_status, live_load_status, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, worldgen_quality_summary)
+    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, active_protocol_change, disconnect_cleanup_status, live_load_status, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, worldgen_quality_summary)
     if (status != "pass") {
       exit 1
     }

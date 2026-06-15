@@ -2,6 +2,8 @@ package network
 
 import (
 	"bytes"
+	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -184,6 +186,32 @@ func TestConfiguredChunkOrderModeParsesSupportedValues(t *testing.T) {
 	t.Setenv(chunkOrderEnv, "invalid")
 	if got := configuredChunkOrderMode(); got != chunkOrderNearest {
 		t.Fatalf("configuredChunkOrderMode() = %v, want nearest fallback", got)
+	}
+}
+
+func TestConfiguredClientWriteTimeoutParsesSupportedValues(t *testing.T) {
+	t.Setenv(clientWriteTimeoutEnv, "")
+	if got := configuredClientWriteTimeout(); got != defaultClientWriteTimeout {
+		t.Fatalf("configuredClientWriteTimeout() = %s, want default %s", got, defaultClientWriteTimeout)
+	}
+
+	t.Setenv(clientWriteTimeoutEnv, "25")
+	if got := configuredClientWriteTimeout(); got != 25*time.Millisecond {
+		t.Fatalf("configuredClientWriteTimeout() = %s, want 25ms", got)
+	}
+
+	t.Setenv(clientWriteTimeoutEnv, "0")
+	if got := configuredClientWriteTimeout(); got != 0 {
+		t.Fatalf("configuredClientWriteTimeout() = %s, want disabled timeout", got)
+	}
+
+	for _, value := range []string{"-1", "nope"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(clientWriteTimeoutEnv, value)
+			if got := configuredClientWriteTimeout(); got != defaultClientWriteTimeout {
+				t.Fatalf("configuredClientWriteTimeout() = %s, want default %s", got, defaultClientWriteTimeout)
+			}
+		})
 	}
 }
 
@@ -386,6 +414,128 @@ func TestHandleClientPacketIgnoresUnknownBlockAction(t *testing.T) {
 	}
 }
 
+func TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	origin := newClientSession(&recordingConn{})
+	watcher := newClientSession(&recordingConn{})
+	uninterested := newClientSession(&recordingConn{})
+
+	watcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
+	uninterested.streamState.sentChunks[world.ChunkCoord{X: 1, Z: 0}] = true
+
+	server.registerClient(watcher)
+	server.registerClient(uninterested)
+	defer server.unregisterClient(watcher)
+	defer server.unregisterClient(uninterested)
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       64,
+				Z:       1,
+				BlockId: uint32(world.Wood),
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(origin, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+
+	originConn := origin.conn.(*recordingConn)
+	watcherConn := watcher.conn.(*recordingConn)
+	uninterestedConn := uninterested.conn.(*recordingConn)
+	if got := len(recordedFrames(t, originConn)); got != 1 {
+		t.Fatalf("origin frames = %d, want 1", got)
+	}
+	watcherFrames := recordedFrames(t, watcherConn)
+	if got := len(watcherFrames); got != 1 {
+		t.Fatalf("watcher frames = %d, want 1", got)
+	}
+	if got := len(recordedFrames(t, uninterestedConn)); got != 0 {
+		t.Fatalf("uninterested frames = %d, want 0", got)
+	}
+
+	decoded := &api.Packet{}
+	if err := proto.Unmarshal(watcherFrames[0], decoded); err != nil {
+		t.Fatalf("unmarshal watcher frame: %v", err)
+	}
+	chunkData := decoded.GetChunk()
+	if chunkData == nil {
+		t.Fatal("watcher frame chunk = nil")
+	}
+	if chunkData.GetX() != 0 || chunkData.GetZ() != 0 {
+		t.Fatalf("watcher chunk coord = %d,%d, want 0,0", chunkData.GetX(), chunkData.GetZ())
+	}
+	chunk, err := world.DeserializeChunk(chunkData.GetX(), chunkData.GetZ(), chunkData.GetBlocks())
+	if err != nil {
+		t.Fatalf("DeserializeChunk(watcher frame) error = %v", err)
+	}
+	if got := chunk.GetBlock(1, 64, 1); got != world.Wood {
+		t.Fatalf("broadcast block = %v, want Wood", got)
+	}
+}
+
+func TestBroadcastDisconnectsFailedInterestedClient(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	origin := newClientSession(&recordingConn{})
+	failedWatcherConn := &failingWriteConn{writeErr: errors.New("write failed")}
+	failedWatcher := newClientSession(failedWatcherConn)
+	failedWatcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
+
+	server.registerClient(failedWatcher)
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       64,
+				Z:       1,
+				BlockId: uint32(world.Wood),
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(origin, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if !failedWatcherConn.closed {
+		t.Fatal("failed watcher connection was not closed")
+	}
+	if server.clientCountForTest() != 0 {
+		t.Fatalf("registered clients = %d, want failed watcher removed", server.clientCountForTest())
+	}
+}
+
+func TestSendChunkToSessionSetsAndClearsWriteDeadline(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	server.writeTimeout = 25 * time.Millisecond
+
+	conn := &deadlineRecordingConn{}
+	client := newClientSession(conn)
+	if _, err := server.sendChunkToSession(client, world.ChunkSnapshot{X: 0, Z: 0, Blocks: []byte{0x01, 0x00}}); err != nil {
+		t.Fatalf("sendChunkToSession() error = %v", err)
+	}
+
+	if len(conn.writeDeadlines) != 2 {
+		t.Fatalf("write deadlines = %d, want set and clear", len(conn.writeDeadlines))
+	}
+	if conn.writeDeadlines[0].IsZero() {
+		t.Fatal("first write deadline is zero, want active deadline")
+	}
+	if !conn.writeDeadlines[1].IsZero() {
+		t.Fatalf("second write deadline = %s, want cleared zero deadline", conn.writeDeadlines[1])
+	}
+}
+
 func TestSendChunkCanUseRLEPayload(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()
@@ -464,6 +614,7 @@ func sendChunkBatchForTest(t *testing.T, server *Server, chunks []world.ChunkSna
 
 type recordingConn struct {
 	written int
+	data    bytes.Buffer
 }
 
 func (c *recordingConn) Read([]byte) (int, error) {
@@ -472,6 +623,9 @@ func (c *recordingConn) Read([]byte) (int, error) {
 
 func (c *recordingConn) Write(data []byte) (int, error) {
 	c.written += len(data)
+	if _, err := c.data.Write(data); err != nil {
+		return 0, err
+	}
 	return len(data), nil
 }
 
@@ -507,4 +661,78 @@ func (a testAddr) Network() string {
 
 func (a testAddr) String() string {
 	return string(a)
+}
+
+func (s *Server) clientCountForTest() int {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+	return len(s.clients)
+}
+
+func recordedFrames(t *testing.T, conn *recordingConn) [][]byte {
+	t.Helper()
+
+	data := conn.data.Bytes()
+	var frames [][]byte
+	for len(data) > 0 {
+		if len(data) < 4 {
+			t.Fatalf("recorded frame has short length prefix: %d bytes", len(data))
+		}
+		length := int(binary.LittleEndian.Uint32(data[:4]))
+		data = data[4:]
+		if len(data) < length {
+			t.Fatalf("recorded frame payload length = %d, want %d", len(data), length)
+		}
+		frames = append(frames, append([]byte(nil), data[:length]...))
+		data = data[length:]
+	}
+	return frames
+}
+
+type failingWriteConn struct {
+	writeErr error
+	closed   bool
+}
+
+func (c *failingWriteConn) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (c *failingWriteConn) Write([]byte) (int, error) {
+	return 0, c.writeErr
+}
+
+func (c *failingWriteConn) Close() error {
+	c.closed = true
+	return nil
+}
+
+func (c *failingWriteConn) LocalAddr() net.Addr {
+	return testAddr("local")
+}
+
+func (c *failingWriteConn) RemoteAddr() net.Addr {
+	return testAddr("failed")
+}
+
+func (c *failingWriteConn) SetDeadline(time.Time) error {
+	return nil
+}
+
+func (c *failingWriteConn) SetReadDeadline(time.Time) error {
+	return nil
+}
+
+func (c *failingWriteConn) SetWriteDeadline(time.Time) error {
+	return nil
+}
+
+type deadlineRecordingConn struct {
+	recordingConn
+	writeDeadlines []time.Time
+}
+
+func (c *deadlineRecordingConn) SetWriteDeadline(deadline time.Time) error {
+	c.writeDeadlines = append(c.writeDeadlines, deadline)
+	return nil
 }

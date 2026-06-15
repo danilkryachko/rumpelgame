@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -21,12 +22,14 @@ const defaultViewDistance int32 = 10
 const maxViewDistance int32 = 16
 const defaultChunksPerUpdate = 64
 const defaultBootstrapRadius int32 = 0
+const defaultClientWriteTimeout = 2 * time.Second
 const viewDistanceEnv = "RUMPELMC_SERVER_VIEW_DISTANCE"
 const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
 const bootstrapRadiusEnv = "RUMPELMC_SERVER_BOOTSTRAP_RADIUS"
 const chunkStreamMetricsEnv = "RUMPELMC_SERVER_CHUNK_STREAM_METRICS"
 const chunkEncodingEnv = "RUMPELMC_SERVER_CHUNK_ENCODING"
 const chunkOrderEnv = "RUMPELMC_SERVER_CHUNK_ORDER"
+const clientWriteTimeoutEnv = "RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS"
 const initialClientPacketTimeout = 250 * time.Millisecond
 
 type chunkOrderMode string
@@ -44,6 +47,9 @@ type Server struct {
 	chunksPerUpdate int
 	chunkEncoding   api.ChunkEncoding
 	chunkOrderMode  chunkOrderMode
+	writeTimeout    time.Duration
+	clientsMu       sync.Mutex
+	clients         map[*clientSession]struct{}
 }
 
 func NewServer(address string, gameWorld *world.World) *Server {
@@ -56,6 +62,8 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		chunksPerUpdate: configuredChunksPerUpdate(),
 		chunkEncoding:   configuredChunkEncoding(),
 		chunkOrderMode:  configuredChunkOrderMode(),
+		writeTimeout:    configuredClientWriteTimeout(),
+		clients:         make(map[*clientSession]struct{}),
 	}
 }
 
@@ -83,21 +91,22 @@ func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 	log.Printf("Client connected: %s", conn.RemoteAddr())
 
-	streamState := clientChunkStreamState{
-		sentChunks: make(map[world.ChunkCoord]bool),
-	}
+	client := newClientSession(conn)
+	s.registerClient(client)
+	defer s.unregisterClient(client)
+
 	firstPacket, hasFirstPacket, err := s.receiveInitialClientPacket(conn)
 	if err != nil {
 		log.Printf("Client disconnected before initial chunk stream: %v", err)
 		return
 	}
 	if hasFirstPacket {
-		if err := s.handleInitialClientPacketWithState(conn, firstPacket, &streamState); err != nil {
+		if err := s.handleInitialClientPacketForSession(client, firstPacket); err != nil {
 			log.Printf("Failed to handle initial client packet: %v", err)
 			return
 		}
 	} else {
-		if err := s.sendChunksAroundWithRadius(conn, 0, 0, s.bootstrapRadius, streamState.sentChunks); err != nil {
+		if err := s.sendChunksAroundWithRadiusForSession(client, 0, 0, s.bootstrapRadius, world.ChunkOrder{}); err != nil {
 			log.Printf("Failed to send initial chunks: %v", err)
 			return
 		}
@@ -112,10 +121,31 @@ func (s *Server) handleConnection(conn net.Conn) {
 			return
 		}
 
-		if err := s.handleClientPacketWithState(conn, clientPacket, &streamState); err != nil {
+		if err := s.handleClientPacketForSession(client, clientPacket); err != nil {
 			log.Printf("Failed to handle client packet: %v", err)
 			return
 		}
+	}
+}
+
+func (s *Server) registerClient(client *clientSession) {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	s.clients[client] = struct{}{}
+}
+
+func (s *Server) unregisterClient(client *clientSession) {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	delete(s.clients, client)
+}
+
+func (s *Server) disconnectClient(client *clientSession) {
+	s.unregisterClient(client)
+	if err := client.conn.Close(); err != nil {
+		log.Printf("Failed to close client %s: %v", client.conn.RemoteAddr(), err)
 	}
 }
 
@@ -136,6 +166,20 @@ func (s *Server) handleInitialClientPacketWithState(conn net.Conn, clientPacket 
 		return nil
 	default:
 		return s.handleClientPacketWithState(conn, clientPacket, streamState)
+	}
+}
+
+func (s *Server) handleInitialClientPacketForSession(client *clientSession, clientPacket *api.Packet) error {
+	switch p := clientPacket.Payload.(type) {
+	case *api.Packet_Position:
+		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
+		if err := s.sendChunksAroundWithRadiusForSession(client, center.X, center.Z, s.bootstrapRadius, world.ChunkOrder{}); err != nil {
+			return fmt.Errorf("send bootstrap chunks around %d,%d: %w", center.X, center.Z, err)
+		}
+		client.recordCenter(center)
+		return nil
+	default:
+		return s.handleClientPacketForSession(client, clientPacket)
 	}
 }
 
@@ -189,6 +233,87 @@ func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Pa
 	return nil
 }
 
+func (s *Server) handleClientPacketForSession(client *clientSession, clientPacket *api.Packet) error {
+	switch p := clientPacket.Payload.(type) {
+	case *api.Packet_Position:
+		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
+		order := client.chunkOrderForCenter(center, s.chunkOrderMode)
+		if err := s.sendChunksAroundForSession(client, center.X, center.Z, order); err != nil {
+			return fmt.Errorf("send chunks around %d,%d: %w", center.X, center.Z, err)
+		}
+		client.recordCenter(center)
+
+	case *api.Packet_BlockAction:
+		action := p.BlockAction
+		log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
+
+		block := world.Air
+		switch action.Action {
+		case api.BlockAction_DESTROY:
+			block = world.Air
+		case api.BlockAction_PLACE:
+			block = world.BlockID(action.BlockId)
+			if !world.IsPlaceable(block) {
+				log.Printf("Ignored invalid place block id=%d", action.BlockId)
+				return nil
+			}
+		default:
+			log.Printf("Ignored unknown block action=%v", action.Action)
+			return nil
+		}
+
+		snapshot, err := s.world.SetBlockGlobal(action.X, action.Y, action.Z, block)
+		if err != nil {
+			return fmt.Errorf("update block: %w", err)
+		}
+
+		if err := s.broadcastChunkUpdate(client, snapshot); err != nil {
+			return fmt.Errorf("send updated chunk %d,%d: %w", snapshot.X, snapshot.Z, err)
+		}
+
+	default:
+		log.Printf("Unknown packet received")
+	}
+	return nil
+}
+
+type clientSession struct {
+	conn        net.Conn
+	stateMu     sync.Mutex
+	writeMu     sync.Mutex
+	streamState clientChunkStreamState
+}
+
+func newClientSession(conn net.Conn) *clientSession {
+	return &clientSession{
+		conn: conn,
+		streamState: clientChunkStreamState{
+			sentChunks: make(map[world.ChunkCoord]bool),
+		},
+	}
+}
+
+func (c *clientSession) chunkOrderForCenter(center world.ChunkCoord, mode chunkOrderMode) world.ChunkOrder {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	return c.streamState.chunkOrderForCenter(center, mode)
+}
+
+func (c *clientSession) recordCenter(center world.ChunkCoord) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	c.streamState.recordCenter(center)
+}
+
+func (c *clientSession) hasSentChunk(coord world.ChunkCoord) bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	return c.streamState.sentChunks[coord]
+}
+
 type clientChunkStreamState struct {
 	sentChunks    map[world.ChunkCoord]bool
 	lastCenter    world.ChunkCoord
@@ -236,6 +361,10 @@ func (s *Server) sendChunksAroundOrdered(conn net.Conn, centerX, centerZ int32, 
 	return s.sendChunksAroundWithRadiusOrdered(conn, centerX, centerZ, s.viewDistance, sentChunks, order)
 }
 
+func (s *Server) sendChunksAroundForSession(client *clientSession, centerX, centerZ int32, order world.ChunkOrder) error {
+	return s.sendChunksAroundWithRadiusForSession(client, centerX, centerZ, s.viewDistance, order)
+}
+
 func (s *Server) sendChunksAroundWithRadius(conn net.Conn, centerX, centerZ, radius int32, sentChunks map[world.ChunkCoord]bool) error {
 	return s.sendChunksAroundWithRadiusOrdered(conn, centerX, centerZ, radius, sentChunks, world.ChunkOrder{})
 }
@@ -273,6 +402,78 @@ func (s *Server) sendChunksAroundWithRadiusOrdered(conn net.Conn, centerX, cente
 		)
 	}
 	return nil
+}
+
+func (s *Server) sendChunksAroundWithRadiusForSession(client *clientSession, centerX, centerZ, radius int32, order world.ChunkOrder) error {
+	started := time.Now()
+
+	client.stateMu.Lock()
+	forgetFarSentChunks(client.streamState.sentChunks, centerX, centerZ, s.viewDistance+1)
+	chunks, err := s.world.ChunksAroundOrdered(centerX, centerZ, radius, client.streamState.sentChunks, s.chunksPerUpdate, order)
+	client.stateMu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	var batch chunkStreamBatchStats
+	for _, chunk := range chunks {
+		stats, err := s.sendChunkToSession(client, chunk)
+		if err != nil {
+			return err
+		}
+		batch.add(stats)
+	}
+	if chunkStreamMetricsEnabled() && batch.chunks > 0 {
+		elapsed := time.Since(started)
+		log.Printf(
+			"Chunk stream batch center=%d,%d radius=%d order=%s direction=%d,%d chunks=%d raw_bytes=%d payload_bytes=%d wire_bytes=%d elapsed_ms=%.3f chunks_per_sec=%.2f",
+			centerX,
+			centerZ,
+			radius,
+			s.chunkOrderMode,
+			order.DirectionX,
+			order.DirectionZ,
+			batch.chunks,
+			batch.rawBytes,
+			batch.payloadBytes,
+			batch.wireBytes,
+			float64(elapsed.Microseconds())/1000.0,
+			float64(batch.chunks)/elapsed.Seconds(),
+		)
+	}
+	return nil
+}
+
+func (s *Server) broadcastChunkUpdate(origin *clientSession, chunk world.ChunkSnapshot) error {
+	coord := world.ChunkCoord{X: chunk.X, Z: chunk.Z}
+	targets := s.chunkUpdateTargets(origin, coord)
+	for _, target := range targets {
+		if _, err := s.sendChunkToSession(target, chunk); err != nil {
+			if target == origin {
+				return err
+			}
+			log.Printf("Failed to broadcast updated chunk %d,%d to %s: %v", chunk.X, chunk.Z, target.conn.RemoteAddr(), err)
+			s.disconnectClient(target)
+		}
+	}
+	return nil
+}
+
+func (s *Server) chunkUpdateTargets(origin *clientSession, coord world.ChunkCoord) []*clientSession {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	targets := make([]*clientSession, 0, len(s.clients))
+	if origin != nil {
+		targets = append(targets, origin)
+	}
+	for client := range s.clients {
+		if client == origin || !client.hasSentChunk(coord) {
+			continue
+		}
+		targets = append(targets, client)
+	}
+	return targets
 }
 
 func configuredViewDistance() int32 {
@@ -364,6 +565,19 @@ func configuredChunkOrderMode() chunkOrderMode {
 	}
 }
 
+func configuredClientWriteTimeout() time.Duration {
+	value := strings.TrimSpace(os.Getenv(clientWriteTimeoutEnv))
+	if value == "" {
+		return defaultClientWriteTimeout
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		log.Printf("Ignoring invalid %s=%q; using %s", clientWriteTimeoutEnv, value, defaultClientWriteTimeout)
+		return defaultClientWriteTimeout
+	}
+	return time.Duration(parsed) * time.Millisecond
+}
+
 type chunkSendStats struct {
 	rawBytes     int
 	payloadBytes int
@@ -378,13 +592,49 @@ type chunkStreamBatchStats struct {
 }
 
 func (s *Server) sendChunk(conn net.Conn, chunk world.ChunkSnapshot) (chunkSendStats, error) {
+	packet, stats, err := s.chunkPacket(chunk)
+	if err != nil {
+		return chunkSendStats{}, err
+	}
+	return stats, s.sendPacket(conn, packet)
+}
+
+func (s *Server) sendChunkToSession(client *clientSession, chunk world.ChunkSnapshot) (chunkSendStats, error) {
+	packet, stats, err := s.chunkPacket(chunk)
+	if err != nil {
+		return chunkSendStats{}, err
+	}
+
+	client.writeMu.Lock()
+	defer client.writeMu.Unlock()
+
+	if s.writeTimeout > 0 {
+		if err := client.conn.SetWriteDeadline(time.Now().Add(s.writeTimeout)); err != nil {
+			return chunkSendStats{}, err
+		}
+	}
+	sendErr := s.sendPacket(client.conn, packet)
+	var clearErr error
+	if s.writeTimeout > 0 {
+		clearErr = client.conn.SetWriteDeadline(time.Time{})
+	}
+	if sendErr != nil {
+		return chunkSendStats{}, sendErr
+	}
+	if clearErr != nil {
+		return chunkSendStats{}, clearErr
+	}
+	return stats, nil
+}
+
+func (s *Server) chunkPacket(chunk world.ChunkSnapshot) (*api.Packet, chunkSendStats, error) {
 	blocks := chunk.Blocks
 	encoding := api.ChunkEncoding_CHUNK_ENCODING_RAW
 	var uncompressedSize uint32
 	if s.chunkEncoding == api.ChunkEncoding_CHUNK_ENCODING_RLE {
 		encoded, err := world.EncodeSerializedChunkRLE(chunk.Blocks)
 		if err != nil {
-			return chunkSendStats{}, err
+			return nil, chunkSendStats{}, err
 		}
 		blocks = encoded
 		encoding = api.ChunkEncoding_CHUNK_ENCODING_RLE
@@ -407,7 +657,7 @@ func (s *Server) sendChunk(conn net.Conn, chunk world.ChunkSnapshot) (chunkSendS
 		payloadBytes: len(blocks),
 		wireBytes:    framedPacketSize(packet),
 	}
-	return stats, s.sendPacket(conn, packet)
+	return packet, stats, nil
 }
 
 func (s *chunkStreamBatchStats) add(stats chunkSendStats) {

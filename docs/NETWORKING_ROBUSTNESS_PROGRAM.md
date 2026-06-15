@@ -24,12 +24,13 @@ Context inspected:
 Scope:
 
 - Add focused Rust client unit coverage for short length prefixes, short payloads, and malformed protobuf payloads.
-- Keep the current server framing tests as the server-side robustness guard.
-- Define reconnect, slow-client, and overload gaps before any runtime policy changes.
+- Keep the current server framing tests as the server-side packet-boundary robustness guard.
+- Add server session-write timeout and failed-broadcast cleanup guards.
+- Define reconnect, live slow-reader, and overload gaps before broader runtime policy changes.
 
 Out of scope:
 
-- No protobuf schema change, new packet type, wire framing change, reconnect state machine, slow-client timeout policy, write backpressure policy, server admission control, packet retry layer, queue drop behavior, or live load harness.
+- No protobuf schema change, new packet type, wire framing change, reconnect state machine, write backpressure queue, server admission control, packet retry layer, queue drop behavior, or live load harness.
 
 Assumptions:
 
@@ -37,12 +38,12 @@ Assumptions:
 - Packet framing remains a 4-byte little-endian payload length followed by exact protobuf payload bytes.
 - The server treats read/decode errors as connection termination.
 - The client reader thread reports receive errors and exits the reader loop; reconnect policy is not implemented in this block.
-- Slow-client and overloaded-client behavior needs a dedicated policy gate before runtime changes.
+- Slow-client behavior is unit-guarded for bounded writes and failed broadcast cleanup; real slow-reader/live-load behavior still needs a dedicated harness.
 
 Done when:
 
 - Server and Rust client packet boundary tests cover short, oversized, and malformed input paths.
-- A networking robustness gate runs the focused tests and records deferred reconnect/slow-client/overload work.
+- A networking robustness gate runs the focused tests and records deferred reconnect, live slow-reader, and overload work.
 
 Checks:
 
@@ -56,6 +57,8 @@ Checks:
 - Server `handleConnection` logs receive errors as disconnects and closes the connection through `defer conn.Close()`.
 - Server `receiveInitialClientPacket` has a bounded read deadline for startup probing and clears the deadline before normal streaming.
 - Server `sendPacket` writes the length prefix and payload through `writeFull`, which rejects zero-byte writes with `io.ErrShortWrite`.
+- Live session chunk writes set and clear a bounded write deadline using `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS`; `0` disables it as a rollback/control.
+- Failed non-origin block-update broadcasts close and unregister the failed client.
 - Rust `NetworkClient::receive_packet_with_timing_since` reads the exact length prefix, rejects lengths above `MAX_PACKET_LENGTH`, reads the exact payload, then decodes one protobuf `Packet`.
 - Rust `NetworkClient::send_packet` rejects encoded packets larger than `MAX_PACKET_LENGTH` before writing.
 
@@ -80,15 +83,21 @@ These complement the existing Rust oversized-length test and the Go server frami
 - closed initial-client probe handling
 - initial position handshake read
 
+`server/pkg/network/server_test.go` also covers:
+
+- client write-timeout configuration parsing
+- session write deadline set/clear behavior
+- interested-client block-update fanout
+- failed interested-client broadcast disconnect cleanup
+
 ## Deferred Robustness Work
 
 Still needed before claiming a full networking robustness program:
 
 - Client reconnect state machine with explicit states, backoff, and stale packet handling.
-- Slow-client send timeout or write deadline policy with compatibility tests.
+- Live multi-client slow-reader harness that proves one slow client does not stall unrelated clients.
 - Server overload/admission behavior and connection limits under load.
 - Live reconnect smoke that restarts the server and proves client recovery.
-- Multi-client slow-reader harness that proves one slow client does not stall unrelated clients.
 - Packet error telemetry that classifies EOF, oversized frame, malformed protobuf, timeout, and short write causes.
 - Backpressure policy for the existing client reader-thread channel.
 
@@ -99,7 +108,7 @@ Still needed before claiming a full networking robustness program:
 - Do not add packet retries or ordering semantics inside `ChunkData`.
 - Do not drop, coalesce, or reorder packets without an explicit queue/backpressure design.
 - Do not treat reconnect as complete until the client state machine is defined and tested.
-- Do not add slow-client timeouts without proving startup, bootstrap, and normal movement are not falsely terminated.
+- Do not tighten slow-client timeout defaults without proving startup, bootstrap, and normal movement are not falsely terminated.
 
 ## Block 38 Gate
 
@@ -109,7 +118,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `active_protocol_change=0`, `reconnect_status=deferred`, `slow_client_status=deferred`, and `overload_status=deferred`.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `active_protocol_change=0`, `reconnect_status=deferred`, `slow_client_status=unit_guarded`, and `overload_status=deferred`.
 
 The gate checks that:
 
@@ -121,4 +130,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a packet-boundary robustness checkpoint. Reconnect, slow-client policy, overload handling, and runtime telemetry remain future work.
+This block is complete as a packet-boundary and unit-guarded write-timeout checkpoint. Reconnect, live slow-reader validation, overload handling, and runtime telemetry remain future work.
