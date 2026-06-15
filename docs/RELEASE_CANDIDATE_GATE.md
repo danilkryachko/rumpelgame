@@ -60,6 +60,7 @@ Checks:
 
 - `sh -n scripts/release_candidate_gate.sh`
 - `/bin/sh scripts/release_candidate_gate.sh logs/release_candidate_gate_current`
+- `RUMPELMC_RC_RUN_FAST_CHECKS=1 RUMPELMC_RC_RUN_FULL_CHECKS=1 RUMPELMC_RC_RUN_DIFF_GUARD=1 /bin/sh scripts/release_candidate_gate.sh logs/release_candidate_gate_current`
 
 Review gates:
 
@@ -101,9 +102,16 @@ Default summaries:
 - `logs/transparent_fixture_acceptance_suite_current/transparent-fixture-acceptance-suite-summary.txt`
 - `logs/lighting_stability_matrix_current/lighting-stability-matrix-summary.txt`
 
+## Fresh Check
+
+Fresh 2026-06-15 current artifact:
+
+- `logs/release_candidate_gate_current/release-candidate-gate-summary.txt` reported `status=pass`, `reason=ok`, `rc_status=summary_ready`, `perf_matrix=summary_ready`, `visual_smoke=summary_ready`, `storage_protocol_compatibility=guarded`, `active_protocol_change=0`, `observability_error_scan=clean`, `observability_summary_count=46`, `current_summary_count=46`, `arch_runtime_change=none`, `baseline_warning_status=ok`, `shadow_active_native=deferred`, `transparent_active_fixture=deferred`, `lighting_ambient_status=deferred`, `live_checks=full`, `fast_check=pass`, `full_check=pass`, `diff_check=pass`, and `diff_guard=pass`.
+- The live full check ran `./scripts/check.sh full`; Go lint was skipped because `golangci-lint` was not installed, and Rust unit tests reported `173 passed`.
+
 ## Deferred Work
 
-- Run live full and diff guard as a final release action, not as every quick evidence refresh.
+- Repeat live full and diff guard as a final release action, not as every quick evidence refresh.
 - Add external profiler artifacts once Block 49 records Xcode/Metal, Windows GPU, or Linux/Vulkan captures.
 - Add a real native-shadow active-renderer RC row only after `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=true`.
 - Add a real active-transparent RC row only after `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=true`.

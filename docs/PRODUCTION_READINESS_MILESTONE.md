@@ -37,7 +37,7 @@ Out of scope:
 Assumptions:
 
 - The milestone is an evidence checkpoint, not a deployment action.
-- `release_candidate_gate` summary mode proves reproducible evidence is clean; live full release checks remain a separate explicit release action.
+- `release_candidate_gate` summary mode proves reproducible evidence is clean; live full release checks remain a separate explicit release action and must be repeated for a real release branch.
 - Pending external-profiler evidence blocks shadow-retirement decisions but does not block documenting the current milestone.
 
 Implementation plan:
@@ -58,6 +58,7 @@ Checks:
 
 - `sh -n scripts/production_readiness_milestone_gate.sh`
 - `/bin/sh scripts/production_readiness_milestone_gate.sh logs/production_readiness_milestone_current`
+- `RUMPELMC_RC_RUN_FAST_CHECKS=1 RUMPELMC_RC_RUN_FULL_CHECKS=1 RUMPELMC_RC_RUN_DIFF_GUARD=1 /bin/sh scripts/release_candidate_gate.sh logs/release_candidate_gate_current`
 
 Review gates:
 
@@ -77,8 +78,16 @@ Current expected milestone verdict:
 - `external_profiler=pending_external_profiler`
 - `native_shadow_direction=deferred_implementation_gate`
 - `transparent_direction=deferred_implementation_gate`
+- latest current `live_release_checks=full`
 
 This means the current architecture has a reproducible evidence chain and release-candidate summary readiness, but it is not a declaration that external profiler work, native shadow rollout, or active transparent terrain rollout is complete.
+
+## Fresh Check
+
+Fresh 2026-06-15 current artifacts:
+
+- `logs/release_candidate_gate_current/release-candidate-gate-summary.txt` reported `status=pass`, `live_checks=full`, `fast_check=pass`, `full_check=pass`, `diff_check=pass`, `diff_guard=pass`, `active_protocol_change=0`, `observability_error_scan=clean`, and `baseline_warning_status=ok`. The nested full check skipped Go lint because `golangci-lint` was not installed.
+- `logs/production_readiness_milestone_current/production-readiness-milestone-summary.txt` reported `status=pass`, `reason=milestone_reached`, `production_readiness=rc_evidence_ready`, `stable_streaming=pass`, `high_resident_set=pass`, `predictable_performance=pass`, `resource_upload_health=pass`, `storage_protocol_integrity=pass`, `docs_reproducible_gates=pass`, `external_profiler=pending_external_profiler`, `native_shadow_direction=deferred_implementation_gate`, `transparent_direction=deferred_implementation_gate`, `live_release_checks=full`, `resident_gpu_draws=2482`, `resident_gpu_subchunks=2482`, `upload_effective_draws=21216`, and `memory_fragmentation_pct=0.000`.
 
 ## Deferred Release Blockers
 
@@ -86,7 +95,7 @@ This means the current architecture has a reproducible evidence chain and releas
 - Native-shadow RenderingDevice rendering remains behind `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`.
 - CPU shadow proxy retirement remains deferred until active native-shadow capture, profiler evidence, and rollback evidence exist.
 - Active transparent terrain remains behind `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
-- Live full release checks are explicit release actions, not always run by summary gates.
+- Live full release checks are explicit release actions and must be rerun for the exact release branch, even when the latest current artifact reports `live_release_checks=full`.
 
 ## Compatibility Rules
 
