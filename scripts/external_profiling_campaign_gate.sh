@@ -22,6 +22,10 @@ RESULTS_PATH="${RUMPELMC_EXTERNAL_PROFILING_RESULTS:-"$ROOT_DIR/logs/gpu_shadow_
 RESULTS_SUMMARY="${RUMPELMC_EXTERNAL_PROFILING_RESULTS_SUMMARY:-"$ROOT_DIR/logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results-summary.txt"}"
 XCTRACE_REVIEW_CAPTURE_DIR="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_REVIEW_CAPTURE_DIR:-"$ROOT_DIR/logs/gpu_shadow_xctrace_attach_current"}"
 XCTRACE_REVIEW_PACKET="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_REVIEW_PACKET:-"$XCTRACE_REVIEW_CAPTURE_DIR/shadow-xctrace-review-packet.txt"}"
+XCTRACE_OVERHEAD_SHADOW_ON_DIR="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_OVERHEAD_SHADOW_ON_DIR:-"$XCTRACE_REVIEW_CAPTURE_DIR"}"
+XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR:-"$ROOT_DIR/logs/gpu_shadow_xctrace_shadow_disabled_control"}"
+XCTRACE_OVERHEAD_OUT_DIR="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_OVERHEAD_OUT_DIR:-"$ROOT_DIR/logs/gpu_shadow_xctrace_shadow_overhead_current"}"
+XCTRACE_OVERHEAD_SUMMARY="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_OVERHEAD_SUMMARY:-"$XCTRACE_OVERHEAD_OUT_DIR/shadow-xctrace-shadow-overhead-summary.txt"}"
 case "$XCTRACE_REVIEW_CAPTURE_DIR" in
   /*) ;;
   *) XCTRACE_REVIEW_CAPTURE_DIR="$ROOT_DIR/$XCTRACE_REVIEW_CAPTURE_DIR" ;;
@@ -29,6 +33,22 @@ esac
 case "$XCTRACE_REVIEW_PACKET" in
   /*) ;;
   *) XCTRACE_REVIEW_PACKET="$ROOT_DIR/$XCTRACE_REVIEW_PACKET" ;;
+esac
+case "$XCTRACE_OVERHEAD_SHADOW_ON_DIR" in
+  /*) ;;
+  *) XCTRACE_OVERHEAD_SHADOW_ON_DIR="$ROOT_DIR/$XCTRACE_OVERHEAD_SHADOW_ON_DIR" ;;
+esac
+case "$XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR" in
+  /*) ;;
+  *) XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR="$ROOT_DIR/$XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR" ;;
+esac
+case "$XCTRACE_OVERHEAD_OUT_DIR" in
+  /*) ;;
+  *) XCTRACE_OVERHEAD_OUT_DIR="$ROOT_DIR/$XCTRACE_OVERHEAD_OUT_DIR" ;;
+esac
+case "$XCTRACE_OVERHEAD_SUMMARY" in
+  /*) ;;
+  *) XCTRACE_OVERHEAD_SUMMARY="$ROOT_DIR/$XCTRACE_OVERHEAD_SUMMARY" ;;
 esac
 
 mkdir -p "$OUT_DIR"
@@ -98,6 +118,7 @@ for token in \
   'Windows Workflow' \
   'Godot `RenderingDevice` timestamp samples currently report `0.0us`' \
   'scripts/gpu_terrain_shadow_xctrace_attach_capture.sh' \
+  'scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh' \
   'Use the profiler plan guard before external capture handoff'; do
   require_token "$GPU_PROFILING_DOC" "$token"
 done
@@ -106,6 +127,7 @@ test -x "$ROOT_DIR/scripts/gpu_terrain_shadow_profiler_capture_pack.sh" || fail 
 test -x "$ROOT_DIR/scripts/gpu_terrain_shadow_profiler_results_check.sh" || fail "missing executable shadow profiler results checker"
 test -x "$ROOT_DIR/scripts/gpu_terrain_shadow_xctrace_attach_capture.sh" || fail "missing executable shadow xctrace attach capture script"
 test -x "$ROOT_DIR/scripts/gpu_terrain_shadow_xctrace_review_packet.sh" || fail "missing executable shadow xctrace review packet script"
+test -x "$ROOT_DIR/scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh" || fail "missing executable shadow xctrace overhead summary script"
 test -x "$ROOT_DIR/scripts/release_candidate_gate.sh" || fail "missing executable release candidate gate"
 
 shadow_status="$(field_metric status "$SHADOW_SUMMARY")"
@@ -163,6 +185,25 @@ if [ -s "$XCTRACE_REVIEW_CAPTURE_DIR/shadow-xctrace-attach-capture-summary.txt" 
   fi
 fi
 
+xctrace_overhead_status="missing_control"
+xctrace_overhead_check_status="skipped"
+xctrace_overhead_estimate_p50_ms="missing"
+if [ -s "$XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR/metal-command-buffer-submissions.xml" ]; then
+  if sh "$ROOT_DIR/scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh" \
+    "$XCTRACE_OVERHEAD_SHADOW_ON_DIR" \
+    "$XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR" \
+    "$XCTRACE_OVERHEAD_OUT_DIR" > "$OUT_DIR/shadow-xctrace-overhead-summary-check.txt" 2>&1; then
+    xctrace_overhead_status="$(field_metric status "$XCTRACE_OVERHEAD_SUMMARY")"
+    xctrace_overhead_check_status="pass"
+    xctrace_overhead_estimate_p50_ms="$(field_metric shadow_overhead_estimate_p50_ms "$XCTRACE_OVERHEAD_SUMMARY")"
+  else
+    cat "$OUT_DIR/shadow-xctrace-overhead-summary-check.txt" >&2 || true
+    xctrace_overhead_status="fail"
+    xctrace_overhead_check_status="fail"
+    fail "xctrace shadow-overhead summary failed"
+  fi
+fi
+
 {
   printf 'external_profiling_campaign_plan status=prepared\n'
   printf 'lane=macos_metal_shadow_proxy platform=macos tool=xcode_metal status=%s workload=shadow_radius_matrix capture_pack=%s results=%s validation=%s\n' \
@@ -174,6 +215,10 @@ fi
   printf 'review_packet=macos_xctrace command="sh scripts/gpu_terrain_shadow_xctrace_review_packet.sh logs/gpu_shadow_xctrace_attach_current" status=%s packet=%s trust_boundary=not_profiler_result\n' \
     "$xctrace_review_packet_status" \
     "$(relative_path "$XCTRACE_REVIEW_PACKET")"
+  printf 'overhead_summary=macos_xctrace_control_delta command="sh scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh logs/gpu_shadow_xctrace_attach_current logs/gpu_shadow_xctrace_shadow_disabled_control logs/gpu_shadow_xctrace_shadow_overhead_current" status=%s summary=%s p50_ms=%s trust_boundary=not_profiler_result\n' \
+    "$xctrace_overhead_status" \
+    "$(relative_path "$XCTRACE_OVERHEAD_SUMMARY")" \
+    "$xctrace_overhead_estimate_p50_ms"
   printf 'lane=windows_gpu_shadow_proxy platform=windows tool=pix_renderdoc_or_vendor status=pending_external_machine workload=shadow_radius_matrix capture_pack=%s results=external_artifact_required validation=repeat_plan_and_record_driver_gpu_backend\n' \
     "$(relative_path "$CAPTURE_PACK")"
   printf 'lane=linux_vulkan_shadow_proxy platform=linux tool=renderdoc_or_vulkan_profiler status=deferred_optional workload=shadow_radius_matrix capture_pack=%s results=external_artifact_required validation=only_if_backend_available\n' \
@@ -196,14 +241,20 @@ fi
   printf 'required_row_format=external_profile_status=captured priority=<plan_priority> radius=<plan_radius> artifact=<plan_artifact> profiler_tool=<xcode_metal|pix|renderdoc|vendor|vulkan> profiler_artifact=<real_trace_or_report_path> gpu_shadow_pass_ms=<positive_decimal>\n'
   printf 'command_capture_macos_xctrace_attach=RUMPELMC_SHADOW_XCTRACE_RECORD_SEC=10 RUMPELMC_SHADOW_XCTRACE_SMOKE_DELAY_SEC=25 sh scripts/gpu_terrain_shadow_xctrace_attach_capture.sh logs/gpu_shadow_xctrace_attach_current\n'
   printf 'command_review_macos_xctrace_packet=sh scripts/gpu_terrain_shadow_xctrace_review_packet.sh logs/gpu_shadow_xctrace_attach_current\n'
+  printf 'command_summarize_macos_xctrace_shadow_overhead=sh scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh logs/gpu_shadow_xctrace_attach_current logs/gpu_shadow_xctrace_shadow_disabled_control logs/gpu_shadow_xctrace_shadow_overhead_current\n'
   printf 'xctrace_review_packet=%s xctrace_review_capture_status=%s xctrace_review_packet_status=%s xctrace_review_packet_check_status=%s\n' \
     "$(relative_path "$XCTRACE_REVIEW_PACKET")" \
     "$xctrace_review_capture_status" \
     "$xctrace_review_packet_status" \
     "$xctrace_review_packet_check_status"
+  printf 'xctrace_shadow_overhead_summary=%s xctrace_shadow_overhead_status=%s xctrace_shadow_overhead_check_status=%s xctrace_shadow_overhead_estimate_p50_ms=%s\n' \
+    "$(relative_path "$XCTRACE_OVERHEAD_SUMMARY")" \
+    "$xctrace_overhead_status" \
+    "$xctrace_overhead_check_status" \
+    "$xctrace_overhead_estimate_p50_ms"
   printf 'trust_boundary template_status=%s template_rows_are_not_evidence=1 pending_capture_pack_is_not_evidence=1 local_fps_is_warning_only=1 godot_gpu_timestamp_is_warning_only=1\n' \
     "${results_template_status:-missing}"
-  printf 'trust_boundary xctrace_trace_requires_manual_review=1 xctrace_exports_are_not_result_rows=1 xctrace_xml_marker_scan_is_navigation_only=1 xctrace_review_packet_is_not_result_row=1 manual_gpu_shadow_pass_ms_required=1\n'
+  printf 'trust_boundary xctrace_trace_requires_manual_review=1 xctrace_exports_are_not_result_rows=1 xctrace_xml_marker_scan_is_navigation_only=1 xctrace_review_packet_is_not_result_row=1 xctrace_shadow_overhead_is_not_result_row=1 manual_gpu_shadow_pass_ms_required=1\n'
   printf 'command_validate_results=sh scripts/gpu_terrain_shadow_profiler_results_check.sh %s %s %s\n' \
     "$(relative_path "$PLAN_INPUT")" \
     "$(relative_path "$RESULTS_PATH")" \
@@ -234,6 +285,9 @@ awk \
   -v xctrace_review_capture_status="$xctrace_review_capture_status" \
   -v xctrace_review_packet_status="$xctrace_review_packet_status" \
   -v xctrace_review_packet_check_status="$xctrace_review_packet_check_status" \
+  -v xctrace_overhead_status="$xctrace_overhead_status" \
+  -v xctrace_overhead_check_status="$xctrace_overhead_check_status" \
+  -v xctrace_overhead_estimate_p50_ms="$xctrace_overhead_estimate_p50_ms" \
   -v captured_rows="${captured_rows:-0}" \
   -v missing_rows="${missing_rows:-0}" \
   -v plan_path="$PLAN_PATH" \
@@ -243,6 +297,7 @@ awk \
   -v results_path="$RESULTS_PATH" \
   -v results_summary="$RESULTS_SUMMARY" \
   -v xctrace_review_packet="$XCTRACE_REVIEW_PACKET" \
+  -v xctrace_overhead_summary="$XCTRACE_OVERHEAD_SUMMARY" \
   -v shadow_summary="$SHADOW_SUMMARY" \
   -v rc_summary="$RC_SUMMARY" '
   BEGIN {
@@ -278,7 +333,7 @@ awk \
       macos_metal_status = "captured"
     }
 
-    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s capture_readiness=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d capture_pack_results_file_status=%s results_file_status=%s results_template_status=%s results_check_status=%s xctrace_review_capture_status=%s xctrace_review_packet_status=%s xctrace_review_packet_check_status=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s rc_live_checks=%s plan=%s intake=%s capture_pack=%s results_template=%s results=%s results_summary=%s xctrace_review_packet=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, capture_readiness, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, capture_pack_results_file_status, results_file_status, results_template_status, results_check_status, xctrace_review_capture_status, xctrace_review_packet_status, xctrace_review_packet_check_status, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, rc_live_checks, plan_path, intake_path, capture_pack, results_template, results_path, results_summary, xctrace_review_packet, shadow_summary, rc_summary)
+    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s capture_readiness=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d capture_pack_results_file_status=%s results_file_status=%s results_template_status=%s results_check_status=%s xctrace_review_capture_status=%s xctrace_review_packet_status=%s xctrace_review_packet_check_status=%s xctrace_overhead_status=%s xctrace_overhead_check_status=%s xctrace_overhead_estimate_p50_ms=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s rc_live_checks=%s plan=%s intake=%s capture_pack=%s results_template=%s results=%s results_summary=%s xctrace_review_packet=%s xctrace_overhead_summary=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, capture_readiness, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, capture_pack_results_file_status, results_file_status, results_template_status, results_check_status, xctrace_review_capture_status, xctrace_review_packet_status, xctrace_review_packet_check_status, xctrace_overhead_status, xctrace_overhead_check_status, xctrace_overhead_estimate_p50_ms, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, rc_live_checks, plan_path, intake_path, capture_pack, results_template, results_path, results_summary, xctrace_review_packet, xctrace_overhead_summary, shadow_summary, rc_summary)
     if (status != "pass") {
       exit 1
     }

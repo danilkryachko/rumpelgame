@@ -270,6 +270,17 @@ The generated trace and exported Metal tables are review artifacts, not accepted
 
 The helper validates the current GPU terrain compositor profiler markers from the runtime smoke marker before it reports pass: `gpu_profiler_breadcrumb=1381256515`, `gpu_profiler_shader=rumpel_gpu_terrain_render_shader`, and `gpu_profiler_pipeline=rumpel_gpu_terrain_compositor_pipeline`. These identify the terrain compositor runtime path, not the Godot shadow-proxy pass time.
 
+After both a shadow-on attach capture and a shadow-disabled control XML export exist, generate a control-delta summary to quantify the overhead shape without accepting it as profiler evidence:
+
+```sh
+sh scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh \
+  logs/gpu_shadow_xctrace_attach_current \
+  logs/gpu_shadow_xctrace_shadow_disabled_control \
+  logs/gpu_shadow_xctrace_shadow_overhead_current
+```
+
+The helper compares post-warmup main Godot command-buffer totals and writes `shadow-xctrace-shadow-overhead-summary.txt`. The summary must keep `estimate_is_not_gpu_shadow_pass_ms=1`, `control_delta_is_not_shadow_pass_row=1`, and `manual_gpu_shadow_pass_ms_required=1`; use `shadow_overhead_estimate_*_ms` only as prioritization/navigation evidence.
+
 When reviewing `xctrace` CLI exports, generic rows such as command-buffer render/blit commands, drawable present events, completion handlers, or shader-list entries are insufficient for `gpu_shadow_pass_ms` unless they can be tied to the exact shadow pass by a stable profiler label or manual Xcode/Instruments inspection. Current helper summaries and review packets report `profiler_marker_xml_status=missing`, so treat exported XML tables, review packets, and XML marker scans as navigation aids only.
 
 Record external profiler rows separately from the pending plan. Each result row must start with `external_profile_status=captured` and include `priority`, `radius`, `artifact`, `profiler_tool`, `profiler_artifact`, and a positive `gpu_shadow_pass_ms`. Validate results against the plan before citing them; by default all planned rows must be captured, while partial handoff validation requires an explicit `RUMPELMC_SHADOW_PROFILER_RESULTS_ALLOW_PARTIAL=1`:
