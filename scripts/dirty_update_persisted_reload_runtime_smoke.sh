@@ -29,8 +29,6 @@ SMOKE_PORT=25565
 SMOKE_ADDR="127.0.0.1:$SMOKE_PORT"
 RUN_DIR="$ARTIFACT_DIR/persisted_dirty"
 SMOKE_DB="$RUN_DIR/rocksdb"
-GODOT_RUN_DIR="$RUN_DIR/godot_dirty"
-GODOT_RUN_LOG="$OUT_DIR/godot-dirty-run.log"
 BUILD_SERVER="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_BUILD_SERVER:-1}"
 SEED_X="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_SEED_X:-96}"
 SEED_Y="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_SEED_Y:-64}"
@@ -38,6 +36,8 @@ SEED_Z="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_SEED_Z:-64}"
 SEED_BLOCK_ID="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_SEED_BLOCK_ID:-4}"
 EDIT_SEQUENCE="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_SEQUENCE:-toggle:96:64:64:1,toggle:127:64:95:1,toggle:112:80:80:1,toggle:112:96:80:1}"
 EDIT_COUNT="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_EDIT_COUNT:-4}"
+SOAK_CYCLES="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_SOAK_CYCLES:-3}"
+MIN_SOAK_CYCLES="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_MIN_SOAK_CYCLES:-3}"
 VERIFY_FINAL_AIR_COORDS="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_VERIFY_FINAL_AIR_COORDS:-96:64:64 127:64:95 112:80:80 112:96:80}"
 TARGET_FPS="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_TARGET_FPS:-100}"
 EDIT_WAIT_SEC="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_EDIT_WAIT_SEC:-3.0}"
@@ -49,6 +49,20 @@ MIN_PARTIAL_SAVED_SUBCHUNKS="${RUMPELMC_DIRTY_PERSISTED_RUNTIME_MIN_PARTIAL_SAVE
 SERVER_PID=""
 FINAL_VERIFY_COUNT=0
 FINAL_VERIFY_SUMMARIES=""
+PERSISTED_DIRTY_CYCLE_SUMMARIES=""
+RELOAD_CYCLES=0
+SOAK_DIRTY_BLOCKS=0
+SOAK_CHUNK_REPLACE=0
+SOAK_EDGE_NEIGHBOR_SUBCHUNKS=0
+SOAK_PARTIAL_SUBCHUNKS=0
+SOAK_PARTIAL_SAVED_SUBCHUNKS=0
+SOAK_CURRENT_CHUNK_COLLISION=0
+SOAK_TERRAIN_QUEUE_MAX="0.000"
+SOAK_GPU_COMPOSITOR_SUBMIT_MAX="0.000"
+SOAK_PROCESS_WALL_P95_MAX="0.000"
+LAST_GODOT_RUN_DIR=""
+LAST_GODOT_RUN_LOG=""
+LAST_MARKER_PATH=""
 
 fail() {
   echo "dirty_update_persisted_reload_runtime_smoke: $*" >&2
@@ -162,6 +176,16 @@ $line"
   FINAL_VERIFY_COUNT=$((FINAL_VERIFY_COUNT + 1))
 }
 
+append_persisted_dirty_cycle_summary() {
+  line="$1"
+  if [ -z "$PERSISTED_DIRTY_CYCLE_SUMMARIES" ]; then
+    PERSISTED_DIRTY_CYCLE_SUMMARIES="$line"
+  else
+    PERSISTED_DIRTY_CYCLE_SUMMARIES="$PERSISTED_DIRTY_CYCLE_SUMMARIES
+$line"
+  fi
+}
+
 metric() {
   key="$1"
   marker_path="$2"
@@ -231,24 +255,97 @@ require_int_ge() {
   fi
 }
 
+float_max() {
+  current="$1"
+  candidate="$2"
+  awk -v current="$current" -v candidate="$candidate" '
+    BEGIN {
+      if (candidate > current) {
+        printf("%.3f", candidate)
+      } else {
+        printf("%.3f", current)
+      }
+    }
+  '
+}
+
+validate_and_accumulate_marker() {
+  cycle="$1"
+  marker_path="$2"
+  run_dir="$3"
+  test -s "$marker_path" || fail "missing marker $marker_path"
+  grep -q 'block_edit="sequence"' "$marker_path" || fail "missing sequence block edit marker"
+  require_metric_eq "$marker_path" block_edit_dirty_observed 1
+  require_metric_eq "$marker_path" block_edit_count "$EDIT_COUNT"
+  require_metric_ge "$marker_path" dirty_blocks "$MIN_DIRTY_BLOCKS"
+  require_metric_ge "$marker_path" chunk_replace "$MIN_CHUNK_REPLACE"
+  require_metric_ge "$marker_path" dirty_edge_neighbor_subchunks "$MIN_EDGE_NEIGHBOR_SUBCHUNKS"
+  require_metric_ge "$marker_path" dirty_partial_subchunks "$MIN_PARTIAL_SUBCHUNKS"
+  require_metric_ge "$marker_path" dirty_partial_saved_subchunks "$MIN_PARTIAL_SAVED_SUBCHUNKS"
+  require_metric_ge "$marker_path" current_chunk_collision 1
+  require_metric_eq "$marker_path" gpu_upload_fail 0
+
+  cycle_dirty_blocks="$(metric dirty_blocks "$marker_path")"
+  cycle_chunk_replace="$(metric chunk_replace "$marker_path")"
+  cycle_edge_neighbor_subchunks="$(metric dirty_edge_neighbor_subchunks "$marker_path")"
+  cycle_partial_subchunks="$(metric dirty_partial_subchunks "$marker_path")"
+  cycle_partial_saved_subchunks="$(metric dirty_partial_saved_subchunks "$marker_path")"
+  cycle_current_chunk_collision="$(metric current_chunk_collision "$marker_path")"
+  cycle_terrain_queue_max="$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)"
+  cycle_gpu_compositor_submit_max="$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 3)"
+  cycle_process_wall_p95="$(float_metric process_wall_p95_ms "$marker_path")"
+  require_positive_float terrain_queue_max_ms "$cycle_terrain_queue_max"
+  require_positive_float gpu_compositor_submit_max_ms "$cycle_gpu_compositor_submit_max"
+  require_positive_float process_wall_p95_ms "$cycle_process_wall_p95"
+
+  SOAK_DIRTY_BLOCKS=$((SOAK_DIRTY_BLOCKS + cycle_dirty_blocks))
+  SOAK_CHUNK_REPLACE=$((SOAK_CHUNK_REPLACE + cycle_chunk_replace))
+  SOAK_EDGE_NEIGHBOR_SUBCHUNKS=$((SOAK_EDGE_NEIGHBOR_SUBCHUNKS + cycle_edge_neighbor_subchunks))
+  SOAK_PARTIAL_SUBCHUNKS=$((SOAK_PARTIAL_SUBCHUNKS + cycle_partial_subchunks))
+  SOAK_PARTIAL_SAVED_SUBCHUNKS=$((SOAK_PARTIAL_SAVED_SUBCHUNKS + cycle_partial_saved_subchunks))
+  SOAK_CURRENT_CHUNK_COLLISION=$((SOAK_CURRENT_CHUNK_COLLISION + cycle_current_chunk_collision))
+  SOAK_TERRAIN_QUEUE_MAX="$(float_max "$SOAK_TERRAIN_QUEUE_MAX" "$cycle_terrain_queue_max")"
+  SOAK_GPU_COMPOSITOR_SUBMIT_MAX="$(float_max "$SOAK_GPU_COMPOSITOR_SUBMIT_MAX" "$cycle_gpu_compositor_submit_max")"
+  SOAK_PROCESS_WALL_P95_MAX="$(float_max "$SOAK_PROCESS_WALL_P95_MAX" "$cycle_process_wall_p95")"
+
+  append_persisted_dirty_cycle_summary "$(printf 'persisted_dirty_cycle cycle=%s dirty_blocks=%s chunk_replace=%s dirty_edge_neighbor_subchunks=%s dirty_partial_subchunks=%s dirty_partial_saved_subchunks=%s current_chunk_collision=%s terrain_queue_max_ms=%s gpu_compositor_submit_max_ms=%s process_wall_p95_ms=%s gpu_upload_fail=0 marker=%s run_summary=%s' \
+    "$cycle" \
+    "$cycle_dirty_blocks" \
+    "$cycle_chunk_replace" \
+    "$cycle_edge_neighbor_subchunks" \
+    "$cycle_partial_subchunks" \
+    "$cycle_partial_saved_subchunks" \
+    "$cycle_current_chunk_collision" \
+    "$cycle_terrain_queue_max" \
+    "$cycle_gpu_compositor_submit_max" \
+    "$cycle_process_wall_p95" \
+    "$marker_path" \
+    "$run_dir/movement-stress-summary.txt")"
+}
+
 run_godot_dirty_after_reload() {
-  rm -rf "$GODOT_RUN_DIR"
+  cycle="$1"
+  LAST_GODOT_RUN_DIR="$RUN_DIR/godot_dirty_cycle_$cycle"
+  LAST_GODOT_RUN_LOG="$OUT_DIR/godot-dirty-cycle-$cycle.log"
+  LAST_MARKER_PATH="$LAST_GODOT_RUN_DIR/gpu-terrain-movement-stress.png.txt"
+  rm -rf "$LAST_GODOT_RUN_DIR"
   if ! RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD=1 \
     RUMPELMC_MOVEMENT_STRESS_TARGET_FPS="$TARGET_FPS" \
     RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT=sequence \
     RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_SEQUENCE="$EDIT_SEQUENCE" \
     RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_WAIT_SEC="$EDIT_WAIT_SEC" \
-    sh "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$GODOT_RUN_DIR" > "$GODOT_RUN_LOG" 2>&1; then
-    cat "$GODOT_RUN_LOG" >&2 || true
-    fail "Godot dirty update after reload failed"
+    sh "$ROOT_DIR/scripts/gpu_terrain_movement_stress.sh" "$LAST_GODOT_RUN_DIR" > "$LAST_GODOT_RUN_LOG" 2>&1; then
+    cat "$LAST_GODOT_RUN_LOG" >&2 || true
+    fail "Godot dirty update after reload cycle $cycle failed"
   fi
 }
 
 mkdir -p "$OUT_DIR" "$ARTIFACT_DIR"
 rm -rf "$RUN_DIR" "$OUT_DIR/persisted_dirty"
-rm -f "$SUMMARY_PATH" "$OUT_DIR"/client-*.log "$OUT_DIR"/server-*.log "$GODOT_RUN_LOG"
+rm -f "$SUMMARY_PATH" "$OUT_DIR"/client-*.log "$OUT_DIR"/server-*.log "$OUT_DIR"/godot-dirty-*.log
 
 require_int_ge RUMPELMC_DIRTY_PERSISTED_RUNTIME_EDIT_COUNT "$EDIT_COUNT" 1
+require_int_ge RUMPELMC_DIRTY_PERSISTED_RUNTIME_SOAK_CYCLES "$SOAK_CYCLES" "$MIN_SOAK_CYCLES"
 
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 if [ "$proto_diff_count" -ne 0 ]; then
@@ -282,65 +379,56 @@ seed_place_summary="$(run_phase seed-place "$SEED_X" "$SEED_Y" "$SEED_Z" -action
 cleanup_server
 
 start_server "reload-before-dirty"
+RELOAD_CYCLES=$((RELOAD_CYCLES + 1))
 verify_seed_summary="$(run_phase verify-seed "$SEED_X" "$SEED_Y" "$SEED_Z" -action expect -want-block "$SEED_BLOCK_ID" -block-id "$SEED_BLOCK_ID")"
-run_godot_dirty_after_reload
-cleanup_server
 
-MARKER_PATH="$GODOT_RUN_DIR/gpu-terrain-movement-stress.png.txt"
-test -s "$MARKER_PATH" || fail "missing marker $MARKER_PATH"
-grep -q 'block_edit="sequence"' "$MARKER_PATH" || fail "missing sequence block edit marker"
-require_metric_eq "$MARKER_PATH" block_edit_dirty_observed 1
-require_metric_eq "$MARKER_PATH" block_edit_count "$EDIT_COUNT"
-require_metric_ge "$MARKER_PATH" dirty_blocks "$MIN_DIRTY_BLOCKS"
-require_metric_ge "$MARKER_PATH" chunk_replace "$MIN_CHUNK_REPLACE"
-require_metric_ge "$MARKER_PATH" dirty_edge_neighbor_subchunks "$MIN_EDGE_NEIGHBOR_SUBCHUNKS"
-require_metric_ge "$MARKER_PATH" dirty_partial_subchunks "$MIN_PARTIAL_SUBCHUNKS"
-require_metric_ge "$MARKER_PATH" dirty_partial_saved_subchunks "$MIN_PARTIAL_SAVED_SUBCHUNKS"
-require_metric_ge "$MARKER_PATH" current_chunk_collision 1
-require_metric_eq "$MARKER_PATH" gpu_upload_fail 0
+cycle=1
+while [ "$cycle" -le "$SOAK_CYCLES" ]; do
+  run_godot_dirty_after_reload "$cycle"
+  validate_and_accumulate_marker "$cycle" "$LAST_MARKER_PATH" "$LAST_GODOT_RUN_DIR"
+  cleanup_server
 
-terrain_queue_max="$(perf_triplet_value terrain_queue_work_ms "$MARKER_PATH" 3)"
-gpu_compositor_submit_max="$(perf_triplet_value gpu_compositor_submit_ms "$MARKER_PATH" 3)"
-process_wall_p95="$(float_metric process_wall_p95_ms "$MARKER_PATH")"
-require_positive_float terrain_queue_max_ms "$terrain_queue_max"
-require_positive_float gpu_compositor_submit_max_ms "$gpu_compositor_submit_max"
-require_positive_float process_wall_p95_ms "$process_wall_p95"
-
-start_server "reload-after-dirty"
-for coord in $VERIFY_FINAL_AIR_COORDS; do
-  old_ifs="$IFS"
-  IFS=:
-  set -- $coord
-  IFS="$old_ifs"
-  x="${1:-}"
-  y="${2:-}"
-  z="${3:-}"
-  test -n "$x" && test -n "$y" && test -n "$z" || fail "malformed final verify coord: $coord"
-  final_summary="$(run_phase "verify-final-air-$FINAL_VERIFY_COUNT" "$x" "$y" "$z" -action expect -want-block 0 -block-id "$SEED_BLOCK_ID")"
-  append_final_verify_summary "$(printf 'phase_verify_final_air coord=%s summary="%s"' "$coord" "$final_summary")"
+  start_server "reload-after-dirty-$cycle"
+  RELOAD_CYCLES=$((RELOAD_CYCLES + 1))
+  for coord in $VERIFY_FINAL_AIR_COORDS; do
+    old_ifs="$IFS"
+    IFS=:
+    set -- $coord
+    IFS="$old_ifs"
+    x="${1:-}"
+    y="${2:-}"
+    z="${3:-}"
+    test -n "$x" && test -n "$y" && test -n "$z" || fail "malformed final verify coord: $coord"
+    final_summary="$(run_phase "verify-final-air-$cycle-$FINAL_VERIFY_COUNT" "$x" "$y" "$z" -action expect -want-block 0 -block-id "$SEED_BLOCK_ID")"
+    append_final_verify_summary "$(printf 'phase_verify_final_air cycle=%s coord=%s summary="%s"' "$cycle" "$coord" "$final_summary")"
+  done
+  cycle=$((cycle + 1))
 done
 cleanup_server
 
 {
-  printf 'dirty_update_persisted_reload_runtime status=pass runtime_persisted_dirty=godot_guarded reload_cycles=2 dirty_after_reload=pass final_reload=pass final_verify_count=%s mass_edit_count=%s target_fps=%s active_protocol_change=0 sequence="%s" db_path=%s marker=%s run_summary=%s\n' \
+  printf 'dirty_update_persisted_reload_runtime status=pass runtime_persisted_dirty=godot_guarded soak_status=pass soak_cycles=%s reload_cycles=%s dirty_after_reload=pass final_reload=pass final_verify_count=%s mass_edit_count=%s target_fps=%s active_protocol_change=0 sequence="%s" db_path=%s last_marker=%s last_run_summary=%s\n' \
+    "$SOAK_CYCLES" \
+    "$RELOAD_CYCLES" \
     "$FINAL_VERIFY_COUNT" \
     "$EDIT_COUNT" \
     "$TARGET_FPS" \
     "$EDIT_SEQUENCE" \
     "$SMOKE_DB" \
-    "$MARKER_PATH" \
-    "$GODOT_RUN_DIR/movement-stress-summary.txt"
-  printf 'persisted_dirty seed_block_id=%s dirty_blocks=%s chunk_replace=%s dirty_edge_neighbor_subchunks=%s dirty_partial_subchunks=%s dirty_partial_saved_subchunks=%s current_chunk_collision=%s terrain_queue_max_ms=%s gpu_compositor_submit_max_ms=%s process_wall_p95_ms=%s gpu_upload_fail=0\n' \
+    "$LAST_MARKER_PATH" \
+    "$LAST_GODOT_RUN_DIR/movement-stress-summary.txt"
+  printf 'persisted_dirty seed_block_id=%s soak_dirty_blocks=%s soak_chunk_replace=%s soak_edge_neighbor_subchunks=%s soak_partial_subchunks=%s soak_partial_saved_subchunks=%s soak_current_chunk_collision=%s terrain_queue_max_ms=%s gpu_compositor_submit_max_ms=%s process_wall_p95_ms=%s gpu_upload_fail=0\n' \
     "$SEED_BLOCK_ID" \
-    "$(metric dirty_blocks "$MARKER_PATH")" \
-    "$(metric chunk_replace "$MARKER_PATH")" \
-    "$(metric dirty_edge_neighbor_subchunks "$MARKER_PATH")" \
-    "$(metric dirty_partial_subchunks "$MARKER_PATH")" \
-    "$(metric dirty_partial_saved_subchunks "$MARKER_PATH")" \
-    "$(metric current_chunk_collision "$MARKER_PATH")" \
-    "$terrain_queue_max" \
-    "$gpu_compositor_submit_max" \
-    "$process_wall_p95"
+    "$SOAK_DIRTY_BLOCKS" \
+    "$SOAK_CHUNK_REPLACE" \
+    "$SOAK_EDGE_NEIGHBOR_SUBCHUNKS" \
+    "$SOAK_PARTIAL_SUBCHUNKS" \
+    "$SOAK_PARTIAL_SAVED_SUBCHUNKS" \
+    "$SOAK_CURRENT_CHUNK_COLLISION" \
+    "$SOAK_TERRAIN_QUEUE_MAX" \
+    "$SOAK_GPU_COMPOSITOR_SUBMIT_MAX" \
+    "$SOAK_PROCESS_WALL_P95_MAX"
+  printf '%s\n' "$PERSISTED_DIRTY_CYCLE_SUMMARIES"
   printf 'phase_seed_place %s\n' "$seed_place_summary"
   printf 'phase_verify_seed %s\n' "$verify_seed_summary"
   printf '%s\n' "$FINAL_VERIFY_SUMMARIES"

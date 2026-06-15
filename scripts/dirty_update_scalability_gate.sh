@@ -16,11 +16,14 @@ RUNTIME_SMOKE_SCRIPT="${RUMPELMC_DIRTY_SCALABILITY_RUNTIME_SMOKE_SCRIPT:-"$ROOT_
 RUNTIME_SMOKE_SUMMARY="${RUMPELMC_DIRTY_SCALABILITY_RUNTIME_SMOKE_SUMMARY:-"$ROOT_DIR/logs/dirty_update_runtime_smoke_current/dirty-update-runtime-smoke-summary.txt"}"
 MASS_RUNTIME_SMOKE_SCRIPT="${RUMPELMC_DIRTY_SCALABILITY_MASS_RUNTIME_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/dirty_update_mass_edit_runtime_smoke.sh"}"
 MASS_RUNTIME_SMOKE_SUMMARY="${RUMPELMC_DIRTY_SCALABILITY_MASS_RUNTIME_SMOKE_SUMMARY:-"$ROOT_DIR/logs/dirty_update_mass_edit_runtime_current/dirty-update-mass-edit-runtime-summary.txt"}"
+CROSS_MASS_RUNTIME_SMOKE_SCRIPT="${RUMPELMC_DIRTY_SCALABILITY_CROSS_MASS_RUNTIME_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/dirty_update_cross_chunk_mass_runtime_smoke.sh"}"
+CROSS_MASS_RUNTIME_SMOKE_SUMMARY="${RUMPELMC_DIRTY_SCALABILITY_CROSS_MASS_RUNTIME_SMOKE_SUMMARY:-"$ROOT_DIR/logs/dirty_update_cross_chunk_mass_runtime_current/dirty-update-cross-chunk-mass-runtime-summary.txt"}"
 PERSISTED_RUNTIME_SMOKE_SCRIPT="${RUMPELMC_DIRTY_SCALABILITY_PERSISTED_RUNTIME_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/dirty_update_persisted_reload_runtime_smoke.sh"}"
 PERSISTED_RUNTIME_SMOKE_SUMMARY="${RUMPELMC_DIRTY_SCALABILITY_PERSISTED_RUNTIME_SMOKE_SUMMARY:-"$ROOT_DIR/logs/dirty_update_persisted_reload_runtime_current/dirty-update-persisted-reload-runtime-summary.txt"}"
 RUN_RUST_TESTS="${RUMPELMC_DIRTY_SCALABILITY_RUN_RUST_TESTS:-1}"
 RUN_RUNTIME_SMOKE="${RUMPELMC_DIRTY_SCALABILITY_RUN_RUNTIME_SMOKE:-0}"
 RUN_MASS_RUNTIME_SMOKE="${RUMPELMC_DIRTY_SCALABILITY_RUN_MASS_RUNTIME_SMOKE:-0}"
+RUN_CROSS_MASS_RUNTIME_SMOKE="${RUMPELMC_DIRTY_SCALABILITY_RUN_CROSS_MASS_RUNTIME_SMOKE:-0}"
 RUN_PERSISTED_RUNTIME_SMOKE="${RUMPELMC_DIRTY_SCALABILITY_RUN_PERSISTED_RUNTIME_SMOKE:-0}"
 
 mkdir -p "$OUT_DIR"
@@ -90,6 +93,7 @@ scripts/gpu_terrain_single_edge_dirty_compare.sh
 scripts/gpu_terrain_single_edge_dirty_repeat.sh
 scripts/dirty_update_runtime_smoke.sh
 scripts/dirty_update_mass_edit_runtime_smoke.sh
+scripts/dirty_update_cross_chunk_mass_runtime_smoke.sh
 scripts/dirty_update_persisted_reload_runtime_smoke.sh
 "
 
@@ -110,6 +114,7 @@ for script in \
   scripts/gpu_terrain_edge_dirty_repeat.sh \
   scripts/dirty_update_runtime_smoke.sh \
   scripts/dirty_update_mass_edit_runtime_smoke.sh \
+  scripts/dirty_update_cross_chunk_mass_runtime_smoke.sh \
   scripts/dirty_update_persisted_reload_runtime_smoke.sh; do
   path="$ROOT_DIR/$script"
   require_token "$path" 'dirty_partial'
@@ -125,8 +130,13 @@ require_token "$RUNTIME_SMOKE_SCRIPT" 'runtime_edge_dirty=godot_guarded'
 require_token "$MASS_RUNTIME_SMOKE_SCRIPT" 'dirty_update_mass_edit_runtime status=pass'
 require_token "$MASS_RUNTIME_SMOKE_SCRIPT" 'runtime_mass_edit=godot_guarded'
 require_token "$MASS_RUNTIME_SMOKE_SCRIPT" 'runtime_mass_budget=godot_guarded'
+require_token "$CROSS_MASS_RUNTIME_SMOKE_SCRIPT" 'dirty_update_cross_chunk_mass_runtime status=pass'
+require_token "$CROSS_MASS_RUNTIME_SMOKE_SCRIPT" 'runtime_cross_chunk_mass_edit=godot_guarded'
+require_token "$CROSS_MASS_RUNTIME_SMOKE_SCRIPT" 'cross_chunk_mass_budget=godot_guarded'
 require_token "$PERSISTED_RUNTIME_SMOKE_SCRIPT" 'dirty_update_persisted_reload_runtime status=pass'
 require_token "$PERSISTED_RUNTIME_SMOKE_SCRIPT" 'runtime_persisted_dirty=godot_guarded'
+require_token "$PERSISTED_RUNTIME_SMOKE_SCRIPT" 'soak_cycles='
+require_token "$PERSISTED_RUNTIME_SMOKE_SCRIPT" 'persisted_dirty_cycle cycle='
 
 block_edit_persistence_status="$(field_metric status "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
 block_edit_protocol_change="$(field_metric active_protocol_change "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
@@ -147,6 +157,15 @@ if [ "$RUN_MASS_RUNTIME_SMOKE" = "1" ]; then
   if ! sh "$MASS_RUNTIME_SMOKE_SCRIPT" "$mass_runtime_dir" > "$OUT_DIR/mass-runtime-smoke-run.log" 2>&1; then
     cat "$OUT_DIR/mass-runtime-smoke-run.log" >&2 || true
     fail "dirty update mass-edit runtime smoke failed"
+  fi
+fi
+
+if [ "$RUN_CROSS_MASS_RUNTIME_SMOKE" = "1" ]; then
+  cross_mass_runtime_dir="$(dirname -- "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY")"
+  mkdir -p "$cross_mass_runtime_dir"
+  if ! sh "$CROSS_MASS_RUNTIME_SMOKE_SCRIPT" "$cross_mass_runtime_dir" > "$OUT_DIR/cross-mass-runtime-smoke-run.log" 2>&1; then
+    cat "$OUT_DIR/cross-mass-runtime-smoke-run.log" >&2 || true
+    fail "dirty update cross-chunk mass-edit runtime smoke failed"
   fi
 fi
 
@@ -208,19 +227,48 @@ if [ -s "$MASS_RUNTIME_SMOKE_SUMMARY" ]; then
   mass_runtime_destroy_actions="$(field_metric destroy_actions "$MASS_RUNTIME_SMOKE_SUMMARY")"
 fi
 
+cross_mass_runtime_summary_present=0
+cross_mass_runtime_smoke_status="missing"
+cross_mass_runtime_protocol_change=0
+cross_mass_runtime_mass_edit="deferred"
+cross_mass_runtime_budget="deferred"
+cross_mass_runtime_cross_chunk_count=0
+cross_mass_runtime_edit_count=0
+cross_mass_runtime_place_actions=0
+cross_mass_runtime_destroy_actions=0
+if [ -s "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY" ]; then
+  cross_mass_runtime_summary_present=1
+  require_token "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY" 'dirty_update_cross_chunk_mass_runtime status=pass'
+  require_token "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY" 'runtime_cross_chunk_mass_edit=godot_guarded'
+  require_token "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY" 'cross_chunk_mass_budget=godot_guarded'
+  require_token "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY" 'budget_status=pass'
+  cross_mass_runtime_smoke_status="$(field_metric status "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY")"
+  cross_mass_runtime_protocol_change="$(field_metric active_protocol_change "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY")"
+  cross_mass_runtime_mass_edit="$(field_metric runtime_cross_chunk_mass_edit "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY")"
+  cross_mass_runtime_budget="$(field_metric cross_chunk_mass_budget "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY")"
+  cross_mass_runtime_cross_chunk_count="$(field_metric cross_chunk_count "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY")"
+  cross_mass_runtime_edit_count="$(field_metric mass_edit_count "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY")"
+  cross_mass_runtime_place_actions="$(field_metric place_actions "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY")"
+  cross_mass_runtime_destroy_actions="$(field_metric destroy_actions "$CROSS_MASS_RUNTIME_SMOKE_SUMMARY")"
+fi
+
 persisted_runtime_summary_present=0
 persisted_runtime_smoke_status="missing"
 persisted_runtime_protocol_change=0
 persisted_runtime_dirty="deferred"
+persisted_runtime_soak_cycles=0
 persisted_runtime_reload_cycles=0
 persisted_runtime_final_verify_count=0
 if [ -s "$PERSISTED_RUNTIME_SMOKE_SUMMARY" ]; then
   persisted_runtime_summary_present=1
   require_token "$PERSISTED_RUNTIME_SMOKE_SUMMARY" 'dirty_update_persisted_reload_runtime status=pass'
   require_token "$PERSISTED_RUNTIME_SMOKE_SUMMARY" 'runtime_persisted_dirty=godot_guarded'
+  require_token "$PERSISTED_RUNTIME_SMOKE_SUMMARY" 'soak_status=pass'
+  require_token "$PERSISTED_RUNTIME_SMOKE_SUMMARY" 'persisted_dirty_cycle cycle=3'
   persisted_runtime_smoke_status="$(field_metric status "$PERSISTED_RUNTIME_SMOKE_SUMMARY")"
   persisted_runtime_protocol_change="$(field_metric active_protocol_change "$PERSISTED_RUNTIME_SMOKE_SUMMARY")"
   persisted_runtime_dirty="$(field_metric runtime_persisted_dirty "$PERSISTED_RUNTIME_SMOKE_SUMMARY")"
+  persisted_runtime_soak_cycles="$(field_metric soak_cycles "$PERSISTED_RUNTIME_SMOKE_SUMMARY")"
   persisted_runtime_reload_cycles="$(field_metric reload_cycles "$PERSISTED_RUNTIME_SMOKE_SUMMARY")"
   persisted_runtime_final_verify_count="$(field_metric final_verify_count "$PERSISTED_RUNTIME_SMOKE_SUMMARY")"
 fi
@@ -252,6 +300,7 @@ awk \
   -v dirty_tests="$dirty_tests" \
   -v run_runtime_smoke="$RUN_RUNTIME_SMOKE" \
   -v run_mass_runtime_smoke="$RUN_MASS_RUNTIME_SMOKE" \
+  -v run_cross_mass_runtime_smoke="$RUN_CROSS_MASS_RUNTIME_SMOKE" \
   -v run_persisted_runtime_smoke="$RUN_PERSISTED_RUNTIME_SMOKE" \
   -v runtime_summary_present="$runtime_summary_present" \
   -v runtime_smoke_status="$runtime_smoke_status" \
@@ -270,10 +319,20 @@ awk \
   -v mass_runtime_edit_count="${mass_runtime_edit_count:-0}" \
   -v mass_runtime_place_actions="${mass_runtime_place_actions:-0}" \
   -v mass_runtime_destroy_actions="${mass_runtime_destroy_actions:-0}" \
+  -v cross_mass_runtime_summary_present="$cross_mass_runtime_summary_present" \
+  -v cross_mass_runtime_smoke_status="$cross_mass_runtime_smoke_status" \
+  -v cross_mass_runtime_protocol_change="${cross_mass_runtime_protocol_change:-0}" \
+  -v cross_mass_runtime_mass_edit="${cross_mass_runtime_mass_edit:-deferred}" \
+  -v cross_mass_runtime_budget="${cross_mass_runtime_budget:-deferred}" \
+  -v cross_mass_runtime_cross_chunk_count="${cross_mass_runtime_cross_chunk_count:-0}" \
+  -v cross_mass_runtime_edit_count="${cross_mass_runtime_edit_count:-0}" \
+  -v cross_mass_runtime_place_actions="${cross_mass_runtime_place_actions:-0}" \
+  -v cross_mass_runtime_destroy_actions="${cross_mass_runtime_destroy_actions:-0}" \
   -v persisted_runtime_summary_present="$persisted_runtime_summary_present" \
   -v persisted_runtime_smoke_status="$persisted_runtime_smoke_status" \
   -v persisted_runtime_protocol_change="${persisted_runtime_protocol_change:-0}" \
   -v persisted_runtime_dirty="${persisted_runtime_dirty:-deferred}" \
+  -v persisted_runtime_soak_cycles="${persisted_runtime_soak_cycles:-0}" \
   -v persisted_runtime_reload_cycles="${persisted_runtime_reload_cycles:-0}" \
   -v persisted_runtime_final_verify_count="${persisted_runtime_final_verify_count:-0}" \
   -v design_doc="$DESIGN_DOC" \
@@ -285,13 +344,15 @@ awk \
     edge_runtime_scripts = "available"
     runtime_edge_dirty_status = "deferred"
     runtime_mass_edit_status = "deferred"
+    runtime_cross_chunk_mass_status = "deferred"
     runtime_persisted_dirty_status = "deferred"
     runtime_persisted_dirty = "deferred"
     runtime_mass_edit = "deferred"
+    runtime_cross_chunk_mass_edit = "deferred"
     active_protocol_change = proto_diff_count + 0
 
     persistence_ok = block_edit_persistence_status == "pass" && block_edit_protocol_change + 0 == 0
-    scripts_ok = script_count + 0 >= 9
+    scripts_ok = script_count + 0 >= 10
     rust_ok = (mass_dirty_unit == "pass" || mass_dirty_unit == "skipped") &&
       (dirty_tests == "pass" || dirty_tests == "skipped")
     runtime_ok = runtime_smoke_status == "pass" &&
@@ -309,11 +370,20 @@ awk \
       mass_runtime_edit_count + 0 >= 8 &&
       mass_runtime_place_actions + 0 >= 4 &&
       mass_runtime_destroy_actions + 0 >= 4
+    cross_mass_runtime_ok = cross_mass_runtime_smoke_status == "pass" &&
+      cross_mass_runtime_protocol_change + 0 == 0 &&
+      cross_mass_runtime_mass_edit == "godot_guarded" &&
+      cross_mass_runtime_budget == "godot_guarded" &&
+      cross_mass_runtime_cross_chunk_count + 0 >= 4 &&
+      cross_mass_runtime_edit_count + 0 >= 8 &&
+      cross_mass_runtime_place_actions + 0 >= 4 &&
+      cross_mass_runtime_destroy_actions + 0 >= 4
     persisted_runtime_ok = persisted_runtime_smoke_status == "pass" &&
       persisted_runtime_protocol_change + 0 == 0 &&
       persisted_runtime_dirty == "godot_guarded" &&
-      persisted_runtime_reload_cycles + 0 >= 2 &&
-      persisted_runtime_final_verify_count + 0 >= 1
+      persisted_runtime_soak_cycles + 0 >= 3 &&
+      persisted_runtime_reload_cycles + 0 >= persisted_runtime_soak_cycles + 1 &&
+      persisted_runtime_final_verify_count + 0 >= 12
 
     if (runtime_ok) {
       dirty_scalability_status = "unit_and_edge_runtime_guarded"
@@ -335,6 +405,17 @@ awk \
         dirty_scalability_status = "unit_and_persisted_runtime_guarded"
       }
     }
+    if (cross_mass_runtime_ok) {
+      runtime_cross_chunk_mass_edit = "godot_guarded"
+      runtime_cross_chunk_mass_status = "pass"
+      if (runtime_ok && mass_runtime_ok && persisted_runtime_ok) {
+        dirty_scalability_status = "unit_edge_mixed_mass_persisted_and_cross_chunk_runtime_guarded"
+      } else if (mass_runtime_ok) {
+        dirty_scalability_status = "unit_mixed_and_cross_chunk_mass_runtime_guarded"
+      } else {
+        dirty_scalability_status = "unit_and_cross_chunk_mass_runtime_guarded"
+      }
+    }
 
     if (active_protocol_change != 0) {
       status = "fail"
@@ -354,12 +435,15 @@ awk \
     } else if (!mass_runtime_ok && (run_mass_runtime_smoke == "1" || mass_runtime_summary_present + 0 == 1)) {
       status = "fail"
       reason = "runtime_mass_edit_not_clean"
+    } else if (!cross_mass_runtime_ok && (run_cross_mass_runtime_smoke == "1" || cross_mass_runtime_summary_present + 0 == 1)) {
+      status = "fail"
+      reason = "runtime_cross_chunk_mass_edit_not_clean"
     } else if (!persisted_runtime_ok && (run_persisted_runtime_smoke == "1" || persisted_runtime_summary_present + 0 == 1)) {
       status = "fail"
       reason = "runtime_persisted_dirty_not_clean"
     }
 
-    printf("dirty_update_scalability status=%s reason=%s dirty_scalability_status=%s active_protocol_change=%d mass_dirty_unit=%s dirty_tests=%s edge_runtime_scripts=%s runtime_script_count=%d runtime_edge_dirty=%s runtime_edge_dirty_status=%s runtime_smoke_status=%s single_edge_compare=%s corner_edge_compare=%s corner_edge_repeat=%s runtime_repeat_runs=%d runtime_mass_edit=%s runtime_mass_edit_status=%s runtime_mass_budget=%s mass_runtime_smoke_status=%s mass_runtime_edit_count=%d mass_runtime_place_actions=%d mass_runtime_destroy_actions=%d runtime_persisted_dirty=%s runtime_persisted_dirty_status=%s persisted_runtime_smoke_status=%s persisted_runtime_reload_cycles=%d persisted_runtime_final_verify_count=%d block_edit_persistence_status=%s block_edit_protocol_change=%d design_doc=%s block_edit_persistence_summary=%s\n", status, reason, dirty_scalability_status, active_protocol_change, mass_dirty_unit, dirty_tests, edge_runtime_scripts, script_count, runtime_edge_dirty, runtime_edge_dirty_status, runtime_smoke_status, single_edge_compare, corner_edge_compare, corner_edge_repeat, runtime_repeat_runs, runtime_mass_edit, runtime_mass_edit_status, mass_runtime_budget, mass_runtime_smoke_status, mass_runtime_edit_count, mass_runtime_place_actions, mass_runtime_destroy_actions, runtime_persisted_dirty, runtime_persisted_dirty_status, persisted_runtime_smoke_status, persisted_runtime_reload_cycles, persisted_runtime_final_verify_count, block_edit_persistence_status, block_edit_protocol_change, design_doc, block_edit_persistence_summary)
+    printf("dirty_update_scalability status=%s reason=%s dirty_scalability_status=%s active_protocol_change=%d mass_dirty_unit=%s dirty_tests=%s edge_runtime_scripts=%s runtime_script_count=%d runtime_edge_dirty=%s runtime_edge_dirty_status=%s runtime_smoke_status=%s single_edge_compare=%s corner_edge_compare=%s corner_edge_repeat=%s runtime_repeat_runs=%d runtime_mass_edit=%s runtime_mass_edit_status=%s runtime_mass_budget=%s mass_runtime_smoke_status=%s mass_runtime_edit_count=%d mass_runtime_place_actions=%d mass_runtime_destroy_actions=%d runtime_cross_chunk_mass_edit=%s runtime_cross_chunk_mass_status=%s cross_chunk_mass_budget=%s cross_mass_runtime_smoke_status=%s cross_mass_runtime_cross_chunk_count=%d cross_mass_runtime_edit_count=%d cross_mass_runtime_place_actions=%d cross_mass_runtime_destroy_actions=%d runtime_persisted_dirty=%s runtime_persisted_dirty_status=%s persisted_runtime_smoke_status=%s persisted_runtime_soak_cycles=%d persisted_runtime_reload_cycles=%d persisted_runtime_final_verify_count=%d block_edit_persistence_status=%s block_edit_protocol_change=%d design_doc=%s block_edit_persistence_summary=%s\n", status, reason, dirty_scalability_status, active_protocol_change, mass_dirty_unit, dirty_tests, edge_runtime_scripts, script_count, runtime_edge_dirty, runtime_edge_dirty_status, runtime_smoke_status, single_edge_compare, corner_edge_compare, corner_edge_repeat, runtime_repeat_runs, runtime_mass_edit, runtime_mass_edit_status, mass_runtime_budget, mass_runtime_smoke_status, mass_runtime_edit_count, mass_runtime_place_actions, mass_runtime_destroy_actions, runtime_cross_chunk_mass_edit, runtime_cross_chunk_mass_status, cross_mass_runtime_budget, cross_mass_runtime_smoke_status, cross_mass_runtime_cross_chunk_count, cross_mass_runtime_edit_count, cross_mass_runtime_place_actions, cross_mass_runtime_destroy_actions, runtime_persisted_dirty, runtime_persisted_dirty_status, persisted_runtime_smoke_status, persisted_runtime_soak_cycles, persisted_runtime_reload_cycles, persisted_runtime_final_verify_count, block_edit_persistence_status, block_edit_protocol_change, design_doc, block_edit_persistence_summary)
     if (status != "pass") {
       exit 1
     }
