@@ -65,6 +65,7 @@ Checks:
 - The server scalability live smoke validates two real TCP clients receiving bootstrap chunk data and the same block-edit update through the existing frame/protobuf path.
 - The slow-reader smoke validates a real non-reading TCP client timing out during a large RAW bootstrap stream while a separate fast client still receives chunk `0,0`.
 - The client reconnect smoke validates a real Godot client detecting a server-side TCP disconnect, retrying after server restart, and exposing `client_state=active`, `reconnect_events`, `reconnect_successes`, and `network_reader_errors` in the perf marker.
+- The repeated reconnect soak validates multiple server-side TCP disconnect/restart/rebootstrap cycles in one Godot session with the client ending in `active`.
 - Rust `NetworkClient::receive_packet_with_timing_since` reads the exact length prefix, rejects lengths above `MAX_PACKET_LENGTH`, reads the exact payload, then decodes one protobuf `Packet`.
 - Rust `NetworkClient::send_packet` rejects encoded packets larger than `MAX_PACKET_LENGTH` before writing.
 
@@ -136,11 +137,29 @@ client_reconnect_smoke status=pass client_state=active reconnect_events=1 reconn
 
 This is a bounded retry/rebootstrap smoke. It is not a stale packet, packet replay, overload, queue reset, or backpressure proof.
 
+## Repeated Reconnect Soak
+
+`scripts/client_reconnect_soak.sh` wraps the live reconnect smoke with multiple kill/restart cycles in one Godot session. The default run uses three cycles and requires each cycle to produce a reader error and a reconnect success.
+
+Use:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release sh scripts/client_reconnect_soak.sh logs/client_reconnect_soak_current
+```
+
+Expected summary:
+
+```text
+client_reconnect_soak status=pass reconnect_cycles=3 client_state=active reconnect_successes=3 network_reader_errors=3 ... active_protocol_change=0
+```
+
+This is bounded repeated runtime evidence. It does not define stale-packet handling, packet replay, overload behavior, queue reset, or backpressure policy.
+
 ## Deferred Robustness Work
 
 Still needed before claiming a full networking robustness program:
 
-- Reconnect stale packet handling, state reset rules, packet replay policy, and repeated reconnect soak.
+- Reconnect stale packet handling, state reset rules, packet replay policy, and longer reconnect failure/idle soak.
 - Broader multi-client slow-reader load evidence across more active clients, broadcast fanout, and longer runs.
 - Server overload/admission behavior and connection limits under load.
 - Packet error telemetry that classifies EOF, oversized frame, malformed protobuf, timeout, and short write causes.
@@ -163,12 +182,18 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `active_protocol_change=0`, `reconnect_status=live_rebootstrap_guarded` when a current reconnect smoke summary exists, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
 
 To run the slow-reader smoke inside the gate:
 
 ```sh
 RUMPELMC_NETWORKING_ROBUSTNESS_RUN_SLOW_READER_SMOKE=1 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
+```
+
+To run the reconnect soak inside the gate:
+
+```sh
+RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SOAK=1 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
 The gate checks that:
@@ -178,10 +203,11 @@ The gate checks that:
 - Go server framing/network tests pass.
 - Rust network tests pass.
 - The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
+- The reconnect smoke and repeated reconnect soak summaries are clean when current artifacts exist or the runs are explicitly requested.
 - The slow-reader smoke script exists, and the gate carries its status when a current slow-reader summary exists or the smoke is explicitly run.
 - The reconnect smoke script exists, and the gate carries its status when a current reconnect summary exists or the smoke is explicitly run.
 - Protocol schema/generated files are unchanged.
 
 ## Current Status
 
-This block is complete as a packet-boundary, unit-guarded write-timeout, two-client live fanout, bounded slow-reader, and reconnect/rebootstrap checkpoint. Reconnect stale-packet policy, overload handling, broader live load, broadcast/backpressure policy, and runtime error classification telemetry remain future work.
+This block is complete as a packet-boundary, unit-guarded write-timeout, two-client live fanout, bounded slow-reader, and bounded repeated reconnect/rebootstrap checkpoint. Reconnect stale-packet policy, overload handling, broader live load, broadcast/backpressure policy, and runtime error classification telemetry remain future work.

@@ -15,16 +15,18 @@ GODOT_QUIT_AFTER_FRAMES="${GODOT_QUIT_AFTER_FRAMES:-30000}"
 SMOKE_DELAY_SEC="${RUMPELMC_CLIENT_RECONNECT_SMOKE_DELAY_SEC:-7.0}"
 SERVER_KILL_AFTER_SEC="${RUMPELMC_CLIENT_RECONNECT_SMOKE_KILL_AFTER_SEC:-2.0}"
 SERVER_RESTART_AFTER_SEC="${RUMPELMC_CLIENT_RECONNECT_SMOKE_RESTART_AFTER_SEC:-1.0}"
+RECONNECT_CYCLES="${RUMPELMC_CLIENT_RECONNECT_SMOKE_CYCLES:-1}"
 SERVER_DIR="$ROOT_DIR/server"
 SERVER_BINARY="$SERVER_DIR/server"
 SMOKE_PORT=25565
 SMOKE_DB="$OUT_DIR/rocksdb"
 INITIAL_SERVER_LOG="$OUT_DIR/server-initial.log"
-RESTART_SERVER_LOG="$OUT_DIR/server-restart.log"
+RESTART_SERVER_LOG="$OUT_DIR/server-restart-1.log"
 GODOT_LOG="$OUT_DIR/godot.log"
 SUMMARY_PATH="$OUT_DIR/client-reconnect-smoke-summary.txt"
 SERVER_PID=""
 GODOT_PID=""
+RESTART_SERVER_LOGS=""
 
 mkdir -p "$OUT_DIR"
 
@@ -66,6 +68,19 @@ require_text_metric_eq() {
   test -n "$value" || fail "missing $key in $marker_path"
   if [ "$value" != "$expected" ]; then
     fail "$key=$value, expected $expected in $marker_path"
+  fi
+}
+
+require_positive_int() {
+  name="$1"
+  value="$2"
+  case "$value" in
+    ''|*[!0-9]*)
+      fail "$name must be a positive integer, got $value"
+      ;;
+  esac
+  if [ "$value" -lt 1 ]; then
+    fail "$name must be >= 1, got $value"
   fi
 }
 
@@ -151,6 +166,7 @@ listener="$(listener_pid || true)"
 if [ -n "$listener" ]; then
   fail "port $SMOKE_PORT is already in use; stop the existing server before reconnect smoke"
 fi
+require_positive_int RUMPELMC_CLIENT_RECONNECT_SMOKE_CYCLES "$RECONNECT_CYCLES"
 trap cleanup_all EXIT HUP INT TERM
 
 (
@@ -159,7 +175,7 @@ trap cleanup_all EXIT HUP INT TERM
   sign_server_binary_if_possible
 )
 
-rm -f "$INITIAL_SERVER_LOG" "$RESTART_SERVER_LOG" "$GODOT_LOG" "$SUMMARY_PATH"
+rm -f "$INITIAL_SERVER_LOG" "$OUT_DIR"/server-restart-*.log "$GODOT_LOG" "$SUMMARY_PATH"
 rm -rf "$SMOKE_DB"
 
 start_server "$INITIAL_SERVER_LOG"
@@ -185,10 +201,20 @@ rm -f "$screenshot_path" "$marker_path"
 ) > "$GODOT_LOG" 2>&1 &
 GODOT_PID="$!"
 
-sleep "$SERVER_KILL_AFTER_SEC"
-cleanup_server
-sleep "$SERVER_RESTART_AFTER_SEC"
-start_server "$RESTART_SERVER_LOG"
+cycle=1
+while [ "$cycle" -le "$RECONNECT_CYCLES" ]; do
+  sleep "$SERVER_KILL_AFTER_SEC"
+  cleanup_server
+  sleep "$SERVER_RESTART_AFTER_SEC"
+  restart_log="$OUT_DIR/server-restart-$cycle.log"
+  start_server "$restart_log"
+  if [ -z "$RESTART_SERVER_LOGS" ]; then
+    RESTART_SERVER_LOGS="$restart_log"
+  else
+    RESTART_SERVER_LOGS="$RESTART_SERVER_LOGS,$restart_log"
+  fi
+  cycle=$((cycle + 1))
+done
 
 set +e
 wait "$GODOT_PID"
@@ -208,14 +234,15 @@ require_text_metric_eq "$marker_path" client_state active
 require_metric_ge "$marker_path" lifecycle_transitions 4
 require_metric_ge "$marker_path" reconnect_events 1
 require_metric_ge "$marker_path" reconnect_attempts 1
-require_metric_ge "$marker_path" reconnect_successes 1
-require_metric_ge "$marker_path" network_reader_errors 1
+require_metric_ge "$marker_path" reconnect_successes "$RECONNECT_CYCLES"
+require_metric_ge "$marker_path" network_reader_errors "$RECONNECT_CYCLES"
 require_metric_ge "$marker_path" current_chunk_loaded 1
 last_network_error="$(text_metric last_network_error "$marker_path")"
 test -n "$last_network_error" || fail "missing last_network_error in $marker_path"
 
 {
-  printf 'client_reconnect_smoke status=pass client_state=active lifecycle_transitions=%s reconnect_events=%s reconnect_attempts=%s reconnect_successes=%s network_reader_errors=%s current_chunk_loaded=%s last_network_error=%s active_protocol_change=0 initial_server_log=%s restart_server_log=%s godot_log=%s marker=%s\n' \
+  printf 'client_reconnect_smoke status=pass client_state=active reconnect_cycles=%s lifecycle_transitions=%s reconnect_events=%s reconnect_attempts=%s reconnect_successes=%s network_reader_errors=%s current_chunk_loaded=%s last_network_error=%s active_protocol_change=0 initial_server_log=%s restart_server_log=%s restart_server_logs=%s godot_log=%s marker=%s\n' \
+    "$RECONNECT_CYCLES" \
     "$(metric lifecycle_transitions "$marker_path")" \
     "$(metric reconnect_events "$marker_path")" \
     "$(metric reconnect_attempts "$marker_path")" \
@@ -225,6 +252,7 @@ test -n "$last_network_error" || fail "missing last_network_error in $marker_pat
     "$last_network_error" \
     "$INITIAL_SERVER_LOG" \
     "$RESTART_SERVER_LOG" \
+    "$RESTART_SERVER_LOGS" \
     "$GODOT_LOG" \
     "$marker_path"
 } > "$SUMMARY_PATH"

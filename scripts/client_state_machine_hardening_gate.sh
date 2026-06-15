@@ -15,8 +15,11 @@ CLIENT_SOURCE="${RUMPELMC_CLIENT_STATE_MACHINE_SOURCE:-"$ROOT_DIR/client/rust_ex
 NETWORKING_SUMMARY="${RUMPELMC_CLIENT_STATE_MACHINE_NETWORKING_SUMMARY:-"$ROOT_DIR/logs/networking_robustness_current/networking-robustness-summary.txt"}"
 RECONNECT_SMOKE_SCRIPT="${RUMPELMC_CLIENT_STATE_MACHINE_RECONNECT_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/client_reconnect_smoke.sh"}"
 RECONNECT_SMOKE_SUMMARY="${RUMPELMC_CLIENT_STATE_MACHINE_RECONNECT_SMOKE_SUMMARY:-"$ROOT_DIR/logs/client_reconnect_smoke_current/client-reconnect-smoke-summary.txt"}"
+RECONNECT_SOAK_SCRIPT="${RUMPELMC_CLIENT_STATE_MACHINE_RECONNECT_SOAK_SCRIPT:-"$ROOT_DIR/scripts/client_reconnect_soak.sh"}"
+RECONNECT_SOAK_SUMMARY="${RUMPELMC_CLIENT_STATE_MACHINE_RECONNECT_SOAK_SUMMARY:-"$ROOT_DIR/logs/client_reconnect_soak_current/client-reconnect-soak-summary.txt"}"
 RUN_RUST_TESTS="${RUMPELMC_CLIENT_STATE_MACHINE_RUN_RUST_TESTS:-1}"
 RUN_RECONNECT_SMOKE="${RUMPELMC_CLIENT_STATE_MACHINE_RUN_RECONNECT_SMOKE:-0}"
+RUN_RECONNECT_SOAK="${RUMPELMC_CLIENT_STATE_MACHINE_RUN_RECONNECT_SOAK:-0}"
 
 mkdir -p "$OUT_DIR"
 
@@ -51,7 +54,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$CLIENT_SOURCE" "$NETWORKING_SUMMARY" "$RECONNECT_SMOKE_SCRIPT"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$CLIENT_SOURCE" "$NETWORKING_SUMMARY" "$RECONNECT_SMOKE_SCRIPT" "$RECONNECT_SOAK_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -64,6 +67,7 @@ for token in \
   'Reader-thread receive errors' \
   'Automatic retry/backoff' \
   'Live Reconnect Smoke' \
+  'Repeated Reconnect Soak' \
   'Do not change packet schema or framing'; do
   require_token "$DESIGN_DOC" "$token"
 done
@@ -98,6 +102,7 @@ require_token "$CLIENT_SOURCE" 'client_lifecycle_shutdown_is_terminal'
 require_token "$CLIENT_SOURCE" 'client_lifecycle_rejects_out_of_order_startup_events'
 require_token "$CLIENT_SOURCE" 'client_lifecycle_outbound_is_active_only'
 require_token "$RECONNECT_SMOKE_SCRIPT" 'client_reconnect_smoke status=pass'
+require_token "$RECONNECT_SOAK_SCRIPT" 'client_reconnect_soak status=pass'
 
 networking_status="$(field_metric status "$NETWORKING_SUMMARY")"
 networking_protocol_change="$(field_metric active_protocol_change "$NETWORKING_SUMMARY")"
@@ -114,6 +119,19 @@ case "$RUN_RECONNECT_SMOKE" in
     fail "unsupported RUMPELMC_CLIENT_STATE_MACHINE_RUN_RECONNECT_SMOKE=$RUN_RECONNECT_SMOKE"
     ;;
 esac
+case "$RUN_RECONNECT_SOAK" in
+  0) ;;
+  1)
+    reconnect_soak_dir="$(dirname "$RECONNECT_SOAK_SUMMARY")"
+    "$RECONNECT_SOAK_SCRIPT" "$reconnect_soak_dir" > "$OUT_DIR/reconnect-soak-run.txt" 2>&1 || {
+      cat "$OUT_DIR/reconnect-soak-run.txt" >&2 || true
+      fail "repeated reconnect soak failed"
+    }
+    ;;
+  *)
+    fail "unsupported RUMPELMC_CLIENT_STATE_MACHINE_RUN_RECONNECT_SOAK=$RUN_RECONNECT_SOAK"
+    ;;
+esac
 reconnect_smoke_status="deferred"
 reconnect_smoke_client_state="missing"
 reconnect_smoke_reader_errors="0"
@@ -125,6 +143,20 @@ if [ -s "$RECONNECT_SMOKE_SUMMARY" ]; then
   reconnect_smoke_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_successes="$(field_metric reconnect_successes "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SMOKE_SUMMARY")"
+fi
+reconnect_soak_status="deferred"
+reconnect_soak_client_state="missing"
+reconnect_soak_cycles="0"
+reconnect_soak_reader_errors="0"
+reconnect_soak_successes="0"
+reconnect_soak_protocol_change="0"
+if [ -s "$RECONNECT_SOAK_SUMMARY" ]; then
+  reconnect_soak_status="$(field_metric status "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_client_state="$(field_metric client_state "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_cycles="$(field_metric reconnect_cycles "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_successes="$(field_metric reconnect_successes "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SOAK_SUMMARY")"
 fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
@@ -147,11 +179,19 @@ awk \
   -v reconnect_smoke_successes="${reconnect_smoke_successes:-0}" \
   -v reconnect_smoke_protocol_change="${reconnect_smoke_protocol_change:-0}" \
   -v reconnect_smoke_required="$RUN_RECONNECT_SMOKE" \
+  -v reconnect_soak_status="${reconnect_soak_status:-deferred}" \
+  -v reconnect_soak_client_state="${reconnect_soak_client_state:-missing}" \
+  -v reconnect_soak_cycles="${reconnect_soak_cycles:-0}" \
+  -v reconnect_soak_reader_errors="${reconnect_soak_reader_errors:-0}" \
+  -v reconnect_soak_successes="${reconnect_soak_successes:-0}" \
+  -v reconnect_soak_protocol_change="${reconnect_soak_protocol_change:-0}" \
+  -v reconnect_soak_required="$RUN_RECONNECT_SOAK" \
   -v proto_diff_count="$proto_diff_count" \
   -v client_lifecycle_tests="$client_lifecycle_tests" \
   -v design_doc="$DESIGN_DOC" \
   -v networking_summary="$NETWORKING_SUMMARY" \
-  -v reconnect_smoke_summary="$RECONNECT_SMOKE_SUMMARY" '
+  -v reconnect_smoke_summary="$RECONNECT_SMOKE_SUMMARY" \
+  -v reconnect_soak_summary="$RECONNECT_SOAK_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
@@ -160,8 +200,14 @@ awk \
       reconnect_smoke_reader_errors + 0 >= 1 &&
       reconnect_smoke_successes + 0 >= 1 &&
       reconnect_smoke_protocol_change + 0 == 0
-    state_machine_status = reconnect_ok ? "runtime_guarded" : "unit_guarded"
-    runtime_reconnect = reconnect_ok ? "live_rebootstrap_guarded" : "deferred"
+    reconnect_soak_ok = reconnect_soak_status == "pass" &&
+      reconnect_soak_client_state == "active" &&
+      reconnect_soak_cycles + 0 >= 2 &&
+      reconnect_soak_reader_errors + 0 >= reconnect_soak_cycles + 0 &&
+      reconnect_soak_successes + 0 >= reconnect_soak_cycles + 0 &&
+      reconnect_soak_protocol_change + 0 == 0
+    state_machine_status = reconnect_soak_ok ? "repeated_runtime_guarded" : (reconnect_ok ? "runtime_guarded" : "unit_guarded")
+    runtime_reconnect = reconnect_soak_ok ? "repeated_live_rebootstrap_guarded" : (reconnect_ok ? "live_rebootstrap_guarded" : "deferred")
     state_telemetry = reconnect_ok ? "live_marker_guarded" : "source_guarded"
     active_protocol_change = proto_diff_count + 0
 
@@ -177,12 +223,15 @@ awk \
     } else if (reconnect_smoke_required == "1" && !reconnect_ok) {
       status = "fail"
       reason = "reconnect_smoke_failed"
+    } else if (reconnect_soak_required == "1" && !reconnect_soak_ok) {
+      status = "fail"
+      reason = "reconnect_soak_failed"
     } else if (!tests_ok) {
       status = "fail"
       reason = "client_lifecycle_tests_failed"
     }
 
-    printf("client_state_machine_hardening status=%s reason=%s state_machine_status=%s active_protocol_change=%d client_lifecycle_tests=%s runtime_reconnect=%s state_telemetry=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d networking_status=%s networking_protocol_change=%d design_doc=%s networking_summary=%s reconnect_smoke_summary=%s\n", status, reason, state_machine_status, active_protocol_change, client_lifecycle_tests, runtime_reconnect, state_telemetry, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, networking_status, networking_protocol_change, design_doc, networking_summary, reconnect_smoke_summary)
+    printf("client_state_machine_hardening status=%s reason=%s state_machine_status=%s active_protocol_change=%d client_lifecycle_tests=%s runtime_reconnect=%s state_telemetry=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d networking_status=%s networking_protocol_change=%d design_doc=%s networking_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, state_machine_status, active_protocol_change, client_lifecycle_tests, runtime_reconnect, state_telemetry, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, networking_status, networking_protocol_change, design_doc, networking_summary, reconnect_smoke_summary, reconnect_soak_summary)
     if (status != "pass") {
       exit 1
     }

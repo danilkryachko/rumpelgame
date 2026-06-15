@@ -20,10 +20,13 @@ SLOW_READER_SMOKE_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_SLOW_READER_SMOKE_SCR
 SLOW_READER_SMOKE_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_SLOW_READER_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_slow_reader_smoke_current/server-slow-reader-smoke-summary.txt"}"
 RECONNECT_SMOKE_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/client_reconnect_smoke.sh"}"
 RECONNECT_SMOKE_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SMOKE_SUMMARY:-"$ROOT_DIR/logs/client_reconnect_smoke_current/client-reconnect-smoke-summary.txt"}"
+RECONNECT_SOAK_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SOAK_SCRIPT:-"$ROOT_DIR/scripts/client_reconnect_soak.sh"}"
+RECONNECT_SOAK_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SOAK_SUMMARY:-"$ROOT_DIR/logs/client_reconnect_soak_current/client-reconnect-soak-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_GO_TESTS:-1}"
 RUN_RUST_TESTS="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RUST_TESTS:-1}"
 RUN_SLOW_READER_SMOKE="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_SLOW_READER_SMOKE:-0}"
 RUN_RECONNECT_SMOKE="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SMOKE:-0}"
+RUN_RECONNECT_SOAK="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SOAK:-0}"
 
 mkdir -p "$OUT_DIR"
 
@@ -58,7 +61,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$SERVER_SESSION_TEST" "$CLIENT_SOURCE" "$SERVER_SCALABILITY_SUMMARY" "$SLOW_READER_SMOKE_SCRIPT" "$RECONNECT_SMOKE_SCRIPT"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$SERVER_SESSION_TEST" "$CLIENT_SOURCE" "$SERVER_SCALABILITY_SUMMARY" "$SLOW_READER_SMOKE_SCRIPT" "$RECONNECT_SMOKE_SCRIPT" "$RECONNECT_SOAK_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -69,6 +72,7 @@ for token in \
   'Deferred Robustness Work' \
   'Compatibility Rules' \
   'Live Reconnect Smoke' \
+  'Repeated Reconnect Soak' \
   'Live Slow-Reader Smoke' \
   'Server overload/admission behavior'; do
   require_token "$DESIGN_DOC" "$token"
@@ -93,6 +97,7 @@ require_token "$SERVER_SESSION_TEST" 'TestSendChunkToSessionSetsAndClearsWriteDe
 require_token "$SERVER_SESSION_TEST" 'TestBroadcastDisconnectsFailedInterestedClient'
 require_token "$SLOW_READER_SMOKE_SCRIPT" 'server_slow_reader_smoke status=pass'
 require_token "$RECONNECT_SMOKE_SCRIPT" 'client_reconnect_smoke status=pass'
+require_token "$RECONNECT_SOAK_SCRIPT" 'client_reconnect_soak status=pass'
 
 require_token "$CLIENT_SOURCE" 'const MAX_PACKET_LENGTH: usize = 16 * 1024 * 1024;'
 require_token "$CLIENT_SOURCE" 'self.stream.read_exact(&mut len_buf)?;'
@@ -133,6 +138,19 @@ case "$RUN_RECONNECT_SMOKE" in
     fail "unsupported RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SMOKE=$RUN_RECONNECT_SMOKE"
     ;;
 esac
+case "$RUN_RECONNECT_SOAK" in
+  0) ;;
+  1)
+    reconnect_soak_dir="$(dirname "$RECONNECT_SOAK_SUMMARY")"
+    "$RECONNECT_SOAK_SCRIPT" "$reconnect_soak_dir" > "$OUT_DIR/reconnect-soak-run.txt" 2>&1 || {
+      cat "$OUT_DIR/reconnect-soak-run.txt" >&2 || true
+      fail "repeated reconnect soak failed"
+    }
+    ;;
+  *)
+    fail "unsupported RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SOAK=$RUN_RECONNECT_SOAK"
+    ;;
+esac
 slow_reader_smoke_status="deferred"
 slow_reader_timeout_observed="0"
 if [ -s "$SLOW_READER_SMOKE_SUMMARY" ]; then
@@ -150,6 +168,20 @@ if [ -s "$RECONNECT_SMOKE_SUMMARY" ]; then
   reconnect_smoke_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_successes="$(field_metric reconnect_successes "$RECONNECT_SMOKE_SUMMARY")"
   reconnect_smoke_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SMOKE_SUMMARY")"
+fi
+reconnect_soak_status="deferred"
+reconnect_soak_client_state="missing"
+reconnect_soak_cycles="0"
+reconnect_soak_reader_errors="0"
+reconnect_soak_successes="0"
+reconnect_soak_protocol_change="0"
+if [ -s "$RECONNECT_SOAK_SUMMARY" ]; then
+  reconnect_soak_status="$(field_metric status "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_client_state="$(field_metric client_state "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_cycles="$(field_metric reconnect_cycles "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_successes="$(field_metric reconnect_successes "$RECONNECT_SOAK_SUMMARY")"
+  reconnect_soak_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SOAK_SUMMARY")"
 fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
@@ -187,13 +219,21 @@ awk \
   -v reconnect_smoke_successes="${reconnect_smoke_successes:-0}" \
   -v reconnect_smoke_protocol_change="${reconnect_smoke_protocol_change:-0}" \
   -v reconnect_smoke_required="$RUN_RECONNECT_SMOKE" \
+  -v reconnect_soak_status="${reconnect_soak_status:-deferred}" \
+  -v reconnect_soak_client_state="${reconnect_soak_client_state:-missing}" \
+  -v reconnect_soak_cycles="${reconnect_soak_cycles:-0}" \
+  -v reconnect_soak_reader_errors="${reconnect_soak_reader_errors:-0}" \
+  -v reconnect_soak_successes="${reconnect_soak_successes:-0}" \
+  -v reconnect_soak_protocol_change="${reconnect_soak_protocol_change:-0}" \
+  -v reconnect_soak_required="$RUN_RECONNECT_SOAK" \
   -v proto_diff_count="$proto_diff_count" \
   -v server_boundary_tests="$server_boundary_tests" \
   -v client_boundary_tests="$client_boundary_tests" \
   -v design_doc="$DESIGN_DOC" \
   -v server_scalability_summary="$SERVER_SCALABILITY_SUMMARY" \
   -v slow_reader_smoke_summary="$SLOW_READER_SMOKE_SUMMARY" \
-  -v reconnect_smoke_summary="$RECONNECT_SMOKE_SUMMARY" '
+  -v reconnect_smoke_summary="$RECONNECT_SMOKE_SUMMARY" \
+  -v reconnect_soak_summary="$RECONNECT_SOAK_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
@@ -203,7 +243,13 @@ awk \
       reconnect_smoke_reader_errors + 0 >= 1 &&
       reconnect_smoke_successes + 0 >= 1 &&
       reconnect_smoke_protocol_change + 0 == 0
-    reconnect_status = reconnect_ok ? "live_rebootstrap_guarded" : "deferred"
+    reconnect_soak_ok = reconnect_soak_status == "pass" &&
+      reconnect_soak_client_state == "active" &&
+      reconnect_soak_cycles + 0 >= 2 &&
+      reconnect_soak_reader_errors + 0 >= reconnect_soak_cycles + 0 &&
+      reconnect_soak_successes + 0 >= reconnect_soak_cycles + 0 &&
+      reconnect_soak_protocol_change + 0 == 0
+    reconnect_status = reconnect_soak_ok ? "repeated_live_rebootstrap_guarded" : (reconnect_ok ? "live_rebootstrap_guarded" : "deferred")
     slow_client_status = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1 ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred")
     multi_client_live_status = server_scalability_live_load
     overload_status = "deferred"
@@ -226,6 +272,9 @@ awk \
     } else if (reconnect_smoke_required == "1" && !reconnect_ok) {
       status = "fail"
       reason = "reconnect_smoke_failed"
+    } else if (reconnect_soak_required == "1" && !reconnect_soak_ok) {
+      status = "fail"
+      reason = "reconnect_soak_failed"
     } else if (!server_tests_ok) {
       status = "fail"
       reason = "server_boundary_tests_failed"
@@ -234,7 +283,7 @@ awk \
       reason = "client_boundary_tests_failed"
     }
 
-    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary)
+    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
     if (status != "pass") {
       exit 1
     }

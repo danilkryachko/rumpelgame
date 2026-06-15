@@ -122,13 +122,25 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 
 This validates runtime disconnect detection, retry, server restart recovery, rebootstrap chunk delivery, and marker telemetry. It is not a stale-packet, packet replay, queue reset, overload, or backpressure proof.
 
+## Repeated Reconnect Soak
+
+`scripts/client_reconnect_soak.sh` runs `scripts/client_reconnect_smoke.sh` with multiple server kill/restart cycles in one Godot session. The default is three reconnect cycles.
+
+Use:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release sh scripts/client_reconnect_soak.sh logs/client_reconnect_soak_current
+```
+
+The soak requires `client_state=active`, `reconnect_successes>=reconnect_cycles`, `network_reader_errors>=reconnect_cycles`, `current_chunk_loaded>=1`, and `active_protocol_change=0`. This is still bounded smoke evidence, not a long-run network soak or stale-packet policy proof.
+
 ## Deferred Work
 
 Still needed before claiming a complete client state machine:
 
 - Stale packet handling needs an explicit generation/session policy before packet replay or queue reset is added.
 - Broader state reset rules for loaded chunks, mesh queues, collision queues, and GPU residency remain deferred.
-- Longer runtime smokes should cover repeated disconnects and reconnect failures, not just one restart/rebootstrap cycle.
+- Longer runtime smokes should cover reconnect failures and longer idle/play windows beyond the current bounded repeated reconnect soak.
 
 ## Compatibility Rules
 
@@ -146,7 +158,7 @@ Use:
 sh scripts/client_state_machine_hardening_gate.sh logs/client_state_machine_hardening_current
 ```
 
-The expected current result after collecting the live artifact is `status=pass`, `state_machine_status=runtime_guarded`, `runtime_reconnect=live_rebootstrap_guarded`, `state_telemetry=live_marker_guarded`, `reconnect_smoke_status=pass`, `reconnect_smoke_client_state=active`, `reconnect_smoke_successes>=1`, `client_lifecycle_tests=pass`, and `active_protocol_change=0`.
+The expected current result after collecting the live artifacts is `status=pass`, `state_machine_status=repeated_runtime_guarded`, `runtime_reconnect=repeated_live_rebootstrap_guarded`, `state_telemetry=live_marker_guarded`, `reconnect_smoke_status=pass`, `reconnect_smoke_client_state=active`, `reconnect_soak_status=pass`, `reconnect_soak_cycles>=3`, `reconnect_soak_successes>=reconnect_soak_cycles`, `client_lifecycle_tests=pass`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -154,10 +166,11 @@ The gate checks that:
 - The Rust client source contains the lifecycle states, event enum, transition function, runtime event wiring, and focused tests.
 - The Rust client source carries reader-thread error events to the main thread and exports marker state telemetry.
 - The reconnect smoke script exists, and the gate carries its status when a current reconnect summary exists or the smoke is explicitly run.
+- The repeated reconnect soak script exists, and the gate carries its status when a current soak summary exists or the soak is explicitly run.
 - The previous networking robustness gate is clean.
 - Focused Rust lifecycle tests pass.
 - Protocol schema/generated files are unchanged.
 
 ## Current Status
 
-This block is complete as a unit-guarded state model plus live disconnect/restart/rebootstrap-to-`active` proof. Stale packet handling, queue reset policy, repeated reconnect soak, overload handling, and backpressure remain future work.
+This block is complete as a unit-guarded state model plus bounded repeated live disconnect/restart/rebootstrap-to-`active` proof. Stale packet handling, queue reset policy, reconnect failure soak, overload handling, and backpressure remain future work.
