@@ -17,6 +17,7 @@ SERVER_SOURCE="${RUMPELMC_GAMEPLAY_LOOP_SERVER_SOURCE:-"$ROOT_DIR/server/pkg/net
 WORLD_SOURCE="${RUMPELMC_GAMEPLAY_LOOP_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
 SERVER_MAIN="${RUMPELMC_GAMEPLAY_LOOP_SERVER_MAIN:-"$ROOT_DIR/server/cmd/server/main.go"}"
 CLIENT_STATE_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_CLIENT_STATE_SUMMARY:-"$ROOT_DIR/logs/client_state_machine_hardening_current/client-state-machine-hardening-summary.txt"}"
+BLOCK_EDIT_PERSISTENCE_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_BLOCK_EDIT_PERSISTENCE_SUMMARY:-"$ROOT_DIR/logs/block_edit_persistence_current/block-edit-persistence-summary.txt"}"
 RUN_RUST_TESTS="${RUMPELMC_GAMEPLAY_LOOP_RUN_RUST_TESTS:-1}"
 RUN_GO_TESTS="${RUMPELMC_GAMEPLAY_LOOP_RUN_GO_TESTS:-1}"
 
@@ -96,6 +97,12 @@ require_token "$SERVER_MAIN" 'storage.OpenRocksChunkStore'
 
 client_state_status="$(field_metric status "$CLIENT_STATE_SUMMARY")"
 client_state_protocol_change="$(field_metric active_protocol_change "$CLIENT_STATE_SUMMARY")"
+block_edit_persistence_status="deferred"
+block_edit_visual_path="deferred"
+if [ -s "$BLOCK_EDIT_PERSISTENCE_SUMMARY" ]; then
+  block_edit_persistence_status="$(field_metric status "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+  block_edit_visual_path="$(field_metric visual_collision_gpu_path "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 inventory_tests="skipped"
@@ -121,18 +128,22 @@ fi
 awk \
   -v client_state_status="${client_state_status:-missing}" \
   -v client_state_protocol_change="${client_state_protocol_change:-1}" \
+  -v block_edit_persistence_status="${block_edit_persistence_status:-deferred}" \
+  -v block_edit_visual_path="${block_edit_visual_path:-deferred}" \
   -v proto_diff_count="$proto_diff_count" \
   -v inventory_tests="$inventory_tests" \
   -v server_tests="$server_tests" \
   -v design_doc="$DESIGN_DOC" \
-  -v client_state_summary="$CLIENT_STATE_SUMMARY" '
+  -v client_state_summary="$CLIENT_STATE_SUMMARY" \
+  -v block_edit_persistence_summary="$BLOCK_EDIT_PERSISTENCE_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
     gameplay_loop_status = "foundation_guarded"
     inventory_foundation = "unit_guarded"
     server_edit_persistence = "store_save_boundary"
-    full_reload_persistence = "deferred"
+    block_edit_visual_ok = block_edit_persistence_status == "pass" && block_edit_visual_path == "godot_persisted_reload_guarded"
+    full_reload_persistence = block_edit_visual_ok ? "block_41_visual_guarded" : "deferred"
     active_protocol_change = proto_diff_count + 0
 
     state_ok = client_state_status == "pass" && client_state_protocol_change + 0 == 0
@@ -153,7 +164,7 @@ awk \
       reason = "server_tests_failed"
     }
 
-    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, client_state_status, client_state_protocol_change, design_doc, client_state_summary)
+    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary)
     if (status != "pass") {
       exit 1
     }

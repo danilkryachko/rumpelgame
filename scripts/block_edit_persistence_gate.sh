@@ -18,9 +18,12 @@ CLIENT_SOURCE="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_CLIENT_SOURCE:-"$ROOT_DIR/clien
 GAMEPLAY_SUMMARY="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_GAMEPLAY_SUMMARY:-"$ROOT_DIR/logs/gameplay_loop_foundation_current/gameplay-loop-foundation-summary.txt"}"
 RUNTIME_RELOAD_SMOKE_SCRIPT="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUNTIME_RELOAD_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_persisted_reload_smoke.sh"}"
 RUNTIME_RELOAD_SMOKE_SUMMARY="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUNTIME_RELOAD_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_persisted_reload_smoke_current/server-persisted-reload-smoke-summary.txt"}"
+PERSISTED_VISUAL_SMOKE_SCRIPT="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_PERSISTED_VISUAL_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/block_edit_persisted_visual_smoke.sh"}"
+PERSISTED_VISUAL_SMOKE_SUMMARY="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_PERSISTED_VISUAL_SMOKE_SUMMARY:-"$ROOT_DIR/logs/block_edit_persisted_visual_smoke_current/block-edit-persisted-visual-smoke-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_GO_TESTS:-1}"
 RUN_RUST_TESTS="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_RUST_TESTS:-1}"
 RUN_RUNTIME_RELOAD_SMOKE="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_RUNTIME_RELOAD_SMOKE:-0}"
+RUN_PERSISTED_VISUAL_SMOKE="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_PERSISTED_VISUAL_SMOKE:-0}"
 
 mkdir -p "$OUT_DIR"
 
@@ -55,7 +58,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$STORAGE_DOC" "$WORLD_SOURCE" "$WORLD_TEST" "$NETWORK_SOURCE" "$CLIENT_SOURCE" "$GAMEPLAY_SUMMARY" "$RUNTIME_RELOAD_SMOKE_SCRIPT"; do
+for path in "$DESIGN_DOC" "$STORAGE_DOC" "$WORLD_SOURCE" "$WORLD_TEST" "$NETWORK_SOURCE" "$CLIENT_SOURCE" "$GAMEPLAY_SUMMARY" "$RUNTIME_RELOAD_SMOKE_SCRIPT" "$PERSISTED_VISUAL_SMOKE_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -66,7 +69,7 @@ for token in \
   'Live Restart/Reload Smoke' \
   'Deferred Work' \
   'Compatibility Rules' \
-  'Runtime edit -> server restart/reopen -> client reload visual smoke' \
+  'Godot persisted visual smoke proves' \
   'Do not change the RocksDB key format'; do
   require_token "$DESIGN_DOC" "$token"
 done
@@ -88,6 +91,10 @@ require_token "$CLIENT_SOURCE" 'enqueue_dirty_chunk_subchunks'
 require_token "$CLIENT_SOURCE" 'process_collision_refresh_queue'
 require_token "$CLIENT_SOURCE" 'upload_gpu_subchunk'
 require_token "$RUNTIME_RELOAD_SMOKE_SCRIPT" 'server_persisted_reload_smoke status=pass'
+require_token "$PERSISTED_VISUAL_SMOKE_SCRIPT" 'block_edit_persisted_visual_smoke status=pass'
+require_token "$PERSISTED_VISUAL_SMOKE_SCRIPT" 'visual_collision_gpu_path=godot_persisted_reload_guarded'
+require_token "$PERSISTED_VISUAL_SMOKE_SCRIPT" 'destroy_after_reload'
+require_token "$PERSISTED_VISUAL_SMOKE_SCRIPT" 'edge_place'
 
 gameplay_status="$(field_metric status "$GAMEPLAY_SUMMARY")"
 gameplay_protocol_change="$(field_metric active_protocol_change "$GAMEPLAY_SUMMARY")"
@@ -104,11 +111,40 @@ case "$RUN_RUNTIME_RELOAD_SMOKE" in
     fail "unsupported RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_RUNTIME_RELOAD_SMOKE=$RUN_RUNTIME_RELOAD_SMOKE"
     ;;
 esac
+case "$RUN_PERSISTED_VISUAL_SMOKE" in
+  0) ;;
+  1)
+    persisted_visual_smoke_dir="$(dirname "$PERSISTED_VISUAL_SMOKE_SUMMARY")"
+    "$PERSISTED_VISUAL_SMOKE_SCRIPT" "$persisted_visual_smoke_dir" > "$OUT_DIR/persisted-visual-smoke-run.txt" 2>&1 || {
+      cat "$OUT_DIR/persisted-visual-smoke-run.txt" >&2 || true
+      fail "persisted visual smoke failed"
+    }
+    ;;
+  *)
+    fail "unsupported RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_PERSISTED_VISUAL_SMOKE=$RUN_PERSISTED_VISUAL_SMOKE"
+    ;;
+esac
 runtime_reload_smoke_status="deferred"
 runtime_reload_protocol_change="0"
 if [ -s "$RUNTIME_RELOAD_SMOKE_SUMMARY" ]; then
   runtime_reload_smoke_status="$(field_metric status "$RUNTIME_RELOAD_SMOKE_SUMMARY")"
   runtime_reload_protocol_change="$(field_metric protocol_change "$RUNTIME_RELOAD_SMOKE_SUMMARY")"
+fi
+persisted_visual_smoke_status="deferred"
+persisted_visual_protocol_change="0"
+persisted_visual_path="deferred"
+persisted_visual_scenarios="0"
+persisted_visual_place_reload_status="deferred"
+persisted_visual_destroy_after_reload_status="deferred"
+persisted_visual_edge_place_status="deferred"
+if [ -s "$PERSISTED_VISUAL_SMOKE_SUMMARY" ]; then
+  persisted_visual_smoke_status="$(field_metric status "$PERSISTED_VISUAL_SMOKE_SUMMARY")"
+  persisted_visual_protocol_change="$(field_metric protocol_change "$PERSISTED_VISUAL_SMOKE_SUMMARY")"
+  persisted_visual_path="$(field_metric visual_collision_gpu_path "$PERSISTED_VISUAL_SMOKE_SUMMARY")"
+  persisted_visual_scenarios="$(field_metric scenarios "$PERSISTED_VISUAL_SMOKE_SUMMARY")"
+  persisted_visual_place_reload_status="$(field_metric place_reload_status "$PERSISTED_VISUAL_SMOKE_SUMMARY")"
+  persisted_visual_destroy_after_reload_status="$(field_metric destroy_after_reload_status "$PERSISTED_VISUAL_SMOKE_SUMMARY")"
+  persisted_visual_edge_place_status="$(field_metric edge_place_status "$PERSISTED_VISUAL_SMOKE_SUMMARY")"
 fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
@@ -154,6 +190,14 @@ awk \
   -v runtime_reload_smoke_status="${runtime_reload_smoke_status:-deferred}" \
   -v runtime_reload_protocol_change="${runtime_reload_protocol_change:-0}" \
   -v runtime_reload_required="$RUN_RUNTIME_RELOAD_SMOKE" \
+  -v persisted_visual_smoke_status="${persisted_visual_smoke_status:-deferred}" \
+  -v persisted_visual_protocol_change="${persisted_visual_protocol_change:-0}" \
+  -v persisted_visual_path="${persisted_visual_path:-deferred}" \
+  -v persisted_visual_scenarios="${persisted_visual_scenarios:-0}" \
+  -v persisted_visual_place_reload_status="${persisted_visual_place_reload_status:-deferred}" \
+  -v persisted_visual_destroy_after_reload_status="${persisted_visual_destroy_after_reload_status:-deferred}" \
+  -v persisted_visual_edge_place_status="${persisted_visual_edge_place_status:-deferred}" \
+  -v persisted_visual_required="$RUN_PERSISTED_VISUAL_SMOKE" \
   -v proto_diff_count="$proto_diff_count" \
   -v world_reload_test="$world_reload_test" \
   -v storage_tests="$storage_tests" \
@@ -161,16 +205,25 @@ awk \
   -v dirty_update_tests="$dirty_update_tests" \
   -v design_doc="$DESIGN_DOC" \
   -v gameplay_summary="$GAMEPLAY_SUMMARY" \
-  -v runtime_reload_smoke_summary="$RUNTIME_RELOAD_SMOKE_SUMMARY" '
+  -v runtime_reload_smoke_summary="$RUNTIME_RELOAD_SMOKE_SUMMARY" \
+  -v persisted_visual_smoke_summary="$PERSISTED_VISUAL_SMOKE_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
     runtime_ok = runtime_reload_smoke_status == "pass" && runtime_reload_protocol_change + 0 == 0
+    persisted_visual_ok = persisted_visual_smoke_status == "pass" &&
+      persisted_visual_protocol_change + 0 == 0 &&
+      persisted_visual_path == "godot_persisted_reload_guarded" &&
+      persisted_visual_scenarios + 0 >= 3 &&
+      persisted_visual_place_reload_status == "pass" &&
+      persisted_visual_destroy_after_reload_status == "pass" &&
+      persisted_visual_edge_place_status == "pass"
     persistence_status = runtime_ok ? "runtime_guarded" : "unit_guarded"
     place_reload = runtime_ok ? "live_restart_guarded" : "guarded"
     destroy_reload = runtime_ok ? "live_restart_guarded" : "guarded"
     runtime_reload_smoke = runtime_ok ? "live_restart_guarded" : "deferred"
-    visual_collision_gpu_path = "existing_update_chunk_path"
+    persisted_visual_smoke = persisted_visual_ok ? "godot_guarded" : "deferred"
+    visual_collision_gpu_path = persisted_visual_ok ? "godot_persisted_reload_guarded" : "existing_update_chunk_path"
     active_protocol_change = proto_diff_count + 0
 
     gameplay_ok = gameplay_status == "pass" && gameplay_protocol_change + 0 == 0
@@ -188,6 +241,9 @@ awk \
     } else if (runtime_reload_required == "1" && !runtime_ok) {
       status = "fail"
       reason = "runtime_reload_smoke_failed"
+    } else if (persisted_visual_required == "1" && !persisted_visual_ok) {
+      status = "fail"
+      reason = "persisted_visual_smoke_failed"
     } else if (!go_ok) {
       status = "fail"
       reason = "go_persistence_tests_failed"
@@ -196,7 +252,7 @@ awk \
       reason = "dirty_update_tests_failed"
     }
 
-    printf("block_edit_persistence status=%s reason=%s persistence_status=%s place_reload=%s destroy_reload=%s runtime_reload_smoke=%s runtime_reload_smoke_status=%s visual_collision_gpu_path=%s active_protocol_change=%d world_reload_test=%s storage_tests=%s network_tests=%s dirty_update_tests=%s gameplay_status=%s gameplay_protocol_change=%d design_doc=%s gameplay_summary=%s runtime_reload_smoke_summary=%s\n", status, reason, persistence_status, place_reload, destroy_reload, runtime_reload_smoke, runtime_reload_smoke_status, visual_collision_gpu_path, active_protocol_change, world_reload_test, storage_tests, network_tests, dirty_update_tests, gameplay_status, gameplay_protocol_change, design_doc, gameplay_summary, runtime_reload_smoke_summary)
+    printf("block_edit_persistence status=%s reason=%s persistence_status=%s place_reload=%s destroy_reload=%s runtime_reload_smoke=%s runtime_reload_smoke_status=%s persisted_visual_smoke=%s persisted_visual_smoke_status=%s persisted_visual_scenarios=%d persisted_visual_place_reload_status=%s persisted_visual_destroy_after_reload_status=%s persisted_visual_edge_place_status=%s visual_collision_gpu_path=%s active_protocol_change=%d world_reload_test=%s storage_tests=%s network_tests=%s dirty_update_tests=%s gameplay_status=%s gameplay_protocol_change=%d design_doc=%s gameplay_summary=%s runtime_reload_smoke_summary=%s persisted_visual_smoke_summary=%s\n", status, reason, persistence_status, place_reload, destroy_reload, runtime_reload_smoke, runtime_reload_smoke_status, persisted_visual_smoke, persisted_visual_smoke_status, persisted_visual_scenarios, persisted_visual_place_reload_status, persisted_visual_destroy_after_reload_status, persisted_visual_edge_place_status, visual_collision_gpu_path, active_protocol_change, world_reload_test, storage_tests, network_tests, dirty_update_tests, gameplay_status, gameplay_protocol_change, design_doc, gameplay_summary, runtime_reload_smoke_summary, persisted_visual_smoke_summary)
     if (status != "pass") {
       exit 1
     }

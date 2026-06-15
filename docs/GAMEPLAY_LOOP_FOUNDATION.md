@@ -83,7 +83,7 @@ The gameplay foundation relies on the existing server boundary:
 - `BlockAction_PLACE` and `BlockAction_DESTROY` both flow through `World.SetBlockGlobal`.
 - `World.SetBlockGlobal` persists the edited chunk only when `World` was created with a `ChunkStore`.
 - `server/cmd/server/main.go` creates the default server with `storage.OpenRocksChunkStore`, so normal server runs are persistence-capable.
-- Block 40 does not prove save -> process restart -> reload -> visual/collision/GPU update. That is Block 41.
+- Block 40 does not own save -> process restart -> reload -> visual/collision/GPU update proof. That evidence is collected by Block 41.
 
 ## Deferred Work
 
@@ -94,7 +94,7 @@ Still needed before calling gameplay production-ready:
 - Tool/durability/mining-time rules.
 - Drops and pickup flow.
 - Edit broadcast/fanout to other clients.
-- Dirty chunk save/reload visual smoke from Block 41.
+- Broader dirty chunk save/reload coverage beyond the Block 41 persisted visual smoke.
 - Mass edit, chunk edge, collision, and GPU dirty scalability from Block 42.
 
 ## Compatibility Rules
@@ -114,7 +114,7 @@ Use:
 sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, and `full_reload_persistence=deferred`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `server_edit_persistence=store_save_boundary`, and `active_protocol_change=0`. If the Block 41 persisted visual summary is present, the gate also reports `full_reload_persistence=block_41_visual_guarded`; otherwise it remains `full_reload_persistence=deferred`.
 
 The gate checks that:
 
@@ -128,4 +128,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint. Full dirty chunk save/reload and visual/collision/GPU verification remain Block 41 work.
+This block is complete as a gameplay foundation checkpoint. Full dirty chunk save/reload and visual/collision/GPU proof is owned by Block 41, with broader gameplay systems still deferred.

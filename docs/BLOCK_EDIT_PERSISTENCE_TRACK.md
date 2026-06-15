@@ -30,8 +30,7 @@ Scope:
 - Add a world-level unit test proving `SetBlockGlobal` persists an edited chunk through the configured `ChunkStore`.
 - In the same test, prove a new `World(store)` reloads the placed block, then reloads the destroyed block after a follow-up edit.
 - Add a live server restart/reload smoke that reuses one RocksDB path across separate server processes.
-- Record the current client visual/collision/GPU update path for reloaded edited chunks.
-- Keep dedicated Godot visual reload smoke deferred unless a separate heavy run is requested.
+- Add a dedicated Godot visual reload smoke matrix that proves placed, destroyed-after-reload, and chunk-edge persisted edits through server restart, then validates the restarted server's bootstrap chunk through screenshot, collision, and GPU markers.
 
 Out of scope:
 
@@ -43,16 +42,17 @@ Assumptions:
 - `ChunkStore.SaveChunk` persists the exact `Chunk.Serialize()` bytes.
 - Reloading a dirty edit through `World.ChunkSnapshot` sends the same full chunk snapshot path used for generated chunks.
 - The Rust client already treats edited/reloaded snapshots as chunk replacements and runs the existing dirty update, mesh, collision, and GPU queue path.
-- Full visual verification still requires a Godot smoke that restarts or reopens server state after the edit.
+- The server-side persisted reload smoke proves the exact block value; the Godot persisted visual smoke matrix proves the reloaded chunk reaches the visual/collision/GPU path after process restart for place, destroy-after-reload, and chunk-edge edits.
 
 Done when:
 
 - Unit evidence proves place and destroy edits survive a new `World(store)` load.
-- A block-edit persistence gate runs focused world/storage/network/Rust update-path checks and records live restart/reload smoke status.
+- A block-edit persistence gate runs focused world/storage/network/Rust update-path checks and records live restart/reload plus persisted visual smoke status.
 
 Checks:
 
 - `sh scripts/block_edit_persistence_gate.sh logs/block_edit_persistence_current`
+- `RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_PERSISTED_VISUAL_SMOKE=1 sh scripts/block_edit_persistence_gate.sh logs/block_edit_persistence_current`
 
 ## Persistence Contract
 
@@ -98,19 +98,20 @@ The current client update path for any edited or reloaded chunk snapshot is:
 - Collision refresh and GPU upload are driven by the normal mesh queue and collision refresh queue.
 - `scripts/gpu_terrain_block_edit_stress.sh` is the current runtime smoke wrapper for same-session visual dirty update, collision, and GPU upload markers.
 - `scripts/server_persisted_reload_smoke.sh` verifies that a restarted server sends the persisted edited chunk through the normal snapshot path.
+- `scripts/block_edit_persisted_visual_smoke.sh` starts isolated servers on the Godot client's fixed local port and runs `place_reload`, `destroy_after_reload`, and `edge_place` scenarios through `server/cmd/persisted_reload_smoke`, restart/reopen verification, and Godot visual smoke.
+- The persisted visual smoke requires `current_chunk_loaded>=1`, `current_chunk_submeshes>=1`, `current_chunk_collision>=1`, `terrain_samples>=1`, `gpu_frames>=1`, `gpu_uploads>=1`, and zero GPU upload failures.
 
-Block 41 now has live server restart/reload evidence. A dedicated restart/reload Godot visual smoke remains a heavier future gate if visual parity after process restart needs direct screenshot evidence.
+Block 41 now has both live server restart/reload evidence and a heavier Godot persisted-reload screenshot matrix. The Godot smoke intentionally uses the existing full snapshot path and does not add client-side block-id inspection or protocol fields.
 
 ## Deferred Work
 
 Still needed:
 
-- Runtime edit -> server restart/reopen -> client reload visual smoke with screenshot evidence.
-- Collision and GPU marker assertions after an actual Godot persisted reload, not just same-session replacement.
 - Multi-client edit fanout/broadcast.
 - Dirty chunk save batching or async save policy.
 - Delta packet or subchunk edit packet design, if full chunk snapshots become too expensive.
 - Corrupt edit recovery and malicious edit boundary tests.
+- Cross-chunk or non-current-chunk persisted visual coverage beyond the current bootstrap chunk.
 
 ## Compatibility Rules
 
@@ -129,7 +130,7 @@ Use:
 sh scripts/block_edit_persistence_gate.sh logs/block_edit_persistence_current
 ```
 
-The expected current result after collecting the live artifact is `status=pass`, `persistence_status=runtime_guarded`, `place_reload=live_restart_guarded`, `destroy_reload=live_restart_guarded`, `runtime_reload_smoke=live_restart_guarded`, `runtime_reload_smoke_status=pass`, `visual_collision_gpu_path=existing_update_chunk_path`, and `active_protocol_change=0`.
+The expected current result after collecting the live and persisted visual artifacts is `status=pass`, `persistence_status=runtime_guarded`, `place_reload=live_restart_guarded`, `destroy_reload=live_restart_guarded`, `runtime_reload_smoke=live_restart_guarded`, `runtime_reload_smoke_status=pass`, `persisted_visual_smoke=godot_guarded`, `persisted_visual_smoke_status=pass`, `persisted_visual_scenarios=3`, `persisted_visual_place_reload_status=pass`, `persisted_visual_destroy_after_reload_status=pass`, `persisted_visual_edge_place_status=pass`, `visual_collision_gpu_path=godot_persisted_reload_guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -138,10 +139,13 @@ The gate checks that:
 - `World.SetBlockGlobal` still saves through `ChunkStore.SaveChunk`.
 - The client still runs edited snapshots through `update_chunk` dirty/collision/GPU queues.
 - The live server restart/reload smoke passes, when `RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_RUNTIME_RELOAD_SMOKE=1` is enabled or a current summary exists.
+- The persisted visual smoke passes, when `RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_PERSISTED_VISUAL_SMOKE=1` is enabled or a current summary exists.
 - The gameplay foundation gate is clean.
 - Focused world, storage, network, and Rust dirty-update tests pass.
 - Protocol schema/generated files are unchanged.
 
 ## Current Status
 
-This block is complete as a fast persistence proof plus live server restart/reload proof. Dedicated Godot persisted-reload visual/collision/GPU screenshot evidence remains future work.
+This block is complete as a fast persistence proof, live server restart/reload proof, and dedicated Godot persisted-reload visual/collision/GPU screenshot matrix for place, destroy-after-reload, and chunk-edge coordinates. Cross-chunk/non-current-chunk visual coverage remains future work.
+
+Fresh `logs/block_edit_persisted_visual_smoke_current/block-edit-persisted-visual-smoke-summary.txt` evidence reports `status=pass`, `scenarios=3`, `place_reload_status=pass`, `destroy_after_reload_status=pass`, `edge_place_status=pass`, and `protocol_change=0`. Scenario details: `place_reload` reloaded block `1,64,1` as id `4` with `current_chunk_collision=3`, `terrain_samples=288`, `gpu_frames=123`, `gpu_uploads=637`, and `gpu_upload_fail=0`; `destroy_after_reload` reloaded the same coordinate as `Air` with `current_chunk_collision=2`, `gpu_frames=414`, `gpu_uploads=385`, and `gpu_upload_fail=0`; `edge_place` reloaded block `31,64,31` as id `4` with `current_chunk_collision=3`, `gpu_frames=420`, `gpu_uploads=387`, and `gpu_upload_fail=0`.
