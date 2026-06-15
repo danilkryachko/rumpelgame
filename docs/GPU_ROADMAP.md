@@ -62,6 +62,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 38. Add runtime warning for high fragmentation.
 39. Done 2026-06-14: designed safe GPU terrain buffer repack behind explicit rollback flag in `docs/GPU_BUFFER_REPACK.md`.
 40. Done 2026-06-14: added default-off GPU buffer repack prototype foundation behind `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK=1`, with marker-only telemetry, source mirror, payload preview, explicit one-shot temporary replacement-buffer upload/binding preview, draw-command remap preview, all-or-nothing staged swap guard, disabled commit-point proof, disabled apply scaffold, disabled final-swap guard, report aggregation, and pure planner/payload/draw/staged/commit/apply/final-guard tests; no active render binding, indirect-buffer swap, slot mutation, or allocator mutation yet.
+41. Done 2026-06-15: added `scripts/gpu_terrain_memory_budget.sh` and `docs/GPU_TERRAIN_MEMORY_BUDGETING.md` as a summary-only budget gate for configured terrain buffers, active face bytes, subchunks, draws, faces, draw-command occupancy/headroom, fragmentation, free ranges, and upload failures.
 
 ## Phase 5: Upload Pipeline
 

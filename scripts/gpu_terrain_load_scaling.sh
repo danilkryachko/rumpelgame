@@ -1,0 +1,105 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+OUT_DIR="${1:-"$ROOT_DIR/logs/gpu_terrain_load_scaling"}"
+case "$OUT_DIR" in
+  /*) ;;
+  *) OUT_DIR="$ROOT_DIR/$OUT_DIR" ;;
+esac
+
+SUMMARY_PATH="$OUT_DIR/gpu-terrain-load-scaling-summary.txt"
+SOURCE_SUMMARY="${RUMPELMC_GPU_LOAD_SCALING_SOURCE_SUMMARY:-}"
+MIN_GPU_SUBCHUNKS="${RUMPELMC_GPU_LOAD_SCALING_MIN_GPU_SUBCHUNKS:-2000}"
+MIN_GPU_DRAWS="${RUMPELMC_GPU_LOAD_SCALING_MIN_GPU_DRAWS:-2000}"
+MIN_GPU_FACES="${RUMPELMC_GPU_LOAD_SCALING_MIN_GPU_FACES:-3000}"
+MIN_DRAW_CMD_OCCUPANCY_PCT="${RUMPELMC_GPU_LOAD_SCALING_MIN_DRAW_CMD_OCCUPANCY_PCT:-25.0}"
+
+mkdir -p "$OUT_DIR"
+
+fail() {
+  echo "gpu_terrain_load_scaling: $*" >&2
+  exit 1
+}
+
+field_metric() {
+  key="$1"
+  path="$2"
+  awk -v key="$key" '
+    {
+      prefix = key "="
+      for (i = 1; i <= NF; i++) {
+        if (index($i, prefix) == 1) {
+          value = substr($i, length(prefix) + 1)
+          gsub(/^"/, "", value)
+          gsub(/"$/, "", value)
+          print value
+          exit
+        }
+      }
+    }
+  ' "$path"
+}
+
+if [ -z "$SOURCE_SUMMARY" ]; then
+  resident_dir="$OUT_DIR/resident-set-growth"
+  RUMPELMC_RESIDENT_SET_MIN_GPU_DRAWS="$MIN_GPU_DRAWS" \
+    /bin/sh "$ROOT_DIR/scripts/world_streaming_resident_set_growth.sh" "$resident_dir"
+  SOURCE_SUMMARY="$resident_dir/resident-set-growth-summary.txt"
+fi
+
+test -s "$SOURCE_SUMMARY" || fail "missing resident-set summary $SOURCE_SUMMARY"
+
+status="$(field_metric status "$SOURCE_SUMMARY")"
+max_subchunks="$(field_metric max_gpu_subchunks "$SOURCE_SUMMARY")"
+max_draws="$(field_metric max_gpu_draws "$SOURCE_SUMMARY")"
+max_faces="$(field_metric max_gpu_faces "$SOURCE_SUMMARY")"
+draw_cmd_bytes="$(field_metric max_gpu_draw_cmd_bytes "$SOURCE_SUMMARY")"
+draw_cmd_capacity_bytes="$(field_metric max_gpu_draw_cmd_capacity_bytes "$SOURCE_SUMMARY")"
+terrain_queue_max="$(field_metric max_terrain_queue_ms "$SOURCE_SUMMARY")"
+process_wall_p95="$(field_metric max_process_wall_p95_ms "$SOURCE_SUMMARY")"
+gpu_submit_max="$(field_metric max_gpu_compositor_submit_ms "$SOURCE_SUMMARY")"
+gpu_upload_fail="$(field_metric gpu_upload_fail "$SOURCE_SUMMARY")"
+gpu_upload_fail_capacity="$(field_metric gpu_upload_fail_capacity "$SOURCE_SUMMARY")"
+gpu_upload_fail_fragmented="$(field_metric gpu_upload_fail_fragmented "$SOURCE_SUMMARY")"
+
+awk \
+  -v status="${status:-fail}" \
+  -v max_subchunks="${max_subchunks:-0}" \
+  -v max_draws="${max_draws:-0}" \
+  -v max_faces="${max_faces:-0}" \
+  -v draw_cmd_bytes="${draw_cmd_bytes:-0}" \
+  -v draw_cmd_capacity_bytes="${draw_cmd_capacity_bytes:-0}" \
+  -v terrain_queue_max="${terrain_queue_max:-0}" \
+  -v process_wall_p95="${process_wall_p95:-0}" \
+  -v gpu_submit_max="${gpu_submit_max:-0}" \
+  -v gpu_upload_fail="${gpu_upload_fail:-0}" \
+  -v gpu_upload_fail_capacity="${gpu_upload_fail_capacity:-0}" \
+  -v gpu_upload_fail_fragmented="${gpu_upload_fail_fragmented:-0}" \
+  -v min_subchunks="$MIN_GPU_SUBCHUNKS" \
+  -v min_draws="$MIN_GPU_DRAWS" \
+  -v min_faces="$MIN_GPU_FACES" \
+  -v min_occupancy="$MIN_DRAW_CMD_OCCUPANCY_PCT" \
+  -v source_summary="$SOURCE_SUMMARY" '
+  BEGIN {
+    occupancy = 0.0
+    headroom = draw_cmd_capacity_bytes - draw_cmd_bytes
+    if (draw_cmd_capacity_bytes > 0) {
+      occupancy = (draw_cmd_bytes / draw_cmd_capacity_bytes) * 100.0
+    }
+    gate_status = "pass"
+    if (status != "pass" || max_subchunks < min_subchunks || max_draws < min_draws || max_faces < min_faces || occupancy < min_occupancy || gpu_upload_fail > 0 || gpu_upload_fail_capacity > 0 || gpu_upload_fail_fragmented > 0) {
+      gate_status = "fail"
+    }
+    printf("gpu_terrain_load_scaling status=%s source_status=%s min_gpu_subchunks=%d min_gpu_draws=%d min_gpu_faces=%d min_draw_cmd_occupancy_pct=%.1f max_gpu_subchunks=%d max_gpu_draws=%d max_gpu_faces=%d max_gpu_draw_cmd_bytes=%d max_gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_occupancy_pct=%.3f gpu_draw_cmd_headroom_bytes=%d max_terrain_queue_ms=%.3f max_process_wall_p95_ms=%.3f max_gpu_compositor_submit_ms=%.3f gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d source_summary=%s\n", gate_status, status, min_subchunks, min_draws, min_faces, min_occupancy, max_subchunks, max_draws, max_faces, draw_cmd_bytes, draw_cmd_capacity_bytes, occupancy, headroom, terrain_queue_max, process_wall_p95, gpu_submit_max, gpu_upload_fail, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, source_summary)
+    if (gate_status != "pass") {
+      exit 1
+    }
+  }
+' > "$SUMMARY_PATH" || {
+  cat "$SUMMARY_PATH" >&2 || true
+  fail "GPU terrain load scaling gate failed"
+}
+
+cat "$SUMMARY_PATH"
+echo "GPU terrain load scaling artifacts: $OUT_DIR"

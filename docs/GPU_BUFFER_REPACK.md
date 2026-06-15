@@ -145,6 +145,12 @@ The current replacement-upload, binding-preview, draw-remap-preview, staged-guar
 
 `scripts/gpu_terrain_report.sh` aggregates the numeric `gpu_repack_*` fields, including source readiness, payload-preview, upload-preview, binding-preview, draw-remap-preview, staged-guard, and commit-proof counters, and reports the latest `gpu_repack_failure_reason`.
 
+## Activation Preflight
+
+Active repack remains deferred as of 2026-06-15. `scripts/gpu_repack_activation_preflight.sh` reads upload-pressure and load-scaling summaries and reports `active_repack_allowed=0` while there is no upload failure or fragmentation pressure. The current preflight artifact is `logs/gpu_repack_activation_preflight_current/gpu-repack-activation-preflight-summary.txt` with `status=deferred`, `reason=no_fragmentation_pressure`, and `max_gpu_fragmentation_pct=0.0`.
+
+`scripts/gpu_repack_soak_rollback_gate.sh` records the matching soak/rollback decision. The current artifact is `logs/gpu_repack_soak_rollback_gate_current/gpu-repack-soak-rollback-summary.txt` with `status=deferred` and `active_soak_run=0`; it is not active-repack runtime validation.
+
 ## Next Implementation Slice
 
-The next slice should add disabled final-swap abort bookkeeping for the guarded path, still without replacing active RenderingDevice RIDs, slot-map state, indirect buffers, or allocator state. The final RenderingDevice buffer swap must stay disabled until upload, swap, telemetry, and abort paths are covered by tests.
+The next code slice should remain disabled unless preflight evidence changes. Do not replace active RenderingDevice RIDs, slot-map state, indirect buffers, or allocator state while `active_repack_allowed=0`.

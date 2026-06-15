@@ -162,3 +162,33 @@ The current code slice is telemetry/test scaffolding, not a renderer rewrite:
 - The native-shadow resource descriptor now records future depth/clip labels as `native_shadow_depth_clip_space=zero_to_one`, `native_shadow_depth_range_source=scene_shadow_radius`, `native_shadow_depth_near_milli=100`, and `native_shadow_depth_far_chunks=<shadow_radius_chunks>` for active descriptor tests; disabled resources report `none/none/0/0` and still do not upload depth ranges, bind light matrices, compile shaders, allocate shader/pass/RID/draw resources, or run a native shadow pass while `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`.
 
 The next implementation slice can keep measuring the current compact proxy path with an external profiler, or start a tiny renderer proof only after the fallback and parity gates above are kept intact.
+
+## Block 26 Preflight
+
+Block 26, Native Shadow Rendering Prototype, is currently deferred by a local preflight instead of changing renderer behavior. Use:
+
+```sh
+sh scripts/gpu_native_shadow_prototype_preflight.sh logs/gpu_native_shadow_prototype_preflight_current
+```
+
+Fresh evidence in `logs/gpu_native_shadow_prototype_preflight_current/gpu-native-shadow-prototype-preflight-summary.txt` reports `status=deferred`, `active_prototype_allowed=0`, and `reason=implementation_gate_false`. The checked fallback row still has `requested=1`, `active=0`, `fallback=1`, `implemented=0`, `resource_status=disabled`, zero lifecycle counters, zero coverage counters, clean resource lifecycle status, and a passing performance baseline.
+
+## Block 27 Parity
+
+Block 27, Shadow Quality Parity Program, now has a summary-only gate:
+
+```sh
+sh scripts/shadow_quality_parity_program.sh logs/shadow_quality_parity_program_current
+```
+
+Fresh evidence in `logs/shadow_quality_parity_program_current/shadow-quality-parity-summary.txt` reports `status=pass` for the current Godot proxy/native-shadow fallback parity program and `active_native_comparison=deferred` because the implementation gate remains false. The native fallback visual delta is `0.0000`, lighting/shadow deltas remain within the existing parity thresholds, and the external profiler pack remains `pending_external_profiler`.
+
+## Block 28 Retirement
+
+Block 28, Shadow Proxy Retirement Plan, now has a guard:
+
+```sh
+sh scripts/shadow_proxy_retirement_plan.sh logs/shadow_proxy_retirement_plan_current
+```
+
+Fresh evidence in `logs/shadow_proxy_retirement_plan_current/shadow-proxy-retirement-summary.txt` reports `status=deferred`, `retirement_allowed=0`, and `reason=native_shadow_not_active`. Current proxy evidence remains useful (`max_compact_shadow_proxy=201`, `max_compact_shadow_normals_saved=3932`), but CPU shadow-only proxies must stay until active native-shadow captures, validated external profiler results, and `godot_proxy` rollback evidence exist.

@@ -206,6 +206,46 @@ The current code slice is telemetry/test scaffolding, not blended rendering:
 - Existing tests still lock the current opaque-only block and fragment-alpha contracts.
 - No transparent face buffer, alpha blending, sort policy, shader alpha path, Godot transparent material, block ID, atlas asset, or protocol behavior is implemented.
 
+## Block 30 Active Path Preflight
+
+Block 30, Transparent Terrain Active Path, is currently deferred by a local active-path preflight instead of changing renderer behavior. Use:
+
+```sh
+sh scripts/transparent_active_path_preflight.sh logs/transparent_active_path_preflight_current
+```
+
+Fresh evidence in `logs/transparent_active_path_preflight_current/transparent-active-path-preflight-summary.txt` reports `status=deferred`, `active_path_allowed=0`, and `reason=implementation_gate_false`. The fixture pack, scene smoke, default-off, and final-report guards are clean, but runtime workload markers remain `transparent_blocks=0`, `transparent_faces=0`, `transparent_draws=0`, and `transparent_subchunks=0`.
+
+## Block 31 Sorting And Depth
+
+Block 31, Transparent Sorting And Depth Program, now has a policy gate:
+
+```sh
+sh scripts/transparent_sorting_depth_program.sh logs/transparent_sorting_depth_program_current
+```
+
+Fresh evidence in `logs/transparent_sorting_depth_program_current/transparent-sorting-depth-summary.txt` reports `status=deferred`, `sort_depth_active_allowed=0`, and `reason=active_transparent_not_available`. The first proposed policy is chunk/subchunk back-to-front sorting after opaque depth, with active fixture gates for opaque occlusion, collision solidity, and same-material transparent seams before any runtime path can be enabled.
+
+## Block 32 Acceptance Suite
+
+Block 32, Transparent Fixture Acceptance Suite, now has a consolidated gate:
+
+```sh
+sh scripts/transparent_fixture_acceptance_suite.sh logs/transparent_fixture_acceptance_suite_current
+```
+
+Fresh evidence in `logs/transparent_fixture_acceptance_suite_current/transparent-fixture-acceptance-suite-summary.txt` reports `status=pass`, `current_fallback_acceptance=pass`, and `active_fixture_acceptance=deferred`. It validates the fixture pack, runtime scene smoke, active-path preflight, sorting/depth program, default-off guard, and final-report guard together while keeping transparent workload markers at zero.
+
+## Block 33 Material Metadata
+
+Block 33, Block Material Metadata Design, is captured in `docs/BLOCK_MATERIAL_METADATA_DESIGN.md` and checked by:
+
+```sh
+sh scripts/block_material_metadata_design_gate.sh logs/block_material_metadata_design_current
+```
+
+The current expected result is `status=pass`, `production_metadata_status=designed`, `active_schema_change=0`, and `current_runtime_contract=opaque_only`. Production transparent, liquid, emissive, collision, and render metadata remains registry design work until a separate migration slice updates both client and server block definitions without changing chunk wire/storage payloads.
+
 ## Fixture Scene Implementation Plan
 
 The next implementation step should stop extending the no-render guard chain and move to an env-driven fixture scene harness. The current Godot project has a minimal scene structure (`client/main.tscn` plus `client/main.gd`), and visual smoke behavior is already controlled through environment variables, so the first fixture harness should avoid hand-editing new `.tscn` resources unless a later slice proves it is necessary.

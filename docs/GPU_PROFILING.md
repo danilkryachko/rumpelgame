@@ -97,6 +97,78 @@ Use the allocator stress gate after a movement/workload/fill artifact has been c
 ./scripts/gpu_terrain_allocator_stress_gate.sh logs/week2_gpu_allocator_telemetry_20260614
 ```
 
+Use the upload-pressure wrapper when a task needs fill stress and allocator validation in one artifact:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release ./scripts/gpu_terrain_upload_pressure.sh logs/gpu_terrain_upload_pressure
+```
+
+The wrapper writes `gpu-upload-pressure-summary.txt`; see `docs/GPU_UPLOAD_PRESSURE.md`.
+
+Use the resource lifecycle audit after upload-pressure, renderer resource ownership, atlas/uniform, native-shadow, repack upload, or shutdown cleanup work. It refreshes a scoped GPU report and fails on dirty error scans, upload failures, unexpected scene-target replacement, missing default terrain resources, or native-shadow resource error counters:
+
+```sh
+sh scripts/gpu_resource_lifecycle_audit.sh logs/gpu_terrain_upload_pressure_smoke
+```
+
+The gate writes `gpu-resource-lifecycle-audit-summary.txt`; see `docs/RENDERINGDEVICE_RESOURCE_LIFECYCLE_AUDIT.md`.
+
+Use the memory budget gate when a task needs explicit resident-memory, draw-command, face, subchunk, and fragmentation limits from existing artifacts:
+
+```sh
+sh scripts/gpu_terrain_memory_budget.sh logs/gpu_terrain_memory_budget_current
+```
+
+The gate writes `gpu-terrain-memory-budget-summary.txt`; see `docs/GPU_TERRAIN_MEMORY_BUDGETING.md`.
+
+Use the V2 report wrapper when a task needs report consumers to distinguish one scoped summary, fail gates, historical aggregate maxima, and warning-only local signals:
+
+```sh
+sh scripts/gpu_terrain_report_v2.sh logs/gpu_terrain_upload_pressure_smoke logs/gpu_terrain_report_v2_current
+```
+
+The wrapper writes `gpu-terrain-report-v2-summary.txt` and `gpu-terrain-report-v2.txt`; see `docs/GPU_REPORT_SYSTEM_V2.md`.
+
+Use performance baseline governance after V2 reports when a task needs accepted baseline comparison, threshold policy, and a controlled update flow:
+
+```sh
+sh scripts/performance_baseline_governance.sh
+```
+
+The check writes `performance-baseline-governance-summary.txt`; see `docs/PERFORMANCE_BASELINE_GOVERNANCE.md`.
+
+Use native-shadow prototype preflight before any task tries to move from marker/descriptor scaffolding to a real RenderingDevice shadow pass. It requires clean env-on Godot-proxy fallback markers, clean resource lifecycle, and a passing performance baseline. While `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`, the expected result is deferred:
+
+```sh
+sh scripts/gpu_native_shadow_prototype_preflight.sh logs/gpu_native_shadow_prototype_preflight_current
+```
+
+The gate writes `gpu-native-shadow-prototype-preflight-summary.txt`; see `docs/NATIVE_SHADOW_PROTOTYPE_PREFLIGHT.md`.
+
+Use shadow quality parity after native-shadow preflight when a task needs one current summary for Godot proxy, native-shadow fallback parity, shadow-radius proxy counters, pending external profiler state, and report-only FPS fields:
+
+```sh
+sh scripts/shadow_quality_parity_program.sh logs/shadow_quality_parity_program_current
+```
+
+The gate writes `shadow-quality-parity-summary.txt`; see `docs/SHADOW_QUALITY_PARITY_PROGRAM.md`.
+
+Use shadow proxy retirement planning before removing or reducing CPU shadow-only mesh proxies. The current expected status is deferred until active native-shadow rendering and external profiler evidence exist:
+
+```sh
+sh scripts/shadow_proxy_retirement_plan.sh logs/shadow_proxy_retirement_plan_current
+```
+
+The gate writes `shadow-proxy-retirement-summary.txt`; see `docs/SHADOW_PROXY_RETIREMENT_PLAN.md`.
+
+Use the lighting stability matrix before changing directional light extraction, lighting push constants, shadow lighting poses, or default lighting behavior:
+
+```sh
+sh scripts/lighting_stability_matrix.sh logs/lighting_stability_matrix_current
+```
+
+The gate writes `lighting-stability-matrix-summary.txt`; see `docs/LIGHTING_STABILITY_MATRIX.md`.
+
 GPU terrain buffer repack work is documented in `docs/GPU_BUFFER_REPACK.md`. Repack is default-off behind `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK=1`; unset or `0` must keep the current allocator path, and the allocator stress gate remains required before and after any prototype run. The current prototype is marker-only: env-on records `gpu_repack_requested=1`, keeps `gpu_repack_active=0`, and reports `gpu_repack_failure_reason=marker_only` while previewing the deterministic compaction plan. Env-on also stores CPU-owned resident packed-face source bytes and reports `gpu_repack_source_subchunks`, `gpu_repack_source_bytes`, and `gpu_repack_source_missing`; any missing resident source should keep real buffer replacement disabled. Replacement upload, binding, draw-remap, staged-guard, commit-proof, apply-scaffold, and final-swap-guard preview reports `gpu_repack_payload_ready`, `gpu_repack_payload_bytes`, `gpu_repack_upload_ready`, `gpu_repack_upload_bytes`, `gpu_repack_upload_ms`, `gpu_repack_bind_ready`, `gpu_repack_bind_ms`, `gpu_repack_draw_ready`, `gpu_repack_draw_bytes`, `gpu_repack_stage_ready`, `gpu_repack_stage_slots`, `gpu_repack_stage_bytes`, `gpu_repack_commit_ready`, `gpu_repack_commit_steps`, `gpu_repack_commit_tail_free`, `gpu_repack_apply_ready`, `gpu_repack_apply_steps`, `gpu_repack_apply_slots`, `gpu_repack_final_swap_ready`, `gpu_repack_final_swap_blocked`, and `gpu_repack_final_swap_slots`; with `RUMPELMC_GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW=1`, it takes one sample upload to a temporary replacement storage buffer, validates a temporary uniform set against the existing shader/atlas resources, builds replacement indirect draw command bytes and a deterministic replacement slot map for compacted slot offsets, validates the disabled commit ordering and allocator tail rebuild, proves the disabled apply bookkeeping from the same staged data, records that final swap remains blocked, and immediately frees temporary GPU resources without swapping active render bindings or slot state.
 
 Use workload matrix to compare movement and resident-load cases:
@@ -106,6 +178,14 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
 RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 ./scripts/gpu_terrain_workload_matrix.sh logs/gpu_terrain_profile_matrix
 ```
+
+Use the load-scaling gate when a task needs a high resident set rather than the standard workload:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release ./scripts/gpu_terrain_load_scaling.sh logs/gpu_terrain_load_scaling
+```
+
+The gate requires thousands of subchunks/draws/faces and nontrivial draw-command occupancy; see `docs/GPU_TERRAIN_LOAD_SCALING.md`.
 
 Use the compact proxy benchmark for focused shadow-proxy measurements. It writes `compact-proxy-benchmark-summary.txt` and, in capture mode, requires a free local `25565` server port:
 
@@ -182,6 +262,46 @@ The current production GPU terrain shadow path is still Godot CPU shadow proxies
 ## Transparent Path Design
 
 The current production GPU terrain path is opaque-only. `docs/GPU_TRANSPARENT_PATH.md` records the Phase 12 design for a future transparent terrain path. A future transparent path must keep the current opaque pass as the default rollback, separate render opacity from collision solidity, report requested/active/fallback transparent markers, and pass visual/depth/collision parity plus external profiler evidence before becoming default.
+
+Use transparent active path preflight before adding a real transparent face buffer, shader alpha path, sort policy, or active fixture workload:
+
+```sh
+sh scripts/transparent_active_path_preflight.sh logs/transparent_active_path_preflight_current
+```
+
+The gate writes `transparent-active-path-preflight-summary.txt`; see `docs/TRANSPARENT_ACTIVE_PATH_PREFLIGHT.md`.
+
+Use transparent sorting/depth program before enabling a transparent pass or accepting nonzero transparent workload markers:
+
+```sh
+sh scripts/transparent_sorting_depth_program.sh logs/transparent_sorting_depth_program_current
+```
+
+The gate writes `transparent-sorting-depth-summary.txt`; see `docs/TRANSPARENT_SORTING_DEPTH_PROGRAM.md`.
+
+Use transparent fixture acceptance suite to consolidate the fixture pack, runtime scene smoke, active-path preflight, sorting/depth program, default-off guard, and report guard:
+
+```sh
+sh scripts/transparent_fixture_acceptance_suite.sh logs/transparent_fixture_acceptance_suite_current
+```
+
+The gate writes `transparent-fixture-acceptance-suite-summary.txt`; see `docs/TRANSPARENT_FIXTURE_ACCEPTANCE_SUITE.md`.
+
+Use the external profiling campaign gate before citing cross-platform GPU profiler state:
+
+```sh
+sh scripts/external_profiling_campaign_gate.sh logs/external_profiling_campaign_current
+```
+
+The gate writes `external-profiling-campaign-summary.txt`; see `docs/EXTERNAL_PROFILING_CAMPAIGN.md`. The current expected result is `pass` with `external_profile_status=pending_external_profiler` until real Xcode/Metal, Windows, or Linux/Vulkan profiler artifacts are captured and validated.
+
+Use the texture atlas evolution gate before changing atlas metadata, atlas assets, or shader atlas layout:
+
+```sh
+sh scripts/texture_atlas_evolution_gate.sh logs/texture_atlas_evolution_current
+```
+
+The gate writes `texture-atlas-evolution-summary.txt`; see `docs/TEXTURE_ATLAS_EVOLUTION_TRACK.md`. The current expected result is `pass` with no atlas asset diff, no shader layout change, `64px` tiles, a `10x1` atlas, and packed tile capacity `2048`.
 
 ## Recording Results
 
