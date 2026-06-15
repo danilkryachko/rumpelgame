@@ -17,6 +17,8 @@ SERVER_LOG="$OUT_DIR/server.log"
 CLIENT_LOG="$OUT_DIR/client.log"
 SUMMARY_PATH="$OUT_DIR/server-multi-client-smoke-summary.txt"
 BUILD_SERVER="${RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_BUILD_SERVER:-1}"
+CLIENTS="${RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS:-2}"
+CLIENT_TIMEOUT="${RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_TIMEOUT:-5s}"
 SERVER_PID=""
 
 mkdir -p "$OUT_DIR"
@@ -113,7 +115,7 @@ wait_for_server
 set +e
 (
   cd "$SERVER_DIR"
-  go run ./cmd/multi_client_smoke -addr "$SMOKE_ADDR" -timeout 3s
+  go run ./cmd/multi_client_smoke -addr "$SMOKE_ADDR" -timeout "$CLIENT_TIMEOUT" -clients "$CLIENTS"
 ) > "$CLIENT_LOG" 2>&1
 rc=$?
 set -e

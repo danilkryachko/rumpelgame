@@ -15,9 +15,12 @@ SERVER_SOURCE="${RUMPELMC_SERVER_SCALABILITY_SOURCE:-"$ROOT_DIR/server/pkg/netwo
 SERVER_TEST="${RUMPELMC_SERVER_SCALABILITY_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
 LIVE_SMOKE_SCRIPT="${RUMPELMC_SERVER_SCALABILITY_LIVE_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_multi_client_smoke.sh"}"
 LIVE_SMOKE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_LIVE_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_multi_client_smoke_current/server-multi-client-smoke-summary.txt"}"
+BROADER_LIVE_SMOKE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_BROADER_LIVE_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_multi_client_load_current/server-multi-client-smoke-summary.txt"}"
 WORLDGEN_QUALITY_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_WORLDGEN_QUALITY_SUMMARY:-"$ROOT_DIR/logs/world_generation_quality_current/world-generation-quality-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_SERVER_SCALABILITY_RUN_GO_TESTS:-1}"
 RUN_LIVE_SMOKE="${RUMPELMC_SERVER_SCALABILITY_RUN_LIVE_SMOKE:-0}"
+RUN_BROADER_LIVE_SMOKE="${RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE:-0}"
+BROADER_LIVE_SMOKE_CLIENTS="${RUMPELMC_SERVER_SCALABILITY_BROADER_LIVE_SMOKE_CLIENTS:-6}"
 
 mkdir -p "$OUT_DIR"
 
@@ -59,9 +62,10 @@ done
 for token in \
   'per-client sent-chunk state isolation' \
   'Scalability Gaps' \
-  'Live slow-client handling evidence' \
+  'Broader slow-client handling evidence' \
+  'Broader Live Multi-Client Load Smoke' \
   'Do not change `api/schema/packets.proto`' \
-  'Live multi-client load'; do
+  'Live Multi-Client Smoke'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
@@ -94,12 +98,36 @@ case "$RUN_LIVE_SMOKE" in
     fail "unsupported RUMPELMC_SERVER_SCALABILITY_RUN_LIVE_SMOKE=$RUN_LIVE_SMOKE"
     ;;
 esac
+case "$RUN_BROADER_LIVE_SMOKE" in
+  0) ;;
+  1)
+    broader_smoke_dir="$(dirname "$BROADER_LIVE_SMOKE_SUMMARY")"
+    RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS="$BROADER_LIVE_SMOKE_CLIENTS" \
+      "$LIVE_SMOKE_SCRIPT" "$broader_smoke_dir" > "$OUT_DIR/broader-live-smoke-run.txt" 2>&1 || {
+        cat "$OUT_DIR/broader-live-smoke-run.txt" >&2 || true
+        fail "broader live multi-client smoke failed"
+      }
+    ;;
+  *)
+    fail "unsupported RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=$RUN_BROADER_LIVE_SMOKE"
+    ;;
+esac
 
 worldgen_quality_status="$(field_metric status "$WORLDGEN_QUALITY_SUMMARY")"
 worldgen_runtime_quality="$(field_metric runtime_quality_pass "$WORLDGEN_QUALITY_SUMMARY")"
 live_load_status="deferred"
 if [ -s "$LIVE_SMOKE_SUMMARY" ]; then
   live_load_status="$(field_metric status "$LIVE_SMOKE_SUMMARY")"
+fi
+broader_live_load_status="deferred"
+broader_live_clients="0"
+broader_live_initial_chunks="0"
+broader_live_fanout_updates="0"
+if [ -s "$BROADER_LIVE_SMOKE_SUMMARY" ]; then
+  broader_live_load_status="$(field_metric status "$BROADER_LIVE_SMOKE_SUMMARY")"
+  broader_live_clients="$(field_metric clients "$BROADER_LIVE_SMOKE_SUMMARY")"
+  broader_live_initial_chunks="$(field_metric initial_chunks "$BROADER_LIVE_SMOKE_SUMMARY")"
+  broader_live_fanout_updates="$(field_metric fanout_updates "$BROADER_LIVE_SMOKE_SUMMARY")"
 fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
@@ -119,14 +147,25 @@ awk \
   -v proto_diff_count="$proto_diff_count" \
   -v live_load_status="${live_load_status:-missing}" \
   -v live_required="$RUN_LIVE_SMOKE" \
+  -v broader_live_load_status="${broader_live_load_status:-deferred}" \
+  -v broader_live_clients="${broader_live_clients:-0}" \
+  -v broader_live_initial_chunks="${broader_live_initial_chunks:-0}" \
+  -v broader_live_fanout_updates="${broader_live_fanout_updates:-0}" \
+  -v broader_live_required="$RUN_BROADER_LIVE_SMOKE" \
+  -v broader_live_min_clients="$BROADER_LIVE_SMOKE_CLIENTS" \
   -v network_tests="$network_tests" \
   -v design_doc="$DESIGN_DOC" \
   -v live_smoke_summary="$LIVE_SMOKE_SUMMARY" \
+  -v broader_live_smoke_summary="$BROADER_LIVE_SMOKE_SUMMARY" \
   -v worldgen_quality_summary="$WORLDGEN_QUALITY_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
-    scalability_status = "unit_guarded"
+    broader_live_ok = broader_live_load_status == "pass" &&
+      broader_live_clients + 0 >= broader_live_min_clients + 0 &&
+      broader_live_initial_chunks + 0 == broader_live_clients + 0 &&
+      broader_live_fanout_updates + 0 == broader_live_clients + 0
+    scalability_status = broader_live_ok ? "broader_live_guarded" : "unit_guarded"
     multi_client_sent_state = "guarded"
     block_edit_fanout = "interested_clients_guarded"
     slow_client_write_timeout = "guarded"
@@ -136,6 +175,7 @@ awk \
     deps_ok = worldgen_quality_status == "pass" && worldgen_runtime_quality == "deferred"
     tests_ok = network_tests == "pass" || network_tests == "skipped"
     live_ok = live_load_status == "pass" || live_required != "1"
+    broader_required_ok = broader_live_ok || broader_live_required != "1"
 
     if (active_protocol_change != 0) {
       status = "fail"
@@ -143,6 +183,9 @@ awk \
     } else if (!live_ok) {
       status = "fail"
       reason = "live_multi_client_smoke_failed"
+    } else if (!broader_required_ok) {
+      status = "fail"
+      reason = "broader_live_multi_client_smoke_failed"
     } else if (!deps_ok) {
       status = "fail"
       reason = "worldgen_quality_gate_not_clean"
@@ -151,7 +194,7 @@ awk \
       reason = "network_tests_failed"
     }
 
-    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, active_protocol_change, disconnect_cleanup_status, live_load_status, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, worldgen_quality_summary)
+    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s broader_live_load_status=%s broader_live_clients=%d broader_live_initial_chunks=%d broader_live_fanout_updates=%d network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s broader_live_smoke_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, active_protocol_change, disconnect_cleanup_status, live_load_status, broader_live_load_status, broader_live_clients, broader_live_initial_chunks, broader_live_fanout_updates, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, broader_live_smoke_summary, worldgen_quality_summary)
     if (status != "pass") {
       exit 1
     }

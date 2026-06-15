@@ -27,11 +27,12 @@ Scope:
 - Broadcast block-edit chunk snapshots to interested clients that have already received that chunk.
 - Add a bounded write timeout and disconnect cleanup for failed non-origin broadcast clients.
 - Add a bounded live two-client smoke that validates real TCP chunk bootstrap and block-edit fanout.
+- Add a bounded broader live smoke that validates bootstrap and block-edit fanout across more than two clients.
 - Define the next scalability evidence needed before broader runtime policy changes.
 
 Out of scope:
 
-- No protocol change, packet shape change, connection pool, backpressure queue, global scheduler, CPU profiling harness, memory profiling harness, disconnect metric, slow-reader harness, or production concurrency limit.
+- No protocol change, packet shape change, connection pool, backpressure queue, global scheduler, CPU profiling harness, memory profiling harness, disconnect metric, broad slow-reader harness, admission policy, or production concurrency limit.
 
 Assumptions:
 
@@ -46,7 +47,7 @@ Done when:
 - Block-edit fanout to interested clients has a focused unit test.
 - Failed interested-client broadcast closes and unregisters that client.
 - Session writes set and clear a write deadline.
-- The scalability gate runs the focused network tests and can run or consume the live two-client smoke summary.
+- The scalability gate runs the focused network tests and can run or consume the live two-client and broader multi-client smoke summaries.
 
 Checks:
 
@@ -78,7 +79,7 @@ These tests lock core fairness, fanout, and failed-write cleanup invariants with
 
 `scripts/server_multi_client_smoke.sh` builds and starts the Go server on an isolated local smoke port and temporary RocksDB path, then runs `server/cmd/multi_client_smoke` against it. The smoke uses the real 4-byte little-endian frame prefix and protobuf `Packet` schema.
 
-The live client opens two TCP sessions, sends initial positions for both, waits for both clients to receive chunk `0,0`, sends a `BlockAction_PLACE` for wood at `1,64,1`, and verifies that both the origin and watcher receive the updated chunk with that block present. The client accepts both raw and RLE chunk encodings and decodes RLE through the server world package.
+The live client opens TCP sessions, sends initial positions for each, waits for each client to receive chunk `0,0`, sends a `BlockAction_PLACE` for wood at `1,64,1`, and verifies that every interested client receives the updated chunk with that block present. The default remains two clients. Set `RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS=<n>` for broader load evidence. The client accepts both raw and RLE chunk encodings and decodes RLE through the server world package.
 
 Use:
 
@@ -94,16 +95,30 @@ server_multi_client_smoke status=pass clients=2 origin_initial=1 watcher_initial
 
 This is a live fanout/bootstrap smoke, not a throughput, memory, slow-reader, or overload benchmark.
 
+## Broader Live Multi-Client Load Smoke
+
+The broader load smoke reuses `scripts/server_multi_client_smoke.sh` with a higher client count. Current bounded target:
+
+```sh
+RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS=6 sh scripts/server_multi_client_smoke.sh logs/server_multi_client_load_current
+```
+
+Expected summary:
+
+```text
+server_multi_client_smoke status=pass clients=6 initial_chunks=6 fanout_updates=6 ... protocol_change=0
+```
+
+This proves a single live server can bootstrap and fan out one block edit to more than two interested clients. It does not claim throughput capacity, memory headroom, admission behavior, slow-reader fairness, or overload policy.
+
 ## Scalability Gaps
 
 Still needed before claiming full live multi-client scalability:
 
-- Live multi-client load beyond the bounded two-client fanout smoke.
-- More-than-two-client load evidence that records per-client chunks sent, elapsed time, disconnect behavior, and server errors.
 - CPU/memory profiling under multiple active clients.
+- Longer multi-client load evidence that records per-client chunks sent, elapsed time, disconnect behavior, and server errors.
 - Broader slow-client handling evidence under more clients and broadcast load; the networking robustness block now owns the bounded two-client slow-reader smoke.
 - Disconnect cleanup counters or log summaries.
-- Block-edit fanout/broadcast load evidence under several active clients beyond the two-client smoke.
 - Fair scheduling or backpressure design if one client can monopolize generation/send work.
 
 ## Compatibility Rules
@@ -122,7 +137,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result is `status=pass`, `scalability_status=unit_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `active_protocol_change=0`, `live_load_status=deferred` or `pass` when a current smoke summary exists, and `network_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live artifact is `status=pass`, `scalability_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `active_protocol_change=0`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, and `network_tests=pass`.
 
 To run the live smoke inside the gate:
 
@@ -132,15 +147,24 @@ RUMPELMC_SERVER_SCALABILITY_RUN_LIVE_SMOKE=1 sh scripts/server_scalability_pass_
 
 With the live smoke enabled, the expected result includes `live_load_status=pass`.
 
+To run the broader live smoke inside the gate:
+
+```sh
+RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
+```
+
+With the broader smoke enabled, the expected result includes `broader_live_load_status=pass`.
+
 The gate checks that:
 
 - This document records current server behavior, added unit guards, live scalability gaps, and compatibility rules.
 - `server.go` still has per-session `clientChunkStreamState`, connection close cleanup, block-edit fanout, and write deadlines.
 - The live smoke script exists and records `server_multi_client_smoke status=pass`.
+- The broader live smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1`.
 - The multi-client sent-state, interested-client fanout, failed-broadcast cleanup, and write-deadline tests exist.
 - `api/schema/packets.proto` is unchanged.
 - Focused network tests pass.
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with a bounded live two-client fanout smoke. Broader live load, CPU/memory profiling, broad slow-reader/load harnesses, and disconnect metrics remain future work.
+This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout smokes. CPU/memory profiling, broad slow-reader/load harnesses, admission/overload policy, and disconnect metrics remain future work.

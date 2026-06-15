@@ -25,73 +25,86 @@ type smokeClient struct {
 func main() {
 	addr := flag.String("addr", "127.0.0.1:25565", "server TCP address")
 	timeout := flag.Duration("timeout", 3*time.Second, "per-read/write timeout")
+	clientCount := flag.Int("clients", 2, "number of concurrent clients")
 	flag.Parse()
 
-	if err := run(*addr, *timeout); err != nil {
+	if err := run(*addr, *timeout, *clientCount); err != nil {
 		fmt.Fprintf(os.Stderr, "server_multi_client_smoke status=fail error=%q\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(addr string, timeout time.Duration) error {
-	origin, err := dialClient("origin", addr, timeout)
-	if err != nil {
-		return err
-	}
-	defer origin.conn.Close()
-
-	watcher, err := dialClient("watcher", addr, timeout)
-	if err != nil {
-		return err
-	}
-	defer watcher.conn.Close()
-
-	if err := origin.sendPosition(1, 68, 1, timeout); err != nil {
-		return err
-	}
-	if err := watcher.sendPosition(2, 68, 2, timeout); err != nil {
-		return err
+func run(addr string, timeout time.Duration, clientCount int) error {
+	if clientCount < 2 {
+		return fmt.Errorf("clients = %d, want at least 2", clientCount)
 	}
 
-	originInitial, err := origin.readChunk(timeout)
-	if err != nil {
-		return err
+	clients := make([]*smokeClient, 0, clientCount)
+	for i := 0; i < clientCount; i++ {
+		name := fmt.Sprintf("client-%d", i)
+		if i == 0 {
+			name = "origin"
+		} else if i == 1 {
+			name = "watcher"
+		}
+		client, err := dialClient(name, addr, timeout)
+		if err != nil {
+			closeClients(clients)
+			return err
+		}
+		clients = append(clients, client)
 	}
-	watcherInitial, err := watcher.readChunk(timeout)
-	if err != nil {
-		return err
+	defer closeClients(clients)
+
+	for i, client := range clients {
+		position := float32((i % 8) + 1)
+		if err := client.sendPosition(position, 68, position, timeout); err != nil {
+			return err
+		}
 	}
-	if err := assertChunk(originInitial, "origin initial", 0, 0); err != nil {
-		return err
+
+	initialChunks := 0
+	for _, client := range clients {
+		initial, err := client.readChunk(timeout)
+		if err != nil {
+			return err
+		}
+		if err := assertChunk(initial, client.name+" initial", 0, 0); err != nil {
+			return err
+		}
+		initialChunks++
 	}
-	if err := assertChunk(watcherInitial, "watcher initial", 0, 0); err != nil {
+
+	if err := clients[0].sendBlockPlace(1, 64, 1, world.Wood, timeout); err != nil {
 		return err
 	}
 
-	if err := origin.sendBlockPlace(1, 64, 1, world.Wood, timeout); err != nil {
-		return err
-	}
-
-	originUpdate, err := origin.readChunk(timeout)
-	if err != nil {
-		return err
-	}
-	watcherUpdate, err := watcher.readChunk(timeout)
-	if err != nil {
-		return err
-	}
-	if err := assertUpdatedChunk(originUpdate, "origin update"); err != nil {
-		return err
-	}
-	if err := assertUpdatedChunk(watcherUpdate, "watcher update"); err != nil {
-		return err
+	fanoutUpdates := 0
+	for _, client := range clients {
+		update, err := client.readChunk(timeout)
+		if err != nil {
+			return err
+		}
+		if err := assertUpdatedChunk(update, client.name+" update"); err != nil {
+			return err
+		}
+		fanoutUpdates++
 	}
 
 	fmt.Printf(
-		"server_multi_client_smoke status=pass clients=2 origin_initial=1 watcher_initial=1 origin_update=1 watcher_update=1 chunk=0,0 block_x=1 block_y=64 block_z=1 block_id=%d protocol_change=0\n",
+		"server_multi_client_smoke status=pass clients=%d initial_chunks=%d fanout_updates=%d origin_initial=1 watcher_initial=1 origin_update=1 watcher_update=1 chunk=0,0 block_x=1 block_y=64 block_z=1 block_id=%d protocol_change=0\n",
+		clientCount,
+		initialChunks,
+		fanoutUpdates,
 		world.Wood,
 	)
 	return nil
+}
+
+func closeClients(clients []*smokeClient) {
+	for _, client := range clients {
+		_ = client.conn.Close()
+	}
 }
 
 func dialClient(name, addr string, timeout time.Duration) (*smokeClient, error) {

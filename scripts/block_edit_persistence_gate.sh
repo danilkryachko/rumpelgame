@@ -16,8 +16,11 @@ WORLD_TEST="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_WORLD_TEST:-"$ROOT_DIR/server/pkg/
 NETWORK_SOURCE="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_NETWORK_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
 CLIENT_SOURCE="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_CLIENT_SOURCE:-"$ROOT_DIR/client/rust_ext/src/lib.rs"}"
 GAMEPLAY_SUMMARY="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_GAMEPLAY_SUMMARY:-"$ROOT_DIR/logs/gameplay_loop_foundation_current/gameplay-loop-foundation-summary.txt"}"
+RUNTIME_RELOAD_SMOKE_SCRIPT="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUNTIME_RELOAD_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_persisted_reload_smoke.sh"}"
+RUNTIME_RELOAD_SMOKE_SUMMARY="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUNTIME_RELOAD_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_persisted_reload_smoke_current/server-persisted-reload-smoke-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_GO_TESTS:-1}"
 RUN_RUST_TESTS="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_RUST_TESTS:-1}"
+RUN_RUNTIME_RELOAD_SMOKE="${RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_RUNTIME_RELOAD_SMOKE:-0}"
 
 mkdir -p "$OUT_DIR"
 
@@ -52,7 +55,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$STORAGE_DOC" "$WORLD_SOURCE" "$WORLD_TEST" "$NETWORK_SOURCE" "$CLIENT_SOURCE" "$GAMEPLAY_SUMMARY"; do
+for path in "$DESIGN_DOC" "$STORAGE_DOC" "$WORLD_SOURCE" "$WORLD_TEST" "$NETWORK_SOURCE" "$CLIENT_SOURCE" "$GAMEPLAY_SUMMARY" "$RUNTIME_RELOAD_SMOKE_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -60,6 +63,7 @@ for token in \
   'Persistence Contract' \
   'Added Unit Guard' \
   'Visual/Collision/GPU Update Path' \
+  'Live Restart/Reload Smoke' \
   'Deferred Work' \
   'Compatibility Rules' \
   'Runtime edit -> server restart/reopen -> client reload visual smoke' \
@@ -83,9 +87,29 @@ require_token "$CLIENT_SOURCE" 'chunk_update_needs_geometry_refresh'
 require_token "$CLIENT_SOURCE" 'enqueue_dirty_chunk_subchunks'
 require_token "$CLIENT_SOURCE" 'process_collision_refresh_queue'
 require_token "$CLIENT_SOURCE" 'upload_gpu_subchunk'
+require_token "$RUNTIME_RELOAD_SMOKE_SCRIPT" 'server_persisted_reload_smoke status=pass'
 
 gameplay_status="$(field_metric status "$GAMEPLAY_SUMMARY")"
 gameplay_protocol_change="$(field_metric active_protocol_change "$GAMEPLAY_SUMMARY")"
+case "$RUN_RUNTIME_RELOAD_SMOKE" in
+  0) ;;
+  1)
+    runtime_reload_smoke_dir="$(dirname "$RUNTIME_RELOAD_SMOKE_SUMMARY")"
+    "$RUNTIME_RELOAD_SMOKE_SCRIPT" "$runtime_reload_smoke_dir" > "$OUT_DIR/runtime-reload-smoke-run.txt" 2>&1 || {
+      cat "$OUT_DIR/runtime-reload-smoke-run.txt" >&2 || true
+      fail "live restart/reload smoke failed"
+    }
+    ;;
+  *)
+    fail "unsupported RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_RUNTIME_RELOAD_SMOKE=$RUN_RUNTIME_RELOAD_SMOKE"
+    ;;
+esac
+runtime_reload_smoke_status="deferred"
+runtime_reload_protocol_change="0"
+if [ -s "$RUNTIME_RELOAD_SMOKE_SUMMARY" ]; then
+  runtime_reload_smoke_status="$(field_metric status "$RUNTIME_RELOAD_SMOKE_SUMMARY")"
+  runtime_reload_protocol_change="$(field_metric protocol_change "$RUNTIME_RELOAD_SMOKE_SUMMARY")"
+fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 world_reload_test="skipped"
@@ -127,20 +151,25 @@ fi
 awk \
   -v gameplay_status="${gameplay_status:-missing}" \
   -v gameplay_protocol_change="${gameplay_protocol_change:-1}" \
+  -v runtime_reload_smoke_status="${runtime_reload_smoke_status:-deferred}" \
+  -v runtime_reload_protocol_change="${runtime_reload_protocol_change:-0}" \
+  -v runtime_reload_required="$RUN_RUNTIME_RELOAD_SMOKE" \
   -v proto_diff_count="$proto_diff_count" \
   -v world_reload_test="$world_reload_test" \
   -v storage_tests="$storage_tests" \
   -v network_tests="$network_tests" \
   -v dirty_update_tests="$dirty_update_tests" \
   -v design_doc="$DESIGN_DOC" \
-  -v gameplay_summary="$GAMEPLAY_SUMMARY" '
+  -v gameplay_summary="$GAMEPLAY_SUMMARY" \
+  -v runtime_reload_smoke_summary="$RUNTIME_RELOAD_SMOKE_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
-    persistence_status = "unit_guarded"
-    place_reload = "guarded"
-    destroy_reload = "guarded"
-    runtime_reload_smoke = "deferred"
+    runtime_ok = runtime_reload_smoke_status == "pass" && runtime_reload_protocol_change + 0 == 0
+    persistence_status = runtime_ok ? "runtime_guarded" : "unit_guarded"
+    place_reload = runtime_ok ? "live_restart_guarded" : "guarded"
+    destroy_reload = runtime_ok ? "live_restart_guarded" : "guarded"
+    runtime_reload_smoke = runtime_ok ? "live_restart_guarded" : "deferred"
     visual_collision_gpu_path = "existing_update_chunk_path"
     active_protocol_change = proto_diff_count + 0
 
@@ -156,6 +185,9 @@ awk \
     } else if (!gameplay_ok) {
       status = "fail"
       reason = "gameplay_foundation_not_clean"
+    } else if (runtime_reload_required == "1" && !runtime_ok) {
+      status = "fail"
+      reason = "runtime_reload_smoke_failed"
     } else if (!go_ok) {
       status = "fail"
       reason = "go_persistence_tests_failed"
@@ -164,7 +196,7 @@ awk \
       reason = "dirty_update_tests_failed"
     }
 
-    printf("block_edit_persistence status=%s reason=%s persistence_status=%s place_reload=%s destroy_reload=%s runtime_reload_smoke=%s visual_collision_gpu_path=%s active_protocol_change=%d world_reload_test=%s storage_tests=%s network_tests=%s dirty_update_tests=%s gameplay_status=%s gameplay_protocol_change=%d design_doc=%s gameplay_summary=%s\n", status, reason, persistence_status, place_reload, destroy_reload, runtime_reload_smoke, visual_collision_gpu_path, active_protocol_change, world_reload_test, storage_tests, network_tests, dirty_update_tests, gameplay_status, gameplay_protocol_change, design_doc, gameplay_summary)
+    printf("block_edit_persistence status=%s reason=%s persistence_status=%s place_reload=%s destroy_reload=%s runtime_reload_smoke=%s runtime_reload_smoke_status=%s visual_collision_gpu_path=%s active_protocol_change=%d world_reload_test=%s storage_tests=%s network_tests=%s dirty_update_tests=%s gameplay_status=%s gameplay_protocol_change=%d design_doc=%s gameplay_summary=%s runtime_reload_smoke_summary=%s\n", status, reason, persistence_status, place_reload, destroy_reload, runtime_reload_smoke, runtime_reload_smoke_status, visual_collision_gpu_path, active_protocol_change, world_reload_test, storage_tests, network_tests, dirty_update_tests, gameplay_status, gameplay_protocol_change, design_doc, gameplay_summary, runtime_reload_smoke_summary)
     if (status != "pass") {
       exit 1
     }

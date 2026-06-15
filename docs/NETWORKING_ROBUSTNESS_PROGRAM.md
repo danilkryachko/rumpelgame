@@ -28,18 +28,19 @@ Scope:
 - Add server session-write timeout and failed-broadcast cleanup guards.
 - Consume the server scalability live two-client fanout smoke as networking runtime evidence when available.
 - Add a bounded live slow-reader smoke that proves a non-reading TCP client hits the session write timeout while a separate fast client still receives bootstrap chunk data.
+- Consume a bounded client reconnect smoke that proves a live TCP disconnect reaches `client_state=reconnecting` telemetry.
 - Define reconnect and overload gaps before broader runtime policy changes.
 
 Out of scope:
 
-- No protobuf schema change, new packet type, wire framing change, reconnect state machine, write backpressure queue, server admission control, packet retry layer, queue drop behavior, or broad load harness.
+- No protobuf schema change, new packet type, wire framing change, reconnect retry/rebootstrap loop, write backpressure queue, server admission control, packet retry layer, queue drop behavior, or broad load harness.
 
 Assumptions:
 
 - TCP remains the only transport.
 - Packet framing remains a 4-byte little-endian payload length followed by exact protobuf payload bytes.
 - The server treats read/decode errors as connection termination.
-- The client reader thread reports receive errors and exits the reader loop; reconnect policy is not implemented in this block.
+- The client reader thread reports receive errors to the main thread, exits the reader loop, and moves the client lifecycle to `reconnecting`; retry/rebootstrap policy is not implemented in this block.
 - Slow-client behavior is unit-guarded for bounded writes and failed broadcast cleanup, with a bounded live slow-reader smoke covering one slow reader plus one fast client. Broader load behavior still needs a dedicated harness.
 
 Done when:
@@ -63,6 +64,7 @@ Checks:
 - Failed non-origin block-update broadcasts close and unregister the failed client.
 - The server scalability live smoke validates two real TCP clients receiving bootstrap chunk data and the same block-edit update through the existing frame/protobuf path.
 - The slow-reader smoke validates a real non-reading TCP client timing out during a large RAW bootstrap stream while a separate fast client still receives chunk `0,0`.
+- The client reconnect smoke validates a real Godot client detecting a server-side TCP disconnect and exposing `client_state=reconnecting`, `reconnect_events`, and `network_reader_errors` in the perf marker.
 - Rust `NetworkClient::receive_packet_with_timing_since` reads the exact length prefix, rejects lengths above `MAX_PACKET_LENGTH`, reads the exact payload, then decodes one protobuf `Packet`.
 - Rust `NetworkClient::send_packet` rejects encoded packets larger than `MAX_PACKET_LENGTH` before writing.
 
@@ -116,14 +118,31 @@ server_slow_reader_smoke status=pass slow_client=1 fast_client=1 fast_bootstrap_
 
 This is a bounded isolation smoke, not a throughput benchmark, admission-control policy, reconnect harness, or proof of broadcast/backpressure fairness under large client counts.
 
+## Live Reconnect Smoke
+
+`scripts/client_reconnect_smoke.sh` starts the Go server on the normal local client port, starts a Godot visual smoke, kills the server before capture, and requires the marker to report `client_state=reconnecting`, at least one reconnect event, and at least one reader-thread network error.
+
+Use:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release sh scripts/client_reconnect_smoke.sh logs/client_reconnect_smoke_current
+```
+
+Expected summary:
+
+```text
+client_reconnect_smoke status=pass client_state=reconnecting reconnect_events=1 network_reader_errors=1 ... active_protocol_change=0
+```
+
+This is a disconnect-detection and telemetry smoke. It is not a retry/backoff, server restart recovery, stale packet, or rebootstrap proof.
+
 ## Deferred Robustness Work
 
 Still needed before claiming a full networking robustness program:
 
-- Client reconnect state machine with explicit states, backoff, and stale packet handling.
+- Client reconnect retry with backoff, state reset rules, stale packet handling, and rebootstrap recovery.
 - Broader multi-client slow-reader load evidence across more active clients, broadcast fanout, and longer runs.
 - Server overload/admission behavior and connection limits under load.
-- Live reconnect smoke that restarts the server and proves client recovery.
 - Packet error telemetry that classifies EOF, oversized frame, malformed protobuf, timeout, and short write causes.
 - Backpressure policy for the existing client reader-thread channel.
 
@@ -133,7 +152,7 @@ Still needed before claiming a full networking robustness program:
 - Do not change the 4-byte little-endian frame prefix.
 - Do not add packet retries or ordering semantics inside `ChunkData`.
 - Do not drop, coalesce, or reorder packets without an explicit queue/backpressure design.
-- Do not treat reconnect as complete until the client state machine is defined and tested.
+- Do not treat reconnect recovery as complete until retry, backoff, stale-packet handling, and rebootstrap are defined and tested.
 - Do not tighten slow-client timeout defaults without proving startup, bootstrap, and normal movement are not falsely terminated.
 
 ## Block 38 Gate
@@ -144,7 +163,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `active_protocol_change=0`, `reconnect_status=deferred`, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `active_protocol_change=0`, `reconnect_status=live_disconnect_guarded` when a current reconnect smoke summary exists, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
 
 To run the slow-reader smoke inside the gate:
 
@@ -160,8 +179,9 @@ The gate checks that:
 - Rust network tests pass.
 - The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
 - The slow-reader smoke script exists, and the gate carries its status when a current slow-reader summary exists or the smoke is explicitly run.
+- The reconnect smoke script exists, and the gate carries its status when a current reconnect summary exists or the smoke is explicitly run.
 - Protocol schema/generated files are unchanged.
 
 ## Current Status
 
-This block is complete as a packet-boundary, unit-guarded write-timeout, two-client live fanout, and bounded slow-reader checkpoint. Reconnect, overload handling, broader live load, broadcast/backpressure policy, and runtime error classification telemetry remain future work.
+This block is complete as a packet-boundary, unit-guarded write-timeout, two-client live fanout, bounded slow-reader, and reconnect disconnect-detection checkpoint. Reconnect retry/rebootstrap, overload handling, broader live load, broadcast/backpressure policy, and runtime error classification telemetry remain future work.

@@ -197,21 +197,29 @@ Fresh check:
 
 - `go test ./pkg/api ./pkg/world ./pkg/network` passed on 2026-06-15 with the new compatibility coverage.
 
-## Networking Robustness
+## Server Scalability
 
-The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, and closed initial probes.
+Server scalability is now guarded by per-client sent-state tests, interested-client block-edit fanout tests, failed-broadcast cleanup, session write deadlines, a two-client live fanout smoke, and a bounded six-client fanout/load smoke. CPU/memory profiling, admission/overload policy, broad slow-reader/load harnesses, and disconnect counters remain future work.
 
 Fresh check:
 
-- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `active_protocol_change=0`, and reconnect/slow-client/overload status as `deferred`.
+- `logs/server_scalability_pass_current/server-scalability-pass-summary.txt` reported `status=pass`, `scalability_status=broader_live_guarded`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients=6`, `broader_live_initial_chunks=6`, `broader_live_fanout_updates=6`, and `active_protocol_change=0`.
+
+## Networking Robustness
+
+The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, closed initial probes, bounded slow-reader timeout evidence, and live disconnect detection into `client_state=reconnecting`. Retry/rebootstrap, overload, and backpressure policy remain deferred.
+
+Fresh check:
+
+- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `reconnect_status=live_disconnect_guarded`, `slow_client_status=live_guarded`, `multi_client_live_status=pass`, `overload_status=deferred`, and `active_protocol_change=0`.
 
 ## Client State Machine
 
-The client lifecycle is now modeled explicitly as `connecting`, `waiting_chunks`, `spawning`, `active`, `reconnecting`, and `shutdown`. The model is unit-guarded and wired to current connect success/failure, startup chunk readiness, player spawn, synchronous send errors, and shutdown cleanup. Runtime reconnect execution remains deferred.
+The client lifecycle is now modeled explicitly as `connecting`, `waiting_chunks`, `spawning`, `active`, `reconnecting`, and `shutdown`. The model is unit-guarded and wired to current connect success/failure, startup chunk readiness, player spawn, synchronous send errors, reader-thread network errors, and shutdown cleanup. The current runtime smoke proves disconnect detection and marker telemetry; retry/backoff/rebootstrap remains deferred.
 
 Fresh check:
 
-- `logs/client_state_machine_hardening_current/client-state-machine-hardening-summary.txt` reported `status=pass`, `client_lifecycle_tests=pass`, `runtime_reconnect=deferred`, `state_telemetry=deferred`, and `active_protocol_change=0`.
+- `logs/client_state_machine_hardening_current/client-state-machine-hardening-summary.txt` reported `status=pass`, `client_lifecycle_tests=pass`, `runtime_reconnect=live_disconnect_guarded`, `state_telemetry=live_marker_guarded`, `reconnect_smoke_status=pass`, `reconnect_smoke_client_state=reconnecting`, and `active_protocol_change=0`.
 
 ## Gameplay Loop Foundation
 
@@ -223,11 +231,11 @@ Fresh check:
 
 ## Block Edit Persistence
 
-Block edit persistence is now guarded at the world/storage boundary. A focused unit test proves `SetBlockGlobal` place and destroy edits are saved through `ChunkStore.SaveChunk` and reloaded by fresh `World(store)` instances. Runtime persisted-reload visual/collision/GPU smoke remains deferred to a heavier Godot run.
+Block edit persistence is now guarded at the world/storage boundary and the live server process boundary. A focused unit test proves `SetBlockGlobal` place and destroy edits are saved through `ChunkStore.SaveChunk` and reloaded by fresh `World(store)` instances; a live server smoke proves place and destroy edits survive server restart/reopen through the normal bootstrap chunk snapshot. Dedicated Godot persisted-reload visual/collision/GPU screenshot evidence remains deferred to a heavier run.
 
 Fresh check:
 
-- `logs/block_edit_persistence_current/block-edit-persistence-summary.txt` reported `status=pass`, `place_reload=guarded`, `destroy_reload=guarded`, `world_reload_test=pass`, `storage_tests=pass`, `network_tests=pass`, `dirty_update_tests=pass`, `runtime_reload_smoke=deferred`, and `active_protocol_change=0`.
+- `logs/block_edit_persistence_current/block-edit-persistence-summary.txt` reported `status=pass`, `persistence_status=runtime_guarded`, `place_reload=live_restart_guarded`, `destroy_reload=live_restart_guarded`, `runtime_reload_smoke=live_restart_guarded`, `world_reload_test=pass`, `storage_tests=pass`, `network_tests=pass`, `dirty_update_tests=pass`, and `active_protocol_change=0`.
 
 ## Dirty Update Scalability
 
