@@ -181,7 +181,7 @@ Block 27, Shadow Quality Parity Program, now has a summary-only gate:
 sh scripts/shadow_quality_parity_program.sh logs/shadow_quality_parity_program_current
 ```
 
-Fresh evidence in `logs/shadow_quality_parity_program_current/shadow-quality-parity-summary.txt` reports `status=pass` for the current Godot proxy/native-shadow fallback parity program and `active_native_comparison=deferred` because the implementation gate remains false. The native fallback visual delta is `0.0000`, lighting/shadow deltas remain within the existing parity thresholds, and the external profiler pack remains `pending_external_profiler`.
+Fresh evidence in `logs/shadow_quality_parity_program_current/shadow-quality-parity-summary.txt` reports `status=pass` for the current Godot proxy/native-shadow fallback parity program and `active_native_comparison=deferred` because the implementation gate remains false. The program now carries the Block 26 preflight readiness contract forward with `native_preflight_readiness_fields=present`, `native_preflight_readiness_status=disabled_clean`, and `native_preflight_readiness_errors=0`; stale preflight summaries without readiness fields fail before parity can pass. The native fallback visual delta is `0.0000`, lighting/shadow deltas remain within the existing parity thresholds, and the external profiler pack remains `pending_external_profiler`.
 
 ## Block 28 Retirement
 
@@ -191,4 +191,4 @@ Block 28, Shadow Proxy Retirement Plan, now has a guard:
 sh scripts/shadow_proxy_retirement_plan.sh logs/shadow_proxy_retirement_plan_current
 ```
 
-Fresh evidence in `logs/shadow_proxy_retirement_plan_current/shadow-proxy-retirement-summary.txt` reports `status=deferred`, `retirement_allowed=0`, and `reason=native_shadow_not_active`. Current proxy evidence remains useful (`max_compact_shadow_proxy=201`, `max_compact_shadow_normals_saved=3932`), but CPU shadow-only proxies must stay until active native-shadow captures, validated external profiler results, and `godot_proxy` rollback evidence exist.
+Fresh evidence in `logs/shadow_proxy_retirement_plan_current/shadow-proxy-retirement-summary.txt` reports `status=deferred`, `retirement_allowed=0`, `reason=native_shadow_not_active`, and `native_preflight_readiness_status=disabled_clean`. Current proxy evidence remains useful (`max_compact_shadow_proxy=201`, `max_compact_shadow_normals_saved=3932`), but CPU shadow-only proxies must stay until active native-shadow captures, validated external profiler results, and `godot_proxy` rollback evidence exist.

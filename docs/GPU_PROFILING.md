@@ -145,7 +145,7 @@ sh scripts/gpu_native_shadow_prototype_preflight.sh logs/gpu_native_shadow_proto
 
 The gate writes `gpu-native-shadow-prototype-preflight-summary.txt`; see `docs/NATIVE_SHADOW_PROTOTYPE_PREFLIGHT.md`.
 
-Use shadow quality parity after native-shadow preflight when a task needs one current summary for Godot proxy, native-shadow fallback parity, shadow-radius proxy counters, pending external profiler state, and report-only FPS fields:
+Use shadow quality parity after native-shadow preflight when a task needs one current summary for Godot proxy, native-shadow fallback parity, native preflight readiness propagation, shadow-radius proxy counters, pending external profiler state, and report-only FPS fields:
 
 ```sh
 sh scripts/shadow_quality_parity_program.sh logs/shadow_quality_parity_program_current

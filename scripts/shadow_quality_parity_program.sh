@@ -113,6 +113,9 @@ lighting_low_angle_compact_delta="$(pair_delta_metric lighting_low_angle_compact
 preflight_status="$(field_metric status "$NATIVE_PREFLIGHT_SUMMARY")"
 preflight_allowed="$(field_metric active_prototype_allowed "$NATIVE_PREFLIGHT_SUMMARY")"
 preflight_reason="$(field_metric reason "$NATIVE_PREFLIGHT_SUMMARY")"
+preflight_readiness_fields="$(field_metric fallback_readiness_fields "$NATIVE_PREFLIGHT_SUMMARY")"
+preflight_readiness_status="$(field_metric fallback_readiness_status "$NATIVE_PREFLIGHT_SUMMARY")"
+preflight_readiness_errors="$(field_metric fallback_readiness_errors "$NATIVE_PREFLIGHT_SUMMARY")"
 
 report_v2_status="$(field_metric status "$REPORT_V2_SUMMARY")"
 warning_fps_p05="$(field_metric warning_fps_p05 "$REPORT_V2_SUMMARY")"
@@ -169,6 +172,9 @@ awk \
   -v preflight_status="${preflight_status:-blocked}" \
   -v preflight_allowed="${preflight_allowed:-1}" \
   -v preflight_reason="${preflight_reason:-unknown}" \
+  -v preflight_readiness_fields="${preflight_readiness_fields:-missing}" \
+  -v preflight_readiness_status="${preflight_readiness_status:-missing}" \
+  -v preflight_readiness_errors="${preflight_readiness_errors:-999}" \
   -v radius_stats="$radius_stats" \
   -v min_radius_rows="$MIN_RADIUS_ROWS" \
   -v min_usable_radius_rows="$MIN_USABLE_RADIUS_ROWS" \
@@ -232,6 +238,9 @@ awk \
     } else if (!(preflight_status == "deferred" && preflight_allowed + 0 == 0)) {
       status = "fail"
       reason = "native_preflight_not_deferred"
+    } else if (!(preflight_readiness_fields == "present" && preflight_readiness_status == "disabled_clean" && preflight_readiness_errors + 0 == 0)) {
+      status = "fail"
+      reason = "native_preflight_readiness_not_clean"
     } else if (radius_rows < min_radius_rows || radius_pass_rows != radius_rows || radius_usable_rows < min_usable_radius_rows) {
       status = "fail"
       reason = "shadow_radius_matrix_not_clean"
@@ -243,7 +252,7 @@ awk \
       reason = "report_v2_not_clean"
     }
 
-    printf("shadow_quality_parity_program status=%s reason=%s active_native_comparison=%s active_native_reason=%s parity_case_count=%d native_fallback_avg_luma_delta=%.4f native_fallback_luma_range_delta=%.4f lighting_shadow_avg_luma_delta=%.4f lighting_shadow_luma_range_delta=%.4f lighting_shadow_compact_delta=%.4f lighting_low_angle_avg_luma_delta=%.4f lighting_low_angle_luma_range_delta=%.4f lighting_low_angle_compact_delta=%.4f radius_rows=%d radius_usable_rows=%d radius_rejected_rows=%d max_compact_shadow_proxy=%d max_compact_shadow_normals_saved=%d max_full_cpu_proxy=%d max_compact_cpu_proxy=%d max_full_mesh_ms=%.2f max_compact_mesh_ms=%.2f profiler_status=%s profiler_rows=%d fps_status=warning_only warning_fps_p05=%.3f warning_frame_p95_ms=%.3f parity_summary=%s native_preflight_summary=%s radius_matrix_summary=%s profiler_capture_pack=%s report_v2_summary=%s\n", status, reason, active_native_comparison, preflight_reason, case_count, native_delta, native_luma_range_delta, lighting_shadow_delta, lighting_shadow_range_delta, lighting_shadow_compact_delta, lighting_low_angle_delta, lighting_low_angle_range_delta, lighting_low_angle_compact_delta, radius_rows, radius_usable_rows, radius_rejected_rows, max_compact_shadow_proxy, max_compact_shadow_normals_saved, max_full_cpu_proxy, max_compact_cpu_proxy, max_full_mesh_ms, max_compact_mesh_ms, capture_pack_status, capture_pack_rows, warning_fps_p05, warning_frame_p95_ms, parity_summary, native_preflight_summary, radius_matrix_summary, profiler_capture_pack, report_v2_summary)
+    printf("shadow_quality_parity_program status=%s reason=%s active_native_comparison=%s active_native_reason=%s native_preflight_readiness_fields=%s native_preflight_readiness_status=%s native_preflight_readiness_errors=%d parity_case_count=%d native_fallback_avg_luma_delta=%.4f native_fallback_luma_range_delta=%.4f lighting_shadow_avg_luma_delta=%.4f lighting_shadow_luma_range_delta=%.4f lighting_shadow_compact_delta=%.4f lighting_low_angle_avg_luma_delta=%.4f lighting_low_angle_luma_range_delta=%.4f lighting_low_angle_compact_delta=%.4f radius_rows=%d radius_usable_rows=%d radius_rejected_rows=%d max_compact_shadow_proxy=%d max_compact_shadow_normals_saved=%d max_full_cpu_proxy=%d max_compact_cpu_proxy=%d max_full_mesh_ms=%.2f max_compact_mesh_ms=%.2f profiler_status=%s profiler_rows=%d fps_status=warning_only warning_fps_p05=%.3f warning_frame_p95_ms=%.3f parity_summary=%s native_preflight_summary=%s radius_matrix_summary=%s profiler_capture_pack=%s report_v2_summary=%s\n", status, reason, active_native_comparison, preflight_reason, preflight_readiness_fields, preflight_readiness_status, preflight_readiness_errors, case_count, native_delta, native_luma_range_delta, lighting_shadow_delta, lighting_shadow_range_delta, lighting_shadow_compact_delta, lighting_low_angle_delta, lighting_low_angle_range_delta, lighting_low_angle_compact_delta, radius_rows, radius_usable_rows, radius_rejected_rows, max_compact_shadow_proxy, max_compact_shadow_normals_saved, max_full_cpu_proxy, max_compact_cpu_proxy, max_full_mesh_ms, max_compact_mesh_ms, capture_pack_status, capture_pack_rows, warning_fps_p05, warning_frame_p95_ms, parity_summary, native_preflight_summary, radius_matrix_summary, profiler_capture_pack, report_v2_summary)
     if (status != "pass") {
       exit 1
     }

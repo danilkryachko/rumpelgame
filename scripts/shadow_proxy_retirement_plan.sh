@@ -57,6 +57,9 @@ max_compact_shadow_normals_saved="$(field_metric max_compact_shadow_normals_save
 preflight_status="$(field_metric status "$NATIVE_PREFLIGHT_SUMMARY")"
 preflight_allowed="$(field_metric active_prototype_allowed "$NATIVE_PREFLIGHT_SUMMARY")"
 preflight_reason="$(field_metric reason "$NATIVE_PREFLIGHT_SUMMARY")"
+preflight_readiness_fields="$(field_metric fallback_readiness_fields "$NATIVE_PREFLIGHT_SUMMARY")"
+preflight_readiness_status="$(field_metric fallback_readiness_status "$NATIVE_PREFLIGHT_SUMMARY")"
+preflight_readiness_errors="$(field_metric fallback_readiness_errors "$NATIVE_PREFLIGHT_SUMMARY")"
 capture_pack_status="$(field_metric capture_pack_status "$PROFILER_CAPTURE_PACK")"
 
 radius_current_proxy="$(
@@ -89,6 +92,9 @@ awk \
   -v preflight_status="${preflight_status:-blocked}" \
   -v preflight_allowed="${preflight_allowed:-1}" \
   -v preflight_reason="${preflight_reason:-unknown}" \
+  -v preflight_readiness_fields="${preflight_readiness_fields:-missing}" \
+  -v preflight_readiness_status="${preflight_readiness_status:-missing}" \
+  -v preflight_readiness_errors="${preflight_readiness_errors:-999}" \
   -v capture_pack_status="${capture_pack_status:-missing}" \
   -v radius_current_proxy="$radius_current_proxy" \
   -v shadow_quality_summary="$SHADOW_QUALITY_SUMMARY" \
@@ -124,6 +130,9 @@ awk \
     } else if (!(active_native_comparison == "deferred" && preflight_status == "deferred" && preflight_allowed + 0 == 0)) {
       status = "needs_manual_review"
       reason = "active_native_state_changed"
+    } else if (!(preflight_readiness_fields == "present" && preflight_readiness_status == "disabled_clean" && preflight_readiness_errors + 0 == 0)) {
+      status = "blocked"
+      reason = "native_preflight_readiness_not_clean"
     } else if (!(quality_profiler_status == "pending_external_profiler" && capture_pack_status == "pending_external_profiler")) {
       status = "blocked"
       reason = "profiler_state_not_pending"
@@ -132,7 +141,7 @@ awk \
       reason = "current_proxy_evidence_missing"
     }
 
-    printf("shadow_proxy_retirement_plan status=%s retirement_allowed=%d reason=%s active_native_comparison=%s native_preflight_status=%s native_preflight_reason=%s requires_active_native_capture=%d requires_external_profiler=%d requires_godot_proxy_rollback=%d quality_status=%s profiler_status=%s native_fallback_avg_luma_delta=%.4f lighting_shadow_avg_luma_delta=%.4f radius_rows=%d radius_usable_rows=%d max_full_cpu_proxy=%d max_compact_cpu_proxy=%d max_compact_shadow_proxy=%d max_compact_shadow_normals_saved=%d shadow_quality_summary=%s native_preflight_summary=%s radius_matrix_summary=%s profiler_capture_pack=%s\n", status, retirement_allowed, reason, active_native_comparison, preflight_status, preflight_reason, requires_active_native_capture, requires_external_profiler, requires_rollback, quality_status, quality_profiler_status, native_fallback_delta, lighting_shadow_delta, radius_rows, radius_usable_rows, max_full_cpu_proxy, max_compact_cpu_proxy, max_radius_compact_shadow_proxy, max_radius_compact_shadow_normals_saved, shadow_quality_summary, native_preflight_summary, radius_matrix_summary, profiler_capture_pack)
+    printf("shadow_proxy_retirement_plan status=%s retirement_allowed=%d reason=%s active_native_comparison=%s native_preflight_status=%s native_preflight_reason=%s native_preflight_readiness_fields=%s native_preflight_readiness_status=%s native_preflight_readiness_errors=%d requires_active_native_capture=%d requires_external_profiler=%d requires_godot_proxy_rollback=%d quality_status=%s profiler_status=%s native_fallback_avg_luma_delta=%.4f lighting_shadow_avg_luma_delta=%.4f radius_rows=%d radius_usable_rows=%d max_full_cpu_proxy=%d max_compact_cpu_proxy=%d max_compact_shadow_proxy=%d max_compact_shadow_normals_saved=%d shadow_quality_summary=%s native_preflight_summary=%s radius_matrix_summary=%s profiler_capture_pack=%s\n", status, retirement_allowed, reason, active_native_comparison, preflight_status, preflight_reason, preflight_readiness_fields, preflight_readiness_status, preflight_readiness_errors, requires_active_native_capture, requires_external_profiler, requires_rollback, quality_status, quality_profiler_status, native_fallback_delta, lighting_shadow_delta, radius_rows, radius_usable_rows, max_full_cpu_proxy, max_compact_cpu_proxy, max_radius_compact_shadow_proxy, max_radius_compact_shadow_normals_saved, shadow_quality_summary, native_preflight_summary, radius_matrix_summary, profiler_capture_pack)
     if (status == "blocked") {
       exit 1
     }

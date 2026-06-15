@@ -1,6 +1,6 @@
 # Shadow Quality Parity Program
 
-Date: 2026-06-15
+Date: 2026-06-16
 
 Scope: block 27 of the world streaming architecture plan. This block compares current Godot proxy shadows and native-shadow fallback/prototype evidence by visual parity, CPU proxy/resource counters, report-only FPS fields, and external-profiler readiness.
 
@@ -9,6 +9,8 @@ Scope: block 27 of the world streaming architecture plan. This block compares cu
 The current shadow quality parity status is pass for the Godot proxy and native-shadow fallback path.
 
 Active native-shadow comparison remains deferred because block 26 still reports `active_prototype_allowed=0` and `reason=implementation_gate_false`. This program therefore checks that the env-on native-shadow path is visually identical to the ordinary GPU terrain path while it falls back to Godot proxy shadows.
+
+The native-shadow preflight summary must also report `fallback_readiness_fields=present`, `fallback_readiness_status=disabled_clean`, and `fallback_readiness_errors=0`; stale preflight summaries without those fields fail this program.
 
 ## Gate
 
@@ -31,6 +33,7 @@ Fresh local evidence:
 - Summary: `logs/shadow_quality_parity_program_current/shadow-quality-parity-summary.txt`
 - Status: `pass`
 - Active native comparison: `deferred`
+- Native preflight readiness: `disabled_clean`, with readiness fields present and zero readiness errors
 - Native fallback visual delta: `avg_luma=0.0000`, `terrain_luma_range=0.0000`
 - Lighting shadow visual delta: `avg_luma=0.0137`, `terrain_luma_range=0.0094`
 - Compact shadow visual delta: `0.0000`

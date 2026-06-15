@@ -1,6 +1,6 @@
 # Shadow Proxy Retirement Plan
 
-Date: 2026-06-15
+Date: 2026-06-16
 
 Scope: block 28 of the world streaming architecture plan. This block decides whether CPU shadow-only mesh proxies can be removed after native-shadow or proxy-reduction evidence.
 
@@ -11,6 +11,7 @@ CPU shadow proxies are not ready for retirement.
 The current safe state is `deferred`:
 
 - Block 26 native-shadow prototype preflight reports `active_prototype_allowed=0`.
+- Block 26 native-shadow preflight readiness reports `fallback_readiness_status=disabled_clean`, not an active native pass.
 - Block 27 validates Godot proxy and native-shadow fallback parity, not an active native shadow renderer.
 - External profiler rows are still `pending_external_profiler`.
 - Current shadow-radius evidence still proves the Godot proxy path is doing real work, with compact proxy savings but no replacement path.
@@ -36,6 +37,7 @@ Fresh local evidence:
 - Status: `deferred`
 - `retirement_allowed=0`
 - Reason: `native_shadow_not_active`
+- Native preflight readiness: `disabled_clean`, with readiness fields present and zero readiness errors
 - Required before retirement: active native capture, external profiler evidence, and Godot proxy rollback
 - Current proxy evidence: `max_full_cpu_proxy=96`, `max_compact_cpu_proxy=96`, `max_compact_shadow_proxy=201`, `max_compact_shadow_normals_saved=3932`
 
