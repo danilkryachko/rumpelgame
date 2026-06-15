@@ -25,19 +25,21 @@ Scope:
 
 - Add `scripts/external_profiling_campaign_gate.sh`.
 - Add this campaign document.
+- Add the optional sanitized macOS `xctrace --attach` helper command to the operator handoff.
 - Validate the current pending capture pack and release-candidate evidence.
 - Generate a campaign plan artifact for external profiler operators.
 - Generate a results-intake artifact that records the trusted row format, validator command, and trust boundary.
 
 Out of scope:
 
-- Do not run Xcode, RenderDoc, PIX, vendor profilers, or Vulkan tools from this local script.
+- Do not run Xcode, RenderDoc, PIX, vendor profilers, or Vulkan tools from the campaign gate itself.
 - Do not treat local FPS or Godot GPU timestamp fields as trusted pass/fail signals.
 - Do not change renderer, shadow, transparency, draw distance, lighting, storage, protocol, or world generation behavior.
 
 Assumptions:
 
 - macOS/Metal is the first target because the existing shadow capture pack already asks for external Metal evidence.
+- `scripts/gpu_terrain_shadow_xctrace_attach_capture.sh` is an operator helper for local macOS trace capture, not a profiler-results validator.
 - Windows and Linux profiling are tracked as campaign lanes until a machine/tooling run produces captured artifacts.
 - Pending capture packs are planning artifacts only, not profiler evidence.
 
@@ -108,14 +110,26 @@ logs/external_profiling_campaign_current/external-profiling-results-intake.txt
 
 That intake file is the handoff contract for external operators: it records the required captured row format, result/template paths, validation commands, and explicit trust boundary. It is not a profiler result.
 
+For local macOS/Xcode Metal capture attempts, the intake points to:
+
+```sh
+RUMPELMC_SHADOW_XCTRACE_RECORD_SEC=10 \
+RUMPELMC_SHADOW_XCTRACE_SMOKE_DELAY_SEC=25 \
+sh scripts/gpu_terrain_shadow_xctrace_attach_capture.sh logs/gpu_shadow_xctrace_attach_current
+```
+
+That helper launches Godot with a minimal environment, attaches `Metal System Trace` to the Godot process, exports Metal command-buffer and encoder tables, and writes `shadow-xctrace-attach-capture-summary.txt`. Its trace/XML outputs still require manual profiler review; they are not accepted rows until a positive `gpu_shadow_pass_ms` is explicitly recorded and validated against the plan.
+
 ## Current Campaign Status
 
-Current local status is expected to be `pending_external_profiler` because no real external profiler trace has been recorded in this workspace. This is a blocked external-lab step, not a local implementation failure.
+Current local status is expected to be `pending_external_profiler` because no validated external profiler result rows exist in this workspace. This is a blocked measurement-review step, not a local implementation failure.
 
 Fresh 2026-06-15 current artifact:
 
 - `logs/external_profiling_campaign_current/external-profiling-campaign-summary.txt` reported `status=pass`, `reason=external_profiler_pending`, `campaign_status=prepared`, `capture_readiness=live_rc_ready_for_external_capture`, `external_profile_status=pending_external_profiler`, `capture_pack_status=pending_external_profiler`, `capture_pack_rows=4`, `results_file_status=missing`, `results_template_status=todo`, `results_check_status=missing`, `captured_rows=0`, `missing_rows=4`, and `rc_live_checks=full`.
-- `logs/external_profiling_campaign_current/external-profiling-results-intake.txt` reported `status=prepared`, `capture_readiness=live_rc_ready_for_external_capture`, the strict captured row format, the full validator command, and `template_rows_are_not_evidence=1`.
+- `logs/external_profiling_campaign_current/external-profiling-results-intake.txt` reported `status=prepared`, `capture_readiness=live_rc_ready_for_external_capture`, the strict captured row format, the macOS `xctrace --attach` helper command, the full validator command, `template_rows_are_not_evidence=1`, `xctrace_exports_are_not_result_rows=1`, and `manual_gpu_shadow_pass_ms_required=1`.
+- 2026-06-15 local Xcode/Metal attempts found that `xctrace --launch` against the shell workload failed with `Operation not permitted`, while an all-processes Metal trace grew to an unusable 13 GB before being killed and deleted. Targeted attach to a normally launched Godot process did work, so the sanitized attach helper now wraps that path.
+- No accepted `gpu_shadow_pass_ms` has been reviewed from the targeted attach trace, and no result row has been copied into `shadow-radius-profiler-results.txt`.
 
 The campaign gate is still useful because it verifies:
 
