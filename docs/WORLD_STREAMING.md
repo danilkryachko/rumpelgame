@@ -2,6 +2,303 @@
 
 This document tracks the chunk-loading path and planned optimizations for faster world startup and movement streaming.
 
+See `docs/WORLD_STREAMING_ARCHITECTURE_REVIEW.md` for the 2026-06-15 end-to-end architecture review, current bottlenecks, invariants, and next acceleration strategy.
+
+See `docs/CHUNK_COMPRESSION_DECISION.md` for the 2026-06-15 compression decision gate and current RLE/raw rollback decision.
+
+See `docs/CHUNK_UNLOAD_POLICY.md` for the 2026-06-15 unload churn metrics, default grace decision, and immediate-unload control evidence.
+
+See `docs/WORLD_POP_IN_METRICS.md` for the 2026-06-15 player-neighborhood pop-in probe and current report-only evidence.
+
+See `docs/COLLISION_READINESS.md` for the 2026-06-15 render-ready versus collision-ready movement summary and startup collision-gating contract.
+
+See `docs/LAZY_COLLISION_EXPERIMENTS.md` for the 2026-06-15 opt-in collision radius experiment and why the default collision radius remains unchanged.
+
+See `docs/WORLDGEN_DETERMINISM.md` for the 2026-06-15 worldgen determinism and stable chunk serialization test guard.
+
+See `docs/CHUNK_SERIALIZATION_COMPATIBILITY.md` for the 2026-06-15 chunk payload and protocol schema compatibility guard.
+
+See `docs/NETWORKING_ROBUSTNESS_PROGRAM.md` for the 2026-06-15 packet boundary robustness gate for short, oversized, and malformed frames.
+
+See `docs/CLIENT_STATE_MACHINE_HARDENING.md` for the 2026-06-15 client lifecycle model and transition tests.
+
+See `docs/GAMEPLAY_LOOP_FOUNDATION.md` for the 2026-06-15 mining/building and local inventory foundation checkpoint.
+
+See `docs/BLOCK_EDIT_PERSISTENCE_TRACK.md` for the 2026-06-15 block edit save/reload persistence proof.
+
+See `docs/DIRTY_UPDATE_SCALABILITY.md` for the 2026-06-15 dirty update scalability checkpoint and mass dirty unit guard.
+
+See `docs/STORAGE_PERSISTENCE_FOUNDATION.md` for the 2026-06-15 RocksDB chunk persistence guard.
+
+See `docs/LONG_RUN_EXPLORATION_SOAK.md` for the 2026-06-15 repeated movement soak harness and smoke evidence.
+
+See `docs/GPU_TERRAIN_LOAD_SCALING.md` for the 2026-06-15 high resident-set GPU terrain load-scaling gate.
+
+See `docs/GPU_UPLOAD_PRESSURE.md` for the 2026-06-15 fill-stress plus allocator upload-pressure gate.
+
+See `docs/GPU_REPACK_ACTIVATION_PREFLIGHT.md` for the 2026-06-15 GPU repack activation preflight and deferred decision.
+
+See `docs/GPU_REPACK_SOAK_ROLLBACK.md` for the 2026-06-15 GPU repack soak/rollback deferred gate.
+
+## High-Pressure Suite
+
+The high-pressure world load suite is:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release ./scripts/world_streaming_high_pressure_suite.sh logs/world_streaming_high_pressure_suite
+```
+
+It builds/signs `server/server`, refuses a pre-existing listener on port `25565`, runs selected movement/workload cases, then writes `world-load-suite-summary.txt`. The top-level summary includes `server_chunk_order` so opt-in delivery-order runs are explicit. By default it runs:
+
+- `startup-cold`
+- `startup-warm`
+- `long-move`
+- `spiral`
+- `fast-turn`
+- `teleport-snap`
+- `high-view`
+- `high-resident`
+
+Use `RUMPELMC_WORLD_LOAD_SUITE_CASES="fast-turn spiral"` to run a narrow subset. The suite defaults performance budgets to report-only so high-pressure evidence is collected without hiding correctness failures; movement smoke still validates terrain, collision, startup timing, and zero GPU upload failures.
+
+## First Playable Latency
+
+The main scene no longer waits a fixed `1.0s` after the local server reports that it is listening before adding `GameClient`. Default startup now yields one frame, then attaches the client immediately. Use `RUMPELMC_CLIENT_ATTACH_DELAY_SEC=<seconds>` only as a diagnostic rollback/control if a platform needs extra delay after server listen readiness.
+
+Fresh check:
+
+- `logs/world_streaming_high_pressure_suite_startup_cold_attach_delay_check/world-load-suite-summary.txt` passed `startup-cold` with `startup_player_spawn_ms=15.152`, `startup_packet_queue_lag_ms=10.125`, `startup_chunk_decode_work_ms=0.228`, `startup_first_mesh_work_ms=3.436`, `startup_first_mesh_collision_work_ms=2.776`, `terrain_queue_max_ms=1.812`, and `gpu_upload_fail=0`.
+
+## Chunk Delivery Order
+
+The default server stream remains nearest-first by squared chunk distance. `world.ChunksAround` preserves that old behavior.
+
+`RUMPELMC_SERVER_CHUNK_ORDER=directional` enables an opt-in server-side tie-break for movement streaming. The server tracks the previous chunk center per connection, converts movement between chunk centers to a normalized `-1/0/1` direction, and passes that to `world.ChunksAroundOrdered`. Directional ordering does not change protocol, chunk payloads, storage, world generation, view distance, batch size, or bootstrap radius. It only chooses ahead-of-motion chunks first when candidates are already at the same distance from the current center.
+
+Fresh check:
+
+- `logs/world_streaming_high_pressure_suite_spiral_directional_check/world-load-suite-summary.txt` passed `spiral` with `server_chunk_order=directional`, `motion_steps=9`, `motion_chunks=9`, `current_chunk=0,2`, `terrain_queue_max_ms=1.831`, `process_wall_p95_ms=0.044`, `gpu_compositor_submit_max_ms=0.116`, `gpu_upload_fail=0`, and `startup_player_spawn_ms=16.667`.
+- The matching run log recorded directional stream batches with nonzero movement directions, including `direction=1,1`, `direction=-1,0`, `direction=1,-1`, and `direction=0,1`.
+
+## Client Packet Queue Measurement
+
+The Rust client keeps the existing unbounded reader-thread channel and main-thread drain behavior. Packet queue metrics are measurement-only and use per-frame drain counts as a queue-depth proxy:
+
+- `packet_q_frames`, `packet_q_nonempty`, `packet_q_drained`, and `packet_q_chunk_drained` count drain frames and drained packets.
+- `packet_q_last_drain`, `packet_q_max_drain`, `packet_q_last_chunk_drain`, and `packet_q_max_chunk_drain` report frame-level drain bursts.
+- `packet_q_lag_ms` reports last/average/max queue lag for packets drained on non-empty frames.
+- `packet_q_decode_work_ms` reports last/average/max protobuf decode work for drained packets.
+
+`scripts/gpu_terrain_movement_stress.sh` writes these fields as a `movement_packet_queue` line, and the high-pressure suite carries the main values into `world-load-suite-summary.txt`.
+
+Fresh check:
+
+- `logs/world_streaming_high_pressure_suite_startup_packet_queue_check/world-load-suite-summary.txt` passed `startup-cold` with `packet_queue_max_drain=35`, `packet_queue_drained=394`, `packet_queue_lag_max_ms=13.943`, `packet_queue_decode_work_max_ms=0.023`, `startup_player_spawn_ms=8.333`, `terrain_queue_max_ms=1.949`, and `gpu_upload_fail=0`.
+
+## Resident Set Growth
+
+The resident-set growth gate is measurement-only. It raises the stress workload to server view distance `16` and client keep distance `16` without changing default gameplay distance, visible quality, protocol, storage, chunk serialization, or GPU feature flags:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release ./scripts/world_streaming_resident_set_growth.sh logs/world_streaming_resident_set_growth_radius16_check
+```
+
+The wrapper runs the heavy workload matrix, requires a minimum resident draw count, and fails on GPU upload failures. It is intended to produce resident pressure evidence before changing unload policy, repack behavior, or draw-distance defaults.
+
+Fresh check:
+
+- `logs/world_streaming_resident_set_growth_radius16_check/resident-set-growth-summary.txt` passed with `server_view_distance=16`, `client_keep_chunk_distance=16`, `max_gpu_subchunks=2482`, `max_gpu_draws=2482`, `max_gpu_faces=3296`, `max_gpu_draw_cmd_bytes=39712`, `max_gpu_draw_cmd_capacity_bytes=131072`, `max_terrain_queue_ms=3.453`, `max_process_wall_p95_ms=0.052`, `max_gpu_compositor_submit_ms=0.207`, and `gpu_upload_fail=0`.
+
+## Chunk Unload Churn
+
+The default client unload policy remains keep-distance plus grace-period based. `RUMPELMC_CLIENT_CHUNK_UNLOAD_GRACE_SEC=0` is still the immediate-unload rollback/control path.
+
+Chunk unload metrics are now part of the Rust perf marker and movement summaries:
+
+- `chunk_unload_grace_kept` counts chunks outside the keep radius but retained by grace.
+- `chunk_unload_total` counts chunks actually unloaded.
+- `chunk_unload_neighbor_refresh` counts loaded neighbors re-enqueued after unloads.
+- `chunk_unload_max` and `chunk_unload_max_grace_kept` capture worst single-scan churn.
+
+Fresh `teleport-snap` checks:
+
+- Default grace in `logs/world_streaming_high_pressure_suite_teleport_unload_churn_check/world-load-suite-summary.txt` passed with `chunk_unload_total=0`, `chunk_unload_grace_kept=24375`, `chunk_unload_neighbor_refreshes=0`, `chunk_unload_max=0`, `chunk_unload_max_grace_kept=311`, `terrain_queue_max_ms=2.062`, and `gpu_upload_fail=0`.
+- Immediate-unload control in `logs/world_streaming_high_pressure_suite_teleport_unload_churn_grace0_check/world-load-suite-summary.txt` passed with `chunk_unload_total=375`, `chunk_unload_grace_kept=0`, `chunk_unload_neighbor_refreshes=296`, `chunk_unload_max=311`, `terrain_queue_max_ms=2.222`, and `gpu_upload_fail=0`.
+
+## World Pop-In Metrics
+
+The first pop-in metric is a report-only player-neighborhood probe. The default `RUMPELMC_CLIENT_POP_IN_PROBE_RADIUS=1` checks chunks around the current player chunk for loaded data and collision bodies. This is not yet an image-space or camera-occlusion hole detector.
+
+Movement summaries now include:
+
+- `movement_popin frames`, `complete_frames`, `missing_frames`, and `collision_missing_frames`.
+- `missing_chunks` and `collision_missing_chunks` accumulated across frames.
+- `missing_max` and `collision_missing_max` for worst single-frame probe gaps.
+
+Fresh check:
+
+- `logs/world_streaming_high_pressure_suite_teleport_popin_check/world-load-suite-summary.txt` passed `teleport-snap` with `popin_missing_chunks=283`, `popin_collision_missing_chunks=75`, `popin_missing_max=5`, `popin_collision_missing_max=5`, `popin_probe_radius=1`, `terrain_queue_max_ms=2.016`, and `gpu_upload_fail=0`.
+- The matching movement summary reported `frames=743`, `complete_frames=647`, `missing_frames=69`, `collision_missing_frames=27`, `missing_last=0`, and `collision_missing_last=0`.
+
+## Collision Readiness
+
+Startup remains collision-gated, and movement summaries now include an explicit `movement_readiness` row that separates final render readiness from final collision readiness:
+
+- `current_render_ready` is derived from `current_chunk_submeshes > 0`.
+- `current_collision_ready` is derived from `current_chunk_collision > 0`.
+- `readiness_ground_misses` stays tied to the final ground-ray grid around the player.
+- `popin_collision_missing_max` reports transient loaded-but-collision-missing probe gaps separately from final readiness.
+
+Fresh check:
+
+- `logs/world_streaming_high_pressure_suite_teleport_readiness_check/world-load-suite-summary.txt` passed `teleport-snap` with `current_render_ready=1`, `current_collision_ready=1`, `readiness_ground_misses=0`, `popin_collision_missing_max=5`, `terrain_queue_max_ms=2.152`, and `gpu_upload_fail=0`.
+- The matching movement summary reported `current_chunk_loaded=1`, `current_chunk_submeshes=2`, `current_chunk_collision=2`, `ground_misses=0`, `startup_collision_ms=8.333`, and `startup_player_spawn_ms=8.333`.
+
+## Lazy Collision Experiment
+
+`RUMPELMC_CLIENT_COLLISION_CHUNK_DISTANCE` is an opt-in experiment control. Leaving it unset keeps the current default collision radius `1`; setting it to `0` keeps collision only for the current player chunk.
+
+Fresh check:
+
+- `logs/world_streaming_high_pressure_suite_teleport_lazy_collision_r0_check/world-load-suite-summary.txt` passed final `teleport-snap` readiness with `current_render_ready=1`, `current_collision_ready=1`, `readiness_ground_misses=0`, `terrain_queue_max_ms=2.067`, and `gpu_upload_fail=0`.
+- The same run reported `popin_collision_missing_chunks=2706` and `popin_collision_missing_max=4`, so radius `0` remains experimental and must not become default without explicit budgets and broader movement coverage.
+
+## Worldgen Determinism
+
+The current worldgen hardening slice is test-only. It locks down flat generation strata, repeat generation for positive and negative chunk coordinates, stable little-endian block serialization order, and `World.ChunkSnapshot()` determinism across independent `World` instances.
+
+Fresh check:
+
+- `go test ./pkg/world` passed on 2026-06-15 with the new determinism coverage.
+
+## Chunk Serialization Compatibility
+
+The compatibility suite is test-only. It guards raw default payload compatibility, RLE wire-vector stability, direct serialize/deserialize round-trips, protobuf schema field numbers, enum wire values, and unknown `ChunkData` field preservation on Go protobuf round-trips.
+
+Fresh check:
+
+- `go test ./pkg/api ./pkg/world ./pkg/network` passed on 2026-06-15 with the new compatibility coverage.
+
+## Networking Robustness
+
+The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, and closed initial probes.
+
+Fresh check:
+
+- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `active_protocol_change=0`, and reconnect/slow-client/overload status as `deferred`.
+
+## Client State Machine
+
+The client lifecycle is now modeled explicitly as `connecting`, `waiting_chunks`, `spawning`, `active`, `reconnecting`, and `shutdown`. The model is unit-guarded and wired to current connect success/failure, startup chunk readiness, player spawn, synchronous send errors, and shutdown cleanup. Runtime reconnect execution remains deferred.
+
+Fresh check:
+
+- `logs/client_state_machine_hardening_current/client-state-machine-hardening-summary.txt` reported `status=pass`, `client_lifecycle_tests=pass`, `runtime_reconnect=deferred`, `state_telemetry=deferred`, and `active_protocol_change=0`.
+
+## Gameplay Loop Foundation
+
+The current mining/building loop remains `Player` raycast signal -> `GameClient` `BlockAction` -> server `World.SetBlockGlobal` -> updated chunk snapshot. The client now has a local creative hotbar inventory model with explicit slot counts and placeability validation. Full save -> reload -> visual/collision/GPU verification remains Block 41 work.
+
+Fresh check:
+
+- `logs/gameplay_loop_foundation_current/gameplay-loop-foundation-summary.txt` reported `status=pass`, `inventory_tests=pass`, `server_tests=pass`, `server_edit_persistence=store_save_boundary`, `full_reload_persistence=deferred`, and `active_protocol_change=0`.
+
+## Block Edit Persistence
+
+Block edit persistence is now guarded at the world/storage boundary. A focused unit test proves `SetBlockGlobal` place and destroy edits are saved through `ChunkStore.SaveChunk` and reloaded by fresh `World(store)` instances. Runtime persisted-reload visual/collision/GPU smoke remains deferred to a heavier Godot run.
+
+Fresh check:
+
+- `logs/block_edit_persistence_current/block-edit-persistence-summary.txt` reported `status=pass`, `place_reload=guarded`, `destroy_reload=guarded`, `world_reload_test=pass`, `storage_tests=pass`, `network_tests=pass`, `dirty_update_tests=pass`, `runtime_reload_smoke=deferred`, and `active_protocol_change=0`.
+
+## Dirty Update Scalability
+
+Dirty update scalability is now guarded by a mass dirty unit test that touches all chunk edges and multiple subchunks. Existing edge dirty runtime wrappers remain the heavy checks for collision/GPU evidence; they are syntax-checked by the gate but not run inside normal fast validation.
+
+Fresh check:
+
+- `logs/dirty_update_scalability_current/dirty-update-scalability-summary.txt` reported `status=pass`, `mass_dirty_unit=pass`, `dirty_tests=pass`, `edge_runtime_scripts=available`, `runtime_script_count=6`, `runtime_mass_edit=deferred`, and `active_protocol_change=0`.
+
+## Storage Persistence Foundation
+
+The storage foundation slice keeps RocksDB as the implemented chunk persistence backend and does not add PostgreSQL behavior. It adds focused coverage for missing chunks, save/reopen round-trips, overwrite isolation between neighboring chunk keys, and corrupt persisted payload errors.
+
+Fresh check:
+
+- `go test ./pkg/storage` passed on 2026-06-15 with the new persistence coverage.
+
+## Long-Run Exploration Soak
+
+The exploration soak wrapper repeats movement stress runs and aggregates long-run signals: packet queue drain/lag, unload churn, pop-in counters, render/collision readiness, GPU upload failures, terrain queue latency, and compositor submit time. Defaults are bounded and report-only; raise `RUMPELMC_EXPLORATION_SOAK_REPEATS` for long or overnight runs.
+
+Fresh smoke:
+
+- `logs/world_streaming_exploration_soak_smoke/world-streaming-exploration-soak-summary.txt` passed a single fast-turn run with `max_terrain_queue_ms=2.147`, `max_packet_queue_drain=36`, `max_packet_queue_lag_ms=15.330`, `max_chunk_unload_total=0`, `gpu_upload_fail=0`, `ground_misses=0`, and final render/collision readiness.
+
+## GPU Terrain Load Scaling
+
+The load-scaling gate requires a high resident set before treating GPU terrain scaling as covered: at least `2000` subchunks, `2000` draws, `3000` faces, and at least `25%` draw-command buffer occupancy with zero upload failures.
+
+Fresh check:
+
+- `logs/gpu_terrain_load_scaling_radius16_summary_check/gpu-terrain-load-scaling-summary.txt` passed over the radius-16 resident-set artifact with `max_gpu_subchunks=2482`, `max_gpu_draws=2482`, `max_gpu_faces=3296`, draw-command occupancy `30.298%`, `max_terrain_queue_ms=3.453`, and `gpu_upload_fail=0`.
+
+## GPU Upload Pressure
+
+The upload-pressure gate composes fill stress and allocator stress. It is meant to pressure draw/fill work while still checking upload failure causes and allocator fragmentation before any upload capacity or allocator behavior changes.
+
+Fresh check:
+
+- `logs/gpu_terrain_upload_pressure_smoke/gpu-upload-pressure-summary.txt` passed with repeat `1` plus report-only repeat `16`, `max_gpu_effective_draws=21216`, `gpu_upload_fail=0`, `gpu_upload_fail_capacity=0`, `gpu_upload_fail_fragmented=0`, `max_gpu_fragmentation_pct=0.0`, and `max_terrain_queue_ms=2.079`.
+
+## GPU Terrain Memory Budget
+
+The memory budget gate is summary-only. It turns current resident memory, draw-command, face/subchunk, fragmentation, and upload-failure evidence into explicit budgets before any allocator or eviction policy changes.
+
+Fresh check:
+
+- `logs/gpu_terrain_memory_budget_current/gpu-terrain-memory-budget-summary.txt` passed with configured terrain buffers `67,239,936` bytes under the `70,254,592` byte budget, active terrain bytes `52,736` under the `4,194,304` byte budget, `gpu_subchunks=2482`, `gpu_draws=2482`, `gpu_faces=3296`, draw-command occupancy `30.298%`, draw-command headroom `91,360` bytes, fragmentation `0.0%`, and zero upload failures.
+
+## GPU Report System V2
+
+The V2 report wrapper keeps the existing aggregate report but explicitly separates fresh scoped metrics, fail gates, historical aggregate maxima, and warning-only local signals.
+
+Fresh check:
+
+- `logs/gpu_terrain_report_v2_current/gpu-terrain-report-v2-summary.txt` passed with scoped status `pass`, resource lifecycle status `pass`, memory budget status `pass`, clean legacy error scan, historical `gpu_effective_draws=21216`, historical upload failures `0`, and warning-only local `frame_p95_ms=8.368`.
+
+## Performance Baseline Governance
+
+The baseline governance check compares the classified V2 report against an accepted baseline file and keeps local FPS/GPU timestamp fields warning-only.
+
+Fresh check:
+
+- `logs/performance_baseline_governance_current/performance-baseline-governance-summary.txt` passed against `docs/performance_baselines/gpu_terrain_world_streaming.baseline` with baseline id `gpu_terrain_world_streaming_20260615`, historical effective draw coverage `21216` over the `20000` minimum, upload failures `0`, fragmentation `0.0%`, draw-command occupancy `16.296%`, and warning status `ok`.
+
+## Test Strategy
+
+The check strategy separates daily `fast`, pre-merge `full`, and heavy/nightly performance evidence. Nightly runtime work remains outside `check.sh` so normal checks do not depend on local Godot capture timing or existing logs.
+
+Fresh check:
+
+- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, load scaling, upload pressure, resource lifecycle, memory budget, report V2, and baseline governance.
+
+## GPU Repack Activation Preflight
+
+Active GPU terrain buffer repack remains disabled. The activation preflight reads upload-pressure and load-scaling summaries and allows no active swap while there is no upload failure or fragmentation pressure.
+
+Fresh check:
+
+- `logs/gpu_repack_activation_preflight_current/gpu-repack-activation-preflight-summary.txt` reported `status=deferred`, `active_repack_allowed=0`, `reason=no_fragmentation_pressure`, `max_gpu_fragmentation_pct=0.0`, and zero upload failures.
+
+## GPU Repack Soak And Rollback
+
+Active repack soak is deferred while activation preflight reports `active_repack_allowed=0`. The soak/rollback gate exists so deferred status is explicit and not confused with active-repack coverage.
+
+Fresh check:
+
+- `logs/gpu_repack_soak_rollback_gate_current/gpu-repack-soak-rollback-summary.txt` reported `status=deferred`, `active_soak_run=0`, `reason=active_repack_not_allowed`, and `preflight_reason=no_fragmentation_pressure`.
+
 ## Current Baseline
 
 - Server chunks are `32 x 32 x 512`.
@@ -10,9 +307,29 @@ This document tracks the chunk-loading path and planned optimizations for faster
 - `server/pkg/network` sends RLE `ChunkData.blocks` by default after the Rust client decodes them back to the same raw block bytes.
 - `RUMPELMC_SERVER_CHUNK_ENCODING=raw` switches chunk payloads back to the raw full chunk rollback path.
 - The default server stream sends up to `64` chunks per update, ordered nearest-first by chunk distance.
+- `RUMPELMC_SERVER_CHUNK_ORDER=directional` enables opt-in movement-direction tie-break ordering while leaving nearest-first as the default.
 - `RUMPELMC_SERVER_CHUNKS_PER_UPDATE=6` restores the previous conservative stream batch.
 - The default first post-connect stream uses bootstrap radius `0`, sending only the current chunk first; normal position updates then continue with the full view distance.
 - `RUMPELMC_SERVER_BOOTSTRAP_RADIUS=1` restores the previous default startup stream; `RUMPELMC_SERVER_BOOTSTRAP_RADIUS=2` restores the earlier wider startup stream; `RUMPELMC_SERVER_BOOTSTRAP_RADIUS=full` restores full view-distance startup streaming.
+- Packet queue metrics are observational only; they do not limit, drop, delay, or reorder packet delivery.
+- Resident-set growth runs use stress-only view/keep distances and do not change default gameplay distance or visual quality.
+- Client chunk unload remains keep-distance plus grace based by default; immediate unload is a control path through `RUMPELMC_CLIENT_CHUNK_UNLOAD_GRACE_SEC=0`.
+- Pop-in metrics are report-only player-neighborhood probes; they do not fail movement gates until explicit budgets are defined.
+- Movement readiness separates final render-ready and collision-ready evidence; player spawn remains collision-gated.
+- Client collision radius remains `1` by default; `RUMPELMC_CLIENT_COLLISION_CHUNK_DISTANCE=0` is an opt-in lazy-collision experiment only.
+- Worldgen determinism is covered by focused `server/pkg/world` tests; generation behavior, chunk dimensions, serialization order, protocol, and storage remain unchanged.
+- Chunk serialization compatibility is guarded by focused `server/pkg/api`, `server/pkg/world`, and `server/pkg/network` tests for field numbers, enum values, raw defaults, RLE wire vectors, and protobuf unknown fields.
+- Networking robustness is guarded by focused Go and Rust packet-boundary tests; reconnect, slow-client, overload, and backpressure policy remain deferred and must not change the wire contract without a protocol task.
+- Client lifecycle state is modeled as connecting, waiting chunks, spawning, active, reconnecting, and shutdown; reconnect execution and state telemetry remain deferred until a separate task defines stale packet and reset behavior.
+- Gameplay foundation keeps mining/building on `BlockAction` and `World.SetBlockGlobal`; local hotbar inventory is client-only and full edit reload persistence is deferred to the block-edit persistence gate.
+- Block edit persistence has a world-level save/reload guard for place and destroy edits; runtime persisted-reload visual/collision/GPU smoke is still a heavier deferred check.
+- Dirty update scalability has a mass dirty unit guard and syntax-checked edge dirty runtime wrappers; heavy runtime mass-edit evidence remains separate from normal checks.
+- RocksDB chunk persistence is guarded by focused `server/pkg/storage` tests for key format, sorted signed coordinate keys, round-trip save/load, missing chunks, overwrite isolation, and corrupt payload errors.
+- Long-run exploration soak is available as a bounded report-only wrapper by default; do not treat the one-run smoke as multi-hour stability evidence.
+- GPU terrain load scaling is guarded by `scripts/gpu_terrain_load_scaling.sh`; standard 996-draw workload results are not enough for this gate.
+- GPU upload pressure is guarded by `scripts/gpu_terrain_upload_pressure.sh`; it must stay evidence-only unless a separate task explicitly changes upload capacity, allocator policy, or visible quality.
+- GPU repack activation is currently deferred by preflight. Do not activate final buffer/render-binding/slot/allocator swaps while `active_repack_allowed=0`.
+- GPU repack soak/rollback coverage is also deferred while active repack is not allowed; do not cite deferred soak as active-repack runtime validation.
 
 ## First Optimization Path
 
@@ -354,3 +671,33 @@ Set `RUMPELMC_SERVER_CHUNK_ENCODING=raw` for the rollback path.
 - Protocol changes must preserve raw chunk compatibility until the client and server both support the encoded path.
 - Storage still persists the exact output of `world.Chunk.Serialize()` unless a separate migration is explicitly planned.
 - Add round-trip tests for every encoded chunk format before enabling it in networking.
+- For RenderingDevice resource lifecycle checks, use `scripts/gpu_resource_lifecycle_audit.sh`; see `docs/RENDERINGDEVICE_RESOURCE_LIFECYCLE_AUDIT.md`.
+- For GPU terrain memory budget checks, use `scripts/gpu_terrain_memory_budget.sh`; see `docs/GPU_TERRAIN_MEMORY_BUDGETING.md`.
+- For classified GPU report output, use `scripts/gpu_terrain_report_v2.sh`; see `docs/GPU_REPORT_SYSTEM_V2.md`.
+- For accepted baseline comparison, use `scripts/performance_baseline_governance.sh`; see `docs/PERFORMANCE_BASELINE_GOVERNANCE.md`.
+- For fast/full/nightly strategy checks, use `scripts/test_strategy_gate.sh`; see `docs/TEST_STRATEGY.md`.
+- For native-shadow prototype readiness, use `scripts/gpu_native_shadow_prototype_preflight.sh`; see `docs/NATIVE_SHADOW_PROTOTYPE_PREFLIGHT.md`. Current expected status is `deferred` while `GPU_TERRAIN_NATIVE_SHADOW_IMPLEMENTED=false`.
+- For shadow quality parity, use `scripts/shadow_quality_parity_program.sh`; see `docs/SHADOW_QUALITY_PARITY_PROGRAM.md`. Current active native comparison remains `deferred`; only Godot proxy and native fallback parity are validated.
+- For CPU shadow proxy retirement planning, use `scripts/shadow_proxy_retirement_plan.sh`; see `docs/SHADOW_PROXY_RETIREMENT_PLAN.md`. Current expected status is `deferred` and `retirement_allowed=0`.
+- For lighting stability checks, use `scripts/lighting_stability_matrix.sh`; see `docs/LIGHTING_STABILITY_MATRIX.md`. Current ambient variation coverage is a deferred sub-gate.
+- For transparent active-path readiness, use `scripts/transparent_active_path_preflight.sh`; see `docs/TRANSPARENT_ACTIVE_PATH_PREFLIGHT.md`. Current expected status is `deferred` while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
+- For transparent sorting/depth policy, use `scripts/transparent_sorting_depth_program.sh`; see `docs/TRANSPARENT_SORTING_DEPTH_PROGRAM.md`. Current expected status is `deferred` until a real active transparent workload exists.
+- For transparent fixture acceptance, use `scripts/transparent_fixture_acceptance_suite.sh`; see `docs/TRANSPARENT_FIXTURE_ACCEPTANCE_SUITE.md`. Current fallback acceptance passes while active fixture acceptance remains deferred.
+- For block material metadata design, use `scripts/block_material_metadata_design_gate.sh`; see `docs/BLOCK_MATERIAL_METADATA_DESIGN.md`. Current expected status is `pass` with `active_schema_change=0` and the runtime contract still opaque-only.
+- For texture atlas evolution planning, use `scripts/texture_atlas_evolution_gate.sh`; see `docs/TEXTURE_ATLAS_EVOLUTION_TRACK.md`. Current expected status is `pass` with no atlas asset or shader layout change.
+- For biome and visual-variety foundation, use `scripts/biome_visual_variety_foundation_gate.sh`; see `docs/BIOME_VISUAL_VARIETY_FOUNDATION.md`. Current expected status is `pass` with runtime biome visuals deferred and no worldgen/serialization change.
+- For world generation quality planning, use `scripts/world_generation_quality_gate.sh`; see `docs/WORLD_GENERATION_QUALITY_PASS.md`. Current expected status is `pass` with runtime terrain/cave/resource/structure changes deferred.
+- For server scalability checks, use `scripts/server_scalability_pass_gate.sh`; see `docs/SERVER_SCALABILITY_PASS.md`. Current expected status is `pass` with multi-client sent-state guarded by unit test and live multi-client load deferred.
+- For networking robustness checks, use `scripts/networking_robustness_gate.sh`; see `docs/NETWORKING_ROBUSTNESS_PROGRAM.md`. Current expected status is `pass` with Go/Rust packet boundary tests guarded and reconnect/slow-client/overload work deferred.
+- For client state-machine checks, use `scripts/client_state_machine_hardening_gate.sh`; see `docs/CLIENT_STATE_MACHINE_HARDENING.md`. Current expected status is `pass` with lifecycle transitions unit-guarded and runtime reconnect/state telemetry deferred.
+- For gameplay loop foundation checks, use `scripts/gameplay_loop_foundation_gate.sh`; see `docs/GAMEPLAY_LOOP_FOUNDATION.md`. Current expected status is `pass` with local hotbar inventory guarded and full reload persistence deferred.
+- For block edit persistence checks, use `scripts/block_edit_persistence_gate.sh`; see `docs/BLOCK_EDIT_PERSISTENCE_TRACK.md`. Current expected status is `pass` with place/destroy reload unit-guarded and runtime reload smoke deferred.
+- For dirty update scalability checks, use `scripts/dirty_update_scalability_gate.sh`; see `docs/DIRTY_UPDATE_SCALABILITY.md`. Current expected status is `pass` with mass dirty math guarded and heavy runtime mass-edit deferred.
+- For tooling/debug overlay checks, use `scripts/tooling_debug_overlay_gate.sh`; see `docs/TOOLING_DEBUG_OVERLAY.md`. Current expected status is `pass` with compact HUD overlay wired, full perf logging preserved, and no protocol or Godot scene/resource diff.
+- For observability/log cleanup checks, use `scripts/observability_logs_cleanup_gate.sh`; see `docs/OBSERVABILITY_LOGS_CLEANUP.md`. Current expected status is `pass` with HUD perf-log run IDs wired, current summary artifacts indexed, and current error scan clean.
+- For automated handoff checks, use `scripts/automated_handoff_discipline_gate.sh`; see `docs/AUTOMATED_HANDOFF_DISCIPLINE.md`. Current expected status is `pass` with handoff quality inputs and the current observability evidence index included in generated snapshots.
+- For architecture refresh checks, use `scripts/architecture_documentation_refresh_gate.sh`; see `docs/ARCHITECTURE_DOCUMENTATION_REFRESH.md`. Current expected status is `pass` with `docs/ARCHITECTURE.md` refreshed and `runtime_change=none`.
+- For security/data-integrity review checks, use `scripts/security_data_integrity_review_gate.sh`; see `docs/SECURITY_DATA_INTEGRITY_REVIEW.md`. Current expected status is `pass` with packet framing, chunk decode, storage persistence, and block-edit validation guarded and `active_protocol_change=0`.
+- For release-candidate evidence checks, use `scripts/release_candidate_gate.sh`; see `docs/RELEASE_CANDIDATE_GATE.md`. Current expected status is `pass` in summary mode with optional live `fast`, `full`, `git diff --check`, and `diff_guard.sh` checks controlled by explicit `RUMPELMC_RC_RUN_*` flags.
+- For external profiler campaign checks, use `scripts/external_profiling_campaign_gate.sh`; see `docs/EXTERNAL_PROFILING_CAMPAIGN.md`. Current expected status is `pass` with `external_profile_status=pending_external_profiler`; do not cite the pending capture pack as measured profiler evidence.
+- For the production-readiness milestone, use `scripts/production_readiness_milestone_gate.sh`; see `docs/PRODUCTION_READINESS_MILESTONE.md`. Current expected status is `pass` with `production_readiness=rc_evidence_ready`, while external profiler, native shadow, and active transparent terrain remain deferred.
