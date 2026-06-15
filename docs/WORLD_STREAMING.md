@@ -121,6 +121,10 @@ sh scripts/world_streaming_resident_set_matrix.sh logs/world_streaming_resident_
 
 Expected current result includes `status=pass`, `mode=summary`, `max_gpu_draws>=2000`, `max_draw_cmd_occupancy_pct>=25.0`, and zero GPU upload failures. The summary also records the best radius, max subchunks/draws/faces, draw-command occupancy/headroom, terrain queue max, process wall p95, and compositor submit max.
 
+Fresh explicit clean run:
+
+- `logs/world_streaming_resident_set_matrix_radius16_18_clean/resident-set-matrix-summary.txt` ran `RUMPELMC_RESIDENT_SET_MATRIX_RUN=1` with radii `16 18` after clearing a stale local server listener. Both source resident-set growth rows passed and reported zero GPU upload failures, but the matrix failed the pressure gate with `reason=draw_pressure_too_low`: best radius `16`, `max_gpu_draws=1859`, `max_gpu_subchunks=1859`, `max_gpu_faces=2243`, `max_draw_cmd_occupancy_pct=22.693`, `min_draw_cmd_headroom_bytes=101328`, `max_terrain_queue_ms=2.498`, `max_process_wall_p95_ms=0.055`, and `max_gpu_compositor_submit_ms=0.160`. This fresh run is negative pressure evidence for active GPU repack or draw-capacity changes.
+
 This wrapper is still measurement-only. It must not be used to change default draw distance, unload policy, GPU buffer repack behavior, allocator policy, protocol, storage, world generation, or chunk serialization by itself.
 
 ## Chunk Unload Churn

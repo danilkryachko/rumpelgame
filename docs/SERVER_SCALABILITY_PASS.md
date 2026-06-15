@@ -101,7 +101,7 @@ Still needed before claiming full live multi-client scalability:
 - Live multi-client load beyond the bounded two-client fanout smoke.
 - More-than-two-client load evidence that records per-client chunks sent, elapsed time, disconnect behavior, and server errors.
 - CPU/memory profiling under multiple active clients.
-- Live slow-client handling evidence with real TCP readers.
+- Broader slow-client handling evidence under more clients and broadcast load; the networking robustness block now owns the bounded two-client slow-reader smoke.
 - Disconnect cleanup counters or log summaries.
 - Block-edit fanout/broadcast load evidence under several active clients beyond the two-client smoke.
 - Fair scheduling or backpressure design if one client can monopolize generation/send work.
@@ -143,4 +143,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with a bounded live two-client fanout smoke. Broader live load, CPU/memory profiling, slow-reader harnesses, and disconnect metrics remain future work.
+This block is complete as a unit-guard/checkpoint block with a bounded live two-client fanout smoke. Broader live load, CPU/memory profiling, broad slow-reader/load harnesses, and disconnect metrics remain future work.

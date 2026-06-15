@@ -107,7 +107,11 @@ while IFS= read -r path; do
 
   case "$status_value" in
     pass|deferred) ;;
-    *) bad_status_count=$((bad_status_count + 1)) ;;
+    *)
+      if [ "$path" != "$SUMMARY_PATH" ]; then
+        bad_status_count=$((bad_status_count + 1))
+      fi
+      ;;
   esac
 
   printf 'artifact path=%s root=%s status=%s bytes=%s\n' "$rel_path" "$root_token" "${status_value:-missing}" "$bytes" >> "$INDEX_PATH"
