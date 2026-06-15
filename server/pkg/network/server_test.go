@@ -363,6 +363,29 @@ func TestHandleInitialClientPacketUsesBootstrapRadius(t *testing.T) {
 	}
 }
 
+func TestHandleClientPacketIgnoresUnknownBlockAction(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	conn := &recordingConn{}
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action: api.BlockAction_ActionType(99),
+				X:      1,
+				Y:      62,
+				Z:      1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacket(conn, packet, map[world.ChunkCoord]bool{}); err != nil {
+		t.Fatalf("handleClientPacket() error = %v", err)
+	}
+	if conn.written != 0 {
+		t.Fatalf("unknown block action wrote %d bytes, want 0", conn.written)
+	}
+}
+
 func TestSendChunkCanUseRLEPayload(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()

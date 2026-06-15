@@ -160,14 +160,18 @@ func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Pa
 		log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
 
 		block := world.Air
-		if action.Action == api.BlockAction_DESTROY {
+		switch action.Action {
+		case api.BlockAction_DESTROY:
 			block = world.Air
-		} else if action.Action == api.BlockAction_PLACE {
+		case api.BlockAction_PLACE:
 			block = world.BlockID(action.BlockId)
 			if !world.IsPlaceable(block) {
 				log.Printf("Ignored invalid place block id=%d", action.BlockId)
 				return nil
 			}
+		default:
+			log.Printf("Ignored unknown block action=%v", action.Action)
+			return nil
 		}
 
 		snapshot, err := s.world.SetBlockGlobal(action.X, action.Y, action.Z, block)
