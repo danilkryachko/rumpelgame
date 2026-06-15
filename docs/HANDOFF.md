@@ -23,6 +23,8 @@ Before handing off a non-trivial task, update `docs/AGENT_HANDOFF.md` with:
 
 Keep entries short and factual. Do not include secrets, access tokens, private keys, local credentials, or long copied logs.
 
+`./scripts/handoff.sh` also prints a handoff quality-input checklist and the current observability artifact index when available. Treat those generated sections as orientation aids; they do not replace reading and updating `docs/AGENT_HANDOFF.md` when a real handoff is happening.
+
 ## Handoff Quality Bar
 
 A new agent should be able to answer these questions in under five minutes:

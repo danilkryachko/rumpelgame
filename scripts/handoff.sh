@@ -3,6 +3,51 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT_DIR"
+HANDOFF_SUMMARY_LIMIT="${RUMPELMC_HANDOFF_SUMMARY_LIMIT:-120}"
+
+print_handoff_quality_inputs() {
+  echo "## Handoff Quality Inputs"
+  echo
+  for path in \
+    AGENTS.md \
+    docs/HANDOFF.md \
+    docs/AGENT_HANDOFF.md \
+    docs/AGENT_MEMORY.md \
+    docs/WORLD_STREAMING_ARCHITECTURE_REVIEW.md \
+    docs/OBSERVABILITY_LOGS_CLEANUP.md \
+    scripts/handoff.sh \
+    scripts/observability_logs_cleanup_gate.sh; do
+    if [ -e "$path" ]; then
+      printf '%s\n' "- \`$path\` status=present"
+    else
+      printf '%s\n' "- \`$path\` status=missing"
+    fi
+  done
+  echo
+}
+
+print_current_evidence_index() {
+  echo "## Current Evidence Index"
+  echo
+  index_path="logs/observability_logs_cleanup_current/observability-artifact-index.txt"
+  if [ -s "$index_path" ]; then
+    echo "Source: \`$index_path\`"
+    echo
+    sed -n "1,${HANDOFF_SUMMARY_LIMIT}p" "$index_path"
+    echo
+    return
+  fi
+
+  if [ -d logs ]; then
+    echo "No generated observability index found. Current summaries discovered from logs:"
+    echo
+    find logs -maxdepth 3 -path '*current/*summary.txt' -type f | sort | sed "s#^#- #"
+    echo
+  else
+    echo "No logs directory found."
+    echo
+  fi
+}
 
 print_gpu_report() {
   report_path="${TMPDIR:-/tmp}/rumpel-handoff-gpu-terrain-report-$$.txt"
@@ -53,6 +98,8 @@ echo "- docs/GPU_PROFILING.md"
 echo "- docs/GPU_TRENDS.md"
 echo
 
+print_handoff_quality_inputs
+
 if [ -f docs/AGENT_HANDOFF.md ]; then
   echo "## Current Handoff State"
   echo
@@ -90,6 +137,8 @@ if [ -f docs/GPU_TRENDS.md ]; then
 fi
 
 print_gpu_report
+
+print_current_evidence_index
 
 echo "## Recent Logs"
 echo
