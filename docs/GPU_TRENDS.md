@@ -8,6 +8,12 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 - `gpu_time` is report-only on the current macOS/Metal path because Godot timestamp samples report `0.0us`.
 - Prefer `terrain_queue_max_ms`, `process_wall_p95_ms`, `gpu_compositor_submit_max_ms`, `gpu_upload_fail`, draw counts, and external GPU profiler captures for decisions.
 
+## 2026-06-16
+
+| Commit | Slice | Artifact | Key Result | Caveat |
+| --- | --- | --- | --- | --- |
+| `workspace` | xctrace encoder candidate breakdown | `logs/gpu_shadow_xctrace_shadow_overhead_current/shadow-xctrace-shadow-overhead-summary.txt`, `logs/gpu_shadow_xctrace_shadow_overhead_current/shadow-xctrace-encoder-candidates.tsv` | Extended the xctrace control-delta helper to emit per-position encoder candidate statistics and surface them through the external campaign gate. Current summary still reports total `shadow_overhead_estimate_p50_ms=1.965`, but the single shadow-on-only candidate is `Blit_Command_7` with `candidate_shadow_encoder_p50_ms=0.007`, `candidate_shadow_encoder_avg_ms=0.028`, and `candidate_shadow_encoder_is_not_gpu_shadow_pass_ms=1`; the campaign summary now exposes `xctrace_overhead_candidate_status=single_missing_encoder_navigation_only` and the TSV path | navigation/reporting slice only; the small missing Blit encoder is not accepted `gpu_shadow_pass_ms` and does not explain the full control delta alone. No runtime renderer behavior, native shadow implementation, Godot proxy shadow behavior, shader visuals, draw distance, lighting, shadow quality, protocol, storage, worldgen, or chunk serialization changed |
+
 ## 2026-06-15
 
 | Commit | Slice | Artifact | Key Result | Caveat |

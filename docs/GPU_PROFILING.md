@@ -279,7 +279,7 @@ sh scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh \
   logs/gpu_shadow_xctrace_shadow_overhead_current
 ```
 
-The helper compares post-warmup main Godot command-buffer totals and writes `shadow-xctrace-shadow-overhead-summary.txt`. The summary must keep `estimate_is_not_gpu_shadow_pass_ms=1`, `control_delta_is_not_shadow_pass_row=1`, and `manual_gpu_shadow_pass_ms_required=1`; use `shadow_overhead_estimate_*_ms` only as prioritization/navigation evidence.
+The helper compares post-warmup main Godot command-buffer totals, writes `shadow-xctrace-shadow-overhead-summary.txt`, and also writes `shadow-xctrace-encoder-candidates.tsv` with per-encoder position deltas. The summary must keep `estimate_is_not_gpu_shadow_pass_ms=1`, `candidate_shadow_encoder_is_not_gpu_shadow_pass_ms=1`, `control_delta_is_not_shadow_pass_row=1`, and `manual_gpu_shadow_pass_ms_required=1`; use `shadow_overhead_estimate_*_ms` and `candidate_shadow_encoder_*` only as prioritization/navigation evidence.
 
 When reviewing `xctrace` CLI exports, generic rows such as command-buffer render/blit commands, drawable present events, completion handlers, or shader-list entries are insufficient for `gpu_shadow_pass_ms` unless they can be tied to the exact shadow pass by a stable profiler label or manual Xcode/Instruments inspection. Current helper summaries and review packets report `profiler_marker_xml_status=missing`, so treat exported XML tables, review packets, and XML marker scans as navigation aids only.
 

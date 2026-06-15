@@ -23,6 +23,11 @@ case "$SUMMARY_PATH" in
   /*) ;;
   *) SUMMARY_PATH="$ROOT_DIR/$SUMMARY_PATH" ;;
 esac
+CANDIDATE_PATH="${RUMPELMC_SHADOW_XCTRACE_ENCODER_CANDIDATES:-"$OUT_DIR/shadow-xctrace-encoder-candidates.tsv"}"
+case "$CANDIDATE_PATH" in
+  /*) ;;
+  *) CANDIDATE_PATH="$ROOT_DIR/$CANDIDATE_PATH" ;;
+esac
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 2>/dev/null || true)}"
 
 fail() {
@@ -31,9 +36,9 @@ fail() {
 }
 
 test -n "$PYTHON_BIN" || fail "python3 was not found"
-mkdir -p "$OUT_DIR" "$(dirname -- "$SUMMARY_PATH")"
+mkdir -p "$OUT_DIR" "$(dirname -- "$SUMMARY_PATH")" "$(dirname -- "$CANDIDATE_PATH")"
 
-"$PYTHON_BIN" - "$ROOT_DIR" "$SHADOW_ON_DIR" "$SHADOW_DISABLED_DIR" "$SUMMARY_PATH" <<'PY'
+"$PYTHON_BIN" - "$ROOT_DIR" "$SHADOW_ON_DIR" "$SHADOW_DISABLED_DIR" "$SUMMARY_PATH" "$CANDIDATE_PATH" <<'PY'
 import os
 import re
 import sys
@@ -46,6 +51,7 @@ root_dir = Path(sys.argv[1]).resolve()
 shadow_on_dir = Path(sys.argv[2]).resolve()
 shadow_disabled_dir = Path(sys.argv[3]).resolve()
 summary_path = Path(sys.argv[4]).resolve()
+candidate_path = Path(sys.argv[5]).resolve()
 
 warmup_frame = int(os.environ.get("RUMPELMC_SHADOW_XCTRACE_OVERHEAD_WARMUP_FRAME", "100"))
 min_main_frames = int(os.environ.get("RUMPELMC_SHADOW_XCTRACE_OVERHEAD_MIN_MAIN_FRAMES", "10"))
@@ -206,6 +212,25 @@ def encoder_kind(label):
     return label.split(" ", 1)[0] if label else "unknown"
 
 
+def position_stats(rows, position):
+    values = [durations[position] for _, _, durations in rows if position < len(durations)]
+    if not values:
+        return {
+            "samples": 0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "avg": 0.0,
+            "max": 0.0,
+        }
+    return {
+        "samples": len(values),
+        "p50": percentile(values, 0.50),
+        "p95": percentile(values, 0.95),
+        "avg": mean(values),
+        "max": max(values),
+    }
+
+
 def collect_main_buffers(capture_dir):
     submissions = parse_table(capture_dir / "metal-command-buffer-submissions.xml")
     frames = parse_table(capture_dir / "metal-command-buffer-frame-assignment.xml")
@@ -310,6 +335,93 @@ def infer_alignment(on_rows, off_rows):
     return "not_aligned", None, "none"
 
 
+def alignment_off_position(on_position, alignment_status, missing_position):
+    if alignment_status != "single_missing_encoder" or missing_position is None:
+        return on_position
+    if on_position < missing_position:
+        return on_position
+    if on_position == missing_position:
+        return None
+    return on_position - 1
+
+
+def alignment_role(on_position, alignment_status, missing_position):
+    if alignment_status != "single_missing_encoder" or missing_position is None:
+        return "unverified"
+    if on_position < missing_position:
+        return "matched_before"
+    if on_position == missing_position:
+        return "shadow_on_only_candidate"
+    return "matched_after"
+
+
+def write_candidate_table(on_rows, off_rows, alignment_status, missing_position):
+    on_labels = on_rows[0][1]
+    off_labels = off_rows[0][1]
+    with candidate_path.open("w", encoding="utf-8") as out:
+        out.write(
+            "position\talignment_role\tshadow_on_label\tshadow_on_kind\t"
+            "shadow_on_samples\tshadow_on_p50_ms\tshadow_on_avg_ms\tshadow_on_p95_ms\tshadow_on_max_ms\t"
+            "shadow_disabled_position\tshadow_disabled_label\tshadow_disabled_kind\t"
+            "shadow_disabled_samples\tshadow_disabled_p50_ms\tshadow_disabled_avg_ms\tshadow_disabled_p95_ms\tshadow_disabled_max_ms\t"
+            "delta_p50_ms\tdelta_avg_ms\tdelta_p95_ms\tdelta_max_ms\tcandidate_is_not_gpu_shadow_pass_ms\n"
+        )
+        for on_position, on_label in enumerate(on_labels):
+            on_stats = position_stats(on_rows, on_position)
+            off_position = alignment_off_position(on_position, alignment_status, missing_position)
+            if off_position is not None and off_position < len(off_labels):
+                off_label = off_labels[off_position]
+                off_stats = position_stats(off_rows, off_position)
+                delta_p50 = on_stats["p50"] - off_stats["p50"]
+                delta_avg = on_stats["avg"] - off_stats["avg"]
+                delta_p95 = on_stats["p95"] - off_stats["p95"]
+                delta_max = on_stats["max"] - off_stats["max"]
+                off_position_text = str(off_position)
+            else:
+                off_label = "none"
+                off_stats = {
+                    "samples": 0,
+                    "p50": 0.0,
+                    "avg": 0.0,
+                    "p95": 0.0,
+                    "max": 0.0,
+                }
+                delta_p50 = on_stats["p50"]
+                delta_avg = on_stats["avg"]
+                delta_p95 = on_stats["p95"]
+                delta_max = on_stats["max"]
+                off_position_text = "none"
+            out.write(
+                "\t".join(
+                    [
+                        str(on_position),
+                        alignment_role(on_position, alignment_status, missing_position),
+                        label_token(on_label),
+                        encoder_kind(on_label),
+                        str(on_stats["samples"]),
+                        metric(on_stats["p50"]),
+                        metric(on_stats["avg"]),
+                        metric(on_stats["p95"]),
+                        metric(on_stats["max"]),
+                        off_position_text,
+                        label_token(off_label),
+                        encoder_kind(off_label),
+                        str(off_stats["samples"]),
+                        metric(off_stats["p50"]),
+                        metric(off_stats["avg"]),
+                        metric(off_stats["p95"]),
+                        metric(off_stats["max"]),
+                        metric(delta_p50),
+                        metric(delta_avg),
+                        metric(delta_p95),
+                        metric(delta_max),
+                        "1",
+                    ]
+                )
+                + "\n"
+            )
+
+
 require_xml_dir(shadow_on_dir)
 require_xml_dir(shadow_disabled_dir)
 
@@ -327,11 +439,33 @@ off_collected = collect_main_buffers(shadow_disabled_dir)
 on_summary = summarize(on_collected["rows"])
 off_summary = summarize(off_collected["rows"])
 alignment_status, missing_position, missing_label = infer_alignment(on_collected["rows"], off_collected["rows"])
+write_candidate_table(on_collected["rows"], off_collected["rows"], alignment_status, missing_position)
 
 p50_delta = on_summary["total_p50"] - off_summary["total_p50"]
 avg_delta = on_summary["total_avg"] - off_summary["total_avg"]
 p95_delta = on_summary["total_p95"] - off_summary["total_p95"]
 max_delta = on_summary["total_max"] - off_summary["total_max"]
+
+candidate_status = "none"
+candidate_position = "none"
+candidate_label = "none"
+candidate_kind = "none"
+candidate_p50 = 0.0
+candidate_avg = 0.0
+candidate_p95 = 0.0
+candidate_max = 0.0
+candidate_samples = 0
+if alignment_status == "single_missing_encoder" and missing_position is not None:
+    candidate_stats = position_stats(on_collected["rows"], missing_position)
+    candidate_status = "single_missing_encoder_navigation_only"
+    candidate_position = str(missing_position)
+    candidate_label = label_token(missing_label)
+    candidate_kind = encoder_kind(missing_label)
+    candidate_p50 = candidate_stats["p50"]
+    candidate_avg = candidate_stats["avg"]
+    candidate_p95 = candidate_stats["p95"]
+    candidate_max = candidate_stats["max"]
+    candidate_samples = candidate_stats["samples"]
 
 summary_path.parent.mkdir(parents=True, exist_ok=True)
 with summary_path.open("w", encoding="utf-8") as out:
@@ -344,6 +478,7 @@ with summary_path.open("w", encoding="utf-8") as out:
         f"shadow_on_marker={rel(shadow_on_marker)} "
         f"shadow_disabled_marker={rel(shadow_disabled_marker)} "
         f"shadow_disabled_marker_binding={disabled_marker_binding} "
+        f"encoder_candidate_table={rel(candidate_path)} "
         f"warmup_frame={warmup_frame} "
         f"shadow_on_main_encoder_count={on_collected['main_encoder_count']} "
         f"shadow_disabled_main_encoder_count={off_collected['main_encoder_count']} "
@@ -359,6 +494,16 @@ with summary_path.open("w", encoding="utf-8") as out:
         f"shadow_overhead_estimate_p95_ms={metric(p95_delta)} "
         f"shadow_overhead_estimate_avg_ms={metric(avg_delta)} "
         f"shadow_overhead_estimate_max_delta_ms={metric(max_delta)} "
+        f"candidate_shadow_encoder_status={candidate_status} "
+        f"candidate_shadow_encoder_position={candidate_position} "
+        f"candidate_shadow_encoder_label={candidate_label} "
+        f"candidate_shadow_encoder_kind={candidate_kind} "
+        f"candidate_shadow_encoder_samples={candidate_samples} "
+        f"candidate_shadow_encoder_p50_ms={metric(candidate_p50)} "
+        f"candidate_shadow_encoder_p95_ms={metric(candidate_p95)} "
+        f"candidate_shadow_encoder_avg_ms={metric(candidate_avg)} "
+        f"candidate_shadow_encoder_max_ms={metric(candidate_max)} "
+        "candidate_shadow_encoder_is_not_gpu_shadow_pass_ms=1 "
         "estimate_is_not_gpu_shadow_pass_ms=1 "
         "result_row_status=not_written\n"
     )
@@ -368,7 +513,10 @@ with summary_path.open("w", encoding="utf-8") as out:
         f"encoder_count_delta={on_collected['main_encoder_count'] - off_collected['main_encoder_count']} "
         f"missing_encoder_position={missing_position if missing_position is not None else 'none'} "
         f"missing_encoder_label={label_token(missing_label)} "
-        "alignment_is_navigation_only=1\n"
+        f"candidate_shadow_encoder_status={candidate_status} "
+        f"candidate_shadow_encoder_p50_ms={metric(candidate_p50)} "
+        "alignment_is_navigation_only=1 "
+        "candidate_is_navigation_only=1\n"
     )
     out.write(
         "trust_boundary "

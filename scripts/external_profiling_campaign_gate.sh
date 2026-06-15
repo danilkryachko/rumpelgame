@@ -26,6 +26,7 @@ XCTRACE_OVERHEAD_SHADOW_ON_DIR="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_OVERHEAD_S
 XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR:-"$ROOT_DIR/logs/gpu_shadow_xctrace_shadow_disabled_control"}"
 XCTRACE_OVERHEAD_OUT_DIR="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_OVERHEAD_OUT_DIR:-"$ROOT_DIR/logs/gpu_shadow_xctrace_shadow_overhead_current"}"
 XCTRACE_OVERHEAD_SUMMARY="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_OVERHEAD_SUMMARY:-"$XCTRACE_OVERHEAD_OUT_DIR/shadow-xctrace-shadow-overhead-summary.txt"}"
+XCTRACE_OVERHEAD_CANDIDATES="${RUMPELMC_EXTERNAL_PROFILING_XCTRACE_OVERHEAD_CANDIDATES:-"$XCTRACE_OVERHEAD_OUT_DIR/shadow-xctrace-encoder-candidates.tsv"}"
 case "$XCTRACE_REVIEW_CAPTURE_DIR" in
   /*) ;;
   *) XCTRACE_REVIEW_CAPTURE_DIR="$ROOT_DIR/$XCTRACE_REVIEW_CAPTURE_DIR" ;;
@@ -49,6 +50,10 @@ esac
 case "$XCTRACE_OVERHEAD_SUMMARY" in
   /*) ;;
   *) XCTRACE_OVERHEAD_SUMMARY="$ROOT_DIR/$XCTRACE_OVERHEAD_SUMMARY" ;;
+esac
+case "$XCTRACE_OVERHEAD_CANDIDATES" in
+  /*) ;;
+  *) XCTRACE_OVERHEAD_CANDIDATES="$ROOT_DIR/$XCTRACE_OVERHEAD_CANDIDATES" ;;
 esac
 
 mkdir -p "$OUT_DIR"
@@ -188,14 +193,22 @@ fi
 xctrace_overhead_status="missing_control"
 xctrace_overhead_check_status="skipped"
 xctrace_overhead_estimate_p50_ms="missing"
+xctrace_overhead_candidate_status="missing"
+xctrace_overhead_candidate_label="missing"
+xctrace_overhead_candidate_p50_ms="missing"
 if [ -s "$XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR/metal-command-buffer-submissions.xml" ]; then
-  if sh "$ROOT_DIR/scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh" \
+  if RUMPELMC_SHADOW_XCTRACE_OVERHEAD_SUMMARY="$XCTRACE_OVERHEAD_SUMMARY" \
+    RUMPELMC_SHADOW_XCTRACE_ENCODER_CANDIDATES="$XCTRACE_OVERHEAD_CANDIDATES" \
+    sh "$ROOT_DIR/scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh" \
     "$XCTRACE_OVERHEAD_SHADOW_ON_DIR" \
     "$XCTRACE_OVERHEAD_SHADOW_DISABLED_DIR" \
     "$XCTRACE_OVERHEAD_OUT_DIR" > "$OUT_DIR/shadow-xctrace-overhead-summary-check.txt" 2>&1; then
     xctrace_overhead_status="$(field_metric status "$XCTRACE_OVERHEAD_SUMMARY")"
     xctrace_overhead_check_status="pass"
     xctrace_overhead_estimate_p50_ms="$(field_metric shadow_overhead_estimate_p50_ms "$XCTRACE_OVERHEAD_SUMMARY")"
+    xctrace_overhead_candidate_status="$(field_metric candidate_shadow_encoder_status "$XCTRACE_OVERHEAD_SUMMARY")"
+    xctrace_overhead_candidate_label="$(field_metric candidate_shadow_encoder_label "$XCTRACE_OVERHEAD_SUMMARY")"
+    xctrace_overhead_candidate_p50_ms="$(field_metric candidate_shadow_encoder_p50_ms "$XCTRACE_OVERHEAD_SUMMARY")"
   else
     cat "$OUT_DIR/shadow-xctrace-overhead-summary-check.txt" >&2 || true
     xctrace_overhead_status="fail"
@@ -215,10 +228,14 @@ fi
   printf 'review_packet=macos_xctrace command="sh scripts/gpu_terrain_shadow_xctrace_review_packet.sh logs/gpu_shadow_xctrace_attach_current" status=%s packet=%s trust_boundary=not_profiler_result\n' \
     "$xctrace_review_packet_status" \
     "$(relative_path "$XCTRACE_REVIEW_PACKET")"
-  printf 'overhead_summary=macos_xctrace_control_delta command="sh scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh logs/gpu_shadow_xctrace_attach_current logs/gpu_shadow_xctrace_shadow_disabled_control logs/gpu_shadow_xctrace_shadow_overhead_current" status=%s summary=%s p50_ms=%s trust_boundary=not_profiler_result\n' \
+  printf 'overhead_summary=macos_xctrace_control_delta command="sh scripts/gpu_terrain_shadow_xctrace_overhead_summary.sh logs/gpu_shadow_xctrace_attach_current logs/gpu_shadow_xctrace_shadow_disabled_control logs/gpu_shadow_xctrace_shadow_overhead_current" status=%s summary=%s encoder_candidates=%s p50_ms=%s candidate_status=%s candidate_label=%s candidate_p50_ms=%s trust_boundary=not_profiler_result\n' \
     "$xctrace_overhead_status" \
     "$(relative_path "$XCTRACE_OVERHEAD_SUMMARY")" \
-    "$xctrace_overhead_estimate_p50_ms"
+    "$(relative_path "$XCTRACE_OVERHEAD_CANDIDATES")" \
+    "$xctrace_overhead_estimate_p50_ms" \
+    "$xctrace_overhead_candidate_status" \
+    "$xctrace_overhead_candidate_label" \
+    "$xctrace_overhead_candidate_p50_ms"
   printf 'lane=windows_gpu_shadow_proxy platform=windows tool=pix_renderdoc_or_vendor status=pending_external_machine workload=shadow_radius_matrix capture_pack=%s results=external_artifact_required validation=repeat_plan_and_record_driver_gpu_backend\n' \
     "$(relative_path "$CAPTURE_PACK")"
   printf 'lane=linux_vulkan_shadow_proxy platform=linux tool=renderdoc_or_vulkan_profiler status=deferred_optional workload=shadow_radius_matrix capture_pack=%s results=external_artifact_required validation=only_if_backend_available\n' \
@@ -247,11 +264,15 @@ fi
     "$xctrace_review_capture_status" \
     "$xctrace_review_packet_status" \
     "$xctrace_review_packet_check_status"
-  printf 'xctrace_shadow_overhead_summary=%s xctrace_shadow_overhead_status=%s xctrace_shadow_overhead_check_status=%s xctrace_shadow_overhead_estimate_p50_ms=%s\n' \
+  printf 'xctrace_shadow_overhead_summary=%s xctrace_shadow_overhead_encoder_candidates=%s xctrace_shadow_overhead_status=%s xctrace_shadow_overhead_check_status=%s xctrace_shadow_overhead_estimate_p50_ms=%s xctrace_shadow_overhead_candidate_status=%s xctrace_shadow_overhead_candidate_label=%s xctrace_shadow_overhead_candidate_p50_ms=%s\n' \
     "$(relative_path "$XCTRACE_OVERHEAD_SUMMARY")" \
+    "$(relative_path "$XCTRACE_OVERHEAD_CANDIDATES")" \
     "$xctrace_overhead_status" \
     "$xctrace_overhead_check_status" \
-    "$xctrace_overhead_estimate_p50_ms"
+    "$xctrace_overhead_estimate_p50_ms" \
+    "$xctrace_overhead_candidate_status" \
+    "$xctrace_overhead_candidate_label" \
+    "$xctrace_overhead_candidate_p50_ms"
   printf 'trust_boundary template_status=%s template_rows_are_not_evidence=1 pending_capture_pack_is_not_evidence=1 local_fps_is_warning_only=1 godot_gpu_timestamp_is_warning_only=1\n' \
     "${results_template_status:-missing}"
   printf 'trust_boundary xctrace_trace_requires_manual_review=1 xctrace_exports_are_not_result_rows=1 xctrace_xml_marker_scan_is_navigation_only=1 xctrace_review_packet_is_not_result_row=1 xctrace_shadow_overhead_is_not_result_row=1 manual_gpu_shadow_pass_ms_required=1\n'
@@ -288,6 +309,9 @@ awk \
   -v xctrace_overhead_status="$xctrace_overhead_status" \
   -v xctrace_overhead_check_status="$xctrace_overhead_check_status" \
   -v xctrace_overhead_estimate_p50_ms="$xctrace_overhead_estimate_p50_ms" \
+  -v xctrace_overhead_candidate_status="$xctrace_overhead_candidate_status" \
+  -v xctrace_overhead_candidate_label="$xctrace_overhead_candidate_label" \
+  -v xctrace_overhead_candidate_p50_ms="$xctrace_overhead_candidate_p50_ms" \
   -v captured_rows="${captured_rows:-0}" \
   -v missing_rows="${missing_rows:-0}" \
   -v plan_path="$PLAN_PATH" \
@@ -298,6 +322,7 @@ awk \
   -v results_summary="$RESULTS_SUMMARY" \
   -v xctrace_review_packet="$XCTRACE_REVIEW_PACKET" \
   -v xctrace_overhead_summary="$XCTRACE_OVERHEAD_SUMMARY" \
+  -v xctrace_overhead_candidates="$XCTRACE_OVERHEAD_CANDIDATES" \
   -v shadow_summary="$SHADOW_SUMMARY" \
   -v rc_summary="$RC_SUMMARY" '
   BEGIN {
@@ -333,7 +358,7 @@ awk \
       macos_metal_status = "captured"
     }
 
-    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s capture_readiness=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d capture_pack_results_file_status=%s results_file_status=%s results_template_status=%s results_check_status=%s xctrace_review_capture_status=%s xctrace_review_packet_status=%s xctrace_review_packet_check_status=%s xctrace_overhead_status=%s xctrace_overhead_check_status=%s xctrace_overhead_estimate_p50_ms=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s rc_live_checks=%s plan=%s intake=%s capture_pack=%s results_template=%s results=%s results_summary=%s xctrace_review_packet=%s xctrace_overhead_summary=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, capture_readiness, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, capture_pack_results_file_status, results_file_status, results_template_status, results_check_status, xctrace_review_capture_status, xctrace_review_packet_status, xctrace_review_packet_check_status, xctrace_overhead_status, xctrace_overhead_check_status, xctrace_overhead_estimate_p50_ms, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, rc_live_checks, plan_path, intake_path, capture_pack, results_template, results_path, results_summary, xctrace_review_packet, xctrace_overhead_summary, shadow_summary, rc_summary)
+    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s capture_readiness=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d capture_pack_results_file_status=%s results_file_status=%s results_template_status=%s results_check_status=%s xctrace_review_capture_status=%s xctrace_review_packet_status=%s xctrace_review_packet_check_status=%s xctrace_overhead_status=%s xctrace_overhead_check_status=%s xctrace_overhead_estimate_p50_ms=%s xctrace_overhead_candidate_status=%s xctrace_overhead_candidate_label=%s xctrace_overhead_candidate_p50_ms=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s rc_live_checks=%s plan=%s intake=%s capture_pack=%s results_template=%s results=%s results_summary=%s xctrace_review_packet=%s xctrace_overhead_summary=%s xctrace_overhead_candidates=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, capture_readiness, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, capture_pack_results_file_status, results_file_status, results_template_status, results_check_status, xctrace_review_capture_status, xctrace_review_packet_status, xctrace_review_packet_check_status, xctrace_overhead_status, xctrace_overhead_check_status, xctrace_overhead_estimate_p50_ms, xctrace_overhead_candidate_status, xctrace_overhead_candidate_label, xctrace_overhead_candidate_p50_ms, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, rc_live_checks, plan_path, intake_path, capture_pack, results_template, results_path, results_summary, xctrace_review_packet, xctrace_overhead_summary, xctrace_overhead_candidates, shadow_summary, rc_summary)
     if (status != "pass") {
       exit 1
     }
