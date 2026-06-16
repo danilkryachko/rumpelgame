@@ -13,7 +13,9 @@ This note records the current deterministic world generation and serialization g
 - `World.ChunkSnapshot()` preserves requested chunk coordinates and produces stable serialized bytes across independent `World` instances for identical coordinates.
 - `World` now owns an explicit generator configuration: `seed`, `dimension_id`, and `version=flat_v1`. The current `flat_v1` generator preserves the existing flat chunk byte vector for default and explicitly configured seeds.
 - Server startup validates `RUMPELMC_WORLD_SEED`, `RUMPELMC_WORLD_DIMENSION_ID`, and `RUMPELMC_WORLD_GENERATOR_VERSION` before creating `World`; default values remain seed `0`, dimension `overworld`, and generator version `flat_v1`.
-- These tests do not change generation behavior, storage, protocol, chunk dimensions, or payload encoding defaults.
+- `height_v1` is an opt-in generator version. It uses deterministic integer coordinate hashing from seed, dimension, world X/Z, and algorithm salts to produce surface heights in the guarded `48..80` range while preserving chunk dimensions and serialization.
+- Representative `height_v1` bytes for seed `8675309`, dimension `overworld`, and chunk `(-3,5)` have SHA-256 `1101411ccf572478dc9dee8772428714fd80d5ea9f82f491401e2ca410369dc7`.
+- These tests do not change storage, protocol, chunk dimensions, payload encoding defaults, or default `flat_v1` generation behavior.
 
 ## Guard
 
@@ -26,7 +28,7 @@ go test ./pkg/world
 
 Fresh check:
 
-- `go test ./pkg/world ./cmd/server` passed on 2026-06-16 with deterministic generation, explicit seed/version generator configuration, server env parsing, flat byte-hash, stable serialization order, and world snapshot determinism coverage.
+- `go test ./pkg/world ./cmd/server` passed on 2026-06-16 with deterministic generation, explicit seed/version generator configuration, server env parsing, flat byte-hash, opt-in `height_v1` byte-hash, seed/dimension sensitivity, stable serialization order, and world snapshot determinism coverage.
 
 ## Biome Foundation
 
@@ -46,4 +48,4 @@ World generation quality work is tracked in `docs/WORLD_GENERATION_QUALITY_PASS.
 sh scripts/world_generation_quality_gate.sh logs/world_generation_quality_current
 ```
 
-The current expected result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=deferred`, and `flat_byte_hash=guarded`. Terrain height, caves, resources, and structures remain blocked until a non-flat generator implementation has deterministic tests and downstream evidence.
+The current expected result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `worldgen_height_v1=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=opt_in_height_v1_guarded`, and `flat_byte_hash=guarded`. Caves, resources, structures, biome runtime, and default-world changes remain blocked until versioned implementations have deterministic tests and downstream evidence.
