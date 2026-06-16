@@ -99,7 +99,7 @@ Before enabling a non-flat generator:
 
 - Add tests for deterministic chunk bytes across independent `World` instances.
 - Add tests for positive and negative chunk coordinates.
-- Keep global-block to chunk/local coordinate mapping guarded across negative boundaries.
+- Keep global-block to chunk/local coordinate mapping guarded across negative and high positive boundaries.
 - Add stable byte-vector tests for representative chunks.
 - Add chunk serialization/RLE round-trip tests for non-flat entropy.
 - Re-run compression decision after terrain entropy changes.
@@ -146,9 +146,9 @@ The gate checks that:
 - This design includes the future generation layer order and determinism rules.
 - Biome foundation is clean and still deferred at runtime.
 - Current `GenerateFlat()` and serialization source remain unchanged.
-- Global block-to-chunk coordinate tests cover positive and negative boundary mapping.
+- Global block-to-chunk coordinate tests cover positive, negative, and high positive boundary mapping.
 - Current world tests pass.
 
 ## Current Status
 
-This block is complete as a design/checkpoint block. Runtime worldgen quality improvements remain future work and must start with explicit seed/version inputs plus deterministic tests before any generated chunk bytes change. Current global block-to-chunk coordinate mapping is guarded across positive and negative chunk boundaries.
+This block is complete as a design/checkpoint block. Runtime worldgen quality improvements remain future work and must start with explicit seed/version inputs plus deterministic tests before any generated chunk bytes change. Current global block-to-chunk coordinate mapping is guarded across positive, negative, and high positive chunk boundaries.

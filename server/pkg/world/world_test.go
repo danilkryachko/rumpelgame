@@ -119,6 +119,29 @@ func TestGlobalToChunkLocalHandlesNegativeBoundaries(t *testing.T) {
 	}
 }
 
+func TestGlobalToChunkLocalHandlesLargePositiveBoundaries(t *testing.T) {
+	base := int32(12345 * ChunkWidth)
+	tests := []struct {
+		name      string
+		block     int32
+		wantChunk int32
+		wantLocal int
+	}{
+		{name: "large positive exact chunk", block: base, wantChunk: 12345, wantLocal: 0},
+		{name: "large positive edge", block: base + int32(ChunkWidth) - 1, wantChunk: 12345, wantLocal: ChunkWidth - 1},
+		{name: "large positive next chunk", block: base + int32(ChunkWidth), wantChunk: 12346, wantLocal: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotChunk, gotLocal := GlobalToChunkLocal(tt.block, ChunkWidth)
+			if gotChunk != tt.wantChunk || gotLocal != tt.wantLocal {
+				t.Fatalf("GlobalToChunkLocal(%d) = (%d, %d), want (%d, %d)", tt.block, gotChunk, gotLocal, tt.wantChunk, tt.wantLocal)
+			}
+		})
+	}
+}
+
 func TestChunkCoordForPositionUsesFloorAtNegativeBoundaries(t *testing.T) {
 	tests := []struct {
 		name string
@@ -132,6 +155,29 @@ func TestChunkCoordForPositionUsesFloorAtNegativeBoundaries(t *testing.T) {
 		{name: "negative fractional edge", x: -0.25, z: -0.25, want: ChunkCoord{X: -1, Z: -1}},
 		{name: "negative exact chunk", x: -float32(ChunkWidth), z: -float32(ChunkDepth), want: ChunkCoord{X: -1, Z: -1}},
 		{name: "negative next chunk", x: -float32(ChunkWidth) - 0.25, z: -float32(ChunkDepth) - 0.25, want: ChunkCoord{X: -2, Z: -2}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ChunkCoordForPosition(tt.x, tt.z); got != tt.want {
+				t.Fatalf("ChunkCoordForPosition(%f, %f) = %+v, want %+v", tt.x, tt.z, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChunkCoordForPositionHandlesLargePositiveBoundaries(t *testing.T) {
+	baseX := float32(12345 * ChunkWidth)
+	baseZ := float32(23456 * ChunkDepth)
+	tests := []struct {
+		name string
+		x    float32
+		z    float32
+		want ChunkCoord
+	}{
+		{name: "large positive exact chunk", x: baseX, z: baseZ, want: ChunkCoord{X: 12345, Z: 23456}},
+		{name: "large positive interior", x: baseX + 1.5, z: baseZ + 2.5, want: ChunkCoord{X: 12345, Z: 23456}},
+		{name: "large positive next chunk", x: baseX + float32(ChunkWidth), z: baseZ + float32(ChunkDepth), want: ChunkCoord{X: 12346, Z: 23457}},
 	}
 
 	for _, tt := range tests {
