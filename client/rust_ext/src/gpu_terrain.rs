@@ -3690,12 +3690,13 @@ fn push_constant_bytes_from_projection(
     projection: Projection,
     lighting: GpuTerrainLighting,
     atlas_layout: GpuTerrainAtlasLayout,
-) -> Vec<u8> {
+) -> [u8; TERRAIN_PUSH_CONSTANT_BYTES] {
     let lighting = lighting.sanitized();
-    let mut bytes = Vec::with_capacity(TERRAIN_PUSH_CONSTANT_BYTES);
+    let mut bytes = [0u8; TERRAIN_PUSH_CONSTANT_BYTES];
+    let mut offset = 0usize;
     for col in projection.cols {
         for value in [col.x, col.y, col.z, col.w] {
-            bytes.extend_from_slice(&value.to_le_bytes());
+            write_push_constant_f32(&mut bytes, &mut offset, value);
         }
     }
 
@@ -3709,14 +3710,25 @@ fn push_constant_bytes_from_projection(
         lighting.color.b,
         lighting.energy,
     ] {
-        bytes.extend_from_slice(&value.to_le_bytes());
+        write_push_constant_f32(&mut bytes, &mut offset, value);
     }
 
     for value in atlas_layout.push_constant_values() {
-        bytes.extend_from_slice(&value.to_le_bytes());
+        write_push_constant_f32(&mut bytes, &mut offset, value);
     }
 
+    debug_assert_eq!(offset, TERRAIN_PUSH_CONSTANT_BYTES);
     bytes
+}
+
+fn write_push_constant_f32(
+    bytes: &mut [u8; TERRAIN_PUSH_CONSTANT_BYTES],
+    offset: &mut usize,
+    value: f32,
+) {
+    let end = *offset + std::mem::size_of::<f32>();
+    bytes[*offset..end].copy_from_slice(&value.to_le_bytes());
+    *offset = end;
 }
 
 fn default_light_direction_to_light() -> Vector3 {

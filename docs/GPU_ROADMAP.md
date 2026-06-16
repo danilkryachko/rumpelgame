@@ -131,16 +131,16 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 
 ## Phase 10: Binding And Frame Data
 
-91. Audit atlas/material binding churn.
-92. Verify sampler and texture reuse.
-93. Verify uniform set recreation frequency.
-94. Cache immutable bindings where safe.
-95. Audit push constants.
-96. Separate static terrain data from per-frame camera/light data.
-97. Reduce per-frame constant updates.
-98. Add binding churn metrics.
-99. Add frame data metrics.
-100. Record binding invariants.
+91. Done: audited atlas/material binding churn and found current runtime creates immutable terrain atlas/uniform resources once per GPU terrain buffer pool.
+92. Done: verified atlas sampler and texture reuse with runtime markers and resource lifecycle audit gates.
+93. Done: verified uniform set recreation frequency with movement/workload markers; default movement keeps `gpu_uniform_set_create=1`.
+94. Done: immutable face-buffer/atlas/sampler bindings are cached in `GpuTerrainRenderPipeline`; scene targets are reused unless the scene RID/view signature changes.
+95. Done: audited push constants as `64` camera/projection bytes, `32` lighting bytes, and `16` atlas-layout bytes.
+96. Done: recorded that atlas layout remains in push constants for runtime atlas validation; moving it to immutable data needs focused profiler justification because constants phase is currently tiny.
+97. Done 2026-06-16: reduced per-frame push-constant packing allocation by replacing the hot-path `Vec<u8>` builder with a fixed `[u8; 112]` byte array while preserving shader byte layout.
+98. Done: binding churn metrics are exposed in runtime markers, movement/workload summaries, aggregate reports, and lifecycle audits.
+99. Done: frame-data metrics expose push-constant update count, total bytes, average bytes, and camera/lighting/atlas byte split.
+100. Done 2026-06-16: recorded binding/frame-data invariants in profiling docs, memory, trends, and handoff evidence.
 
 ## Phase 11: Shader Hot Path
 
