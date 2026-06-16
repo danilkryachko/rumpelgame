@@ -52,11 +52,31 @@ func TestConfiguredViewDistanceDefault(t *testing.T) {
 	}
 }
 
+func TestConfiguredViewDistanceUsesEnvOverride(t *testing.T) {
+	t.Setenv(viewDistanceEnv, "12")
+
+	if got := configuredViewDistance(); got != 12 {
+		t.Fatalf("configuredViewDistance() = %d, want 12", got)
+	}
+}
+
 func TestConfiguredViewDistanceIgnoresInvalid(t *testing.T) {
 	t.Setenv(viewDistanceEnv, "nope")
 
 	if got := configuredViewDistance(); got != defaultViewDistance {
 		t.Fatalf("configuredViewDistance() = %d, want %d", got, defaultViewDistance)
+	}
+}
+
+func TestConfiguredViewDistanceIgnoresNonPositive(t *testing.T) {
+	for _, value := range []string{"0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(viewDistanceEnv, value)
+
+			if got := configuredViewDistance(); got != defaultViewDistance {
+				t.Fatalf("configuredViewDistance() = %d, want %d", got, defaultViewDistance)
+			}
+		})
 	}
 }
 

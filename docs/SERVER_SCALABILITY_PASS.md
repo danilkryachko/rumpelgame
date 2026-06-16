@@ -73,6 +73,7 @@ Checks:
 - Valid `BlockAction_PLACE` edits are applied sequentially through `World.SetBlockGlobal`; when two clients edit the same block coordinate, the current server contract is last-write-wins and every interested client receives the latest authoritative chunk snapshot.
 - The current protocol has no multi-client session identity, global scheduler packet, or server broadcast packet.
 - Chunk stream metrics are per batch and log-only.
+- `RUMPELMC_SERVER_VIEW_DISTANCE` accepts positive overrides, rejects non-positive values back to the default, and clamps stress values to the configured maximum.
 - Session writes are serialized per connection and bounded by `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS`; `0` disables the timeout as a rollback/control.
 - `RUMPELMC_SERVER_MAX_CLIENTS` defaults to `0` for unlimited clients. Positive values make `handleConnection` reject excess accepted TCP sessions before registering them, close the connection, and log `admission_result=rejected` with active/max client counts.
 
@@ -81,6 +82,8 @@ Checks:
 `TestSendChunksAroundKeepsPerClientSentStateIndependent` proves that two clients with independent `sentChunks` maps can both receive the current chunk, and that progress in one client's sent map does not mutate the other client's sent map.
 
 `TestChunksAroundOrdersNearestFirstAndAdvancesSentState` proves the world-owned chunk request ordering contract: nearest-first batches, stable same-distance X/Z tie-breaks, per-batch limits, and sent-state advancement across consecutive calls.
+
+`TestConfiguredViewDistanceUsesEnvOverride` and `TestConfiguredViewDistanceIgnoresNonPositive` prove valid view-distance overrides are preserved while `0` and negative values cannot silently shrink the configured streaming radius.
 
 `TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients` proves that a block edit sends the updated chunk to the origin client and to already-interested clients, while clients without that chunk receive no update.
 
@@ -236,7 +239,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result after collecting the broader live, repeated, admission-limit, and admission-matrix artifacts is `status=pass`, `scalability_status=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `conflict_semantics=last_write_wins_guarded`, `chunk_request_ordering=guarded`, `slow_client_write_timeout=guarded`, `admission_policy=matrix_live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `repeat_smoke_status=pass`, `repeat_smoke_repeats=3`, `repeat_smoke_clients=6`, `repeat_smoke_initial_chunks=18`, `repeat_smoke_fanout_updates=18`, `repeat_smoke_detail_clients=18`, `repeat_smoke_resource_samples=9`, `admission_limit_smoke_status=pass`, `admission_matrix_status=pass`, `admission_matrix_limits_checked=3`, `admission_matrix_total_rejected=3`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, `network_tests=pass`, and `world_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live, repeated, admission-limit, and admission-matrix artifacts is `status=pass`, `scalability_status=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `conflict_semantics=last_write_wins_guarded`, `chunk_request_ordering=guarded`, `view_distance_config=guarded`, `slow_client_write_timeout=guarded`, `admission_policy=matrix_live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `repeat_smoke_status=pass`, `repeat_smoke_repeats=3`, `repeat_smoke_clients=6`, `repeat_smoke_initial_chunks=18`, `repeat_smoke_fanout_updates=18`, `repeat_smoke_detail_clients=18`, `repeat_smoke_resource_samples=9`, `admission_limit_smoke_status=pass`, `admission_matrix_status=pass`, `admission_matrix_limits_checked=3`, `admission_matrix_total_rejected=3`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, `network_tests=pass`, and `world_tests=pass`.
 
 To run the live smoke inside the gate:
 
@@ -300,4 +303,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with guarded world-owned chunk request ordering, bounded live two-client and six-client fanout/resource/detail smokes, a bounded repeated six-client smoke, a bounded live opt-in max-client admission smoke, a bounded admission-limit matrix, and a bounded connection lifecycle log summary. Longer CPU/memory profiling, broad slow-reader/load harnesses, sustained admission sizing, adaptive overload policy, and production disconnect metrics remain future work.
+This block is complete as a unit-guard/checkpoint block with guarded world-owned chunk request ordering, guarded view-distance configuration, bounded live two-client and six-client fanout/resource/detail smokes, a bounded repeated six-client smoke, a bounded live opt-in max-client admission smoke, a bounded admission-limit matrix, and a bounded connection lifecycle log summary. Longer CPU/memory profiling, broad slow-reader/load harnesses, sustained admission sizing, adaptive overload policy, and production disconnect metrics remain future work.
