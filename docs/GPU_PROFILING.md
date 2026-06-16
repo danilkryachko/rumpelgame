@@ -273,6 +273,15 @@ sh scripts/gpu_terrain_border_edit_benchmark.sh logs/gpu_terrain_border_edit_ben
 
 The gate writes `gpu-terrain-border-edit-benchmark-summary.txt` and `gpu-terrain-border-edit-benchmark-cases.txt`; see `docs/GPU_TERRAIN_BORDER_EDIT_BENCHMARK.md`.
 
+Use the partial dirty edge matrix after changing dirty edge masks, edge-neighbor refresh, full-rebuild rollback behavior, or partial dirty upload accounting. It refreshes full-vs-partial compare evidence for all four single edges and all four corner combinations:
+
+```sh
+RUMPELMC_PARTIAL_DIRTY_EDGE_MATRIX_RUN_CASES=1 \
+  sh scripts/gpu_terrain_partial_dirty_edge_matrix.sh logs/gpu_terrain_partial_dirty_edge_matrix_current
+```
+
+The gate writes `gpu-terrain-partial-dirty-edge-matrix-summary.txt` and `gpu-terrain-partial-dirty-edge-matrix-cases.txt`; see `docs/GPU_TERRAIN_PARTIAL_DIRTY_EDGE_MATRIX.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh

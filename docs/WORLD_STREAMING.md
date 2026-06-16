@@ -261,7 +261,19 @@ Fresh check:
 
 Remaining coverage gap:
 
-- Runtime border matrix coverage for local `0` edges, `neg_x`, `neg_z`, single `pos_z`/`neg_z`, and all four corner combinations is still future work before claiming full border-edit coverage.
+- This benchmark is high-volume pressure plus repeated positive-edge evidence. The full directional edge-case matrix lives in the partial dirty edge matrix below.
+
+## GPU Terrain Partial Dirty Edge Matrix
+
+The partial dirty edge matrix refreshes full-vs-partial compare evidence for all four single chunk edges and all four corner combinations. It proves the full rebuild rollback lane keeps partial counters disabled while the partial lane records edge-neighbor refresh and saved subchunks on `pos_x`, `neg_x`, `pos_z`, `neg_z`, and every corner combination.
+
+Fresh check:
+
+- `logs/gpu_terrain_partial_dirty_edge_matrix_current/gpu-terrain-partial-dirty-edge-matrix-summary.txt` passed with `case_count=8`, `single_edge_cases=4`, `corner_edge_cases=4`, min/max partial edge-neighbor subchunks `4/8`, min/max partial saved subchunks `2/2`, max queue/process/submit `3.734/0.041/0.102ms`, `full_partial_disabled=1`, `gpu_upload_fail=0`, and `visible_quality_change_allowed=0`.
+
+Remaining coverage gap:
+
+- Mass-edit runtime, edit-burst budget gates, collision refresh cost audit, shadow proxy refresh cost audit, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain future work before claiming complete world-interaction performance coverage.
 
 ## Storage Persistence Foundation
 

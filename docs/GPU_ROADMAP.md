@@ -260,7 +260,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 61. Done 2026-06-16: added `scripts/gpu_streaming_scheduler_tie_probe.sh` and `docs/GPU_STREAMING_SCHEDULER_TIE_PROBE.md` as a deterministic tie-heavy scheduler probe over the stable `chunk_fly_snap_back` matrix lanes, requiring runtime tie signal while preserving default `nearest`, scheduler-change lockout, and external macOS/Windows profiler blockers.
 62. Done 2026-06-16: added `scripts/gpu_terrain_repeated_edit_benchmark.sh` and `docs/GPU_TERRAIN_REPEATED_EDIT_BENCHMARK.md` to benchmark repeated single-edge and corner-edge dirty edits over three fresh runs each, requiring zero GPU upload failures and CPU-side queue/process/submit budgets without changing default runtime or visible quality.
 63. Done 2026-06-16: added `scripts/gpu_terrain_border_edit_benchmark.sh` and `docs/GPU_TERRAIN_BORDER_EDIT_BENCHMARK.md` to compose repeated single/corner-edge dirty edit evidence with the pressure dirty compare at local border `31,31`, requiring zero upload/ground failures and CPU-side budgets while keeping default runtime and visible quality unchanged.
-64. Refresh dirty partial-upload edge cases.
+64. Done 2026-06-16: added `scripts/gpu_terrain_partial_dirty_edge_matrix.sh` and `docs/GPU_TERRAIN_PARTIAL_DIRTY_EDGE_MATRIX.md` to refresh full-vs-partial runtime evidence for all four single chunk edges plus all four corner edge combinations, requiring zero upload failures and CPU-side budgets while keeping rollback, default runtime, and visible quality unchanged.
 65. Audit collision refresh cost.
 66. Audit shadow proxy refresh cost.
 67. Add edit-burst budget gates.

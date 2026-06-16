@@ -39,6 +39,12 @@ text_metric() {
   sed -n "s/.*$key=\([^ ]*\).*/\1/p" "$marker_path" | sed -n '1p'
 }
 
+float_metric() {
+  key="$1"
+  marker_path="$2"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
 perf_triplet_value() {
   key="$1"
   marker_path="$2"
@@ -201,12 +207,16 @@ write_summary() {
   partial_marker="$PARTIAL_DIR/gpu-terrain-movement-stress.png.txt"
   full_queue_max="$(perf_triplet_value terrain_queue_work_ms "$full_marker" 3)"
   partial_queue_max="$(perf_triplet_value terrain_queue_work_ms "$partial_marker" 3)"
+  full_submit_max="$(perf_triplet_value gpu_compositor_submit_ms "$full_marker" 3)"
+  partial_submit_max="$(perf_triplet_value gpu_compositor_submit_ms "$partial_marker" 3)"
+  full_process_p95="$(float_metric process_wall_p95_ms "$full_marker")"
+  partial_process_p95="$(float_metric process_wall_p95_ms "$partial_marker")"
   queue_delta="$(awk -v partial="$partial_queue_max" -v full="$full_queue_max" 'BEGIN { printf("%.3f", partial - full) }')"
 
   {
     printf 'GPU terrain edge dirty compare summary action=%s x=%s y=%s z=%s block_id=%s expected_edges=%s expected_bounds=%s\n' \
       "$ACTION" "$EDIT_X" "$EDIT_Y" "$EDIT_Z" "$EDIT_BLOCK_ID" "$EXPECTED_EDGES" "$EXPECTED_BOUNDS"
-    printf 'full dirty_blocks=%s dirty_last_rebuild_subchunks=%s dirty_edge_neighbor_subchunks=%s dirty_partial_subchunks=%s dirty_partial_saved_subchunks=%s current_chunk_collision=%s collision_refresh_last_rebuilt=%s proxy_shadow=%s compact_shadow_proxy=%s proxy_refresh_reuse=%s terrain_queue_max_ms=%s gpu_upload_fail=%s\n' \
+    printf 'full dirty_blocks=%s dirty_last_rebuild_subchunks=%s dirty_edge_neighbor_subchunks=%s dirty_partial_subchunks=%s dirty_partial_saved_subchunks=%s current_chunk_collision=%s collision_refresh_last_rebuilt=%s proxy_shadow=%s compact_shadow_proxy=%s proxy_refresh_reuse=%s terrain_queue_max_ms=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s gpu_upload_fail=%s\n' \
       "$(metric dirty_blocks "$full_marker")" \
       "$(metric dirty_last_rebuild_subchunks "$full_marker")" \
       "$(metric dirty_edge_neighbor_subchunks "$full_marker")" \
@@ -218,8 +228,10 @@ write_summary() {
       "$(metric compact_shadow_proxy "$full_marker")" \
       "$(metric proxy_refresh_reuse "$full_marker")" \
       "$full_queue_max" \
+      "$full_process_p95" \
+      "$full_submit_max" \
       "$(metric gpu_upload_fail "$full_marker")"
-    printf 'partial dirty_blocks=%s dirty_last_rebuild_subchunks=%s dirty_edge_neighbor_subchunks=%s dirty_partial_subchunks=%s dirty_partial_saved_subchunks=%s current_chunk_collision=%s collision_refresh_last_rebuilt=%s proxy_shadow=%s compact_shadow_proxy=%s proxy_refresh_reuse=%s terrain_queue_max_ms=%s gpu_upload_fail=%s\n' \
+    printf 'partial dirty_blocks=%s dirty_last_rebuild_subchunks=%s dirty_edge_neighbor_subchunks=%s dirty_partial_subchunks=%s dirty_partial_saved_subchunks=%s current_chunk_collision=%s collision_refresh_last_rebuilt=%s proxy_shadow=%s compact_shadow_proxy=%s proxy_refresh_reuse=%s terrain_queue_max_ms=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s gpu_upload_fail=%s\n' \
       "$(metric dirty_blocks "$partial_marker")" \
       "$(metric dirty_last_rebuild_subchunks "$partial_marker")" \
       "$(metric dirty_edge_neighbor_subchunks "$partial_marker")" \
@@ -231,6 +243,8 @@ write_summary() {
       "$(metric compact_shadow_proxy "$partial_marker")" \
       "$(metric proxy_refresh_reuse "$partial_marker")" \
       "$partial_queue_max" \
+      "$partial_process_p95" \
+      "$partial_submit_max" \
       "$(metric gpu_upload_fail "$partial_marker")"
     printf 'comparison dirty_blocks_match=1 dirty_last_rebuild_subchunks_match=1 partial_saved_subchunks_delta=%s partial_edge_neighbor_subchunks=%s terrain_queue_delta_ms=%s\n' \
       "$(metric dirty_partial_saved_subchunks "$partial_marker")" \

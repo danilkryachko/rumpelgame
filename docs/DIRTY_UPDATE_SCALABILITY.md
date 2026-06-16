@@ -93,6 +93,7 @@ Existing runtime wrappers remain the correct heavy checks:
 - `scripts/gpu_terrain_single_edge_dirty_repeat.sh`
 - `scripts/gpu_terrain_repeated_edit_benchmark.sh`
 - `scripts/gpu_terrain_border_edit_benchmark.sh`
+- `scripts/gpu_terrain_partial_dirty_edge_matrix.sh`
 
 The gate does not run them by default because they require Godot runtime capture, a free local server port, and longer execution time. It does verify their shell syntax and required metric tokens.
 
@@ -100,13 +101,14 @@ Fresh repeated-edit benchmark evidence now lives at `logs/gpu_terrain_repeated_e
 
 Fresh border-edit benchmark evidence now lives at `logs/gpu_terrain_border_edit_benchmark_current/gpu-terrain-border-edit-benchmark-summary.txt`. It composes the repeated single/corner-edge benchmark with the pressure dirty compare at local `31,31`, passed with `case_count=3`, max dirty blocks `709`, max edge-neighbor subchunks `2836`, max partial saved subchunks `1418`, max queue/process/submit `4.777/0.050/0.171ms`, zero GPU upload failures, zero ground misses, and default/visible-quality changes blocked.
 
+Fresh partial dirty edge matrix evidence now lives at `logs/gpu_terrain_partial_dirty_edge_matrix_current/gpu-terrain-partial-dirty-edge-matrix-summary.txt`. It refreshes full-vs-partial runtime compares for all four single edges and all four corner combinations, passed with `case_count=8`, min/max partial edge-neighbor subchunks `4/8`, min/max partial saved subchunks `2/2`, max queue/process/submit `3.734/0.041/0.102ms`, full rollback partial counters disabled, zero GPU upload failures, and default/visible-quality changes blocked.
+
 ## Deferred Work
 
 Still needed:
 
 - Multi-edit runtime smoke that applies many block edits in one session.
 - Chunk-edge mass-edit runtime smoke with both full and partial dirty controls.
-- Runtime border matrix for local `0` edges, `neg_x`, `neg_z`, single `pos_z`/`neg_z`, and all four corner combinations.
 - Repeated persisted reload plus dirty update runtime smoke from Block 41 follow-up.
 - Collision refresh budget under mass edits.
 - GPU upload budget under mass edits.
