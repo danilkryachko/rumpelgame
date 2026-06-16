@@ -838,6 +838,7 @@ error_scan() {
   metric_max_source frame_p95_ms | sed 's/^/- /'
 
   print_optional_file "Selected Movement Stress Summary" "$(latest_file movement-stress-summary.txt)"
+  print_optional_file "Selected Chunk Boundary Stress Summary" "$(latest_file chunk-boundary-stress-summary.txt)"
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
   print_optional_file "Selected Workload Matrix Summary" "$(latest_file workload-matrix-summary.txt)"
   print_optional_file "Selected Perf Baseline Summary" "$(latest_file perf-baseline-summary.txt)"

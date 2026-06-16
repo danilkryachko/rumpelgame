@@ -135,6 +135,19 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 
 The wrapper writes `gpu-upload-pressure-summary.txt`; see `docs/GPU_UPLOAD_PRESSURE.md`.
 
+Use the chunk-boundary stress gate after changing world streaming, movement readiness, chunk unload policy, packet queue handling, or GPU residency reporting. It runs the existing high-pressure movement cases plus a bounded residency workload and fails on wrong final chunk, missing render/collision readiness, ground misses, upload failures, unexpected unload/reload churn, or missing case coverage:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_TIMEOUT_SEC=360 \
+GODOT_QUIT_AFTER_FRAMES=42000 \
+SMOKE_DELAY_SEC=8.0 \
+sh scripts/gpu_terrain_chunk_boundary_stress.sh logs/gpu_terrain_chunk_boundary_stress_current
+```
+
+The gate writes `chunk-boundary-stress-summary.txt`; see `docs/GPU_TERRAIN_CHUNK_BOUNDARY_STRESS.md`.
+
 Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh

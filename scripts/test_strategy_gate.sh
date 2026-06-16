@@ -10,6 +10,7 @@ esac
 SUMMARY_PATH="$OUT_DIR/test-strategy-gate-summary.txt"
 
 EXPLORATION_SOAK_SUMMARY="${RUMPELMC_TEST_STRATEGY_EXPLORATION_SOAK_SUMMARY:-"$ROOT_DIR/logs/world_streaming_exploration_soak_smoke/world-streaming-exploration-soak-summary.txt"}"
+CHUNK_BOUNDARY_SUMMARY="${RUMPELMC_TEST_STRATEGY_CHUNK_BOUNDARY_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_chunk_boundary_stress_current/chunk-boundary-stress-summary.txt"}"
 LOAD_SCALING_SUMMARY="${RUMPELMC_TEST_STRATEGY_LOAD_SCALING_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_load_scaling_radius16_summary_check/gpu-terrain-load-scaling-summary.txt"}"
 UPLOAD_PRESSURE_SUMMARY="${RUMPELMC_TEST_STRATEGY_UPLOAD_PRESSURE_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_upload_pressure_smoke/gpu-upload-pressure-summary.txt"}"
 RESOURCE_LIFECYCLE_SUMMARY="${RUMPELMC_TEST_STRATEGY_RESOURCE_LIFECYCLE_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_upload_pressure_smoke/gpu-resource-lifecycle-audit-summary.txt"}"
@@ -68,6 +69,7 @@ require_status() {
 test -x "$ROOT_DIR/scripts/check.sh" || fail "missing executable scripts/check.sh"
 test -x "$ROOT_DIR/scripts/diff_guard.sh" || fail "missing executable scripts/diff_guard.sh"
 test -x "$ROOT_DIR/scripts/world_streaming_exploration_soak.sh" || fail "missing executable world streaming soak wrapper"
+test -x "$ROOT_DIR/scripts/gpu_terrain_chunk_boundary_stress.sh" || fail "missing executable chunk boundary stress wrapper"
 test -x "$ROOT_DIR/scripts/gpu_terrain_load_scaling.sh" || fail "missing executable load scaling wrapper"
 test -x "$ROOT_DIR/scripts/gpu_terrain_upload_pressure.sh" || fail "missing executable upload pressure wrapper"
 test -x "$ROOT_DIR/scripts/gpu_resource_lifecycle_audit.sh" || fail "missing executable resource lifecycle audit"
@@ -76,6 +78,7 @@ test -x "$ROOT_DIR/scripts/gpu_terrain_report_v2.sh" || fail "missing executable
 test -x "$ROOT_DIR/scripts/performance_baseline_governance.sh" || fail "missing executable baseline governance wrapper"
 
 exploration_status="$(require_status exploration_soak "$EXPLORATION_SOAK_SUMMARY" status pass)"
+chunk_boundary_status="$(require_status chunk_boundary "$CHUNK_BOUNDARY_SUMMARY" status pass)"
 load_status="$(require_status load_scaling "$LOAD_SCALING_SUMMARY" status pass)"
 upload_status="$(require_status upload_pressure "$UPLOAD_PRESSURE_SUMMARY" status pass)"
 resource_status="$(require_status resource_lifecycle "$RESOURCE_LIFECYCLE_SUMMARY" resource_lifecycle_audit_status pass)"
@@ -84,12 +87,13 @@ report_v2_status="$(require_status report_v2 "$REPORT_V2_SUMMARY" status pass)"
 baseline_status="$(require_status baseline_governance "$BASELINE_GOVERNANCE_SUMMARY" status pass)"
 
 {
-  printf 'test_strategy_gate status=pass fast_command="%s" full_command="%s" nightly_runtime_command="%s" nightly_summary_command="%s" exploration_soak_status=%s load_scaling_status=%s upload_pressure_status=%s resource_lifecycle_status=%s memory_budget_status=%s report_v2_status=%s baseline_governance_status=%s exploration_soak_summary=%s load_scaling_summary=%s upload_pressure_summary=%s resource_lifecycle_summary=%s memory_budget_summary=%s report_v2_summary=%s baseline_governance_summary=%s\n' \
+  printf 'test_strategy_gate status=pass fast_command="%s" full_command="%s" nightly_runtime_command="%s" nightly_summary_command="%s" exploration_soak_status=%s chunk_boundary_status=%s load_scaling_status=%s upload_pressure_status=%s resource_lifecycle_status=%s memory_budget_status=%s report_v2_status=%s baseline_governance_status=%s exploration_soak_summary=%s chunk_boundary_summary=%s load_scaling_summary=%s upload_pressure_summary=%s resource_lifecycle_summary=%s memory_budget_summary=%s report_v2_summary=%s baseline_governance_summary=%s\n' \
     './scripts/check.sh fast' \
     './scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh' \
-    'RUMPELMC_EXPLORATION_SOAK_REPEATS=3 ./scripts/world_streaming_exploration_soak.sh logs/nightly/world_streaming_exploration_soak && ./scripts/gpu_terrain_load_scaling.sh logs/nightly/gpu_terrain_load_scaling && ./scripts/gpu_terrain_upload_pressure.sh logs/nightly/gpu_terrain_upload_pressure' \
+    'RUMPELMC_EXPLORATION_SOAK_REPEATS=3 ./scripts/world_streaming_exploration_soak.sh logs/nightly/world_streaming_exploration_soak && ./scripts/gpu_terrain_chunk_boundary_stress.sh logs/nightly/gpu_terrain_chunk_boundary_stress && ./scripts/gpu_terrain_load_scaling.sh logs/nightly/gpu_terrain_load_scaling && ./scripts/gpu_terrain_upload_pressure.sh logs/nightly/gpu_terrain_upload_pressure' \
     './scripts/gpu_resource_lifecycle_audit.sh logs/gpu_terrain_upload_pressure_smoke && ./scripts/gpu_terrain_memory_budget.sh logs/gpu_terrain_memory_budget_current && ./scripts/gpu_terrain_report_v2.sh logs/gpu_terrain_upload_pressure_smoke logs/gpu_terrain_report_v2_current && ./scripts/performance_baseline_governance.sh' \
     "$exploration_status" \
+    "$chunk_boundary_status" \
     "$load_status" \
     "$upload_status" \
     "$resource_status" \
@@ -97,6 +101,7 @@ baseline_status="$(require_status baseline_governance "$BASELINE_GOVERNANCE_SUMM
     "$report_v2_status" \
     "$baseline_status" \
     "$(relative_path "$EXPLORATION_SOAK_SUMMARY")" \
+    "$(relative_path "$CHUNK_BOUNDARY_SUMMARY")" \
     "$(relative_path "$LOAD_SCALING_SUMMARY")" \
     "$(relative_path "$UPLOAD_PRESSURE_SUMMARY")" \
     "$(relative_path "$RESOURCE_LIFECYCLE_SUMMARY")" \

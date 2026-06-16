@@ -20,7 +20,7 @@ Fresh local evidence:
 - Status: `pass`
 - Fast command: `./scripts/check.sh fast`
 - Full command: `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`
-- Nightly runtime command: `RUMPELMC_EXPLORATION_SOAK_REPEATS=3 ./scripts/world_streaming_exploration_soak.sh logs/nightly/world_streaming_exploration_soak && ./scripts/gpu_terrain_load_scaling.sh logs/nightly/gpu_terrain_load_scaling && ./scripts/gpu_terrain_upload_pressure.sh logs/nightly/gpu_terrain_upload_pressure`
+- Nightly runtime command: `RUMPELMC_EXPLORATION_SOAK_REPEATS=3 ./scripts/world_streaming_exploration_soak.sh logs/nightly/world_streaming_exploration_soak && ./scripts/gpu_terrain_chunk_boundary_stress.sh logs/nightly/gpu_terrain_chunk_boundary_stress && ./scripts/gpu_terrain_load_scaling.sh logs/nightly/gpu_terrain_load_scaling && ./scripts/gpu_terrain_upload_pressure.sh logs/nightly/gpu_terrain_upload_pressure`
 - Nightly summary command: `./scripts/gpu_resource_lifecycle_audit.sh logs/gpu_terrain_upload_pressure_smoke && ./scripts/gpu_terrain_memory_budget.sh logs/gpu_terrain_memory_budget_current && ./scripts/gpu_terrain_report_v2.sh logs/gpu_terrain_upload_pressure_smoke logs/gpu_terrain_report_v2_current && ./scripts/performance_baseline_governance.sh`
 
 ## Fast
@@ -70,6 +70,7 @@ Runtime nightly command:
 ```sh
 RUMPELMC_EXPLORATION_SOAK_REPEATS=3 \
   ./scripts/world_streaming_exploration_soak.sh logs/nightly/world_streaming_exploration_soak
+./scripts/gpu_terrain_chunk_boundary_stress.sh logs/nightly/gpu_terrain_chunk_boundary_stress
 ./scripts/gpu_terrain_load_scaling.sh logs/nightly/gpu_terrain_load_scaling
 ./scripts/gpu_terrain_upload_pressure.sh logs/nightly/gpu_terrain_upload_pressure
 ```

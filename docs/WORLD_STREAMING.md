@@ -253,6 +253,14 @@ Fresh smoke:
 
 - `logs/world_streaming_exploration_soak_smoke/world-streaming-exploration-soak-summary.txt` passed a single fast-turn run with `max_terrain_queue_ms=2.147`, `max_packet_queue_drain=36`, `max_packet_queue_lag_ms=15.330`, `max_chunk_unload_total=0`, `gpu_upload_fail=0`, `ground_misses=0`, and final render/collision readiness.
 
+## Chunk Boundary Stress
+
+`scripts/gpu_terrain_chunk_boundary_stress.sh` is the focused chunk enter/exit gate. It composes `long-move`, `spiral`, `fast-turn`, `teleport-snap`, and a bounded `high-resident` workload from the high-pressure suite, then emits `chunk-boundary-stress-summary.txt`.
+
+Fresh local evidence:
+
+- `logs/gpu_terrain_chunk_boundary_stress_current/chunk-boundary-stress-summary.txt` passed with movement cases `4`, workload cases `1`, max bounded residency `998` GPU subchunks/draws and `1445` faces, max terrain queue `2.258ms`, process wall p95 `0.049ms`, compositor submit `0.124ms`, packet queue max drain `54`, unload total `0`, unload neighbor refreshes `0`, upload failures `0`, ground misses `0`, and all final render/collision readiness checks passing.
+
 ## GPU Terrain Load Scaling
 
 The load-scaling gate requires a high resident set before treating GPU terrain scaling as covered: at least `2000` subchunks, `2000` draws, `3000` faces, and at least `25%` draw-command buffer occupancy with zero upload failures.
