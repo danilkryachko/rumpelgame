@@ -153,6 +153,48 @@ func TestEncodeSerializedChunkRLERoundTripsCaveHeightV1Chunk(t *testing.T) {
 	assertCaveHeightV1CarvesUndergroundOpenSamples(t, generator, roundTrip, 34728)
 }
 
+func TestEncodeSerializedChunkRLERoundTripsBiomeCaveHeightV1Chunk(t *testing.T) {
+	generator, err := NewWorldGenerator(GeneratorConfig{
+		Seed:        8675309,
+		DimensionID: "overworld",
+		Version:     GeneratorVersionBiomeCaveHeightV1,
+	})
+	if err != nil {
+		t.Fatalf("NewWorldGenerator() error = %v", err)
+	}
+	chunk, err := generator.GenerateChunk(0, 0)
+	if err != nil {
+		t.Fatalf("GenerateChunk(biome_cave_height_v1) error = %v", err)
+	}
+	raw := chunk.Serialize()
+
+	encoded, err := EncodeSerializedChunkRLE(raw)
+	if err != nil {
+		t.Fatalf("EncodeSerializedChunkRLE(biome_cave_height_v1) error = %v", err)
+	}
+	if len(encoded) <= 64 {
+		t.Fatalf("encoded biome_cave_height_v1 chunk length = %d, want richer run evidence than flat chunk", len(encoded))
+	}
+	if len(encoded) >= len(raw) {
+		t.Fatalf("encoded biome_cave_height_v1 chunk length = %d, want less than raw %d", len(encoded), len(raw))
+	}
+
+	decoded, err := DecodeSerializedChunkRLE(encoded)
+	if err != nil {
+		t.Fatalf("DecodeSerializedChunkRLE(biome_cave_height_v1) error = %v", err)
+	}
+	if !bytes.Equal(decoded, raw) {
+		t.Fatal("decoded biome_cave_height_v1 chunk differs from raw chunk")
+	}
+
+	roundTrip, err := DeserializeChunk(chunk.X, chunk.Z, decoded)
+	if err != nil {
+		t.Fatalf("DeserializeChunk(biome_cave_height_v1 round trip) error = %v", err)
+	}
+	assertHeightV1SurfaceVaries(t, generator, roundTrip)
+	assertBiomeCaveHeightV1CombinesBiomeBlocksAndCaves(t, generator, roundTrip, 28152, 1024)
+}
+
 func TestEncodeSerializedChunkRLEPreservesEditedChunk(t *testing.T) {
 	chunk := NewChunk(-3, 5)
 	chunk.GenerateFlat()

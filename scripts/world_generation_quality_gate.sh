@@ -16,6 +16,7 @@ RESOURCE_DOC="${RUMPELMC_WORLDGEN_QUALITY_RESOURCE_DOC:-"$ROOT_DIR/docs/RESOURCE
 BIOME_SUMMARY="${RUMPELMC_WORLDGEN_QUALITY_BIOME_SUMMARY:-"$ROOT_DIR/logs/biome_visual_variety_foundation_current/biome-visual-variety-foundation-summary.txt"}"
 CAVE_SUMMARY="${RUMPELMC_WORLDGEN_QUALITY_CAVE_SUMMARY:-"$ROOT_DIR/logs/cave_sampler_matrix_current/cave-sampler-matrix-summary.txt"}"
 CAVE_HEIGHT_SUMMARY="${RUMPELMC_WORLDGEN_QUALITY_CAVE_HEIGHT_SUMMARY:-"$ROOT_DIR/logs/cave_height_generator_matrix_current/cave-height-generator-matrix-summary.txt"}"
+BIOME_CAVE_HEIGHT_SUMMARY="${RUMPELMC_WORLDGEN_QUALITY_BIOME_CAVE_HEIGHT_SUMMARY:-"$ROOT_DIR/logs/biome_cave_height_generator_matrix_current/biome-cave-height-generator-matrix-summary.txt"}"
 RESOURCE_SUMMARY="${RUMPELMC_WORLDGEN_QUALITY_RESOURCE_SUMMARY:-"$ROOT_DIR/logs/resource_distribution_matrix_current/resource-distribution-matrix-summary.txt"}"
 CHUNK_SOURCE="${RUMPELMC_WORLDGEN_QUALITY_CHUNK_SOURCE:-"$ROOT_DIR/server/pkg/world/chunk.go"}"
 GENERATOR_SOURCE="${RUMPELMC_WORLDGEN_QUALITY_GENERATOR_SOURCE:-"$ROOT_DIR/server/pkg/world/generator.go"}"
@@ -66,7 +67,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$CAVE_DOC" "$RESOURCE_DOC" "$BIOME_SUMMARY" "$CAVE_SUMMARY" "$CAVE_HEIGHT_SUMMARY" "$RESOURCE_SUMMARY" "$CHUNK_SOURCE" "$GENERATOR_SOURCE" "$CAVE_SOURCE" "$RESOURCE_SOURCE" "$WORLD_SOURCE" "$WORLD_TEST" "$GENERATOR_TEST" "$CAVE_TEST" "$RESOURCE_TEST" "$CHUNK_ENCODING_TEST" "$HEIGHT_SMOKE_SCRIPT" "$HEIGHT_SMOKE_SUMMARY" "$SERVER_CMD_SOURCE" "$SERVER_CMD_TEST"; do
+for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$CAVE_DOC" "$RESOURCE_DOC" "$BIOME_SUMMARY" "$CAVE_SUMMARY" "$CAVE_HEIGHT_SUMMARY" "$BIOME_CAVE_HEIGHT_SUMMARY" "$RESOURCE_SUMMARY" "$CHUNK_SOURCE" "$GENERATOR_SOURCE" "$CAVE_SOURCE" "$RESOURCE_SOURCE" "$WORLD_SOURCE" "$WORLD_TEST" "$GENERATOR_TEST" "$CAVE_TEST" "$RESOURCE_TEST" "$CHUNK_ENCODING_TEST" "$HEIGHT_SMOKE_SCRIPT" "$HEIGHT_SMOKE_SUMMARY" "$SERVER_CMD_SOURCE" "$SERVER_CMD_TEST"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -78,7 +79,7 @@ for token in \
   'generator_version' \
   'validation_and_serialization' \
   'Do not use wall-clock time' \
-  'This block is complete as a seed/version, opt-in height/biome-height/cave-height generator, and metadata-only biome/cave/resource checkpoint'; do
+  'This block is complete as a seed/version, opt-in height/biome-height/cave-height/biome-cave-height generator, and metadata-only biome/cave/resource checkpoint'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
@@ -110,6 +111,7 @@ require_token "$GENERATOR_SOURCE" "GeneratorVersionFlatV1"
 require_token "$GENERATOR_SOURCE" "GeneratorVersionHeightV1"
 require_token "$GENERATOR_SOURCE" "GeneratorVersionBiomeHeightV1"
 require_token "$GENERATOR_SOURCE" "GeneratorVersionCaveHeightV1"
+require_token "$GENERATOR_SOURCE" "GeneratorVersionBiomeCaveHeightV1"
 require_token "$GENERATOR_SOURCE" "DefaultGeneratorConfig"
 require_token "$GENERATOR_SOURCE" "func NewWorldGenerator"
 require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) GenerateChunk"
@@ -117,6 +119,7 @@ require_token "$GENERATOR_SOURCE" "chunk.GenerateFlat()"
 require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) generateHeightV1"
 require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) generateBiomeHeightV1"
 require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) generateCaveHeightV1"
+require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) generateBiomeCaveHeightV1"
 require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) carveCaveHeightV1Column"
 require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) heightV1SurfaceY"
 require_token "$GENERATOR_SOURCE" "func biomeHeightV1ColumnBlocks"
@@ -137,16 +140,21 @@ require_token "$GENERATOR_TEST" "TestConfiguredBiomeHeightV1GeneratorIsDetermini
 require_token "$GENERATOR_TEST" "TestConfiguredBiomeHeightV1GeneratorChangesWithSeedAndDimension"
 require_token "$GENERATOR_TEST" "TestConfiguredCaveHeightV1GeneratorIsDeterministicForSeedDimensionAndCoordinates"
 require_token "$GENERATOR_TEST" "TestConfiguredCaveHeightV1GeneratorChangesWithSeedAndDimension"
+require_token "$GENERATOR_TEST" "TestConfiguredBiomeCaveHeightV1GeneratorIsDeterministicForSeedDimensionAndCoordinates"
+require_token "$GENERATOR_TEST" "TestConfiguredBiomeCaveHeightV1GeneratorChangesWithSeedAndDimension"
 require_token "$GENERATOR_TEST" "stableHeightV1ChunkSHA256"
 require_token "$GENERATOR_TEST" "stableBiomeHeightV1ChunkSHA256"
 require_token "$GENERATOR_TEST" "stableCaveHeightV1ChunkSHA256"
+require_token "$GENERATOR_TEST" "stableBiomeCaveHeightV1ChunkSHA256"
 require_token "$GENERATOR_TEST" "assertHeightV1SurfaceVaries"
 require_token "$GENERATOR_TEST" "assertBiomeHeightV1Columns"
 require_token "$GENERATOR_TEST" "assertCaveHeightV1CarvesUndergroundOpenSamples"
+require_token "$GENERATOR_TEST" "assertBiomeCaveHeightV1CombinesBiomeBlocksAndCaves"
 require_token "$GENERATOR_TEST" "TestNewWorldWithGeneratorConfigRejectsUnknownVersion"
 require_token "$CHUNK_ENCODING_TEST" "TestEncodeSerializedChunkRLERoundTripsHeightV1Chunk"
 require_token "$CHUNK_ENCODING_TEST" "TestEncodeSerializedChunkRLERoundTripsBiomeHeightV1Chunk"
 require_token "$CHUNK_ENCODING_TEST" "TestEncodeSerializedChunkRLERoundTripsCaveHeightV1Chunk"
+require_token "$CHUNK_ENCODING_TEST" "TestEncodeSerializedChunkRLERoundTripsBiomeCaveHeightV1Chunk"
 require_token "$HEIGHT_SMOKE_SCRIPT" "RUMPELMC_WORLD_GENERATOR_VERSION=height_v1"
 require_token "$HEIGHT_SMOKE_SCRIPT" "server_height_generator_smoke status=pass"
 require_token "$SERVER_CMD_SOURCE" "configuredWorldGeneratorConfig"
@@ -157,6 +165,7 @@ require_token "$SERVER_CMD_SOURCE" "world.NewWorldWithGeneratorConfig"
 require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigDefaultsToFlatV1"
 require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigUsesEnvOverrides"
 require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigAcceptsCaveHeightV1"
+require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigAcceptsBiomeCaveHeightV1"
 require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigRejectsInvalidSeed"
 require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigRejectsUnknownVersion"
 
@@ -180,6 +189,15 @@ cave_height_generator="$(field_metric generator_version "$CAVE_HEIGHT_SUMMARY")"
 cave_height_default_change="$(field_metric active_default_change "$CAVE_HEIGHT_SUMMARY")"
 cave_height_serialization_change="$(field_metric active_serialization_change "$CAVE_HEIGHT_SUMMARY")"
 cave_height_protocol_change="$(field_metric protocol_change "$CAVE_HEIGHT_SUMMARY")"
+biome_cave_height_status="$(field_metric status "$BIOME_CAVE_HEIGHT_SUMMARY")"
+biome_cave_height_matrix="$(field_metric matrix_status "$BIOME_CAVE_HEIGHT_SUMMARY")"
+biome_cave_height_chunk_bytes="$(field_metric chunk_bytes "$BIOME_CAVE_HEIGHT_SUMMARY")"
+biome_cave_height_surface_status="$(field_metric surface_status "$BIOME_CAVE_HEIGHT_SUMMARY")"
+biome_cave_height_biome_surface_status="$(field_metric biome_surface_status "$BIOME_CAVE_HEIGHT_SUMMARY")"
+biome_cave_height_generator="$(field_metric generator_version "$BIOME_CAVE_HEIGHT_SUMMARY")"
+biome_cave_height_default_change="$(field_metric active_default_change "$BIOME_CAVE_HEIGHT_SUMMARY")"
+biome_cave_height_serialization_change="$(field_metric active_serialization_change "$BIOME_CAVE_HEIGHT_SUMMARY")"
+biome_cave_height_protocol_change="$(field_metric protocol_change "$BIOME_CAVE_HEIGHT_SUMMARY")"
 resource_status="$(field_metric status "$RESOURCE_SUMMARY")"
 resource_matrix="$(field_metric matrix_status "$RESOURCE_SUMMARY")"
 resource_runtime="$(field_metric metadata_runtime "$RESOURCE_SUMMARY")"
@@ -223,6 +241,15 @@ awk \
   -v cave_height_default_change="${cave_height_default_change:-1}" \
   -v cave_height_serialization_change="${cave_height_serialization_change:-1}" \
   -v cave_height_protocol_change="${cave_height_protocol_change:-1}" \
+  -v biome_cave_height_status="${biome_cave_height_status:-missing}" \
+  -v biome_cave_height_matrix="${biome_cave_height_matrix:-missing}" \
+  -v biome_cave_height_chunk_bytes="${biome_cave_height_chunk_bytes:-missing}" \
+  -v biome_cave_height_surface_status="${biome_cave_height_surface_status:-missing}" \
+  -v biome_cave_height_biome_surface_status="${biome_cave_height_biome_surface_status:-missing}" \
+  -v biome_cave_height_generator="${biome_cave_height_generator:-missing}" \
+  -v biome_cave_height_default_change="${biome_cave_height_default_change:-1}" \
+  -v biome_cave_height_serialization_change="${biome_cave_height_serialization_change:-1}" \
+  -v biome_cave_height_protocol_change="${biome_cave_height_protocol_change:-1}" \
   -v resource_status="${resource_status:-missing}" \
   -v resource_matrix="${resource_matrix:-missing}" \
   -v resource_runtime="${resource_runtime:-active}" \
@@ -239,6 +266,7 @@ awk \
   -v biome_summary="$BIOME_SUMMARY" \
   -v cave_summary="$CAVE_SUMMARY" \
   -v cave_height_summary="$CAVE_HEIGHT_SUMMARY" \
+  -v biome_cave_height_summary="$BIOME_CAVE_HEIGHT_SUMMARY" \
   -v resource_summary="$RESOURCE_SUMMARY" '
   BEGIN {
     status = "pass"
@@ -248,9 +276,11 @@ awk \
     worldgen_height_v1 = "guarded"
     worldgen_biome_height_v1 = "guarded"
     worldgen_cave_height_v1 = "guarded"
+    worldgen_biome_cave_height_v1 = "guarded"
     height_v1_serialization = "guarded"
     biome_height_v1_serialization = "guarded"
     cave_height_v1_serialization = "guarded"
+    biome_cave_height_v1_serialization = "guarded"
     cave_distribution = "guarded"
     resource_distribution = "guarded"
     height_v1_live_smoke = "guarded"
@@ -281,6 +311,15 @@ awk \
       cave_height_default_change + 0 == 0 &&
       cave_height_serialization_change + 0 == 0 &&
       cave_height_protocol_change + 0 == 0
+    biome_cave_height_ok = biome_cave_height_status == "pass" &&
+      biome_cave_height_matrix == "guarded" &&
+      biome_cave_height_chunk_bytes == "guarded" &&
+      biome_cave_height_surface_status == "guarded" &&
+      biome_cave_height_biome_surface_status == "guarded" &&
+      biome_cave_height_generator == "biome_cave_height_v1" &&
+      biome_cave_height_default_change + 0 == 0 &&
+      biome_cave_height_serialization_change + 0 == 0 &&
+      biome_cave_height_protocol_change + 0 == 0
     resource_ok = resource_status == "pass" &&
       resource_matrix == "guarded" &&
       resource_runtime == "matrix_only" &&
@@ -303,6 +342,9 @@ awk \
     } else if (!cave_height_ok) {
       status = "fail"
       reason = "cave_height_generator_not_clean"
+    } else if (!biome_cave_height_ok) {
+      status = "fail"
+      reason = "biome_cave_height_generator_not_clean"
     } else if (!resource_ok) {
       status = "fail"
       reason = "resource_distribution_not_clean"
@@ -314,7 +356,9 @@ awk \
       reason = "world_tests_failed"
     }
 
-    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s worldgen_seed_version=%s worldgen_height_v1=%s worldgen_biome_height_v1=%s worldgen_cave_height_v1=%s height_v1_serialization=%s biome_height_v1_serialization=%s cave_height_v1_serialization=%s cave_distribution=%s resource_distribution=%s height_v1_live_smoke=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s origin_chunk=%s flat_byte_hash=%s world_tests=%s biome_status=%s biome_sampler=%s biome_matrix=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d cave_status=%s cave_matrix=%s cave_runtime=%s cave_active_worldgen_change=%d cave_active_serialization_change=%d cave_protocol_change=%d cave_height_status=%s cave_height_matrix=%s cave_height_chunk_bytes=%s cave_height_surface_status=%s cave_height_active_default_change=%d cave_height_active_serialization_change=%d cave_height_protocol_change=%d resource_status=%s resource_matrix=%s resource_runtime=%s resource_active_worldgen_change=%d resource_active_serialization_change=%d resource_protocol_change=%d height_smoke_status=%s height_smoke_encoding=%s design_doc=%s biome_summary=%s cave_summary=%s cave_height_summary=%s resource_summary=%s\n", status, reason, quality_pass_status, worldgen_seed_version, worldgen_height_v1, worldgen_biome_height_v1, worldgen_cave_height_v1, height_v1_serialization, biome_height_v1_serialization, cave_height_v1_serialization, cave_distribution, resource_distribution, height_v1_live_smoke, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, origin_chunk, flat_byte_hash, world_tests, biome_status, biome_sampler, biome_matrix, biome_runtime, biome_worldgen_change, biome_serialization_change, cave_status, cave_matrix, cave_runtime, cave_worldgen_change, cave_serialization_change, cave_protocol_change, cave_height_status, cave_height_matrix, cave_height_chunk_bytes, cave_height_surface_status, cave_height_default_change, cave_height_serialization_change, cave_height_protocol_change, resource_status, resource_matrix, resource_runtime, resource_worldgen_change, resource_serialization_change, resource_protocol_change, height_smoke_status, height_smoke_encoding, design_doc, biome_summary, cave_summary, cave_height_summary, resource_summary)
+    runtime_quality_pass = "opt_in_biome_cave_height_v1_guarded"
+
+    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s worldgen_seed_version=%s worldgen_height_v1=%s worldgen_biome_height_v1=%s worldgen_cave_height_v1=%s worldgen_biome_cave_height_v1=%s height_v1_serialization=%s biome_height_v1_serialization=%s cave_height_v1_serialization=%s biome_cave_height_v1_serialization=%s cave_distribution=%s resource_distribution=%s height_v1_live_smoke=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s origin_chunk=%s flat_byte_hash=%s world_tests=%s biome_status=%s biome_sampler=%s biome_matrix=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d cave_status=%s cave_matrix=%s cave_runtime=%s cave_active_worldgen_change=%d cave_active_serialization_change=%d cave_protocol_change=%d cave_height_status=%s cave_height_matrix=%s cave_height_chunk_bytes=%s cave_height_surface_status=%s cave_height_active_default_change=%d cave_height_active_serialization_change=%d cave_height_protocol_change=%d biome_cave_height_status=%s biome_cave_height_matrix=%s biome_cave_height_chunk_bytes=%s biome_cave_height_surface_status=%s biome_cave_height_biome_surface_status=%s biome_cave_height_active_default_change=%d biome_cave_height_active_serialization_change=%d biome_cave_height_protocol_change=%d resource_status=%s resource_matrix=%s resource_runtime=%s resource_active_worldgen_change=%d resource_active_serialization_change=%d resource_protocol_change=%d height_smoke_status=%s height_smoke_encoding=%s design_doc=%s biome_summary=%s cave_summary=%s cave_height_summary=%s biome_cave_height_summary=%s resource_summary=%s\n", status, reason, quality_pass_status, worldgen_seed_version, worldgen_height_v1, worldgen_biome_height_v1, worldgen_cave_height_v1, worldgen_biome_cave_height_v1, height_v1_serialization, biome_height_v1_serialization, cave_height_v1_serialization, biome_cave_height_v1_serialization, cave_distribution, resource_distribution, height_v1_live_smoke, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, origin_chunk, flat_byte_hash, world_tests, biome_status, biome_sampler, biome_matrix, biome_runtime, biome_worldgen_change, biome_serialization_change, cave_status, cave_matrix, cave_runtime, cave_worldgen_change, cave_serialization_change, cave_protocol_change, cave_height_status, cave_height_matrix, cave_height_chunk_bytes, cave_height_surface_status, cave_height_default_change, cave_height_serialization_change, cave_height_protocol_change, biome_cave_height_status, biome_cave_height_matrix, biome_cave_height_chunk_bytes, biome_cave_height_surface_status, biome_cave_height_biome_surface_status, biome_cave_height_default_change, biome_cave_height_serialization_change, biome_cave_height_protocol_change, resource_status, resource_matrix, resource_runtime, resource_worldgen_change, resource_serialization_change, resource_protocol_change, height_smoke_status, height_smoke_encoding, design_doc, biome_summary, cave_summary, cave_height_summary, biome_cave_height_summary, resource_summary)
     if (status != "pass") {
       exit 1
     }

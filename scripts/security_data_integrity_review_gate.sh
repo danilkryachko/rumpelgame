@@ -266,6 +266,7 @@ require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsRepres
 require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsHeightV1Chunk'
 require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsBiomeHeightV1Chunk'
 require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsCaveHeightV1Chunk'
+require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsBiomeCaveHeightV1Chunk'
 require_token "$SERVER_WORLD_BEHAVIOR_TEST" 'TestSetBlockGlobalRejectsOutOfRangeYWithoutSave'
 require_token "$SERVER_WORLD_BEHAVIOR_TEST" 'TestSetBlockGlobalRollsBackInMemoryBlockOnSaveError'
 require_token "$SERVER_WORLD_BEHAVIOR_TEST" 'TestHeightV1EditedChunkPersistsThroughStoreReload'

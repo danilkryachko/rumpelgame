@@ -135,6 +135,25 @@ func TestConfiguredWorldGeneratorConfigAcceptsCaveHeightV1(t *testing.T) {
 	}
 }
 
+func TestConfiguredWorldGeneratorConfigAcceptsBiomeCaveHeightV1(t *testing.T) {
+	t.Setenv("RUMPELMC_WORLD_SEED", "8675309")
+	t.Setenv("RUMPELMC_WORLD_DIMENSION_ID", "overworld")
+	t.Setenv("RUMPELMC_WORLD_GENERATOR_VERSION", string(world.GeneratorVersionBiomeCaveHeightV1))
+
+	got, err := configuredWorldGeneratorConfig()
+	if err != nil {
+		t.Fatalf("configuredWorldGeneratorConfig() error = %v", err)
+	}
+	want := world.GeneratorConfig{
+		Seed:        8675309,
+		DimensionID: "overworld",
+		Version:     world.GeneratorVersionBiomeCaveHeightV1,
+	}
+	if got != want {
+		t.Fatalf("configuredWorldGeneratorConfig() = %+v, want %+v", got, want)
+	}
+}
+
 func TestConfiguredWorldGeneratorConfigRejectsInvalidSeed(t *testing.T) {
 	t.Setenv("RUMPELMC_WORLD_SEED", "not-a-number")
 	t.Setenv("RUMPELMC_WORLD_DIMENSION_ID", "")

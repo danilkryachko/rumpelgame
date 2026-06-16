@@ -106,7 +106,8 @@ Layer 3, block-distribution changes:
 
 - Use biomes to vary surface blocks, resource blocks, caves, structures, or height.
 - The current opt-in `biome_height_v1` generator uses `biome_v1` to vary surface/subsurface block selection over the existing `height_v1` height field.
-- Broader biome resources, caves, structures, and default-world changes still require separate worldgen determinism tests, serialization compatibility checks, storage review, and updated perf/world streaming evidence.
+- The current opt-in `biome_cave_height_v1` generator combines biome-selected surface/subsurface blocks with deterministic `cave_v1` carving through the world generation quality gate.
+- Broader biome resources, structures, and default-world changes still require separate worldgen determinism tests, serialization compatibility checks, storage review, and updated perf/world streaming evidence.
 
 Layer 4, persisted/migrated biomes:
 
@@ -130,7 +131,8 @@ Before any runtime biome work:
 These require a separate implementation task and evidence:
 
 - Adding a hidden seed default that changes generated chunks.
-- Varying terrain height, caves, resources, structures, or surface blocks.
+- Changing default-world terrain height, caves, resources, structures, or surface blocks.
+- Turning biome/resource metadata into new block IDs without material/atlas and downstream evidence.
 - Adding biome fields to packets or storage.
 - Adding client-only biome visuals without deterministic client inputs.
 - Changing atlas assets or material metadata to simulate biome variety.
@@ -160,4 +162,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a metadata-only biome foundation. Default runtime biome terrain generation and visual variation remain inactive; `biome_v1` sampling and the representative matrix artifact are guarded as deterministic data and do not change chunk bytes, protocol, storage, atlas assets, material rendering, or default gameplay behavior. Opt-in `biome_height_v1` terrain block selection is tracked by the world generation quality gate, not by changing this foundation contract.
+This block is complete as a metadata-only biome foundation. Default runtime biome terrain generation and visual variation remain inactive; `biome_v1` sampling and the representative matrix artifact are guarded as deterministic data and do not change chunk bytes, protocol, storage, atlas assets, material rendering, or default gameplay behavior. Opt-in `biome_height_v1` and `biome_cave_height_v1` terrain block selection is tracked by the world generation quality gate, not by changing this foundation contract.

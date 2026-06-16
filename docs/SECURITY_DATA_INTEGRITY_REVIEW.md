@@ -72,7 +72,7 @@ Checks:
 - RLE payloads remain runs over the same serialized chunk byte order.
 - Unknown Go-side `ChunkData` fields are preserved through protobuf round trip.
 - Go and Rust RLE tests cover representative run patterns across single-byte and multi-byte varint run-length boundaries.
-- Go RLE tests also cover representative opt-in `height_v1`, `biome_height_v1`, and `cave_height_v1` chunks, proving generated terrain decodes back to the exact raw serialized bytes.
+- Go RLE tests also cover representative opt-in `height_v1`, `biome_height_v1`, `cave_height_v1`, and `biome_cave_height_v1` chunks, proving generated terrain decodes back to the exact raw serialized bytes.
 - Rust chunk decode rejects short raw chunks, bad RLE uncompressed size, malformed RLE runs, and unknown encodings.
 
 ### Storage Integrity
@@ -112,7 +112,7 @@ Checks:
 - Nil packet handler inputs are guarded through the networking gate and surfaced by the security gate as `nil_packet_policy=ignored_guarded`.
 - Nil `ClientPosition` payload bodies are guarded through the networking gate and surfaced by the security gate as `nil_position_policy=ignored_guarded`.
 - Nil `BlockAction` payload bodies are guarded through the networking gate and surfaced by the security gate as `nil_block_action_policy=ignored_guarded`.
-- Focused deterministic packet/RLE property coverage, including representative `height_v1`, `biome_height_v1`, and `cave_height_v1` RLE round-trip coverage, is surfaced by the security gate as `deterministic_property_tests=guarded`.
+- Focused deterministic packet/RLE property coverage, including representative `height_v1`, `biome_height_v1`, `cave_height_v1`, and `biome_cave_height_v1` RLE round-trip coverage, is surfaced by the security gate as `deterministic_property_tests=guarded`.
 - Valid multi-client block edits at the same coordinate are guarded as sequential last-write-wins snapshots through the server scalability and networking gates, then surfaced by the security gate as `conflict_semantics=last_write_wins_guarded`.
 - Out-of-height block edits are guarded at the world boundary and network handler as `block_edit_validation=y_bounds_guarded`.
 - Client reconnect/rebootstrap is guarded by live disconnect/server-restart smoke and a bounded repeated reconnect soak, with reader-session stale-packet filtering covered by Rust unit tests.
@@ -173,7 +173,7 @@ The gate checks that:
 - Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
 - The packet-error monitoring contract summary reports `monitoring_contract=export_ready`, `metrics_export=present`, and zero unknown/protocol/write error classes before security review can pass.
 - The server session monitoring contract summary reports `monitoring_contract=export_ready`, `metrics_export=present`, and zero close/accept/missing active-client field failures before security review can pass.
-- Focused deterministic packet/RLE property tests are present in Go and Rust test sources, including representative `height_v1`, `biome_height_v1`, and `cave_height_v1` RLE round-trip coverage, and surfaced in the summary as `deterministic_property_tests=guarded`.
+- Focused deterministic packet/RLE property tests are present in Go and Rust test sources, including representative `height_v1`, `biome_height_v1`, `cave_height_v1`, and `biome_cave_height_v1` RLE round-trip coverage, and surfaced in the summary as `deterministic_property_tests=guarded`.
 - Focused Go protocol/network/storage/world tests pass.
 - Storage tests prove empty RocksDB paths are rejected before the C API boundary, missing parent directories are created, and existing regular-file parent/database RocksDB paths fail to open.
 - Storage tests prove concurrent save/load operations on distinct RocksDB chunk keys preserve each chunk payload.
