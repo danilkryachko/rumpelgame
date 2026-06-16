@@ -14,6 +14,7 @@
 ## Rules
 
 - Do not hand-edit generated protocol files.
+- Use `scripts/protocol_generated_drift_gate.sh` before finishing protocol/schema work; it guards generated-code headers, schema identity tokens, and partial proto/generated diffs.
 - Protocol changes must account for both client and server behavior.
 - Preserve wire compatibility unless the task explicitly changes it.
 - Do not reuse or repurpose existing packet fields without documenting the compatibility impact.
@@ -66,3 +67,13 @@
 - Block material metadata compatibility; `block_id` remains the only current wire/storage identity for voxel contents.
 - Error handling for malformed, partial, or unknown packets.
 - Reconnect, slow-client timeout, overload, and backpressure behavior are policy work; do not change packet framing or schema for them without an explicit protocol task.
+
+## Generated Drift Guard
+
+Run:
+
+```sh
+sh scripts/protocol_generated_drift_gate.sh logs/protocol_generated_drift_current
+```
+
+The expected current result is `status=pass`, `schema_diff=0`, `generated_diff=0`, `generated_header=guarded`, `schema_identity=guarded`, and `partial_generated_drift=guarded`.
