@@ -68,7 +68,7 @@ Checks:
 
 ### Chunk Serialization
 
-- `ChunkData` raw and RLE compatibility is covered by Go tests.
+- `Packet` empty zero-wire behavior plus `ChunkData` raw and RLE compatibility are covered by Go tests.
 - RLE payloads remain runs over the same serialized chunk byte order.
 - Unknown Go-side `ChunkData` fields are preserved through protobuf round trip.
 - Go and Rust RLE tests cover representative run patterns across single-byte and multi-byte varint run-length boundaries.
@@ -165,7 +165,7 @@ The gate checks that:
 - Server config tests prove PostgreSQL environment variables do not bypass `RUMPELMC_SERVER_ROCKSDB_PATH`.
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean.
-- Networking summary reports `unknown_packet_policy=ignored_guarded`.
+- Networking summary reports `unknown_packet_policy=ignored_guarded`, and API compatibility tests lock empty `Packet{}` zero-wire bytes.
 - Networking summary reports `conflict_semantics=last_write_wins_guarded`.
 - Server world/network tests prove out-of-range block-edit `Y` is rejected without a save or chunk broadcast.
 - Protocol schema/generated files are unchanged.

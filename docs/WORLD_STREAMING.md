@@ -191,11 +191,11 @@ Fresh check:
 
 ## Chunk Serialization Compatibility
 
-The compatibility suite is test-only. It guards raw default payload compatibility, RLE wire-vector stability, direct serialize/deserialize round-trips, protobuf schema field numbers, enum wire values, and unknown `ChunkData` field preservation on Go protobuf round-trips.
+The compatibility suite is test-only. It guards empty-packet zero-wire compatibility, raw default payload compatibility, RLE wire-vector stability, direct serialize/deserialize round-trips, protobuf schema field numbers, enum wire values, and unknown `ChunkData` field preservation on Go protobuf round-trips.
 
 Fresh check:
 
-- `go test ./pkg/api ./pkg/world ./pkg/network` passed on 2026-06-15 with the new compatibility coverage.
+- `go test ./pkg/api ./pkg/world ./pkg/network` passed on 2026-06-16 with empty-packet zero-wire coverage and the existing compatibility coverage.
 
 ## Server Scalability
 
@@ -350,7 +350,7 @@ Fresh check:
 - Movement readiness separates final render-ready and collision-ready evidence; player spawn remains collision-gated.
 - Client collision radius remains `1` by default; `RUMPELMC_CLIENT_COLLISION_CHUNK_DISTANCE=0` is an opt-in lazy-collision experiment only.
 - Worldgen determinism is covered by focused `server/pkg/world` tests including origin chunk flat strata; generation behavior, chunk dimensions, serialization order, protocol, and storage remain unchanged.
-- Chunk serialization compatibility is guarded by focused `server/pkg/api`, `server/pkg/world`, and `server/pkg/network` tests for field numbers, enum values, raw defaults, RLE wire vectors, and protobuf unknown fields.
+- Chunk serialization compatibility is guarded by focused `server/pkg/api`, `server/pkg/world`, and `server/pkg/network` tests for empty-packet zero-wire bytes, field numbers, enum values, raw defaults, RLE wire vectors, and protobuf unknown fields.
 - Protocol generated-code drift is guarded by `scripts/protocol_generated_drift_gate.sh`, which rejects partial schema/generated diffs and checks generated-code identity headers.
 - Networking robustness is guarded by focused Go and Rust packet-boundary tests plus opt-in max-client admission with bounded live rejection evidence; adaptive overload and backpressure policy remain deferred and must not change the wire contract without a protocol task.
 - Client lifecycle state is modeled as connecting, waiting chunks, spawning, active, reconnecting, and shutdown; bounded repeated reconnect/rebootstrap execution and state telemetry are guarded, while stale packet and reset behavior remain deferred.

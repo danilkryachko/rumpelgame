@@ -14,6 +14,11 @@ func TestPacketWireCompatibility(t *testing.T) {
 		expected []byte
 	}{
 		{
+			name:     "empty packet has zero wire bytes",
+			packet:   &Packet{},
+			expected: []byte{},
+		},
+		{
 			name: "chunk payload tag 1",
 			packet: &Packet{
 				Payload: &Packet_Chunk{

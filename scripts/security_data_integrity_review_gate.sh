@@ -13,6 +13,7 @@ DESIGN_DOC="${RUMPELMC_SECURITY_REVIEW_DOC:-"$ROOT_DIR/docs/SECURITY_DATA_INTEGR
 STORAGE_DOC="${RUMPELMC_SECURITY_REVIEW_STORAGE_DOC:-"$ROOT_DIR/docs/STORAGE.md"}"
 SERVER_CMD_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_CMD_SOURCE:-"$ROOT_DIR/server/cmd/server/main.go"}"
 SERVER_NETWORK_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
+SERVER_API_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_API_TEST:-"$ROOT_DIR/server/pkg/api/packets_compat_test.go"}"
 SERVER_WORLD_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
 SERVER_NETWORK_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_TEST:-"$ROOT_DIR/server/pkg/network/framing_test.go"}"
 SERVER_NETWORK_BEHAVIOR_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_BEHAVIOR_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
@@ -68,6 +69,7 @@ for path in \
   "$STORAGE_DOC" \
   "$SERVER_CMD_SOURCE" \
   "$SERVER_NETWORK_SOURCE" \
+  "$SERVER_API_TEST" \
   "$SERVER_WORLD_SOURCE" \
   "$SERVER_NETWORK_TEST" \
   "$SERVER_NETWORK_BEHAVIOR_TEST" \
@@ -173,6 +175,8 @@ for token in \
 done
 
 require_token "$SERVER_NETWORK_TEST" 'TestReceivePacketConsumesExactFrameBoundaries'
+require_token "$SERVER_API_TEST" 'TestPacketWireCompatibility'
+require_token "$SERVER_API_TEST" 'empty packet has zero wire bytes'
 require_token "$SERVER_NETWORK_BEHAVIOR_TEST" 'TestHandleClientPacketRejectsOutOfRangeBlockAction'
 require_token "$SERVER_STORAGE_TEST" 'TestOpenRocksChunkStoreCreatesMissingParentDirectory'
 require_token "$SERVER_STORAGE_TEST" 'TestOpenRocksChunkStoreRejectsFilePath'
