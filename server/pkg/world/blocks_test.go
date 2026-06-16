@@ -76,6 +76,130 @@ func TestBlockDefinitionsAreStableOrderedCopy(t *testing.T) {
 	}
 }
 
+func TestBlockMaterialIdentityRowsAreStable(t *testing.T) {
+	want := []BlockDefinition{
+		{
+			ID:             Air,
+			Name:           "Air",
+			Solid:          false,
+			Opaque:         false,
+			Placeable:      false,
+			RenderClass:    RenderClassAir,
+			CollisionClass: CollisionClassNone,
+			OcclusionClass: OcclusionClassNone,
+			ShadowPolicy:   ShadowPolicyNone,
+			DepthPolicy:    DepthPolicyNone,
+			StoragePolicy:  StoragePolicyNetworked,
+			LiquidPolicy:   LiquidPolicyNone,
+			SortPolicy:     SortPolicyNone,
+			LightEmission:  0,
+			Textures:       BlockTextures{},
+		},
+		{
+			ID:             Stone,
+			Name:           "Stone",
+			Solid:          true,
+			Opaque:         true,
+			Placeable:      true,
+			RenderClass:    RenderClassOpaque,
+			CollisionClass: CollisionClassSolid,
+			OcclusionClass: OcclusionClassOpaque,
+			ShadowPolicy:   ShadowPolicyOpaque,
+			DepthPolicy:    DepthPolicyOpaqueWrite,
+			StoragePolicy:  StoragePolicyNetworked,
+			LiquidPolicy:   LiquidPolicyNone,
+			SortPolicy:     SortPolicyNone,
+			LightEmission:  0,
+			Textures:       sameTexture("stone"),
+		},
+		{
+			ID:             Dirt,
+			Name:           "Dirt",
+			Solid:          true,
+			Opaque:         true,
+			Placeable:      true,
+			RenderClass:    RenderClassOpaque,
+			CollisionClass: CollisionClassSolid,
+			OcclusionClass: OcclusionClassOpaque,
+			ShadowPolicy:   ShadowPolicyOpaque,
+			DepthPolicy:    DepthPolicyOpaqueWrite,
+			StoragePolicy:  StoragePolicyNetworked,
+			LiquidPolicy:   LiquidPolicyNone,
+			SortPolicy:     SortPolicyNone,
+			LightEmission:  0,
+			Textures:       sameTexture("soil"),
+		},
+		{
+			ID:             Grass,
+			Name:           "Grass",
+			Solid:          true,
+			Opaque:         true,
+			Placeable:      true,
+			RenderClass:    RenderClassOpaque,
+			CollisionClass: CollisionClassSolid,
+			OcclusionClass: OcclusionClassOpaque,
+			ShadowPolicy:   ShadowPolicyOpaque,
+			DepthPolicy:    DepthPolicyOpaqueWrite,
+			StoragePolicy:  StoragePolicyNetworked,
+			LiquidPolicy:   LiquidPolicyNone,
+			SortPolicy:     SortPolicyNone,
+			LightEmission:  0,
+			Textures: BlockTextures{
+				Top:    "grass_top",
+				Side:   "grass_side",
+				Bottom: "soil",
+			},
+		},
+		{
+			ID:             Wood,
+			Name:           "Wood",
+			Solid:          true,
+			Opaque:         true,
+			Placeable:      true,
+			RenderClass:    RenderClassOpaque,
+			CollisionClass: CollisionClassSolid,
+			OcclusionClass: OcclusionClassOpaque,
+			ShadowPolicy:   ShadowPolicyOpaque,
+			DepthPolicy:    DepthPolicyOpaqueWrite,
+			StoragePolicy:  StoragePolicyNetworked,
+			LiquidPolicy:   LiquidPolicyNone,
+			SortPolicy:     SortPolicyNone,
+			LightEmission:  0,
+			Textures: BlockTextures{
+				Top:    "wood_top",
+				Side:   "wood_side",
+				Bottom: "wood_top",
+			},
+		},
+		{
+			ID:             Leaves,
+			Name:           "Leaves",
+			Solid:          true,
+			Opaque:         true,
+			Placeable:      true,
+			RenderClass:    RenderClassOpaque,
+			CollisionClass: CollisionClassSolid,
+			OcclusionClass: OcclusionClassOpaque,
+			ShadowPolicy:   ShadowPolicyOpaque,
+			DepthPolicy:    DepthPolicyOpaqueWrite,
+			StoragePolicy:  StoragePolicyNetworked,
+			LiquidPolicy:   LiquidPolicyNone,
+			SortPolicy:     SortPolicyNone,
+			LightEmission:  0,
+			Textures:       sameTexture("leaves"),
+		},
+	}
+	got := BlockDefinitions()
+	if len(got) != len(want) {
+		t.Fatalf("BlockDefinitions() length = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("BlockDefinitions()[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
 func TestCurrentNetworkedBlocksPreserveOpaqueSolidMaterialContract(t *testing.T) {
 	air, ok := BlockByID(Air)
 	if !ok {

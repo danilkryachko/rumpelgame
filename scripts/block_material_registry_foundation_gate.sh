@@ -69,6 +69,7 @@ require_token "$SERVER_BLOCKS" "type SortPolicy string"
 require_token "$SERVER_BLOCKS" "func BlockDefinitions"
 require_token "$SERVER_BLOCKS" "func IsOpaqueSolid"
 require_token "$SERVER_BLOCKS_TEST" "TestBlockDefinitionsAreStableOrderedCopy"
+require_token "$SERVER_BLOCKS_TEST" "TestBlockMaterialIdentityRowsAreStable"
 require_token "$SERVER_BLOCKS_TEST" "TestCurrentNetworkedBlocksPreserveOpaqueSolidMaterialContract"
 require_token "$SERVER_BLOCKS_TEST" "TestUnknownBlockMaterialHelpersAreConservative"
 require_token "$DESIGN_DOC" "server material registry foundation"
@@ -127,6 +128,7 @@ awk \
     status = "pass"
     reason = "ok"
     material_registry_status = "guarded"
+    server_registry_identity = "guarded"
     current_runtime_contract = "opaque_only"
     metadata_scope = "existing_block_ids"
     counts_ok = block_count + 0 == 6 &&
@@ -157,7 +159,7 @@ awk \
       reason = "world_tests_failed"
     }
 
-    printf("block_material_registry_foundation status=%s reason=%s material_registry_status=%s current_runtime_contract=%s metadata_scope=%s block_count=%d registry_hash=%s networked_blocks=%d opaque_solid_blocks=%d placeable_blocks=%d air_blocks=%d emissive_blocks=%d liquid_blocks=%d active_block_id_change=%d active_protocol_change=%d active_storage_change=%d renderer_change=%d proto_diff_count=%d world_tests=%s raw_summary=%s\n", status, reason, material_registry_status, current_runtime_contract, metadata_scope, block_count, registry_hash, networked_blocks, opaque_solid_blocks, placeable_blocks, air_blocks, emissive_blocks, liquid_blocks, active_block_id_change, active_protocol_change, active_storage_change, renderer_change, proto_diff_count, world_tests, raw_summary)
+    printf("block_material_registry_foundation status=%s reason=%s material_registry_status=%s server_registry_identity=%s current_runtime_contract=%s metadata_scope=%s block_count=%d registry_hash=%s networked_blocks=%d opaque_solid_blocks=%d placeable_blocks=%d air_blocks=%d emissive_blocks=%d liquid_blocks=%d active_block_id_change=%d active_protocol_change=%d active_storage_change=%d renderer_change=%d proto_diff_count=%d world_tests=%s raw_summary=%s\n", status, reason, material_registry_status, server_registry_identity, current_runtime_contract, metadata_scope, block_count, registry_hash, networked_blocks, opaque_solid_blocks, placeable_blocks, air_blocks, emissive_blocks, liquid_blocks, active_block_id_change, active_protocol_change, active_storage_change, renderer_change, proto_diff_count, world_tests, raw_summary)
     if (status != "pass") {
       exit 1
     }

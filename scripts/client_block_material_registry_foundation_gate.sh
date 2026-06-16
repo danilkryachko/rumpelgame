@@ -78,6 +78,7 @@ fi
 server_summary="$SERVER_GATE_DIR/block-material-registry-foundation-summary.txt"
 server_status="$(field_metric status "$server_summary")"
 server_registry_status="$(field_metric material_registry_status "$server_summary")"
+server_registry_identity="$(field_metric server_registry_identity "$server_summary")"
 server_registry_hash="$(field_metric registry_hash "$server_summary")"
 
 rust_tests="skipped"
@@ -134,6 +135,7 @@ renderer_code_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- client/rust_e
 awk \
   -v server_status="${server_status:-missing}" \
   -v server_registry_status="${server_registry_status:-missing}" \
+  -v server_registry_identity="${server_registry_identity:-missing}" \
   -v server_registry_hash="${server_registry_hash:-missing}" \
   -v rust_tests="$rust_tests" \
   -v client_block_count="$client_block_count" \
@@ -163,7 +165,9 @@ awk \
       storage_diff_count + 0 == 0 &&
       renderer_code_diff_count + 0 == 0
     tests_ok = rust_tests == "pass" || rust_tests == "skipped"
-    server_ok = server_status == "pass" && server_registry_status == "guarded"
+    server_ok = server_status == "pass" &&
+      server_registry_status == "guarded" &&
+      server_registry_identity == "guarded"
 
     if (!counts_ok) {
       status = "fail"
@@ -179,7 +183,7 @@ awk \
       reason = "protocol_storage_or_renderer_code_diff_present"
     }
 
-    printf("client_block_material_registry_foundation status=%s reason=%s client_material_registry_status=%s client_registry_identity=%s server_material_registry_status=%s current_runtime_contract=%s metadata_scope=%s client_block_count=%d client_opaque_solid_blocks=%d client_placeable_blocks=%d client_air_blocks=%d client_emissive_blocks=%d client_liquid_blocks=%d active_protocol_change=%d active_storage_change=%d renderer_code_change=%d rust_tests=%s server_registry_hash=%s server_summary=%s\n", status, reason, client_material_registry_status, client_registry_identity, server_registry_status, current_runtime_contract, metadata_scope, client_block_count, client_opaque_solid_blocks, client_placeable_blocks, client_air_blocks, client_emissive_blocks, client_liquid_blocks, protocol_diff_count, storage_diff_count, renderer_code_diff_count, rust_tests, server_registry_hash, server_summary)
+    printf("client_block_material_registry_foundation status=%s reason=%s client_material_registry_status=%s client_registry_identity=%s server_material_registry_status=%s server_registry_identity=%s current_runtime_contract=%s metadata_scope=%s client_block_count=%d client_opaque_solid_blocks=%d client_placeable_blocks=%d client_air_blocks=%d client_emissive_blocks=%d client_liquid_blocks=%d active_protocol_change=%d active_storage_change=%d renderer_code_change=%d rust_tests=%s server_registry_hash=%s server_summary=%s\n", status, reason, client_material_registry_status, client_registry_identity, server_registry_status, server_registry_identity, current_runtime_contract, metadata_scope, client_block_count, client_opaque_solid_blocks, client_placeable_blocks, client_air_blocks, client_emissive_blocks, client_liquid_blocks, protocol_diff_count, storage_diff_count, renderer_code_diff_count, rust_tests, server_registry_hash, server_summary)
     if (status != "pass") {
       exit 1
     }
