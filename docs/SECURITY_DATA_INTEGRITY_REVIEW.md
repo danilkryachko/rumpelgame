@@ -114,6 +114,7 @@ Checks:
 - Nil `BlockAction` payload bodies are guarded through the networking gate and surfaced by the security gate as `nil_block_action_policy=ignored_guarded`.
 - Focused deterministic packet/RLE property coverage, including representative `height_v1`, `biome_height_v1`, `cave_height_v1`, and `biome_cave_height_v1` RLE round-trip coverage, is surfaced by the security gate as `deterministic_property_tests=guarded`.
 - Valid multi-client block edits at the same coordinate are guarded as sequential last-write-wins snapshots through the server scalability and networking gates, then surfaced by the security gate as `conflict_semantics=last_write_wins_guarded`.
+- Worldgen atlas guard propagation is consumed through the networking gate and surfaced by the security gate as `worldgen_biome_atlas_tile_identity=guarded` and `worldgen_biome_atlas_block_texture_usage=guarded`.
 - Out-of-height block edits are guarded at the world boundary and network handler as `block_edit_validation=y_bounds_guarded`.
 - Client reconnect/rebootstrap is guarded by live disconnect/server-restart smoke and a bounded repeated reconnect soak, with reader-session stale-packet filtering covered by Rust unit tests.
 - Block edit persistence is guarded at the world/storage boundary, including opt-in `height_v1` edited chunk reload, failed-save rollback, persisted load-error propagation, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
@@ -160,7 +161,7 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `packet_error_monitoring=export_ready`, `server_session_monitoring=export_ready`, `unknown_packet_policy=ignored_guarded`, `nil_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `storage_integrity=guarded`, `storage_package_smoke=guarded`, `storage_config=path_guarded`, `storage_backend_policy=approved_only_guarded`, `storage_backend_ownership=guarded`, `storage_concurrency=guarded`, `storage_errors=actionable_guarded`, `storage_lifecycle=guarded`, `block_edit_validation=y_bounds_guarded`, `block_edit_save_failure_rollback=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `overload_status=admission_matrix_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, `observability_gpu_report_freshness=guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `packet_error_monitoring=export_ready`, `server_session_monitoring=export_ready`, `unknown_packet_policy=ignored_guarded`, `nil_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `storage_integrity=guarded`, `storage_package_smoke=guarded`, `storage_config=path_guarded`, `storage_backend_policy=approved_only_guarded`, `storage_backend_ownership=guarded`, `storage_concurrency=guarded`, `storage_errors=actionable_guarded`, `storage_lifecycle=guarded`, `block_edit_validation=y_bounds_guarded`, `block_edit_save_failure_rollback=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `worldgen_biome_atlas_tile_identity=guarded`, `worldgen_biome_atlas_block_texture_usage=guarded`, `overload_status=admission_matrix_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, `observability_gpu_report_freshness=guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -183,7 +184,7 @@ The gate checks that:
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean, including guarded aggregate GPU terrain report freshness from observability.
 - Networking summary reports `unknown_packet_policy=ignored_guarded`, `nil_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, and `nil_block_action_policy=ignored_guarded`; API compatibility tests lock empty `Packet{}` zero-wire bytes.
-- Networking summary reports `conflict_semantics=last_write_wins_guarded` and `overload_status=admission_matrix_guarded`.
+- Networking summary reports `conflict_semantics=last_write_wins_guarded`, `worldgen_biome_atlas_tile_identity=guarded`, `worldgen_biome_atlas_block_texture_usage=guarded`, and `overload_status=admission_matrix_guarded`.
 - Server world/network tests prove out-of-range block-edit `Y` is rejected without a save or chunk broadcast.
 - Server world tests prove failed `SaveChunk` calls roll the in-memory block edit back before returning an error.
 - Protocol schema/generated files are unchanged.
