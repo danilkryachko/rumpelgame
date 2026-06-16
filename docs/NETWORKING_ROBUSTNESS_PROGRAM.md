@@ -102,6 +102,7 @@ This policy prevents old reader errors or same-frame disconnect packets from mut
 - oversized length rejection
 - malformed protobuf rejection
 - closed initial-client probe handling
+- timeout initial-client probe handling after wrapped read errors
 - initial position handshake read
 - stable packet error classification labels
 - connection-loop `packet_error_class` logging for malformed initial packets

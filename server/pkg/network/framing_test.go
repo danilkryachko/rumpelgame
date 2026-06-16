@@ -159,6 +159,21 @@ func TestReceiveInitialClientPacketIgnoresClosedProbe(t *testing.T) {
 	}
 }
 
+func TestReceiveInitialClientPacketTreatsTimeoutProbeAsNoPacket(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	resultCh := receiveInitialClientPacketAsync(serverConn)
+	result := waitReceivePacket(t, resultCh)
+	if result.err != nil {
+		t.Fatalf("receiveInitialClientPacket() error = %v, want nil timeout probe", result.err)
+	}
+	if result.packet != nil {
+		t.Fatalf("receiveInitialClientPacket() packet = %v, want nil timeout probe", result.packet)
+	}
+}
+
 func TestReceiveInitialClientPacketReadsHandshakePosition(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()

@@ -699,7 +699,8 @@ func (s *Server) receiveInitialClientPacket(conn net.Conn) (*api.Packet, bool, e
 	packet, err := s.receivePacket(conn)
 	clearErr := conn.SetReadDeadline(time.Time{})
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
 			return nil, false, clearErr
 		}
 		if clearErr != nil {
