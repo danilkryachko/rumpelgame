@@ -138,6 +138,26 @@ func TestReceivePacketRejectsMalformedPayload(t *testing.T) {
 	}
 }
 
+func TestReceivePacketAcceptsEmptyPayloadFrame(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	resultCh := receivePacketAsync(serverConn)
+	writeFrame(t, clientConn, nil)
+
+	result := waitReceivePacket(t, resultCh)
+	if result.err != nil {
+		t.Fatalf("receivePacket() error = %v, want nil for empty payload frame", result.err)
+	}
+	if result.packet == nil {
+		t.Fatal("receivePacket() packet = nil, want empty packet")
+	}
+	if result.packet.Payload != nil {
+		t.Fatalf("receivePacket() payload = %T, want nil", result.packet.Payload)
+	}
+}
+
 func TestReceivePacketConsumesExactFrameBoundaries(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()

@@ -62,6 +62,7 @@ Checks:
 - Server `receivePacket` rejects lengths above `maxPacketSize` before allocating payload storage.
 - Server `receivePacket` decodes exactly one protobuf `api.Packet` per frame and returns decode errors to the connection loop.
 - Go packet framing tests prove back-to-back protobuf frames are consumed on exact frame boundaries.
+- Go packet framing tests prove a zero-length protobuf payload frame decodes as an empty `api.Packet` instead of a malformed frame.
 - Server `handleConnection` logs receive errors as disconnects and closes the connection through `defer conn.Close()`.
 - Server packet and write errors are classified into stable `packet_error_class` labels: `eof`, `short_frame`, `oversized_frame`, `malformed_protobuf`, `timeout`, `short_write`, `encode_error`, and `other`.
 - `scripts/packet_error_class_summary.sh` aggregates those labels from server log files, rejects unknown classes, and writes a count summary plus TSV.
@@ -108,6 +109,7 @@ This policy prevents old reader errors or same-frame disconnect packets from mut
 - short payload receive errors
 - oversized length rejection
 - malformed protobuf rejection
+- zero-length protobuf payload frame decoding to an empty packet
 - exact back-to-back frame-boundary reads
 - closed initial-client probe handling
 - timeout initial-client probe handling after wrapped read errors
@@ -261,7 +263,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `unknown_packet_policy=ignored_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `conflict_semantics=last_write_wins_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=load_matrix_guarded` when a current slow-reader matrix summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `slow_reader_matrix_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_matrix_guarded` when current admission-limit matrix evidence exists.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `unknown_packet_policy=ignored_guarded`, `empty_payload_frame=decode_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `conflict_semantics=last_write_wins_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=load_matrix_guarded` when a current slow-reader matrix summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `slow_reader_matrix_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_matrix_guarded` when current admission-limit matrix evidence exists.
 
 To run the slow-reader smoke inside the gate:
 
@@ -290,6 +292,7 @@ The gate checks that:
 - The packet-error alert threshold gate reports `packet_error_alert_threshold status=pass` over current live server smoke logs.
 - Go server framing/network tests pass.
 - Go server session tests prove empty payload packets are ignored without sending chunk frames.
+- Go server framing tests prove zero-length payload frames decode to empty packets before the session-level ignore policy applies.
 - Rust network and reader-drain session tests pass.
 - The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
 - The reconnect smoke and repeated reconnect soak summaries are clean when current artifacts exist or the runs are explicitly requested.
@@ -299,4 +302,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a packet-boundary, empty/unknown payload ignore policy, classified packet-error, parser-guarded classified-error aggregation, local classified-error alert threshold, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection and admission-matrix evidence, two-client live fanout, bounded slow-reader load matrix, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broadcast/backpressure policy, broad reconnect state reset, packet replay, and production monitoring integration remain future work.
+This block is complete as a packet-boundary, zero-length frame decode, empty/unknown payload ignore policy, classified packet-error, parser-guarded classified-error aggregation, local classified-error alert threshold, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection and admission-matrix evidence, two-client live fanout, bounded slow-reader load matrix, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broadcast/backpressure policy, broad reconnect state reset, packet replay, and production monitoring integration remain future work.
