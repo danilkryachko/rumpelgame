@@ -207,11 +207,11 @@ Fresh check:
 
 ## Networking Robustness
 
-The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, closed initial probes, classified packet-error aggregation and live alert thresholds, opt-in max-client admission with bounded live rejection evidence, bounded slow-reader timeout evidence, bounded repeated live disconnect/server-restart/rebootstrap recovery back to `client_state=active`, and unit-guarded reader-session stale-packet handling. Adaptive overload, packet replay, broad reconnect state reset, and backpressure policy remain deferred.
+The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, closed initial probes, classified packet-error aggregation and live alert thresholds, opt-in max-client admission with bounded live rejection evidence, bounded slow-reader timeout plus multi-fast-client matrix evidence, bounded repeated live disconnect/server-restart/rebootstrap recovery back to `client_state=active`, and unit-guarded reader-session stale-packet handling. Adaptive overload, packet replay, broad reconnect state reset, and backpressure policy remain deferred.
 
 Fresh check:
 
-- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `reconnect_status=repeated_live_rebootstrap_guarded`, `slow_client_status=live_guarded`, `multi_client_live_status=pass`, `overload_status=admission_matrix_guarded`, and `active_protocol_change=0`.
+- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `reconnect_status=repeated_live_rebootstrap_guarded`, `slow_client_status=load_matrix_guarded`, `slow_reader_matrix_status=pass`, `slow_reader_matrix_max_fast_clients=4`, `multi_client_live_status=pass`, `overload_status=admission_matrix_guarded`, and `active_protocol_change=0`.
 
 ## Client State Machine
 

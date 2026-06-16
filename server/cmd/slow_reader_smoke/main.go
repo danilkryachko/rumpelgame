@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -21,20 +22,32 @@ type smokeClient struct {
 	conn net.Conn
 }
 
+type fastResult struct {
+	index     int
+	chunk     *api.ChunkData
+	elapsedMS float64
+	err       error
+}
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:25565", "server TCP address")
 	timeout := flag.Duration("timeout", 5*time.Second, "fast client read/write timeout")
 	slowLead := flag.Duration("slow-lead", 250*time.Millisecond, "time to let the slow client pressure server writes before the fast client connects")
 	postFastWait := flag.Duration("post-fast-wait", 750*time.Millisecond, "time to keep the slow client connected after the fast client succeeds")
+	fastClients := flag.Int("fast-clients", 1, "number of fast clients that must receive bootstrap chunks while the slow client is connected")
 	flag.Parse()
 
-	if err := run(*addr, *timeout, *slowLead, *postFastWait); err != nil {
+	if err := run(*addr, *timeout, *slowLead, *postFastWait, *fastClients); err != nil {
 		fmt.Fprintf(os.Stderr, "server_slow_reader_smoke status=fail error=%q\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(addr string, timeout, slowLead, postFastWait time.Duration) error {
+func run(addr string, timeout, slowLead, postFastWait time.Duration, fastClients int) error {
+	if fastClients < 1 {
+		return fmt.Errorf("fast clients must be at least 1, got %d", fastClients)
+	}
+
 	slow, err := dialClient("slow", addr, timeout)
 	if err != nil {
 		return err
@@ -49,32 +62,111 @@ func run(addr string, timeout, slowLead, postFastWait time.Duration) error {
 	}
 	time.Sleep(slowLead)
 
-	fast, err := dialClient("fast", addr, timeout)
-	if err != nil {
-		return err
+	fasts := make([]*smokeClient, 0, fastClients)
+	for i := 0; i < fastClients; i++ {
+		fast, err := dialClient(fmt.Sprintf("fast-%d", i+1), addr, timeout)
+		if err != nil {
+			closeClients(fasts)
+			return err
+		}
+		fasts = append(fasts, fast)
 	}
-	defer fast.conn.Close()
+	defer closeClients(fasts)
 
-	fastStarted := time.Now()
-	if err := fast.sendPosition(1, 68, 1, timeout); err != nil {
-		return err
+	for i, fast := range fasts {
+		if err := fast.sendPosition(float32(i*32+1), 68, 1, timeout); err != nil {
+			return err
+		}
 	}
-	fastChunk, err := fast.readChunk(timeout)
-	if err != nil {
-		return err
+
+	done := make(chan struct{})
+	resultCh := make(chan fastResult, fastClients)
+	drainErrCh := make(chan error, fastClients)
+	var wg sync.WaitGroup
+	for i, fast := range fasts {
+		wg.Add(1)
+		go func(index int, client *smokeClient) {
+			defer wg.Done()
+			started := time.Now()
+			chunk, err := client.readChunk(timeout)
+			resultCh <- fastResult{
+				index:     index,
+				chunk:     chunk,
+				elapsedMS: float64(time.Since(started).Microseconds()) / 1000.0,
+				err:       err,
+			}
+			if err == nil {
+				drainPackets(client, done, 100*time.Millisecond, drainErrCh)
+			}
+		}(i, fast)
 	}
-	fastBootstrapMS := float64(time.Since(fastStarted).Microseconds()) / 1000.0
-	if fastChunk.GetX() != 0 || fastChunk.GetZ() != 0 {
-		return fmt.Errorf("fast bootstrap chunk = %d,%d, want 0,0", fastChunk.GetX(), fastChunk.GetZ())
+
+	fastBootstrapMS := 0.0
+	for i := 0; i < fastClients; i++ {
+		result := <-resultCh
+		if result.err != nil {
+			close(done)
+			wg.Wait()
+			return result.err
+		}
+		if result.elapsedMS > fastBootstrapMS {
+			fastBootstrapMS = result.elapsedMS
+		}
+		if result.chunk.GetX() != int32(result.index) || result.chunk.GetZ() != 0 {
+			close(done)
+			wg.Wait()
+			return fmt.Errorf("fast-%d bootstrap chunk = %d,%d, want %d,0", result.index+1, result.chunk.GetX(), result.chunk.GetZ(), result.index)
+		}
 	}
 
 	time.Sleep(postFastWait)
+	close(done)
+	wg.Wait()
+	select {
+	case err := <-drainErrCh:
+		return err
+	default:
+	}
 
 	fmt.Printf(
-		"server_slow_reader_smoke status=pass slow_client=1 fast_client=1 fast_bootstrap_chunk=1 fast_bootstrap_ms=%.3f protocol_change=0\n",
-		fastBootstrapMS,
+		"server_slow_reader_smoke status=pass slow_client=1 fast_client=%d fast_clients=%d fast_bootstrap_chunk=%d fast_bootstrap_chunks=%d fast_bootstrap_ms=%.3f protocol_change=0\n",
+		fastClients, fastClients, fastClients, fastClients, fastBootstrapMS,
 	)
 	return nil
+}
+
+func closeClients(clients []*smokeClient) {
+	for _, client := range clients {
+		_ = client.conn.Close()
+	}
+}
+
+func drainPackets(client *smokeClient, done <-chan struct{}, timeout time.Duration, errCh chan<- error) {
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		if _, err := client.readPacket(timeout); err != nil {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			if isTimeout(err) {
+				continue
+			}
+			errCh <- fmt.Errorf("%s drain packet: %w", client.name, err)
+			return
+		}
+	}
+}
+
+func isTimeout(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func dialClient(name, addr string, timeout time.Duration) (*smokeClient, error) {

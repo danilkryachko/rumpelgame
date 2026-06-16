@@ -19,6 +19,8 @@ CLIENT_RUNTIME_SOURCE="${RUMPELMC_NETWORKING_ROBUSTNESS_CLIENT_RUNTIME_SOURCE:-"
 SERVER_SCALABILITY_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_SERVER_SCALABILITY_SUMMARY:-"$ROOT_DIR/logs/server_scalability_pass_current/server-scalability-pass-summary.txt"}"
 SLOW_READER_SMOKE_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_SLOW_READER_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_slow_reader_smoke.sh"}"
 SLOW_READER_SMOKE_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_SLOW_READER_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_slow_reader_smoke_current/server-slow-reader-smoke-summary.txt"}"
+SLOW_READER_MATRIX_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_SLOW_READER_MATRIX_SCRIPT:-"$ROOT_DIR/scripts/server_slow_reader_matrix_smoke.sh"}"
+SLOW_READER_MATRIX_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_SLOW_READER_MATRIX_SUMMARY:-"$ROOT_DIR/logs/server_slow_reader_matrix_current/server-slow-reader-matrix-summary.txt"}"
 RECONNECT_SMOKE_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/client_reconnect_smoke.sh"}"
 RECONNECT_SMOKE_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SMOKE_SUMMARY:-"$ROOT_DIR/logs/client_reconnect_smoke_current/client-reconnect-smoke-summary.txt"}"
 RECONNECT_SOAK_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SOAK_SCRIPT:-"$ROOT_DIR/scripts/client_reconnect_soak.sh"}"
@@ -35,6 +37,7 @@ PACKET_ERROR_SUMMARY="$PACKET_ERROR_SUMMARY_DIR/packet-error-class-summary.txt"
 RUN_GO_TESTS="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_GO_TESTS:-1}"
 RUN_RUST_TESTS="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RUST_TESTS:-1}"
 RUN_SLOW_READER_SMOKE="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_SLOW_READER_SMOKE:-0}"
+RUN_SLOW_READER_MATRIX="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_SLOW_READER_MATRIX:-0}"
 RUN_RECONNECT_SMOKE="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SMOKE:-0}"
 RUN_RECONNECT_SOAK="${RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SOAK:-0}"
 
@@ -71,7 +74,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$SERVER_SESSION_TEST" "$CLIENT_SOURCE" "$CLIENT_RUNTIME_SOURCE" "$SERVER_SCALABILITY_SUMMARY" "$SLOW_READER_SMOKE_SCRIPT" "$RECONNECT_SMOKE_SCRIPT" "$RECONNECT_SOAK_SCRIPT" "$PACKET_ERROR_SUMMARY_SCRIPT" "$PACKET_ERROR_ALERT_SCRIPT"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$SERVER_SESSION_TEST" "$CLIENT_SOURCE" "$CLIENT_RUNTIME_SOURCE" "$SERVER_SCALABILITY_SUMMARY" "$SLOW_READER_SMOKE_SCRIPT" "$SLOW_READER_MATRIX_SCRIPT" "$RECONNECT_SMOKE_SCRIPT" "$RECONNECT_SOAK_SCRIPT" "$PACKET_ERROR_SUMMARY_SCRIPT" "$PACKET_ERROR_ALERT_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -85,6 +88,7 @@ for token in \
   'Live Reconnect Smoke' \
   'Repeated Reconnect Soak' \
   'Live Slow-Reader Smoke' \
+  'Slow-Reader Load Matrix' \
   'Packet Error Alert Thresholds' \
   'Sustained max-client sizing'; do
   require_token "$DESIGN_DOC" "$token"
@@ -116,6 +120,7 @@ require_token "$SERVER_SESSION_TEST" 'TestSendChunkToSessionSetsAndClearsWriteDe
 require_token "$SERVER_SESSION_TEST" 'TestBroadcastDisconnectsFailedInterestedClient'
 require_token "$SLOW_READER_SMOKE_SCRIPT" 'server_slow_reader_smoke status=pass'
 require_token "$SLOW_READER_SMOKE_SCRIPT" 'packet_error_class=timeout'
+require_token "$SLOW_READER_MATRIX_SCRIPT" 'server_slow_reader_matrix status='
 require_token "$RECONNECT_SMOKE_SCRIPT" 'client_reconnect_smoke status=pass'
 require_token "$RECONNECT_SOAK_SCRIPT" 'client_reconnect_soak status=pass'
 require_token "$PACKET_ERROR_ALERT_SCRIPT" 'packet_error_alert_threshold status='
@@ -153,6 +158,19 @@ case "$RUN_SLOW_READER_SMOKE" in
     fail "unsupported RUMPELMC_NETWORKING_ROBUSTNESS_RUN_SLOW_READER_SMOKE=$RUN_SLOW_READER_SMOKE"
     ;;
 esac
+case "$RUN_SLOW_READER_MATRIX" in
+  0) ;;
+  1)
+    slow_reader_matrix_dir="$(dirname "$SLOW_READER_MATRIX_SUMMARY")"
+    "$SLOW_READER_MATRIX_SCRIPT" "$slow_reader_matrix_dir" > "$OUT_DIR/slow-reader-matrix-run.txt" 2>&1 || {
+      cat "$OUT_DIR/slow-reader-matrix-run.txt" >&2 || true
+      fail "slow-reader matrix failed"
+    }
+    ;;
+  *)
+    fail "unsupported RUMPELMC_NETWORKING_ROBUSTNESS_RUN_SLOW_READER_MATRIX=$RUN_SLOW_READER_MATRIX"
+    ;;
+esac
 case "$RUN_RECONNECT_SMOKE" in
   0) ;;
   1)
@@ -186,6 +204,24 @@ if [ -s "$SLOW_READER_SMOKE_SUMMARY" ]; then
   slow_reader_smoke_status="$(field_metric status "$SLOW_READER_SMOKE_SUMMARY")"
   slow_reader_timeout_observed="$(field_metric slow_timeout_observed "$SLOW_READER_SMOKE_SUMMARY")"
   slow_reader_timeout_class="$(field_metric slow_timeout_class "$SLOW_READER_SMOKE_SUMMARY")"
+fi
+slow_reader_matrix_status="deferred"
+slow_reader_matrix_counts_checked="0"
+slow_reader_matrix_passed_counts="0"
+slow_reader_matrix_max_fast_clients="0"
+slow_reader_matrix_total_fast_clients="0"
+slow_reader_matrix_total_fast_bootstrap_chunks="0"
+slow_reader_matrix_total_slow_timeouts="0"
+slow_reader_matrix_protocol_change="0"
+if [ -s "$SLOW_READER_MATRIX_SUMMARY" ]; then
+  slow_reader_matrix_status="$(field_metric status "$SLOW_READER_MATRIX_SUMMARY")"
+  slow_reader_matrix_counts_checked="$(field_metric counts_checked "$SLOW_READER_MATRIX_SUMMARY")"
+  slow_reader_matrix_passed_counts="$(field_metric passed_counts "$SLOW_READER_MATRIX_SUMMARY")"
+  slow_reader_matrix_max_fast_clients="$(field_metric max_fast_clients "$SLOW_READER_MATRIX_SUMMARY")"
+  slow_reader_matrix_total_fast_clients="$(field_metric total_fast_clients "$SLOW_READER_MATRIX_SUMMARY")"
+  slow_reader_matrix_total_fast_bootstrap_chunks="$(field_metric total_fast_bootstrap_chunks "$SLOW_READER_MATRIX_SUMMARY")"
+  slow_reader_matrix_total_slow_timeouts="$(field_metric total_slow_timeouts "$SLOW_READER_MATRIX_SUMMARY")"
+  slow_reader_matrix_protocol_change="$(field_metric protocol_change "$SLOW_READER_MATRIX_SUMMARY")"
 fi
 reconnect_smoke_status="deferred"
 reconnect_smoke_client_state="missing"
@@ -281,6 +317,15 @@ awk \
   -v slow_reader_timeout_observed="${slow_reader_timeout_observed:-0}" \
   -v slow_reader_timeout_class="${slow_reader_timeout_class:-missing}" \
   -v slow_reader_required="$RUN_SLOW_READER_SMOKE" \
+  -v slow_reader_matrix_status="${slow_reader_matrix_status:-deferred}" \
+  -v slow_reader_matrix_counts_checked="${slow_reader_matrix_counts_checked:-0}" \
+  -v slow_reader_matrix_passed_counts="${slow_reader_matrix_passed_counts:-0}" \
+  -v slow_reader_matrix_max_fast_clients="${slow_reader_matrix_max_fast_clients:-0}" \
+  -v slow_reader_matrix_total_fast_clients="${slow_reader_matrix_total_fast_clients:-0}" \
+  -v slow_reader_matrix_total_fast_bootstrap_chunks="${slow_reader_matrix_total_fast_bootstrap_chunks:-0}" \
+  -v slow_reader_matrix_total_slow_timeouts="${slow_reader_matrix_total_slow_timeouts:-0}" \
+  -v slow_reader_matrix_protocol_change="${slow_reader_matrix_protocol_change:-0}" \
+  -v slow_reader_matrix_required="$RUN_SLOW_READER_MATRIX" \
   -v reconnect_smoke_status="${reconnect_smoke_status:-deferred}" \
   -v reconnect_smoke_client_state="${reconnect_smoke_client_state:-missing}" \
   -v reconnect_smoke_reader_errors="${reconnect_smoke_reader_errors:-0}" \
@@ -310,6 +355,7 @@ awk \
   -v design_doc="$DESIGN_DOC" \
   -v server_scalability_summary="$SERVER_SCALABILITY_SUMMARY" \
   -v slow_reader_smoke_summary="$SLOW_READER_SMOKE_SUMMARY" \
+  -v slow_reader_matrix_summary="$SLOW_READER_MATRIX_SUMMARY" \
   -v reconnect_smoke_summary="$RECONNECT_SMOKE_SUMMARY" \
   -v reconnect_soak_summary="$RECONNECT_SOAK_SUMMARY" '
   BEGIN {
@@ -339,7 +385,14 @@ awk \
       packet_error_alert_unknown_classes + 0 == 0
     packet_error_alerts = packet_error_alert_ok ? "threshold_guarded" : "fail"
     slow_reader_ok = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1 && slow_reader_timeout_class == "timeout"
-    slow_client_status = slow_reader_ok ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred")
+    slow_reader_matrix_ok = slow_reader_matrix_status == "pass" &&
+      slow_reader_matrix_counts_checked + 0 >= 2 &&
+      slow_reader_matrix_passed_counts + 0 == slow_reader_matrix_counts_checked + 0 &&
+      slow_reader_matrix_max_fast_clients + 0 >= 2 &&
+      slow_reader_matrix_total_fast_clients + 0 == slow_reader_matrix_total_fast_bootstrap_chunks + 0 &&
+      slow_reader_matrix_total_slow_timeouts + 0 == slow_reader_matrix_counts_checked + 0 &&
+      slow_reader_matrix_protocol_change + 0 == 0
+    slow_client_status = slow_reader_matrix_ok ? "load_matrix_guarded" : (slow_reader_ok ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred"))
     multi_client_live_status = server_scalability_live_load
     overload_status = server_scalability_admission_policy == "matrix_live_guarded" ? "admission_matrix_guarded" : (server_scalability_admission_policy == "live_guarded" ? "admission_live_guarded" : (server_scalability_admission_policy == "unit_guarded" ? "admission_unit_guarded" : "deferred"))
     active_protocol_change = proto_diff_count + 0
@@ -357,6 +410,12 @@ awk \
     } else if (slow_reader_required == "1" && !slow_reader_ok) {
       status = "fail"
       reason = "slow_reader_smoke_failed"
+    } else if (slow_reader_matrix_required == "1" && !slow_reader_matrix_ok) {
+      status = "fail"
+      reason = "slow_reader_matrix_failed"
+    } else if (slow_reader_matrix_status != "deferred" && !slow_reader_matrix_ok) {
+      status = "fail"
+      reason = "slow_reader_matrix_summary_failed"
     } else if (reconnect_smoke_required == "1" && !reconnect_ok) {
       status = "fail"
       reason = "reconnect_smoke_failed"
@@ -377,7 +436,7 @@ awk \
       reason = "packet_error_alert_threshold_failed"
     }
 
-    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s stale_packet_policy=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d slow_reader_timeout_class=%s multi_client_live_status=%s overload_status=%s server_scalability_admission_policy=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s packet_error_summary=%s packet_error_alert_summary=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, stale_packet_policy, packet_error_classification, packet_error_aggregation, packet_error_alerts, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, slow_reader_timeout_class, multi_client_live_status, overload_status, server_scalability_admission_policy, server_scalability_status, server_scalability_protocol_change, design_doc, packet_error_summary, packet_error_alert_summary, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
+    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s stale_packet_policy=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d slow_reader_timeout_class=%s slow_reader_matrix_status=%s slow_reader_matrix_counts_checked=%d slow_reader_matrix_max_fast_clients=%d slow_reader_matrix_total_fast_clients=%d slow_reader_matrix_total_fast_bootstrap_chunks=%d slow_reader_matrix_total_slow_timeouts=%d multi_client_live_status=%s overload_status=%s server_scalability_admission_policy=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s packet_error_summary=%s packet_error_alert_summary=%s server_scalability_summary=%s slow_reader_smoke_summary=%s slow_reader_matrix_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, stale_packet_policy, packet_error_classification, packet_error_aggregation, packet_error_alerts, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, slow_reader_timeout_class, slow_reader_matrix_status, slow_reader_matrix_counts_checked, slow_reader_matrix_max_fast_clients, slow_reader_matrix_total_fast_clients, slow_reader_matrix_total_fast_bootstrap_chunks, slow_reader_matrix_total_slow_timeouts, multi_client_live_status, overload_status, server_scalability_admission_policy, server_scalability_status, server_scalability_protocol_change, design_doc, packet_error_summary, packet_error_alert_summary, server_scalability_summary, slow_reader_smoke_summary, slow_reader_matrix_summary, reconnect_smoke_summary, reconnect_soak_summary)
     if (status != "pass") {
       exit 1
     }

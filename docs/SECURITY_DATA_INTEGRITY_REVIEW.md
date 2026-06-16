@@ -85,7 +85,7 @@ Checks:
 
 ### Runtime Session Evidence
 
-- Server write deadlines, failed interested-client broadcast cleanup, bounded connection lifecycle log summaries, bounded slow-reader timeout evidence, bounded six-client fanout/load/resource/per-client detail evidence, and bounded three-run repeat evidence are guarded by the networking and server scalability gates.
+- Server write deadlines, failed interested-client broadcast cleanup, bounded connection lifecycle log summaries, bounded slow-reader timeout and multi-fast-client matrix evidence, bounded six-client fanout/load/resource/per-client detail evidence, and bounded three-run repeat evidence are guarded by the networking and server scalability gates.
 - Opt-in max-client admission rejection is unit-guarded, bounded-live-guarded, and matrix-guarded by the server scalability gate without adding wire semantics.
 - Classified server packet-error labels are guarded through the networking gate as `packet_error_classification`.
 - Classified server packet-error aggregation is guarded through the networking gate as `packet_error_aggregation`.
@@ -106,7 +106,7 @@ Checks:
 Still needed:
 
 - Authentication/encryption or explicit local-only threat model before any non-local server exposure.
-- Sustained overload/admission sizing and backpressure policy beyond the opt-in max-client cap, bounded admission matrix, bounded write-timeout, and slow-reader guards.
+- Sustained overload/admission sizing and backpressure policy beyond the opt-in max-client cap, bounded admission matrix, bounded write-timeout, and bounded slow-reader matrix guards.
 - Longer reconnect failure/idle soak and broad client loaded-state reset policy beyond the bounded reconnect/rebootstrap guards.
 - Corrupt edit recovery policy beyond current corrupt chunk load rejection.
 - Multi-client conflict semantics beyond current interested-client fanout and failed-broadcast cleanup.
@@ -143,4 +143,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and fuzz/property coverage remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and fuzz/property coverage remain future work.

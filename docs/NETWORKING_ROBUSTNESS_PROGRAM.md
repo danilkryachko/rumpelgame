@@ -30,7 +30,7 @@ Scope:
 - Add a parser-guarded offline summary for `packet_error_class` counts across server log artifacts.
 - Consume the server scalability opt-in max-client admission cap, bounded live admission-limit smoke, and bounded admission-limit matrix as the current overload/admission checkpoint.
 - Consume the server scalability live two-client fanout smoke as networking runtime evidence when available.
-- Add a bounded live slow-reader smoke that proves a non-reading TCP client hits the session write timeout while a separate fast client still receives bootstrap chunk data.
+- Add a bounded live slow-reader smoke and load matrix that prove a non-reading TCP client hits the session write timeout while fast clients still receive bootstrap chunk data.
 - Consume a bounded client reconnect smoke that proves a live TCP disconnect, server restart, client reconnect, and rebootstrap back to `client_state=active`.
 - Define reconnect and overload gaps before broader runtime policy changes.
 
@@ -44,7 +44,7 @@ Assumptions:
 - Packet framing remains a 4-byte little-endian payload length followed by exact protobuf payload bytes.
 - The server treats read/decode errors as connection termination.
 - The client reader thread reports receive errors to the main thread, exits the reader loop, moves the client lifecycle to `reconnecting`, then the client retries with a bounded cadence and reboots the stream by sending the current player position.
-- Slow-client behavior is unit-guarded for bounded writes and failed broadcast cleanup, with a bounded live slow-reader smoke covering one slow reader plus one fast client. Broader load behavior still needs a dedicated harness.
+- Slow-client behavior is unit-guarded for bounded writes and failed broadcast cleanup, with bounded live slow-reader smoke and matrix evidence covering one slow reader plus multiple fast clients. Broadcast fanout and longer-run behavior still need dedicated harnesses.
 
 Done when:
 
@@ -70,7 +70,7 @@ Checks:
 - Failed non-origin block-update broadcasts close and unregister the failed client.
 - The server scalability live smoke validates two real TCP clients receiving bootstrap chunk data and the same block-edit update through the existing frame/protobuf path.
 - The server scalability gate unit-guards the opt-in `RUMPELMC_SERVER_MAX_CLIENTS` admission cap and consumes bounded live admission-limit smoke plus matrix evidence without changing packet framing.
-- The slow-reader smoke validates a real non-reading TCP client timing out during a large RAW bootstrap stream while a separate fast client still receives chunk `0,0`.
+- The slow-reader smoke validates a real non-reading TCP client timing out during a large RAW bootstrap stream while fast clients still receive bootstrap chunks.
 - The client reconnect smoke validates a real Godot client detecting a server-side TCP disconnect, retrying after server restart, and exposing `client_state=active`, `reconnect_events`, `reconnect_successes`, and `network_reader_errors` in the perf marker.
 - The repeated reconnect soak validates multiple server-side TCP disconnect/restart/rebootstrap cycles in one Godot session with the client ending in `active`.
 - The Rust client tags reader-thread packet/error events with a session id, ignores events from stale sessions, and drops same-drain queued packets when the current session reports a reader error.
@@ -124,7 +124,7 @@ This policy prevents old reader errors or same-frame disconnect packets from mut
 
 `scripts/server_slow_reader_smoke.sh` builds and starts the Go server on an isolated local smoke port and temporary RocksDB path, then runs `server/cmd/slow_reader_smoke` against it. The server is configured with RAW chunks, full bootstrap radius, high chunk batch size, and a short `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS` so the non-reading client creates real TCP write pressure.
 
-The live client opens a slow TCP session, sends an initial position, does not read from that session, then opens a separate fast client and verifies that the fast client receives chunk `0,0`. The wrapper also requires server-log evidence of `packet_error_class=timeout` and `i/o timeout` on the slow client's initial chunk stream.
+The live client opens a slow TCP session, sends an initial position, does not read from that session, then opens one or more fast clients and verifies that each fast client receives its bootstrap chunk. The wrapper also requires server-log evidence of `packet_error_class=timeout` and `i/o timeout` on the slow client's initial chunk stream.
 
 Use:
 
@@ -139,6 +139,24 @@ server_slow_reader_smoke status=pass slow_client=1 fast_client=1 fast_bootstrap_
 ```
 
 This is a bounded isolation smoke, not a throughput benchmark, admission-control policy, reconnect harness, or proof of broadcast/backpressure fairness under large client counts.
+
+## Slow-Reader Load Matrix
+
+`scripts/server_slow_reader_matrix_smoke.sh` runs the live slow-reader smoke across several fast-client counts, defaulting to `1 2 4`. Each run keeps one slow non-reading client connected, requires every fast client to receive a bootstrap chunk, and requires one classified timeout for the slow client.
+
+Use:
+
+```sh
+sh scripts/server_slow_reader_matrix_smoke.sh logs/server_slow_reader_matrix_current
+```
+
+Expected summary:
+
+```text
+server_slow_reader_matrix status=pass counts_checked=3 passed_counts=3 max_fast_clients=4 total_fast_clients=7 total_fast_bootstrap_chunks=7 total_slow_timeouts=3 protocol_change=0
+```
+
+When this matrix is present and clean, the networking gate reports `slow_client_status=load_matrix_guarded`. This is bounded local isolation/load evidence, not broadcast fanout fairness, long-run soak, or backpressure policy.
 
 ## Packet Error Alert Thresholds
 
@@ -215,7 +233,7 @@ This is bounded repeated runtime evidence. It does not define packet replay, ove
 Still needed before claiming a full networking robustness program:
 
 - Broader reconnect state reset rules, packet replay policy, and longer reconnect failure/idle soak.
-- Broader multi-client slow-reader load evidence across more active clients, broadcast fanout, and longer runs.
+- Broader slow-reader evidence under broadcast fanout and longer runs.
 - Sustained max-client sizing and adaptive overload behavior under representative load.
 - Production monitoring integration beyond the local classified packet-error threshold gate.
 - Backpressure policy for the existing client reader-thread channel.
@@ -237,12 +255,18 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_matrix_guarded` when current admission-limit matrix evidence exists.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=load_matrix_guarded` when a current slow-reader matrix summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `slow_reader_matrix_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_matrix_guarded` when current admission-limit matrix evidence exists.
 
 To run the slow-reader smoke inside the gate:
 
 ```sh
 RUMPELMC_NETWORKING_ROBUSTNESS_RUN_SLOW_READER_SMOKE=1 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
+```
+
+To run the slow-reader matrix inside the gate:
+
+```sh
+RUMPELMC_NETWORKING_ROBUSTNESS_RUN_SLOW_READER_MATRIX=1 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
 To run the reconnect soak inside the gate:
@@ -262,10 +286,10 @@ The gate checks that:
 - Rust network and reader-drain session tests pass.
 - The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
 - The reconnect smoke and repeated reconnect soak summaries are clean when current artifacts exist or the runs are explicitly requested.
-- The slow-reader smoke script exists, requires classified timeout log evidence, and the gate carries its status when a current slow-reader summary exists or the smoke is explicitly run.
+- The slow-reader smoke and matrix scripts exist, require classified timeout log evidence, and the gate carries their status when current summaries exist or the runs are explicitly requested.
 - The reconnect smoke script exists, and the gate carries its status when a current reconnect summary exists or the smoke is explicitly run.
 - Protocol schema/generated files are unchanged.
 
 ## Current Status
 
-This block is complete as a packet-boundary, classified packet-error, parser-guarded classified-error aggregation, local classified-error alert threshold, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection and admission-matrix evidence, two-client live fanout, bounded slow-reader, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broader live load, broadcast/backpressure policy, broad reconnect state reset, packet replay, and production monitoring integration remain future work.
+This block is complete as a packet-boundary, classified packet-error, parser-guarded classified-error aggregation, local classified-error alert threshold, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection and admission-matrix evidence, two-client live fanout, bounded slow-reader load matrix, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broadcast/backpressure policy, broad reconnect state reset, packet replay, and production monitoring integration remain future work.

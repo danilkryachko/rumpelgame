@@ -18,6 +18,7 @@ CLIENT_LOG="$OUT_DIR/client.log"
 SUMMARY_PATH="$OUT_DIR/server-slow-reader-smoke-summary.txt"
 BUILD_SERVER="${RUMPELMC_SERVER_SLOW_READER_SMOKE_BUILD_SERVER:-1}"
 WRITE_TIMEOUT_MS="${RUMPELMC_SERVER_SLOW_READER_WRITE_TIMEOUT_MS:-150}"
+FAST_CLIENTS="${RUMPELMC_SERVER_SLOW_READER_FAST_CLIENTS:-1}"
 SERVER_PID=""
 
 mkdir -p "$OUT_DIR"
@@ -105,6 +106,12 @@ case "$BUILD_SERVER" in
     fail "unsupported RUMPELMC_SERVER_SLOW_READER_SMOKE_BUILD_SERVER=$BUILD_SERVER"
     ;;
 esac
+case "$FAST_CLIENTS" in
+  ''|*[!0-9]*) fail "unsupported RUMPELMC_SERVER_SLOW_READER_FAST_CLIENTS=$FAST_CLIENTS" ;;
+esac
+if [ "$FAST_CLIENTS" -lt 1 ]; then
+  fail "RUMPELMC_SERVER_SLOW_READER_FAST_CLIENTS must be at least 1"
+fi
 
 rm -f "$SERVER_LOG" "$CLIENT_LOG" "$SUMMARY_PATH"
 rm -rf "$SMOKE_DB"
@@ -127,7 +134,7 @@ wait_for_server
 set +e
 (
   cd "$SERVER_DIR"
-  go run ./cmd/slow_reader_smoke -addr "$SMOKE_ADDR" -timeout 5s -slow-lead 250ms -post-fast-wait 750ms
+  go run ./cmd/slow_reader_smoke -addr "$SMOKE_ADDR" -timeout 5s -slow-lead 250ms -post-fast-wait 750ms -fast-clients "$FAST_CLIENTS"
 ) > "$CLIENT_LOG" 2>&1
 rc=$?
 set -e
