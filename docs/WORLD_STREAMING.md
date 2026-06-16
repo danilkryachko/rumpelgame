@@ -199,7 +199,7 @@ Fresh check:
 
 ## Server Scalability
 
-Server scalability is now guarded by per-client sent-state tests, interested-client block-edit fanout tests, failed-broadcast cleanup, session write deadlines, a two-client live fanout smoke, and a bounded six-client fanout/load smoke. CPU/memory profiling, admission/overload policy, broad slow-reader/load harnesses, and disconnect counters remain future work.
+Server scalability is now guarded by per-client sent-state tests, interested-client block-edit fanout tests, failed-broadcast cleanup, session write deadlines, opt-in max-client admission, a two-client live fanout smoke, and a bounded six-client fanout/load smoke. CPU/memory profiling, load-tested admission sizing, adaptive overload policy, broad slow-reader/load harnesses, and disconnect counters remain future work.
 
 Fresh check:
 
@@ -207,11 +207,11 @@ Fresh check:
 
 ## Networking Robustness
 
-The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, closed initial probes, bounded slow-reader timeout evidence, bounded repeated live disconnect/server-restart/rebootstrap recovery back to `client_state=active`, and unit-guarded reader-session stale-packet handling. Overload, packet replay, broad reconnect state reset, and backpressure policy remain deferred.
+The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, closed initial probes, opt-in max-client admission, bounded slow-reader timeout evidence, bounded repeated live disconnect/server-restart/rebootstrap recovery back to `client_state=active`, and unit-guarded reader-session stale-packet handling. Adaptive overload, packet replay, broad reconnect state reset, and backpressure policy remain deferred.
 
 Fresh check:
 
-- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `reconnect_status=repeated_live_rebootstrap_guarded`, `slow_client_status=live_guarded`, `multi_client_live_status=pass`, `overload_status=deferred`, and `active_protocol_change=0`.
+- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `reconnect_status=repeated_live_rebootstrap_guarded`, `slow_client_status=live_guarded`, `multi_client_live_status=pass`, `overload_status=admission_unit_guarded`, and `active_protocol_change=0`.
 
 ## Client State Machine
 
@@ -350,7 +350,7 @@ Fresh check:
 - Client collision radius remains `1` by default; `RUMPELMC_CLIENT_COLLISION_CHUNK_DISTANCE=0` is an opt-in lazy-collision experiment only.
 - Worldgen determinism is covered by focused `server/pkg/world` tests; generation behavior, chunk dimensions, serialization order, protocol, and storage remain unchanged.
 - Chunk serialization compatibility is guarded by focused `server/pkg/api`, `server/pkg/world`, and `server/pkg/network` tests for field numbers, enum values, raw defaults, RLE wire vectors, and protobuf unknown fields.
-- Networking robustness is guarded by focused Go and Rust packet-boundary tests; reconnect, slow-client, overload, and backpressure policy remain deferred and must not change the wire contract without a protocol task.
+- Networking robustness is guarded by focused Go and Rust packet-boundary tests plus opt-in max-client admission; adaptive overload and backpressure policy remain deferred and must not change the wire contract without a protocol task.
 - Client lifecycle state is modeled as connecting, waiting chunks, spawning, active, reconnecting, and shutdown; bounded repeated reconnect/rebootstrap execution and state telemetry are guarded, while stale packet and reset behavior remain deferred.
 - Gameplay foundation keeps mining/building on `BlockAction` and `World.SetBlockGlobal`; local hotbar inventory is client-only and full edit reload persistence is deferred to the block-edit persistence gate.
 - Block edit persistence has a world-level save/reload guard for place and destroy edits; runtime persisted-reload visual/collision/GPU smoke is still a heavier deferred check.
@@ -719,7 +719,7 @@ Set `RUMPELMC_SERVER_CHUNK_ENCODING=raw` for the rollback path.
 - For biome and visual-variety foundation, use `scripts/biome_visual_variety_foundation_gate.sh`; see `docs/BIOME_VISUAL_VARIETY_FOUNDATION.md`. Current expected status is `pass` with runtime biome visuals deferred and no worldgen/serialization change.
 - For world generation quality planning, use `scripts/world_generation_quality_gate.sh`; see `docs/WORLD_GENERATION_QUALITY_PASS.md`. Current expected status is `pass` with runtime terrain/cave/resource/structure changes deferred.
 - For server scalability checks, use `scripts/server_scalability_pass_gate.sh`; see `docs/SERVER_SCALABILITY_PASS.md`. Current expected status is `pass` with multi-client sent-state guarded by unit test and live multi-client load deferred.
-- For networking robustness checks, use `scripts/networking_robustness_gate.sh`; see `docs/NETWORKING_ROBUSTNESS_PROGRAM.md`. Current expected status is `pass` with Go/Rust packet boundary tests guarded and reconnect/slow-client/overload work deferred.
+- For networking robustness checks, use `scripts/networking_robustness_gate.sh`; see `docs/NETWORKING_ROBUSTNESS_PROGRAM.md`. Current expected status is `pass` with Go/Rust packet boundary tests, reconnect, slow-client, stale-session, packet-error classification, and opt-in admission guarded while adaptive overload/backpressure work remains deferred.
 - For client state-machine checks, use `scripts/client_state_machine_hardening_gate.sh`; see `docs/CLIENT_STATE_MACHINE_HARDENING.md`. Current expected status is `pass` with lifecycle transitions unit-guarded and runtime reconnect/state telemetry deferred.
 - For gameplay loop foundation checks, use `scripts/gameplay_loop_foundation_gate.sh`; see `docs/GAMEPLAY_LOOP_FOUNDATION.md`. Current expected status is `pass` with local hotbar inventory guarded and full reload persistence deferred.
 - For block edit persistence checks, use `scripts/block_edit_persistence_gate.sh`; see `docs/BLOCK_EDIT_PERSISTENCE_TRACK.md`. Current expected status is `pass` with place/destroy reload unit-guarded and runtime reload smoke deferred.

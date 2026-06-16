@@ -78,11 +78,17 @@ require_token "$SERVER_SOURCE" "forgetFarSentChunks"
 require_token "$SERVER_SOURCE" "broadcastChunkUpdate"
 require_token "$SERVER_SOURCE" "disconnectClient"
 require_token "$SERVER_SOURCE" "SetWriteDeadline"
+require_token "$SERVER_SOURCE" "maxClientsEnv"
+require_token "$SERVER_SOURCE" "tryRegisterClient"
+require_token "$SERVER_SOURCE" "admission_result=rejected"
 require_token "$SERVER_TEST" "TestSendChunksAroundKeepsPerClientSentStateIndependent"
 require_token "$SERVER_TEST" "second client sent chunks changed after first client progress"
 require_token "$SERVER_TEST" "TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients"
 require_token "$SERVER_TEST" "TestBroadcastDisconnectsFailedInterestedClient"
 require_token "$SERVER_TEST" "TestSendChunkToSessionSetsAndClearsWriteDeadline"
+require_token "$SERVER_TEST" "TestConfiguredMaxClientsParsesSupportedValues"
+require_token "$SERVER_TEST" "TestTryRegisterClientHonorsMaxClients"
+require_token "$SERVER_TEST" "TestHandleConnectionRejectsWhenMaxClientsReached"
 require_token "$LIVE_SMOKE_SCRIPT" "server_multi_client_smoke status=pass"
 
 case "$RUN_LIVE_SMOKE" in
@@ -170,6 +176,7 @@ awk \
     block_edit_fanout = "interested_clients_guarded"
     slow_client_write_timeout = "guarded"
     disconnect_cleanup_status = "failed_broadcast_guarded"
+    admission_policy = "unit_guarded"
     active_protocol_change = proto_diff_count + 0
 
     deps_ok = worldgen_quality_status == "pass" && worldgen_runtime_quality == "deferred"
@@ -194,7 +201,7 @@ awk \
       reason = "network_tests_failed"
     }
 
-    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s broader_live_load_status=%s broader_live_clients=%d broader_live_initial_chunks=%d broader_live_fanout_updates=%d network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s broader_live_smoke_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, active_protocol_change, disconnect_cleanup_status, live_load_status, broader_live_load_status, broader_live_clients, broader_live_initial_chunks, broader_live_fanout_updates, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, broader_live_smoke_summary, worldgen_quality_summary)
+    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s admission_policy=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s broader_live_load_status=%s broader_live_clients=%d broader_live_initial_chunks=%d broader_live_fanout_updates=%d network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s broader_live_smoke_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, admission_policy, active_protocol_change, disconnect_cleanup_status, live_load_status, broader_live_load_status, broader_live_clients, broader_live_initial_chunks, broader_live_fanout_updates, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, broader_live_smoke_summary, worldgen_quality_summary)
     if (status != "pass") {
       exit 1
     }

@@ -26,13 +26,14 @@ Scope:
 - Add a session registry for live connections.
 - Broadcast block-edit chunk snapshots to interested clients that have already received that chunk.
 - Add a bounded write timeout and disconnect cleanup for failed non-origin broadcast clients.
+- Add an opt-in max-client admission cap with a default unlimited rollback/control.
 - Add a bounded live two-client smoke that validates real TCP chunk bootstrap and block-edit fanout.
 - Add a bounded broader live smoke that validates bootstrap and block-edit fanout across more than two clients.
 - Define the next scalability evidence needed before broader runtime policy changes.
 
 Out of scope:
 
-- No protocol change, packet shape change, connection pool, backpressure queue, global scheduler, CPU profiling harness, memory profiling harness, disconnect metric, broad slow-reader harness, admission policy, or production concurrency limit.
+- No protocol change, packet shape change, connection pool, backpressure queue, global scheduler, CPU profiling harness, memory profiling harness, disconnect metric, broad slow-reader harness, adaptive admission policy, or production concurrency sizing.
 
 Assumptions:
 
@@ -62,6 +63,7 @@ Checks:
 - The current protocol has no multi-client session identity, global scheduler packet, or server broadcast packet.
 - Chunk stream metrics are per batch and log-only.
 - Session writes are serialized per connection and bounded by `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS`; `0` disables the timeout as a rollback/control.
+- `RUMPELMC_SERVER_MAX_CLIENTS` defaults to `0` for unlimited clients. Positive values make `handleConnection` reject excess accepted TCP sessions before registering them, close the connection, and log `admission_result=rejected` with active/max client counts.
 
 ## Added Unit Guard
 
@@ -73,7 +75,9 @@ Checks:
 
 `TestSendChunkToSessionSetsAndClearsWriteDeadline` proves that session chunk writes set and clear the configured write deadline.
 
-These tests lock core fairness, fanout, and failed-write cleanup invariants without changing protocol shape.
+`TestConfiguredMaxClientsParsesSupportedValues`, `TestTryRegisterClientHonorsMaxClients`, and `TestHandleConnectionRejectsWhenMaxClientsReached` prove the opt-in admission cap, default unlimited mode, invalid-env fallback, atomic registry rejection, and rejected-connection logging.
+
+These tests lock core fairness, fanout, failed-write cleanup, and admission-cap invariants without changing protocol shape.
 
 ## Live Multi-Client Smoke
 
@@ -119,6 +123,7 @@ Still needed before claiming full live multi-client scalability:
 - Longer multi-client load evidence that records per-client chunks sent, elapsed time, disconnect behavior, and server errors.
 - Broader slow-client handling evidence under more clients and broadcast load; the networking robustness block now owns the bounded two-client slow-reader smoke.
 - Disconnect cleanup counters or log summaries.
+- Load-tested max-client sizing for representative hardware and gameplay workloads.
 - Fair scheduling or backpressure design if one client can monopolize generation/send work.
 
 ## Compatibility Rules
@@ -137,7 +142,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result after collecting the broader live artifact is `status=pass`, `scalability_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `active_protocol_change=0`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, and `network_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live artifact is `status=pass`, `scalability_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=unit_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, and `network_tests=pass`.
 
 To run the live smoke inside the gate:
 
@@ -159,12 +164,13 @@ The gate checks that:
 
 - This document records current server behavior, added unit guards, live scalability gaps, and compatibility rules.
 - `server.go` still has per-session `clientChunkStreamState`, connection close cleanup, block-edit fanout, and write deadlines.
+- `server.go` still has the opt-in max-client admission cap and rejected-connection log marker.
 - The live smoke script exists and records `server_multi_client_smoke status=pass`.
 - The broader live smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1`.
-- The multi-client sent-state, interested-client fanout, failed-broadcast cleanup, and write-deadline tests exist.
+- The multi-client sent-state, interested-client fanout, failed-broadcast cleanup, write-deadline, and max-client admission tests exist.
 - `api/schema/packets.proto` is unchanged.
 - Focused network tests pass.
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout smokes. CPU/memory profiling, broad slow-reader/load harnesses, admission/overload policy, and disconnect metrics remain future work.
+This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout smokes plus an opt-in max-client admission cap. CPU/memory profiling, broad slow-reader/load harnesses, load-tested admission sizing, adaptive overload policy, and disconnect metrics remain future work.

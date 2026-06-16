@@ -24,6 +24,7 @@ const maxViewDistance int32 = 16
 const defaultChunksPerUpdate = 64
 const defaultBootstrapRadius int32 = 0
 const defaultClientWriteTimeout = 2 * time.Second
+const defaultMaxClients = 0
 const viewDistanceEnv = "RUMPELMC_SERVER_VIEW_DISTANCE"
 const chunksPerUpdateEnv = "RUMPELMC_SERVER_CHUNKS_PER_UPDATE"
 const bootstrapRadiusEnv = "RUMPELMC_SERVER_BOOTSTRAP_RADIUS"
@@ -31,6 +32,7 @@ const chunkStreamMetricsEnv = "RUMPELMC_SERVER_CHUNK_STREAM_METRICS"
 const chunkEncodingEnv = "RUMPELMC_SERVER_CHUNK_ENCODING"
 const chunkOrderEnv = "RUMPELMC_SERVER_CHUNK_ORDER"
 const clientWriteTimeoutEnv = "RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS"
+const maxClientsEnv = "RUMPELMC_SERVER_MAX_CLIENTS"
 const initialClientPacketTimeout = 250 * time.Millisecond
 
 type networkErrorClass string
@@ -69,6 +71,7 @@ type Server struct {
 	chunkEncoding   api.ChunkEncoding
 	chunkOrderMode  chunkOrderMode
 	writeTimeout    time.Duration
+	maxClients      int
 	clientsMu       sync.Mutex
 	clients         map[*clientSession]struct{}
 }
@@ -84,6 +87,7 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		chunkEncoding:   configuredChunkEncoding(),
 		chunkOrderMode:  configuredChunkOrderMode(),
 		writeTimeout:    configuredClientWriteTimeout(),
+		maxClients:      configuredMaxClients(),
 		clients:         make(map[*clientSession]struct{}),
 	}
 }
@@ -110,10 +114,14 @@ func (s *Server) Start() error {
 
 func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
-	log.Printf("Client connected: %s", conn.RemoteAddr())
 
 	client := newClientSession(conn)
-	s.registerClient(client)
+	activeClients, admitted := s.tryRegisterClient(client)
+	if !admitted {
+		log.Printf("Client rejected by admission limit admission_result=rejected active_clients=%d max_clients=%d address=%s", activeClients, s.maxClients, conn.RemoteAddr())
+		return
+	}
+	log.Printf("Client connected: %s active_clients=%d max_clients=%d", conn.RemoteAddr(), activeClients, s.maxClients)
 	defer s.unregisterClient(client)
 
 	firstPacket, hasFirstPacket, err := s.receiveInitialClientPacket(conn)
@@ -154,6 +162,18 @@ func (s *Server) registerClient(client *clientSession) {
 	defer s.clientsMu.Unlock()
 
 	s.clients[client] = struct{}{}
+}
+
+func (s *Server) tryRegisterClient(client *clientSession) (int, bool) {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	activeClients := len(s.clients)
+	if s.maxClients > 0 && activeClients >= s.maxClients {
+		return activeClients, false
+	}
+	s.clients[client] = struct{}{}
+	return activeClients + 1, true
 }
 
 func (s *Server) unregisterClient(client *clientSession) {
@@ -597,6 +617,19 @@ func configuredClientWriteTimeout() time.Duration {
 		return defaultClientWriteTimeout
 	}
 	return time.Duration(parsed) * time.Millisecond
+}
+
+func configuredMaxClients() int {
+	value := strings.TrimSpace(os.Getenv(maxClientsEnv))
+	if value == "" {
+		return defaultMaxClients
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		log.Printf("Ignoring invalid %s=%q; using %d", maxClientsEnv, value, defaultMaxClients)
+		return defaultMaxClients
+	}
+	return parsed
 }
 
 type chunkSendStats struct {

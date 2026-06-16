@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -212,6 +214,93 @@ func TestConfiguredClientWriteTimeoutParsesSupportedValues(t *testing.T) {
 				t.Fatalf("configuredClientWriteTimeout() = %s, want default %s", got, defaultClientWriteTimeout)
 			}
 		})
+	}
+}
+
+func TestConfiguredMaxClientsParsesSupportedValues(t *testing.T) {
+	t.Setenv(maxClientsEnv, "")
+	if got := configuredMaxClients(); got != defaultMaxClients {
+		t.Fatalf("configuredMaxClients() = %d, want default %d", got, defaultMaxClients)
+	}
+
+	t.Setenv(maxClientsEnv, "0")
+	if got := configuredMaxClients(); got != 0 {
+		t.Fatalf("configuredMaxClients() = %d, want unlimited 0", got)
+	}
+
+	t.Setenv(maxClientsEnv, "3")
+	if got := configuredMaxClients(); got != 3 {
+		t.Fatalf("configuredMaxClients() = %d, want 3", got)
+	}
+
+	for _, value := range []string{"-1", "nope"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(maxClientsEnv, value)
+			if got := configuredMaxClients(); got != defaultMaxClients {
+				t.Fatalf("configuredMaxClients() = %d, want default %d", got, defaultMaxClients)
+			}
+		})
+	}
+}
+
+func TestTryRegisterClientHonorsMaxClients(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.maxClients = 1
+
+	first := newClientSession(&recordingConn{})
+	if activeClients, admitted := server.tryRegisterClient(first); !admitted || activeClients != 1 {
+		t.Fatalf("first tryRegisterClient() = active:%d admitted:%v, want active:1 admitted:true", activeClients, admitted)
+	}
+
+	second := newClientSession(&recordingConn{})
+	if activeClients, admitted := server.tryRegisterClient(second); admitted || activeClients != 1 {
+		t.Fatalf("second tryRegisterClient() = active:%d admitted:%v, want active:1 admitted:false", activeClients, admitted)
+	}
+	if got := server.clientCountForTest(); got != 1 {
+		t.Fatalf("registered clients = %d, want 1", got)
+	}
+
+	server.unregisterClient(first)
+	if activeClients, admitted := server.tryRegisterClient(second); !admitted || activeClients != 1 {
+		t.Fatalf("tryRegisterClient() after unregister = active:%d admitted:%v, want active:1 admitted:true", activeClients, admitted)
+	}
+}
+
+func TestHandleConnectionRejectsWhenMaxClientsReached(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.maxClients = 1
+	heldClient := newClientSession(&recordingConn{})
+	if activeClients, admitted := server.tryRegisterClient(heldClient); !admitted || activeClients != 1 {
+		t.Fatalf("held tryRegisterClient() = active:%d admitted:%v, want active:1 admitted:true", activeClients, admitted)
+	}
+	defer server.unregisterClient(heldClient)
+
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+
+	var logs bytes.Buffer
+	originalWriter := log.Writer()
+	originalFlags := log.Flags()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	defer log.SetOutput(originalWriter)
+	defer log.SetFlags(originalFlags)
+
+	doneCh := make(chan struct{})
+	go func() {
+		server.handleConnection(serverConn)
+		close(doneCh)
+	}()
+	waitConnectionClosed(t, doneCh)
+
+	if got := server.clientCountForTest(); got != 1 {
+		t.Fatalf("registered clients = %d, want only held client", got)
+	}
+	logText := logs.String()
+	for _, token := range []string{"admission_result=rejected", "active_clients=1", "max_clients=1"} {
+		if !strings.Contains(logText, token) {
+			t.Fatalf("handleConnection() logs = %q, want token %q", logText, token)
+		}
 	}
 }
 
