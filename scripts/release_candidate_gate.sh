@@ -21,6 +21,7 @@ LIGHTING_SUMMARY="${RUMPELMC_RC_LIGHTING_SUMMARY:-"$ROOT_DIR/logs/lighting_stabi
 RUN_FAST_CHECKS="${RUMPELMC_RC_RUN_FAST_CHECKS:-0}"
 RUN_FULL_CHECKS="${RUMPELMC_RC_RUN_FULL_CHECKS:-0}"
 RUN_DIFF_GUARD="${RUMPELMC_RC_RUN_DIFF_GUARD:-0}"
+REQUIRE_LIVE_CHECKS="${RUMPELMC_RC_REQUIRE_LIVE_CHECKS:-0}"
 MIN_CURRENT_SUMMARIES="${RUMPELMC_RC_MIN_CURRENT_SUMMARIES:-25}"
 
 mkdir -p "$OUT_DIR"
@@ -152,6 +153,11 @@ case "$RUN_DIFF_GUARD" in
   *) fail "RUMPELMC_RC_RUN_DIFF_GUARD must be 0 or 1" ;;
 esac
 
+case "$REQUIRE_LIVE_CHECKS" in
+  0|1) ;;
+  *) fail "RUMPELMC_RC_REQUIRE_LIVE_CHECKS must be 0 or 1" ;;
+esac
+
 if [ "$RUN_FAST_CHECKS" = "1" ]; then
   if (cd "$ROOT_DIR" && /bin/sh scripts/check.sh fast > "$OUT_DIR/check-fast.txt" 2>&1); then
     fast_check="pass"
@@ -216,6 +222,7 @@ awk \
   -v full_check="$full_check" \
   -v diff_check="$diff_check" \
   -v diff_guard="$diff_guard" \
+  -v require_live_checks="$REQUIRE_LIVE_CHECKS" \
   -v test_strategy_summary="$TEST_STRATEGY_SUMMARY" \
   -v security_summary="$SECURITY_SUMMARY" \
   -v observability_summary="$OBSERVABILITY_SUMMARY" \
@@ -285,6 +292,9 @@ awk \
     } else if (fast_check == "fail" || full_check == "fail" || diff_check == "fail" || diff_guard == "fail") {
       status = "fail"
       reason = "live_check_failed"
+    } else if (require_live_checks == "1" && live_checks != "full") {
+      status = "fail"
+      reason = "live_checks_required"
     }
 
     printf("release_candidate_gate status=%s reason=%s rc_status=%s perf_matrix=%s visual_smoke=%s storage_protocol_compatibility=%s active_protocol_change=%d security_deterministic_property_tests=%s security_conflict_semantics=%s security_local_server_exposure=%s security_smoke_bind_exposure=%s observability_error_scan=%s observability_summary_count=%d current_summary_count=%d arch_runtime_change=%s baseline_warning_status=%s shadow_active_native=%s transparent_active_fixture=%s lighting_ambient_status=%s live_checks=%s fast_check=%s full_check=%s diff_check=%s diff_guard=%s test_strategy_status=%s test_fast_command=%s test_full_command=%s security_status=%s observability_status=%s arch_status=%s baseline_status=%s shadow_status=%s transparent_status=%s lighting_status=%s test_strategy_summary=%s security_summary=%s observability_summary=%s arch_summary=%s baseline_summary=%s shadow_summary=%s transparent_summary=%s lighting_summary=%s\n", status, reason, rc_status, perf_matrix, visual_smoke, storage_protocol_compatibility, proto_diff_count, security_deterministic_property_tests, security_conflict_semantics, security_local_server_exposure, security_smoke_bind_exposure, observability_error_scan, observability_summary_count, current_summary_count, arch_runtime_change, baseline_warning_status, shadow_active_native, transparent_active_fixture, lighting_ambient_status, live_checks, fast_check, full_check, diff_check, diff_guard, test_status, test_fast_command_status, test_full_command_status, security_status, observability_status, arch_status, baseline_status, shadow_status, transparent_status, lighting_status, test_strategy_summary, security_summary, observability_summary, arch_summary, baseline_summary, shadow_summary, transparent_summary, lighting_summary)

@@ -48,6 +48,7 @@ Implementation plan:
 - Check prerequisite summaries report expected pass/deferred states.
 - Verify no active protobuf schema/generated diff is present.
 - Optionally execute live `check.sh fast`, `check.sh full`, `git diff --check`, and `diff_guard.sh` when requested.
+- In strict release mode, fail unless those live checks produce `live_checks=full`.
 - Emit one compact summary artifact.
 
 Done when:
@@ -89,6 +90,16 @@ RUMPELMC_RC_RUN_FULL_CHECKS=1 RUMPELMC_RC_RUN_DIFF_GUARD=1 /bin/sh scripts/relea
 
 `RUMPELMC_RC_RUN_FULL_CHECKS=1` runs `./scripts/check.sh full`; this may include lint/clippy if those tools are installed. `RUMPELMC_RC_RUN_DIFF_GUARD=1` runs `git diff --check` and `./scripts/diff_guard.sh`.
 
+For release-branch evidence, require the live checks explicitly:
+
+```sh
+RUMPELMC_RC_REQUIRE_LIVE_CHECKS=1 \
+RUMPELMC_RC_RUN_FAST_CHECKS=1 \
+RUMPELMC_RC_RUN_FULL_CHECKS=1 \
+RUMPELMC_RC_RUN_DIFF_GUARD=1 \
+/bin/sh scripts/release_candidate_gate.sh logs/release_candidate_gate_current
+```
+
 ## Current Inputs
 
 Default summaries:
@@ -107,7 +118,7 @@ Default summaries:
 Fresh 2026-06-16 current artifact:
 
 - `logs/release_candidate_gate_current/release-candidate-gate-summary.txt` reported `status=pass`, `reason=ok`, `rc_status=summary_ready`, `perf_matrix=summary_ready`, `visual_smoke=summary_ready`, `storage_protocol_compatibility=guarded`, `active_protocol_change=0`, `security_deterministic_property_tests=guarded`, `security_conflict_semantics=last_write_wins_guarded`, `security_local_server_exposure=loopback_default_guarded`, `security_smoke_bind_exposure=loopback_guarded`, `observability_error_scan=clean`, `observability_summary_count=69`, `current_summary_count=69`, `arch_runtime_change=none`, `baseline_warning_status=ok`, `shadow_active_native=deferred`, `transparent_active_fixture=deferred`, `lighting_ambient_status=deferred`, `live_checks=full`, `fast_check=pass`, `full_check=pass`, `diff_check=pass`, `diff_guard=pass`, `security_status=pass`, `observability_status=pass`, and `test_strategy_status=pass`.
-- This was a live RC refresh after the conflict-semantics evidence update; future release branches must rerun the same live flags on the exact release branch.
+- This was a strict live RC refresh after the conflict-semantics evidence update; future release branches must rerun `RUMPELMC_RC_REQUIRE_LIVE_CHECKS=1` with the same live flags on the exact release branch.
 
 Fresh 2026-06-15 current artifact:
 

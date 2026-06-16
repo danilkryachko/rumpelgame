@@ -59,11 +59,11 @@ Checks:
 
 - `sh -n scripts/production_readiness_milestone_gate.sh`
 - `/bin/sh scripts/production_readiness_milestone_gate.sh logs/production_readiness_milestone_current`
-- `RUMPELMC_RC_RUN_FAST_CHECKS=1 RUMPELMC_RC_RUN_FULL_CHECKS=1 RUMPELMC_RC_RUN_DIFF_GUARD=1 /bin/sh scripts/release_candidate_gate.sh logs/release_candidate_gate_current`
+- `RUMPELMC_RC_REQUIRE_LIVE_CHECKS=1 RUMPELMC_RC_RUN_FAST_CHECKS=1 RUMPELMC_RC_RUN_FULL_CHECKS=1 RUMPELMC_RC_RUN_DIFF_GUARD=1 /bin/sh scripts/release_candidate_gate.sh logs/release_candidate_gate_current`
 
 Review gates:
 
-- Before a real release branch, run live `check.sh fast`, `check.sh full`, `git diff --check`, and `diff_guard.sh`, or run the RC gate with the corresponding live flags.
+- Before a real release branch, run the RC gate with `RUMPELMC_RC_REQUIRE_LIVE_CHECKS=1` plus the live fast/full/diff flags.
 
 ## Milestone Verdict
 
