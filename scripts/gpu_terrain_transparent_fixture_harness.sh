@@ -99,7 +99,7 @@ test "$material" = "transparent_test_glass" || fail "unexpected material=$materi
 test "$runtime_behavior" = "unchanged" || fail "unexpected runtime_behavior=$runtime_behavior"
 test "$ordinary_visibility" = "absent" || fail "unexpected ordinary_world_visibility=$ordinary_visibility"
 test "$rollback_status" = "required" || fail "unexpected opaque_path_rollback=$rollback_status"
-test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
+test "$plan_status" = "contract_ready" || fail "unexpected fixture_plan_status=$plan_status"
 test "$fallback_guard" = "present" || fail "unexpected fallback_guard=$fallback_guard"
 test "$requested" = "1" || fail "unexpected transparent_requested=$requested"
 test "$active" = "0" || fail "unexpected transparent_active=$active"
@@ -116,10 +116,10 @@ case "$contract_tokens" in
   ''|*[!0-9]*) fail "contract_tokens must be numeric: $contract_tokens" ;;
 esac
 test "$contract_tokens" -ge 26 || fail "contract_tokens too low: $contract_tokens"
-printf '%s\n' "$future_markers_line" | grep -F "transparent_blocks=pending" >/dev/null || fail "future workload markers missing transparent_blocks"
-printf '%s\n' "$future_markers_line" | grep -F "transparent_faces=pending" >/dev/null || fail "future workload markers missing transparent_faces"
-printf '%s\n' "$future_markers_line" | grep -F "transparent_draws=pending" >/dev/null || fail "future workload markers missing transparent_draws"
-printf '%s\n' "$future_markers_line" | grep -F "transparent_subchunks=pending" >/dev/null || fail "future workload markers missing transparent_subchunks"
+printf '%s\n' "$future_markers_line" | grep -F "transparent_blocks=blocked_until_fixture" >/dev/null || fail "future workload markers missing transparent_blocks"
+printf '%s\n' "$future_markers_line" | grep -F "transparent_faces=blocked_until_fixture" >/dev/null || fail "future workload markers missing transparent_faces"
+printf '%s\n' "$future_markers_line" | grep -F "transparent_draws=blocked_until_fixture" >/dev/null || fail "future workload markers missing transparent_draws"
+printf '%s\n' "$future_markers_line" | grep -F "transparent_subchunks=blocked_until_fixture" >/dev/null || fail "future workload markers missing transparent_subchunks"
 printf '%s\n' "$overlay_metadata_line" | grep -F "overlay_id=transparent_test_glass" >/dev/null || fail "overlay metadata missing overlay id"
 printf '%s\n' "$overlay_metadata_line" | grep -F "geometry_active=0" >/dev/null || fail "overlay metadata must keep geometry inactive"
 printf '%s\n' "$overlay_metadata_line" | grep -F "chunk_data_mutation=no" >/dev/null || fail "overlay metadata must not mutate chunk data"
@@ -133,27 +133,27 @@ trap 'rm -f "$tmp_harness"' EXIT
   printf 'plan=%s\n' "$(relative_path "$PLAN_PATH")"
   printf 'fixture=%s\n' "$fixture"
   printf 'material=%s\n' "$material"
-  printf 'harness_status=placeholder\n'
+  printf 'harness_status=contract_ready\n'
   printf 'runtime_behavior=%s\n' "$runtime_behavior"
   printf 'ordinary_world_visibility=%s\n' "$ordinary_visibility"
   printf 'opaque_path_rollback=%s\n' "$rollback_status"
-  printf 'note=this placeholder consumes the plan and does not launch Godot or enable transparent terrain materials\n'
+  printf 'note=this no-render contract consumes the plan and does not launch Godot or enable transparent terrain materials\n'
   printf 'step=consume_plan status=present fixture_plan_status=%s contract_tokens=%s fallback_guard=%s\n' \
     "$plan_status" \
     "$contract_tokens" \
     "$fallback_guard"
-  printf 'step=env_off_gate status=placeholder expected=ordinary_opaque_markers_unchanged command="sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_env_off_capture"\n'
-  printf 'step=env_on_fallback_gate status=placeholder expected_transparent_requested=%s expected_transparent_active=%s expected_transparent_fallback=%s expected_overlay_requested=%s expected_overlay_active=%s expected_overlay_fallback=%s command="RUMPELMC_GPU_TERRAIN_TRANSPARENT=1 RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1 sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_fallback_capture"\n' \
+  printf 'step=env_off_gate status=contract_ready expected=ordinary_opaque_markers_unchanged command="sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_env_off_capture"\n'
+  printf 'step=env_on_fallback_gate status=contract_ready expected_transparent_requested=%s expected_transparent_active=%s expected_transparent_fallback=%s expected_overlay_requested=%s expected_overlay_active=%s expected_overlay_fallback=%s command="RUMPELMC_GPU_TERRAIN_TRANSPARENT=1 RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1 sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_fallback_capture"\n' \
     "$requested" \
     "$active" \
     "$fallback" \
     "$overlay_requested" \
     "$overlay_active" \
     "$overlay_fallback"
-  printf 'step=client_overlay_metadata status=placeholder overlay_id=transparent_test_glass transparent_fixture_overlay_roles=%s transparent_fixture_overlay_blocks=%s geometry_active=0 chunk_data_mutation=no\n' \
+  printf 'step=client_overlay_metadata status=contract_ready overlay_id=transparent_test_glass transparent_fixture_overlay_roles=%s transparent_fixture_overlay_blocks=%s geometry_active=0 chunk_data_mutation=no\n' \
     "$overlay_roles" \
     "$overlay_blocks"
-  printf 'step=future_workload_markers status=blocked_until_fixture transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending\n'
+  printf 'step=future_workload_markers status=blocked_until_fixture transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture\n'
   printf 'step=future_active_gate status=blocked_until_implementation transparent_active=%s transparent_fallback=%s gpu_upload_fail=%s\n' \
     "$future_active" \
     "$future_fallback" \
@@ -163,7 +163,7 @@ trap 'rm -f "$tmp_harness"' EXIT
   printf 'command_generate_harness=sh scripts/gpu_terrain_transparent_fixture_harness.sh %s %s\n' \
     "$(relative_path "$PLAN_PATH")" \
     "$(relative_path "$OUT_PATH")"
-  printf 'summary transparent_fixture_harness_status=placeholder fixture_plan_status=%s runtime_behavior=%s env_on_expected=%s/%s/%s overlay_env_on_expected=%s/%s/%s overlay_metadata_expected=%s/%s\n' \
+  printf 'summary transparent_fixture_harness_status=contract_ready fixture_plan_status=%s runtime_behavior=%s env_on_expected=%s/%s/%s overlay_env_on_expected=%s/%s/%s overlay_metadata_expected=%s/%s\n' \
     "$plan_status" \
     "$runtime_behavior" \
     "$requested" \

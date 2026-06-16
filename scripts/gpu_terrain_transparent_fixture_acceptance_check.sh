@@ -111,8 +111,8 @@ test "$pack_status" = "pass" || fail "unexpected transparent_fixture_pack_status
 test "$report_check_status" = "pass" || fail "unexpected transparent_fixture_report_check_status=$report_check_status"
 test "$check_status" = "pass" || fail "unexpected transparent_fixture_check_status=$check_status"
 test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scene_harness_check_status=$scene_check_status"
-test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
-test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
+test "$plan_status" = "contract_ready" || fail "unexpected fixture_plan_status=$plan_status"
+test "$harness_status" = "contract_ready" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
 test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
 test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
@@ -153,13 +153,13 @@ done
 
 required_line "$plan_path" "step=env_on_fallback_gate status=current_expected transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0" >/dev/null
 required_line "$plan_path" "step=client_overlay_metadata status=planned overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no" >/dev/null
-required_line "$plan_path" "step=future_workload_markers status=required transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending" >/dev/null
+required_line "$plan_path" "step=future_workload_markers status=required transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture" >/dev/null
 required_line "$plan_path" "step=future_active_gate status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0" >/dev/null
-required_line "$harness_path" "summary transparent_fixture_harness_status=placeholder" >/dev/null
+required_line "$harness_path" "summary transparent_fixture_harness_status=contract_ready" >/dev/null
 required_line "$check_path" "summary transparent_fixture_check_status=pass" >/dev/null
-required_line "$smoke_plan_path" "summary transparent_fixture_smoke_plan_status=pending_fixture_scene" >/dev/null
-required_line "$scene_checklist_path" "summary transparent_fixture_scene_checklist_status=pending_scene_harness" >/dev/null
-required_line "$scene_harness_path" "summary transparent_fixture_scene_harness_status=placeholder" >/dev/null
+required_line "$smoke_plan_path" "summary transparent_fixture_smoke_plan_status=contract_ready" >/dev/null
+required_line "$scene_checklist_path" "summary transparent_fixture_scene_checklist_status=contract_ready" >/dev/null
+required_line "$scene_harness_path" "summary transparent_fixture_scene_harness_status=contract_ready" >/dev/null
 required_line "$scene_harness_check_path" "summary transparent_fixture_scene_harness_check_status=pass" >/dev/null
 required_line "$report_check_path" "summary transparent_fixture_report_check_status=pass" >/dev/null
 if [ -n "$acceptance_steps_line" ]; then
@@ -192,7 +192,7 @@ done
 for token in fixed_camera=required fixed_light=required depth_occluder=required adjacent_same_material_pair=required collision_probe=required; do
   require_text "$smoke_future_scene_line" "$token" "future fixture-scene gate"
 done
-for token in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
+for token in transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture; do
   require_text "$smoke_future_workload_line" "$token" "future workload gate"
 done
 for token in transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required; do

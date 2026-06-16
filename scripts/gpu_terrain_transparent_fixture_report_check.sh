@@ -111,8 +111,8 @@ scene_check_summary_line="$(required_line "$REPORT_PATH" "summary transparent_fi
 
 fixture_line="$(required_exact_line "$REPORT_PATH" "fixture=gpu-transparent-depth-collision")"
 material_line="$(required_exact_line "$REPORT_PATH" "material=transparent_test_glass")"
-plan_status_line="$(required_exact_line "$REPORT_PATH" "plan_status=pending_fixture_harness")"
-harness_status_line="$(required_exact_line "$REPORT_PATH" "harness_status=placeholder")"
+plan_status_line="$(required_exact_line "$REPORT_PATH" "plan_status=contract_ready")"
+harness_status_line="$(required_exact_line "$REPORT_PATH" "harness_status=contract_ready")"
 runtime_line="$(required_exact_line "$REPORT_PATH" "runtime_behavior=unchanged")"
 ordinary_line="$(required_exact_line "$REPORT_PATH" "ordinary_world_visibility=absent")"
 rollback_line="$(required_exact_line "$REPORT_PATH" "opaque_path_rollback=required")"
@@ -126,8 +126,8 @@ contract_tokens_value="$(required_token "contract_tokens" "$contract_tokens_line
 
 test "${fixture_line#fixture=}" = "gpu-transparent-depth-collision" || fail "unexpected fixture line: $fixture_line"
 test "${material_line#material=}" = "transparent_test_glass" || fail "unexpected material line: $material_line"
-test "${plan_status_line#plan_status=}" = "pending_fixture_harness" || fail "unexpected plan status line: $plan_status_line"
-test "${harness_status_line#harness_status=}" = "placeholder" || fail "unexpected harness status line: $harness_status_line"
+test "${plan_status_line#plan_status=}" = "contract_ready" || fail "unexpected plan status line: $plan_status_line"
+test "${harness_status_line#harness_status=}" = "contract_ready" || fail "unexpected harness status line: $harness_status_line"
 test "${runtime_line#runtime_behavior=}" = "unchanged" || fail "unexpected runtime line: $runtime_line"
 test "${ordinary_line#ordinary_world_visibility=}" = "absent" || fail "unexpected ordinary-world line: $ordinary_line"
 test "${rollback_line#opaque_path_rollback=}" = "required" || fail "unexpected rollback line: $rollback_line"
@@ -166,13 +166,13 @@ scene_check_overlay_metadata_expected="$(required_token "overlay_metadata_expect
 scene_check_overlay_roles="$(required_token "transparent_fixture_overlay_roles" "$scene_check_summary_line" "scene harness-check summary")"
 scene_check_overlay_blocks="$(required_token "transparent_fixture_overlay_blocks" "$scene_check_summary_line" "scene harness-check summary")"
 
-test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
+test "$plan_status" = "contract_ready" || fail "unexpected fixture_plan_status=$plan_status"
 case "$plan_tokens" in
   ''|*[!0-9]*) fail "contract_tokens must be numeric: $plan_tokens" ;;
 esac
 test "$plan_tokens" -ge 26 || fail "unexpected contract_tokens=$plan_tokens"
 test "$plan_fallback_guard" = "present" || fail "unexpected fallback_guard=$plan_fallback_guard"
-test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
+test "$harness_status" = "contract_ready" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$harness_plan_status" = "$plan_status" || fail "harness fixture_plan_status does not match plan"
 test "$harness_runtime" = "unchanged" || fail "unexpected harness runtime_behavior=$harness_runtime"
 test "$harness_env_expected" = "1/0/1" || fail "unexpected harness env_on_expected=$harness_env_expected"
@@ -186,7 +186,7 @@ test "$check_overlay_env_expected" = "$harness_overlay_env_expected" || fail "ch
 test "$check_overlay_metadata_expected" = "$harness_overlay_metadata_expected" || fail "check overlay_metadata_expected does not match harness"
 test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scene_harness_check_status=$scene_check_status"
 test "$scene_check_harness_status" = "$harness_status" || fail "scene harness-check status does not match harness"
-test "$scene_check_scene_status" = "pending_scene_harness" || fail "unexpected scene checklist status=$scene_check_scene_status"
+test "$scene_check_scene_status" = "contract_ready" || fail "unexpected scene checklist status=$scene_check_scene_status"
 test "$scene_check_roles" = "5" || fail "unexpected scene roles=$scene_check_roles"
 test "$scene_check_env_expected" = "$harness_env_expected" || fail "scene harness-check env_on_expected does not match harness"
 test "$scene_check_overlay_env_expected" = "$harness_overlay_env_expected" || fail "scene harness-check overlay_env_on_expected does not match harness"

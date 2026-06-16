@@ -113,7 +113,7 @@ test "$material" = "transparent_test_glass" || fail "unexpected plan material=$m
 test "$runtime_behavior" = "unchanged" || fail "unexpected plan runtime_behavior=$runtime_behavior"
 test "$ordinary_visibility" = "absent" || fail "unexpected plan ordinary_world_visibility=$ordinary_visibility"
 test "$rollback_status" = "required" || fail "unexpected plan opaque_path_rollback=$rollback_status"
-test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
+test "$plan_status" = "contract_ready" || fail "unexpected fixture_plan_status=$plan_status"
 test "$fallback_guard" = "present" || fail "unexpected fallback_guard=$fallback_guard"
 test "$requested" = "1" || fail "unexpected transparent_requested=$requested"
 test "$active" = "0" || fail "unexpected transparent_active=$active"
@@ -131,7 +131,7 @@ case "$contract_tokens" in
 esac
 test "$contract_tokens" -ge 26 || fail "contract_tokens too low: $contract_tokens"
 
-for marker in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
+for marker in transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture; do
   require_text "$plan_future_markers_line" "$marker" "plan future workload"
 done
 for marker in overlay_id=transparent_test_glass geometry_active=0 chunk_data_mutation=no; do
@@ -142,14 +142,14 @@ require_text "$plan_non_goals_line" "$non_goals" "plan non-goals"
 
 harness_fixture_line="$(required_line "$HARNESS_PATH" "fixture=gpu-transparent-depth-collision")"
 harness_material_line="$(required_line "$HARNESS_PATH" "material=transparent_test_glass")"
-harness_status_line="$(required_line "$HARNESS_PATH" "harness_status=placeholder")"
+harness_status_line="$(required_line "$HARNESS_PATH" "harness_status=contract_ready")"
 harness_runtime_line="$(required_line "$HARNESS_PATH" "runtime_behavior=unchanged")"
 harness_ordinary_line="$(required_line "$HARNESS_PATH" "ordinary_world_visibility=absent")"
 harness_rollback_line="$(required_line "$HARNESS_PATH" "opaque_path_rollback=required")"
 harness_consume_line="$(required_line "$HARNESS_PATH" "step=consume_plan status=present")"
-harness_env_off_line="$(required_line "$HARNESS_PATH" "step=env_off_gate status=placeholder")"
-harness_env_on_line="$(required_line "$HARNESS_PATH" "step=env_on_fallback_gate status=placeholder")"
-harness_overlay_metadata_line="$(required_line "$HARNESS_PATH" "step=client_overlay_metadata status=placeholder")"
+harness_env_off_line="$(required_line "$HARNESS_PATH" "step=env_off_gate status=contract_ready")"
+harness_env_on_line="$(required_line "$HARNESS_PATH" "step=env_on_fallback_gate status=contract_ready")"
+harness_overlay_metadata_line="$(required_line "$HARNESS_PATH" "step=client_overlay_metadata status=contract_ready")"
 harness_future_markers_line="$(required_line "$HARNESS_PATH" "step=future_workload_markers status=blocked_until_fixture")"
 harness_future_active_line="$(required_line "$HARNESS_PATH" "step=future_active_gate status=blocked_until_implementation")"
 harness_non_goals_line="$(required_line "$HARNESS_PATH" "step=non_goals status=enforced")"
@@ -157,7 +157,7 @@ harness_summary_line="$(required_line "$HARNESS_PATH" "summary transparent_fixtu
 
 test "${harness_fixture_line#fixture=}" = "$fixture" || fail "harness fixture does not match plan"
 test "${harness_material_line#material=}" = "$material" || fail "harness material does not match plan"
-test "${harness_status_line#harness_status=}" = "placeholder" || fail "unexpected harness_status"
+test "${harness_status_line#harness_status=}" = "contract_ready" || fail "unexpected harness_status"
 test "${harness_runtime_line#runtime_behavior=}" = "$runtime_behavior" || fail "harness runtime_behavior does not match plan"
 test "${harness_ordinary_line#ordinary_world_visibility=}" = "$ordinary_visibility" || fail "harness ordinary_world_visibility does not match plan"
 test "${harness_rollback_line#opaque_path_rollback=}" = "$rollback_status" || fail "harness opaque_path_rollback does not match plan"
@@ -197,14 +197,14 @@ test "$harness_overlay_blocks" = "$overlay_blocks" || fail "harness overlay bloc
 test "$harness_future_active" = "$future_active" || fail "harness future transparent_active does not match plan"
 test "$harness_future_fallback" = "$future_fallback" || fail "harness future transparent_fallback does not match plan"
 test "$harness_future_upload_fail" = "$future_upload_fail" || fail "harness future gpu_upload_fail does not match plan"
-test "$harness_summary_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_summary_status"
+test "$harness_summary_status" = "contract_ready" || fail "unexpected transparent_fixture_harness_status=$harness_summary_status"
 test "$harness_summary_plan_status" = "$plan_status" || fail "harness summary fixture_plan_status does not match plan"
 test "$harness_summary_runtime" = "$runtime_behavior" || fail "harness summary runtime_behavior does not match plan"
 test "$harness_env_expected" = "$requested/$active/$fallback" || fail "unexpected harness env_on_expected=$harness_env_expected"
 test "$harness_overlay_env_expected" = "$overlay_requested/$overlay_active/$overlay_fallback" || fail "unexpected harness overlay_env_on_expected=$harness_overlay_env_expected"
 test "$harness_overlay_metadata_expected" = "$overlay_roles/$overlay_blocks" || fail "unexpected harness overlay_metadata_expected=$harness_overlay_metadata_expected"
 require_text "$harness_env_off_line" "expected=ordinary_opaque_markers_unchanged" "harness env-off"
-for marker in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
+for marker in transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture; do
   require_text "$harness_future_markers_line" "$marker" "harness future workload"
 done
 for marker in overlay_id=transparent_test_glass geometry_active=0 chunk_data_mutation=no; do

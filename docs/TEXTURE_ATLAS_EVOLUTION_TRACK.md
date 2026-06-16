@@ -18,7 +18,7 @@ Context inspected:
 - `client/rust_ext/src/blocks.rs` atlas constants, block texture IDs, UV helper, and compute-mesher code generation.
 - `client/rust_ext/src/gpu_terrain.rs` packed face layout, atlas image validation, sampler creation, push constants, and atlas texture upload.
 - `client/shaders/gpu_terrain_render.glsl` packed tile extraction and atlas UV sampling.
-- `client/shaders/mesher.glsl` generated atlas layout placeholders.
+- `client/shaders/mesher.glsl` generated atlas layout declarations.
 - `client/assets/textures/blocks/block_texture_atlas.png`.
 - `docs/BLOCK_MATERIAL_METADATA_DESIGN.md`, `docs/GPU_TRANSPARENT_PATH.md`, and `docs/GPU_PROFILING.md`.
 

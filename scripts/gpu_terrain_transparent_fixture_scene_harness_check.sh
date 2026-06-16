@@ -78,7 +78,7 @@ mkdir -p "$(dirname -- "$OUT_PATH")"
 
 checklist_fixture_line="$(required_line "$CHECKLIST_PATH" "fixture=gpu-transparent-depth-collision")"
 checklist_material_line="$(required_line "$CHECKLIST_PATH" "material=transparent_test_glass")"
-checklist_status_line="$(required_line "$CHECKLIST_PATH" "scene_checklist_status=pending_scene_harness")"
+checklist_status_line="$(required_line "$CHECKLIST_PATH" "scene_checklist_status=contract_ready")"
 checklist_runtime_line="$(required_line "$CHECKLIST_PATH" "runtime_behavior=unchanged")"
 checklist_ordinary_line="$(required_line "$CHECKLIST_PATH" "ordinary_world_visibility=absent")"
 checklist_env_line="$(required_line "$CHECKLIST_PATH" "env_on_expected=1/0/1")"
@@ -115,14 +115,14 @@ summary_overlay_metadata_expected="$(required_token "overlay_metadata_expected" 
 
 test "$fixture" = "gpu-transparent-depth-collision" || fail "unexpected checklist fixture=$fixture"
 test "$material" = "transparent_test_glass" || fail "unexpected checklist material=$material"
-test "$scene_status" = "pending_scene_harness" || fail "unexpected scene_checklist_status=$scene_status"
+test "$scene_status" = "contract_ready" || fail "unexpected scene_checklist_status=$scene_status"
 test "$runtime_behavior" = "unchanged" || fail "unexpected runtime_behavior=$runtime_behavior"
 test "$ordinary_visibility" = "absent" || fail "unexpected ordinary_world_visibility=$ordinary_visibility"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
 test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
 test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
 test "$summary_scene_status" = "$scene_status" || fail "checklist summary scene status does not match"
-test "$summary_smoke_status" = "pending_fixture_scene" || fail "unexpected transparent_fixture_smoke_plan_status=$summary_smoke_status"
+test "$summary_smoke_status" = "contract_ready" || fail "unexpected transparent_fixture_smoke_plan_status=$summary_smoke_status"
 test "$summary_fixture" = "$fixture" || fail "checklist summary fixture does not match"
 test "$summary_material" = "$material" || fail "checklist summary material does not match"
 test "$summary_env_expected" = "$env_expected" || fail "checklist summary env_on_expected does not match"
@@ -131,8 +131,8 @@ test "$summary_overlay_metadata_expected" = "$overlay_metadata_expected" || fail
 
 harness_fixture_line="$(required_line "$HARNESS_PATH" "fixture=gpu-transparent-depth-collision")"
 harness_material_line="$(required_line "$HARNESS_PATH" "material=transparent_test_glass")"
-harness_status_line="$(required_line "$HARNESS_PATH" "scene_harness_status=placeholder")"
-harness_scene_status_line="$(required_line "$HARNESS_PATH" "scene_checklist_status=pending_scene_harness")"
+harness_status_line="$(required_line "$HARNESS_PATH" "scene_harness_status=contract_ready")"
+harness_scene_status_line="$(required_line "$HARNESS_PATH" "scene_checklist_status=contract_ready")"
 harness_runtime_line="$(required_line "$HARNESS_PATH" "runtime_behavior=unchanged")"
 harness_ordinary_line="$(required_line "$HARNESS_PATH" "ordinary_world_visibility=absent")"
 harness_env_line="$(required_line "$HARNESS_PATH" "env_on_expected=1/0/1")"
@@ -144,7 +144,7 @@ harness_behind_line="$(required_line "$HARNESS_PATH" "role_check=behind_wall_tra
 harness_occluder_line="$(required_line "$HARNESS_PATH" "role_check=opaque_depth_occluder")"
 harness_adjacent_line="$(required_line "$HARNESS_PATH" "role_check=adjacent_same_material_pair")"
 harness_collision_line="$(required_line "$HARNESS_PATH" "role_check=collision_probe")"
-harness_overlay_metadata_line="$(required_line "$HARNESS_PATH" "overlay_metadata status=placeholder overlay_id=transparent_test_glass")"
+harness_overlay_metadata_line="$(required_line "$HARNESS_PATH" "overlay_metadata status=contract_ready overlay_id=transparent_test_glass")"
 harness_env_off_line="$(required_line "$HARNESS_PATH" "assertion=env_off_current status=required")"
 harness_env_on_line="$(required_line "$HARNESS_PATH" "assertion=env_on_fallback_current status=required")"
 harness_future_line="$(required_line "$HARNESS_PATH" "assertion=future_active_path status=blocked_until_implementation")"
@@ -167,7 +167,7 @@ harness_summary_overlay_blocks="$(required_token "transparent_fixture_overlay_bl
 
 test "${harness_fixture_line#fixture=}" = "$fixture" || fail "harness fixture does not match checklist"
 test "${harness_material_line#material=}" = "$material" || fail "harness material does not match checklist"
-test "$harness_status" = "placeholder" || fail "unexpected scene_harness_status=$harness_status"
+test "$harness_status" = "contract_ready" || fail "unexpected scene_harness_status=$harness_status"
 test "${harness_scene_status_line#scene_checklist_status=}" = "$scene_status" || fail "harness scene_checklist_status does not match checklist"
 test "${harness_runtime_line#runtime_behavior=}" = "$runtime_behavior" || fail "harness runtime_behavior does not match checklist"
 test "${harness_ordinary_line#ordinary_world_visibility=}" = "$ordinary_visibility" || fail "harness ordinary_world_visibility does not match checklist"
@@ -225,7 +225,7 @@ for token in transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaqu
   require_text "$checklist_future_line" "$token" "checklist future active assertion"
   require_text "$harness_future_line" "$token" "harness future active assertion"
 done
-for token in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
+for token in transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture; do
   require_text "$checklist_workload_line" "$token" "checklist workload assertion"
   require_text "$harness_workload_line" "$token" "harness workload assertion"
 done

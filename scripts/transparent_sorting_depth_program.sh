@@ -102,7 +102,7 @@ awk \
       status = "needs_manual_review"
       sort_depth_active_allowed = 1
       reason = "active_path_state_changed"
-    } else if (!(scene_checklist_status == "pending_scene_harness" && scene_harness_check_status == "pass" && scene_roles + 0 == 5 && acceptance_status == "pass")) {
+    } else if (!(scene_checklist_status == "contract_ready" && scene_harness_check_status == "pass" && scene_roles + 0 == 5 && acceptance_status == "pass")) {
       status = "blocked"
       reason = "fixture_scene_contract_not_clean"
     } else if (transparent_blocks + transparent_faces + transparent_draws + transparent_subchunks != 0) {

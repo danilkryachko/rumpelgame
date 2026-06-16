@@ -72,7 +72,7 @@ mkdir -p "$(dirname -- "$OUT_PATH")"
 
 fixture_line="$(required_line "$CHECKLIST_PATH" "fixture=gpu-transparent-depth-collision")"
 material_line="$(required_line "$CHECKLIST_PATH" "material=transparent_test_glass")"
-scene_status_line="$(required_line "$CHECKLIST_PATH" "scene_checklist_status=pending_scene_harness")"
+scene_status_line="$(required_line "$CHECKLIST_PATH" "scene_checklist_status=contract_ready")"
 runtime_line="$(required_line "$CHECKLIST_PATH" "runtime_behavior=unchanged")"
 ordinary_line="$(required_line "$CHECKLIST_PATH" "ordinary_world_visibility=absent")"
 env_expected_line="$(required_line "$CHECKLIST_PATH" "env_on_expected=1/0/1")"
@@ -112,14 +112,14 @@ summary_overlay_metadata_expected="$(required_token "overlay_metadata_expected" 
 
 test "$fixture" = "gpu-transparent-depth-collision" || fail "unexpected fixture=$fixture"
 test "$material" = "transparent_test_glass" || fail "unexpected material=$material"
-test "$scene_status" = "pending_scene_harness" || fail "unexpected scene_checklist_status=$scene_status"
+test "$scene_status" = "contract_ready" || fail "unexpected scene_checklist_status=$scene_status"
 test "$runtime_behavior" = "unchanged" || fail "unexpected runtime_behavior=$runtime_behavior"
 test "$ordinary_visibility" = "absent" || fail "unexpected ordinary_world_visibility=$ordinary_visibility"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
 test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
 test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
 test "$summary_scene_status" = "$scene_status" || fail "summary scene checklist status does not match"
-test "$summary_smoke_status" = "pending_fixture_scene" || fail "unexpected transparent_fixture_smoke_plan_status=$summary_smoke_status"
+test "$summary_smoke_status" = "contract_ready" || fail "unexpected transparent_fixture_smoke_plan_status=$summary_smoke_status"
 test "$summary_fixture" = "$fixture" || fail "summary fixture does not match"
 test "$summary_material" = "$material" || fail "summary material does not match"
 test "$summary_env_expected" = "$env_expected" || fail "summary env_on_expected does not match"
@@ -160,7 +160,7 @@ done
 for token in transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required; do
   require_text "$future_active_line" "$token" "future active assertion"
 done
-for token in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
+for token in transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture; do
   require_text "$workload_line" "$token" "future workload assertion"
 done
 require_text "$non_goals_line" "shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no" "non-goals"
@@ -173,7 +173,7 @@ trap 'rm -f "$tmp_harness"' EXIT
   printf 'scene_checklist=%s\n' "$(relative_path "$CHECKLIST_PATH")"
   printf 'fixture=%s\n' "$fixture"
   printf 'material=%s\n' "$material"
-  printf 'scene_harness_status=placeholder\n'
+  printf 'scene_harness_status=contract_ready\n'
   printf 'scene_checklist_status=%s\n' "$scene_status"
   printf 'runtime_behavior=%s\n' "$runtime_behavior"
   printf 'ordinary_world_visibility=%s\n' "$ordinary_visibility"
@@ -186,17 +186,17 @@ trap 'rm -f "$tmp_harness"' EXIT
   printf 'role_check=opaque_depth_occluder status=blocked_until_scene_harness material=current_opaque_block expected_depth_write=required\n'
   printf 'role_check=adjacent_same_material_pair status=blocked_until_scene_harness material=%s expected_same_material_seam=hidden_or_explicit\n' "$material"
   printf 'role_check=collision_probe status=blocked_until_scene_harness material=%s expected_collision_solidity=explicit\n' "$material"
-  printf 'overlay_metadata status=placeholder overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no\n'
+  printf 'overlay_metadata status=contract_ready overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no\n'
   printf 'assertion=env_off_current status=required expected=ordinary_opaque_markers_unchanged\n'
   printf 'assertion=env_on_fallback_current status=required transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero\n'
   printf 'assertion=future_active_path status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required\n'
-  printf 'assertion=future_workload_markers status=blocked_until_fixture transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending\n'
+  printf 'assertion=future_workload_markers status=blocked_until_fixture transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture\n'
   printf 'non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
   printf 'command_generate_scene_checklist=sh scripts/gpu_terrain_transparent_fixture_scene_checklist.sh logs/gpu_transparent_fixture_plan/transparent-fixture-smoke-plan.txt %s\n' "$(relative_path "$CHECKLIST_PATH")"
   printf 'command_generate_scene_harness=sh scripts/gpu_terrain_transparent_fixture_scene_harness.sh %s %s\n' \
     "$(relative_path "$CHECKLIST_PATH")" \
     "$(relative_path "$OUT_PATH")"
-  printf 'summary transparent_fixture_scene_harness_status=placeholder transparent_fixture_scene_checklist_status=%s transparent_fixture_smoke_plan_status=%s fixture=%s material=%s roles=5 transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
+  printf 'summary transparent_fixture_scene_harness_status=contract_ready transparent_fixture_scene_checklist_status=%s transparent_fixture_smoke_plan_status=%s fixture=%s material=%s roles=5 transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$scene_status" \
     "$summary_smoke_status" \
     "$fixture" \

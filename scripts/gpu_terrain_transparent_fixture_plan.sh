@@ -99,14 +99,14 @@ trap 'rm -f "$tmp_plan"' EXIT
   printf 'step=env_off_gate status=required expected=ordinary_opaque_markers_unchanged\n'
   printf 'step=env_on_fallback_gate status=current_expected transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0\n'
   printf 'step=client_overlay_metadata status=planned overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no\n'
-  printf 'step=future_workload_markers status=required transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending\n'
+  printf 'step=future_workload_markers status=required transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture\n'
   printf 'step=future_active_gate status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0\n'
   printf 'step=non_goals status=enforced shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
   printf 'command_generate_plan=sh scripts/gpu_terrain_transparent_fixture_plan.sh %s %s\n' \
     "$(relative_path "$CONTRACT_PATH")" \
     "$(relative_path "$OUT_PATH")"
   printf 'command_env_on_fallback=RUMPELMC_GPU_TERRAIN_TRANSPARENT=1 RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1 sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_fallback_capture\n'
-  printf 'summary fixture_plan_status=pending_fixture_harness contract_tokens=%s fallback_guard=present\n' "$token_count"
+  printf 'summary fixture_plan_status=contract_ready contract_tokens=%s fallback_guard=present\n' "$token_count"
 } > "$tmp_plan"
 
 mv "$tmp_plan" "$OUT_PATH"

@@ -119,8 +119,8 @@ check_env_expected="$(required_token "env_on_expected" "$check_summary_line" "ch
 check_overlay_env_expected="$(required_token "overlay_env_on_expected" "$check_summary_line" "check summary")"
 check_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$check_summary_line" "check summary")"
 
-test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
-test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
+test "$plan_status" = "contract_ready" || fail "unexpected fixture_plan_status=$plan_status"
+test "$harness_status" = "contract_ready" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$check_status" = "pass" || fail "unexpected transparent_fixture_check_status=$check_status"
 test "$check_plan_status" = "$plan_status" || fail "check fixture_plan_status does not match plan"
 test "$check_harness_status" = "$harness_status" || fail "check harness status does not match harness"
@@ -147,7 +147,7 @@ trap 'rm -f "$tmp_pack" "$tmp_smoke"' EXIT
   printf 'report_check=%s\n' "$(relative_path "$REPORT_CHECK_PATH")"
   printf 'fixture=gpu-transparent-depth-collision\n'
   printf 'material=transparent_test_glass\n'
-  printf 'smoke_plan_status=pending_fixture_scene\n'
+  printf 'smoke_plan_status=contract_ready\n'
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
   printf 'pack_status=pass\n'
@@ -158,10 +158,10 @@ trap 'rm -f "$tmp_pack" "$tmp_smoke"' EXIT
   printf 'step=env_on_fallback_current status=required transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero command="RUMPELMC_GPU_TERRAIN_TRANSPARENT=1 RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1 sh scripts/gpu_terrain_movement_stress.sh logs/gpu_transparent_fixture_fallback_capture"\n'
   printf 'step=client_overlay_metadata status=required overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no\n'
   printf 'step=future_fixture_scene status=required fixed_camera=required fixed_light=required depth_occluder=required adjacent_same_material_pair=required collision_probe=required\n'
-  printf 'step=future_workload_markers status=blocked_until_fixture transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending\n'
+  printf 'step=future_workload_markers status=blocked_until_fixture transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture\n'
   printf 'step=future_active_gate status=blocked_until_implementation transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required\n'
   printf 'step=non_goals status=enforced shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
-  printf 'summary transparent_fixture_smoke_plan_status=pending_fixture_scene transparent_fixture_pack_status=pass fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
+  printf 'summary transparent_fixture_smoke_plan_status=contract_ready transparent_fixture_pack_status=pass fixture_plan_status=%s transparent_fixture_harness_status=%s env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s\n' \
     "$plan_status" \
     "$harness_status" \
     "$harness_env_expected" \
@@ -193,8 +193,8 @@ scene_harness_check_overlay_roles="$(required_token "transparent_fixture_overlay
 scene_harness_check_overlay_blocks="$(required_token "transparent_fixture_overlay_blocks" "$scene_harness_check_summary_line" "scene harness-check summary")"
 
 test "$scene_harness_check_status" = "pass" || fail "unexpected transparent_fixture_scene_harness_check_status=$scene_harness_check_status"
-test "$scene_harness_check_harness_status" = "placeholder" || fail "unexpected scene harness status=$scene_harness_check_harness_status"
-test "$scene_harness_check_scene_status" = "pending_scene_harness" || fail "unexpected scene checklist status=$scene_harness_check_scene_status"
+test "$scene_harness_check_harness_status" = "contract_ready" || fail "unexpected scene harness status=$scene_harness_check_harness_status"
+test "$scene_harness_check_scene_status" = "contract_ready" || fail "unexpected scene checklist status=$scene_harness_check_scene_status"
 test "$scene_harness_check_roles" = "5" || fail "unexpected scene roles=$scene_harness_check_roles"
 test "$scene_harness_check_env_expected" = "$harness_env_expected" || fail "scene env_on_expected does not match harness"
 test "$scene_harness_check_overlay_env_expected" = "$harness_overlay_env_expected" || fail "scene overlay_env_on_expected does not match harness"
@@ -516,7 +516,7 @@ scene_implementation_overlay_env_expected="$(required_token "overlay_env_on_expe
 scene_implementation_overlay_metadata_expected="$(required_token "overlay_metadata_expected" "$scene_implementation_summary_line" "scene implementation checklist summary")"
 scene_implementation_future_active="$(required_token "future_active_expected" "$scene_implementation_summary_line" "scene implementation checklist summary")"
 
-test "$scene_implementation_status" = "pending_scene_implementation" || fail "unexpected transparent_fixture_scene_implementation_checklist_status=$scene_implementation_status"
+test "$scene_implementation_status" = "implementation_contract_ready" || fail "unexpected transparent_fixture_scene_implementation_checklist_status=$scene_implementation_status"
 test "$scene_implementation_pack_status" = "pass" || fail "scene implementation pack status does not match"
 test "$scene_implementation_final_report_status" = "$final_report_status" || fail "scene implementation final-report status does not match"
 test "$scene_implementation_default_off_status" = "$default_off_status" || fail "scene implementation default-off status does not match"

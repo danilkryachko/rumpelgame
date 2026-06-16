@@ -115,8 +115,8 @@ test "$acceptance_status" = "pass" || fail "unexpected transparent_fixture_accep
 test "$report_check_status" = "pass" || fail "unexpected transparent_fixture_report_check_status=$report_check_status"
 test "$check_status" = "pass" || fail "unexpected transparent_fixture_check_status=$check_status"
 test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scene_harness_check_status=$scene_check_status"
-test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
-test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
+test "$plan_status" = "contract_ready" || fail "unexpected fixture_plan_status=$plan_status"
+test "$harness_status" = "contract_ready" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
 test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
 test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
@@ -152,7 +152,7 @@ done
 for token in overlay_id=transparent_test_glass transparent_fixture_overlay_roles=5 transparent_fixture_overlay_blocks=5 geometry_active=0 chunk_data_mutation=no; do
   require_text "$smoke_overlay_metadata_line" "$token" "smoke overlay metadata gate"
 done
-for token in transparent_blocks=pending transparent_faces=pending transparent_draws=pending transparent_subchunks=pending; do
+for token in transparent_blocks=blocked_until_fixture transparent_faces=blocked_until_fixture transparent_draws=blocked_until_fixture transparent_subchunks=blocked_until_fixture; do
   require_text "$smoke_future_workload_line" "$token" "smoke future workload gate"
 done
 for token in transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required; do

@@ -110,8 +110,8 @@ test "$default_off_status" = "pass" || fail "unexpected transparent_fixture_defa
 test "$final_report_status" = "pass" || fail "unexpected transparent_fixture_final_report_check_status=$final_report_status"
 test "$report_check_status" = "pass" || fail "unexpected transparent_fixture_report_check_status=$report_check_status"
 test "$scene_check_status" = "pass" || fail "unexpected transparent_fixture_scene_harness_check_status=$scene_check_status"
-test "$plan_status" = "pending_fixture_harness" || fail "unexpected fixture_plan_status=$plan_status"
-test "$harness_status" = "placeholder" || fail "unexpected transparent_fixture_harness_status=$harness_status"
+test "$plan_status" = "contract_ready" || fail "unexpected fixture_plan_status=$plan_status"
+test "$harness_status" = "contract_ready" || fail "unexpected transparent_fixture_harness_status=$harness_status"
 test "$env_expected" = "1/0/1" || fail "unexpected env_on_expected=$env_expected"
 test "$overlay_env_expected" = "1/0/1" || fail "unexpected overlay_env_on_expected=$overlay_env_expected"
 test "$overlay_metadata_expected" = "5/5" || fail "unexpected overlay_metadata_expected=$overlay_metadata_expected"
@@ -181,7 +181,7 @@ behind_line="$(required_line "$scene_harness_path" "role_check=behind_wall_trans
 occluder_line="$(required_line "$scene_harness_path" "role_check=opaque_depth_occluder")"
 adjacent_line="$(required_line "$scene_harness_path" "role_check=adjacent_same_material_pair")"
 collision_line="$(required_line "$scene_harness_path" "role_check=collision_probe")"
-overlay_metadata_line="$(required_line "$scene_harness_path" "overlay_metadata status=placeholder overlay_id=transparent_test_glass")"
+overlay_metadata_line="$(required_line "$scene_harness_path" "overlay_metadata status=contract_ready overlay_id=transparent_test_glass")"
 env_on_line="$(required_line "$smoke_plan_path" "step=env_on_fallback_current status=required")"
 future_active_line="$(required_line "$smoke_plan_path" "step=future_active_gate status=blocked_until_implementation")"
 
@@ -233,7 +233,7 @@ trap 'rm -f "$tmp_checklist"' EXIT
   printf 'final_report_check=%s\n' "$(relative_path "$final_report_check_path")"
   printf 'fixture=gpu-transparent-depth-collision\n'
   printf 'material=transparent_test_glass\n'
-  printf 'scene_implementation_checklist_status=pending_scene_implementation\n'
+  printf 'scene_implementation_checklist_status=implementation_contract_ready\n'
   printf 'implementation_scope=fixture_scene_only\n'
   printf 'transparent_implementation_gate=false\n'
   printf 'runtime_behavior=unchanged\n'
@@ -252,7 +252,7 @@ trap 'rm -f "$tmp_checklist"' EXIT
   printf 'required_current_guard env_on_fallback transparent_requested=1 transparent_active=0 transparent_fallback=1 transparent_fixture_overlay_requested=1 transparent_fixture_overlay_active=0 transparent_fixture_overlay_fallback=1 transparent_blocks=0 transparent_faces=0 transparent_draws=0 transparent_subchunks=0 gpu_upload_fail=0 smoke_err=0 terrain_samples=nonzero\n'
   printf 'required_future_gate active_path transparent_active=1 transparent_fallback=0 gpu_upload_fail=0 opaque_depth_occlusion=required collision_solidity=required opaque_adjacent_faces_visible=required\n'
   printf 'non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
-  printf 'summary transparent_fixture_scene_implementation_checklist_status=pending_scene_implementation transparent_fixture_pack_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_default_off_status=%s transparent_implementation_gate=false env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s future_active_expected=1/0/0\n' \
+  printf 'summary transparent_fixture_scene_implementation_checklist_status=implementation_contract_ready transparent_fixture_pack_status=%s transparent_fixture_final_report_check_status=%s transparent_fixture_default_off_status=%s transparent_implementation_gate=false env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s future_active_expected=1/0/0\n' \
     "$pack_status" \
     "$final_report_status" \
     "$default_off_status" \
