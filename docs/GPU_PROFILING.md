@@ -17,6 +17,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 - `gpu_compositor_submit_ms`: useful for CPU-side compositor submission overhead.
 - `gpu_compositor_submit_max_parts`: useful to separate setup, target, constants, and draw submission cost.
 - `gpu_draws`, `gpu_effective_draws`, `gpu_faces`, `gpu_subchunks`: useful for workload size.
+- `gpu_upload_staging_buffers`, `gpu_upload_staging_mb`, and `gpu_upload_staging_kb`: useful for CPU-side upload staging materialization churn before considering any upload pool or staging reuse work.
 - `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and `compact_shadow_normals_saved`: useful local signals for shadow proxy load and compact proxy savings.
 - `smoke_err`, `terrain_samples`, color buckets, and marker generation: useful for visual correctness gates.
 

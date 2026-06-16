@@ -42,3 +42,14 @@ Fresh check:
 
 - `logs/gpu_terrain_upload_pressure_smoke/gpu-upload-pressure-summary.txt` passed with enforced repeat `1` and report-only repeat `16`, `max_gpu_effective_draws=21216`, `max_gpu_faces=1469`, `gpu_upload_fail=0`, `gpu_upload_fail_capacity=0`, `gpu_upload_fail_fragmented=0`, `max_gpu_fragmentation_pct=0.0`, `max_terrain_queue_ms=2.079`, `max_process_wall_p95_ms=0.047`, and `max_gpu_compositor_submit_ms=0.132`.
 - `logs/gpu_terrain_upload_pressure_smoke/gpu-upload-pressure-allocator-summary.txt` passed with allocator fragmentation `0.000` and zero upload/capacity/fragmentation failures.
+
+## Upload Staging Telemetry
+
+Runtime perf markers now expose CPU-side upload staging materialization counters:
+
+- `gpu_upload_staging_buffers`
+- `gpu_upload_staging_mb`
+- `gpu_last_upload_staging_kb`
+- `gpu_upload_staging_kb=last/avg/max`
+
+Fresh 2026-06-16 movement evidence in `logs/gpu_upload_staging_telemetry_current/movement-stress-summary.txt` passed with `gpu_upload_staging_buffers=539`, `gpu_upload_staging_mb=0.01`, `gpu_upload_staging_kb_max=1.5`, `gpu_upload_fail=0`, `terrain_queue_max_ms=2.139`, `gpu_compositor_submit_max_ms=0.154`, and `process_wall_p95_ms=0.067`. These counters are measurement evidence for future staging reuse decisions; they do not change upload capacity, allocator policy, renderer behavior, or visible quality.

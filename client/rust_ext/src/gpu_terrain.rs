@@ -1523,6 +1523,11 @@ pub struct GpuTerrainStats {
     pub upload_count: u64,
     pub upload_bytes: usize,
     pub last_upload_bytes: usize,
+    pub upload_staging_buffer_count: u64,
+    pub upload_staging_bytes: usize,
+    pub last_upload_staging_bytes: usize,
+    pub avg_upload_staging_bytes: f64,
+    pub max_upload_staging_bytes: usize,
     pub last_upload_ms: f64,
     pub avg_upload_ms: f64,
     pub max_upload_ms: f64,
@@ -1599,6 +1604,26 @@ pub struct GpuTerrainStats {
     pub last_compositor_gpu_ms: f64,
     pub avg_compositor_gpu_ms: f64,
     pub max_compositor_gpu_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct GpuUploadStagingTelemetry {
+    buffer_count: u64,
+    bytes: usize,
+    last_bytes: usize,
+    avg_bytes: f64,
+    max_bytes: usize,
+}
+
+impl GpuUploadStagingTelemetry {
+    fn record_buffer(&mut self, bytes: usize) {
+        self.buffer_count += 1;
+        self.bytes = self.bytes.saturating_add(bytes);
+        self.last_bytes = bytes;
+        let n = self.buffer_count as f64;
+        self.avg_bytes += (bytes as f64 - self.avg_bytes) / n;
+        self.max_bytes = self.max_bytes.max(bytes);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1819,6 +1844,7 @@ pub struct GpuTerrainBufferPool {
     upload_count: u64,
     upload_bytes: usize,
     last_upload_bytes: usize,
+    upload_staging: GpuUploadStagingTelemetry,
     last_upload_ms: f64,
     avg_upload_ms: f64,
     max_upload_ms: f64,
@@ -1915,6 +1941,7 @@ impl GpuTerrainBufferPool {
             upload_count: 0,
             upload_bytes: 0,
             last_upload_bytes: 0,
+            upload_staging: GpuUploadStagingTelemetry::default(),
             last_upload_ms: 0.0,
             avg_upload_ms: 0.0,
             max_upload_ms: 0.0,
@@ -1980,6 +2007,7 @@ impl GpuTerrainBufferPool {
         let stage_start = Instant::now();
         let pba = PackedByteArray::from(bytes.as_slice());
         let upload_stage_ms = stage_start.elapsed().as_secs_f64() * 1000.0;
+        self.upload_staging.record_buffer(pba.len());
         let offset = (range.start * PACKED_FACE_BYTES) as u32;
         let update_start = Instant::now();
         self.rd
@@ -2094,6 +2122,11 @@ impl GpuTerrainBufferPool {
             upload_count: self.upload_count,
             upload_bytes: self.upload_bytes,
             last_upload_bytes: self.last_upload_bytes,
+            upload_staging_buffer_count: self.upload_staging.buffer_count,
+            upload_staging_bytes: self.upload_staging.bytes,
+            last_upload_staging_bytes: self.upload_staging.last_bytes,
+            avg_upload_staging_bytes: self.upload_staging.avg_bytes,
+            max_upload_staging_bytes: self.upload_staging.max_bytes,
             last_upload_ms: self.last_upload_ms,
             avg_upload_ms: self.avg_upload_ms,
             max_upload_ms: self.max_upload_ms,
@@ -4885,6 +4918,21 @@ mod tests {
             upload_failure_kind(exhausted, 8),
             UploadFailureKind::Capacity
         );
+    }
+
+    #[test]
+    fn upload_staging_telemetry_records_buffer_churn() {
+        let mut telemetry = GpuUploadStagingTelemetry::default();
+
+        telemetry.record_buffer(4_096);
+        telemetry.record_buffer(12_288);
+        telemetry.record_buffer(8_192);
+
+        assert_eq!(telemetry.buffer_count, 3);
+        assert_eq!(telemetry.bytes, 24_576);
+        assert_eq!(telemetry.last_bytes, 8_192);
+        assert!((telemetry.avg_bytes - 8_192.0).abs() < f64::EPSILON);
+        assert_eq!(telemetry.max_bytes, 12_288);
     }
 
     #[test]
