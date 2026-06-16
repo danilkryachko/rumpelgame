@@ -24,11 +24,11 @@ Context inspected:
 
 Scope:
 
-- Define biome ownership, determinism rules, visual-variety rollout, and a local gate.
+- Define biome ownership, determinism rules, visual-variety rollout, a deterministic metadata-only sampler, and a local gate.
 
 Out of scope:
 
-- No terrain shape change, block distribution change, seed field, protocol packet, storage record, atlas asset, material tint, renderer behavior, chunk payload format, or default gameplay change.
+- No terrain shape change, block distribution change, protocol packet, storage record, atlas asset, material tint, renderer behavior, chunk payload format, or default gameplay change.
 
 Assumptions:
 
@@ -39,6 +39,7 @@ Assumptions:
 Done when:
 
 - The biome/visual-variety ownership model and rollout gates are documented.
+- `biome_v1` metadata catalog and deterministic sampler are implemented and guarded.
 - A local gate proves the current deterministic flat worldgen and serialization contract still holds.
 
 Checks:
@@ -55,6 +56,8 @@ Checks:
 - `Chunk.Serialize()` writes little-endian `uint16` block IDs in the stable index order `x + y * ChunkWidth * ChunkDepth + z * ChunkWidth`.
 - `World.ChunkSnapshot()` produces stable serialized bytes across independent `World` instances for identical coordinates.
 - `WorldGenerator` now exposes explicit `seed`, `dimension_id`, and `version=flat_v1` inputs for generated chunks while preserving the existing flat chunk byte vector.
+- `BiomeDefinitionsV1()` exposes the current metadata-only biome catalog.
+- `WorldGenerator.SampleBiome()` and `DeterministicBiomeID()` derive `biome_v1` IDs from seed, dimension, and world X/Z coordinates without mutating chunks.
 - RocksDB persistence stores serialized chunk bytes; it does not store biome metadata.
 - Protocol `ChunkData.blocks` sends serialized block IDs, raw or RLE over the same serialized bytes.
 
@@ -88,7 +91,8 @@ Layer 0, current:
 
 Layer 1, metadata-only:
 
-- Add biome IDs/names and visual palette metadata in code or an approved manifest.
+- Biome IDs, names, and RGB surface-tint metadata exist in the `biome_v1` catalog.
+- Deterministic biome sampling is available through `WorldGenerator.SampleBiome()` and `DeterministicBiomeID()`.
 - No terrain shape, block distribution, chunk payload, or renderer change.
 
 Layer 2, client-visible but block-preserving:
@@ -112,7 +116,7 @@ Before any runtime biome work:
 
 - Keep `go test ./pkg/world` passing.
 - Keep current flat strata tests passing until an explicit worldgen task updates them.
-- Add deterministic sampling tests before using any biome function.
+- Keep deterministic sampling tests passing before using biome output outside the world package.
 - Add cross-coordinate tests for positive and negative chunk coordinates.
 - Add serialization round-trip tests for any block distribution change.
 - Run chunk compatibility tests if `ChunkData` behavior changes.
@@ -138,11 +142,13 @@ Use:
 sh scripts/biome_visual_variety_foundation_gate.sh logs/biome_visual_variety_foundation_current
 ```
 
-The expected current result is `status=pass`, `biome_foundation_status=designed`, `active_worldgen_change=0`, `active_serialization_change=0`, `visual_variety_runtime=deferred`, and `world_tests=pass`.
+The expected current result is `status=pass`, `biome_foundation_status=designed`, `biome_sampler=guarded`, `metadata_layer=guarded`, `active_worldgen_change=0`, `active_serialization_change=0`, `visual_variety_runtime=deferred`, and `world_tests=pass`.
 
 The gate checks that:
 
 - This design includes deterministic biome inputs, visual layers, rollout gates, and blocked changes.
+- `server/pkg/world/biome.go` defines the stable `biome_v1` catalog and sampler.
+- `server/pkg/world/biome_test.go` guards metadata uniqueness, stable sample vectors, seed/dimension sensitivity, and no generated-byte changes after sampling.
 - Current worldgen docs still record the flat strata contract.
 - `Chunk.GenerateFlat()` still uses the current strata thresholds.
 - `Chunk.Serialize()` still writes little-endian `uint16` block IDs.
@@ -151,4 +157,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a foundation/checkpoint block. Runtime biome generation and visual variation remain future work and should start with an explicit deterministic seed/model plus tests before any chunk byte or renderer behavior changes.
+This block is complete as a metadata-only biome foundation. Runtime biome terrain generation and visual variation remain inactive; `biome_v1` sampling is guarded as deterministic data and does not change chunk bytes, protocol, storage, atlas assets, material rendering, or default gameplay behavior.

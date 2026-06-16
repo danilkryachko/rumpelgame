@@ -11,6 +11,8 @@ esac
 SUMMARY_PATH="$OUT_DIR/biome-visual-variety-foundation-summary.txt"
 DESIGN_DOC="${RUMPELMC_BIOME_FOUNDATION_DOC:-"$ROOT_DIR/docs/BIOME_VISUAL_VARIETY_FOUNDATION.md"}"
 WORLDGEN_DOC="${RUMPELMC_BIOME_WORLDGEN_DOC:-"$ROOT_DIR/docs/WORLDGEN_DETERMINISM.md"}"
+BIOME_SOURCE="${RUMPELMC_BIOME_SOURCE:-"$ROOT_DIR/server/pkg/world/biome.go"}"
+BIOME_TEST="${RUMPELMC_BIOME_TEST:-"$ROOT_DIR/server/pkg/world/biome_test.go"}"
 CHUNK_SOURCE="${RUMPELMC_BIOME_CHUNK_SOURCE:-"$ROOT_DIR/server/pkg/world/chunk.go"}"
 CHUNK_TEST="${RUMPELMC_BIOME_CHUNK_TEST:-"$ROOT_DIR/server/pkg/world/chunk_test.go"}"
 WORLD_TEST="${RUMPELMC_BIOME_WORLD_TEST:-"$ROOT_DIR/server/pkg/world/world_test.go"}"
@@ -51,7 +53,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$CHUNK_SOURCE" "$CHUNK_TEST" "$WORLD_TEST" "$BLOCK_MATERIAL_SUMMARY" "$ATLAS_SUMMARY"; do
+for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$BIOME_SOURCE" "$BIOME_TEST" "$CHUNK_SOURCE" "$CHUNK_TEST" "$WORLD_TEST" "$BLOCK_MATERIAL_SUMMARY" "$ATLAS_SUMMARY"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -63,10 +65,19 @@ for token in \
   'Layer 2, client-visible but block-preserving' \
   'Layer 3, block-distribution changes' \
   'No terrain shape change' \
-  'Runtime biome generation and visual variation remain future work'; do
+  'Runtime biome terrain generation and visual variation remain inactive'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
+require_token "$BIOME_SOURCE" "type BiomeID string"
+require_token "$BIOME_SOURCE" "BiomeAlgorithmVersionV1"
+require_token "$BIOME_SOURCE" "BiomeDefinitionsV1"
+require_token "$BIOME_SOURCE" "func (g WorldGenerator) SampleBiome"
+require_token "$BIOME_SOURCE" "func DeterministicBiomeID"
+require_token "$BIOME_TEST" "TestBiomeDefinitionsV1AreStableAndUnique"
+require_token "$BIOME_TEST" "TestBiomeSamplerV1StableVector"
+require_token "$BIOME_TEST" "TestBiomeSamplerChangesWithSeedAndDimension"
+require_token "$BIOME_TEST" "TestBiomeSamplerDoesNotChangeGeneratedChunkBytes"
 require_token "$WORLDGEN_DOC" '`Chunk.GenerateFlat()` is deterministic'
 require_token "$WORLDGEN_DOC" 'Stone` from `y=0..60`'
 require_token "$WORLDGEN_DOC" 'Dirt` from `y=61..62`'
@@ -115,6 +126,8 @@ awk \
     status = "pass"
     reason = "ok"
     biome_foundation_status = "designed"
+    biome_sampler = "guarded"
+    metadata_layer = "guarded"
     active_worldgen_change = chunk_source_diff_count + 0
     active_serialization_change = chunk_source_diff_count + 0
     visual_variety_runtime = "deferred"
@@ -137,7 +150,7 @@ awk \
       reason = "world_tests_failed"
     }
 
-    printf("biome_visual_variety_foundation status=%s reason=%s biome_foundation_status=%s active_worldgen_change=%d active_serialization_change=%d visual_variety_runtime=%s deterministic_model=designed world_tests=%s block_material_status=%s block_material_active_schema_change=%d atlas_status=%s atlas_active_asset_change=%d atlas_shader_layout_change=%d design_doc=%s worldgen_doc=%s block_material_summary=%s atlas_summary=%s\n", status, reason, biome_foundation_status, active_worldgen_change, active_serialization_change, visual_variety_runtime, world_tests, block_material_status, block_material_schema_change, atlas_status, atlas_asset_change, atlas_shader_change, design_doc, worldgen_doc, block_material_summary, atlas_summary)
+    printf("biome_visual_variety_foundation status=%s reason=%s biome_foundation_status=%s biome_sampler=%s metadata_layer=%s active_worldgen_change=%d active_serialization_change=%d visual_variety_runtime=%s deterministic_model=designed world_tests=%s block_material_status=%s block_material_active_schema_change=%d atlas_status=%s atlas_active_asset_change=%d atlas_shader_layout_change=%d design_doc=%s worldgen_doc=%s block_material_summary=%s atlas_summary=%s\n", status, reason, biome_foundation_status, biome_sampler, metadata_layer, active_worldgen_change, active_serialization_change, visual_variety_runtime, world_tests, block_material_status, block_material_schema_change, atlas_status, atlas_asset_change, atlas_shader_change, design_doc, worldgen_doc, block_material_summary, atlas_summary)
     if (status != "pass") {
       exit 1
     }

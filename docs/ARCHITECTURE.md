@@ -26,7 +26,7 @@
 - `World.SetBlockGlobal` applies block edits and persists dirty chunks through the configured `ChunkStore`.
 - RocksDB chunk keys use the stable `c` prefix plus sortable signed big-endian chunk coordinates.
 - Persisted chunk payloads are the exact output of `world.Chunk.Serialize()`.
-- Current generation uses an explicit `GeneratorConfig` with `seed`, `dimension_id`, and generator `version`; server startup validates `RUMPELMC_WORLD_SEED`, `RUMPELMC_WORLD_DIMENSION_ID`, and `RUMPELMC_WORLD_GENERATOR_VERSION` before creating `World`. The default `flat_v1` path still produces the deterministic flat terrain byte contract. `height_v1` is opt-in and provides deterministic integer-hashed terrain surface height without changing protocol, storage, chunk dimensions, or default generation. Biome, cave, resource, structure, and default-world quality layers are documented but not active runtime behavior.
+- Current generation uses an explicit `GeneratorConfig` with `seed`, `dimension_id`, and generator `version`; server startup validates `RUMPELMC_WORLD_SEED`, `RUMPELMC_WORLD_DIMENSION_ID`, and `RUMPELMC_WORLD_GENERATOR_VERSION` before creating `World`. The default `flat_v1` path still produces the deterministic flat terrain byte contract. `height_v1` is opt-in and provides deterministic integer-hashed terrain surface height without changing protocol, storage, chunk dimensions, or default generation. `biome_v1` is a deterministic server-side metadata sampler/catalog owned by the world package; it is not used to alter chunk bytes, packet fields, storage records, or renderer behavior. Cave, resource, structure, and default-world quality layers are documented but not active runtime behavior.
 
 ## Protocol Contract
 

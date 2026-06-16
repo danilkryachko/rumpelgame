@@ -18,6 +18,8 @@ This note records the current deterministic world generation and serialization g
 - `TestEncodeSerializedChunkRLERoundTripsHeightV1Chunk` proves a representative `height_v1` chunk round-trips through the existing RLE codec and stays smaller than raw serialized bytes.
 - `TestHeightV1EditedChunkPersistsThroughStoreReload` proves an edited `height_v1` chunk saves through `ChunkStore`, reloads from stored bytes, and is not replaced by a newly generated chunk.
 - `scripts/server_height_generator_smoke.sh` proves a live server configured with `RUMPELMC_WORLD_GENERATOR_VERSION=height_v1` streams the representative chunk through RLE with raw SHA-256 `1101411ccf572478dc9dee8772428714fd80d5ea9f82f491401e2ca410369dc7`.
+- `TestBiomeSamplerV1StableVector` and `TestBiomeSamplerChangesWithSeedAndDimension` prove the metadata-only `biome_v1` sampler is deterministic for representative positive, negative, and high-magnitude world coordinates.
+- `TestBiomeSamplerDoesNotChangeGeneratedChunkBytes` proves biome sampling does not change `flat_v1` generated chunk bytes.
 - These tests do not change storage, protocol, chunk dimensions, payload encoding defaults, or default `flat_v1` generation behavior.
 
 ## Guard
@@ -51,4 +53,4 @@ World generation quality work is tracked in `docs/WORLD_GENERATION_QUALITY_PASS.
 sh scripts/world_generation_quality_gate.sh logs/world_generation_quality_current
 ```
 
-The current expected result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `worldgen_height_v1=guarded`, `height_v1_serialization=guarded`, `height_v1_live_smoke=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=opt_in_height_v1_guarded`, and `flat_byte_hash=guarded`. Caves, resources, structures, biome runtime, and default-world changes remain blocked until versioned implementations have deterministic tests and downstream evidence.
+The current expected result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `worldgen_height_v1=guarded`, `height_v1_serialization=guarded`, `height_v1_live_smoke=guarded`, `biome_sampler=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=opt_in_height_v1_guarded`, and `flat_byte_hash=guarded`. Caves, resources, structures, biome runtime, and default-world changes remain blocked until versioned implementations have deterministic tests and downstream evidence.

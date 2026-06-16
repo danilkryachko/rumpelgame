@@ -77,6 +77,7 @@ The completed seed/version and opt-in height foundation is intentionally narrow:
 - `TestEncodeSerializedChunkRLERoundTripsHeightV1Chunk` proves `height_v1` chunks round-trip through the current RLE codec without changing raw serialized bytes.
 - `TestHeightV1EditedChunkPersistsThroughStoreReload` proves edited `height_v1` chunks reload from persisted bytes through the existing `ChunkStore` boundary.
 - `scripts/server_height_generator_smoke.sh` proves a live server configured with `height_v1` streams the representative chunk through the current RLE protocol path.
+- `TestBiomeSamplerV1StableVector`, `TestBiomeSamplerChangesWithSeedAndDimension`, and `TestBiomeSamplerDoesNotChangeGeneratedChunkBytes` guard the metadata-only `biome_v1` sampler without activating biome runtime terrain or visual changes.
 
 ## Target Generation Pipeline
 
@@ -167,7 +168,7 @@ Use:
 sh scripts/world_generation_quality_gate.sh logs/world_generation_quality_current
 ```
 
-The expected current result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `worldgen_height_v1=guarded`, `height_v1_serialization=guarded`, `height_v1_live_smoke=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=opt_in_height_v1_guarded`, `coordinate_mapping=guarded`, `origin_chunk=guarded`, `flat_byte_hash=guarded`, and `world_tests=pass`.
+The expected current result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `worldgen_height_v1=guarded`, `height_v1_serialization=guarded`, `height_v1_live_smoke=guarded`, `biome_sampler=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=opt_in_height_v1_guarded`, `coordinate_mapping=guarded`, `origin_chunk=guarded`, `flat_byte_hash=guarded`, and `world_tests=pass`.
 
 The gate checks that:
 
@@ -180,6 +181,7 @@ The gate checks that:
 - Configured `height_v1` generator output preserves the stable height chunk byte hash, varies surface height inside the representative chunk, and changes with seed or dimension inputs.
 - `height_v1` chunks round-trip through RLE and edited `height_v1` chunks reload from stored serialized bytes.
 - A live loopback server with `RUMPELMC_WORLD_GENERATOR_VERSION=height_v1` streams the representative chunk as RLE, with varied surface evidence and no protocol diff.
+- The metadata-only `biome_v1` sampler is guarded while runtime biome visuals remain inactive.
 - Current `GenerateFlat()` and serialization source remain unchanged.
 - The origin chunk snapshot is stable and matches the current flat strata contract.
 - Representative flat chunk snapshot bytes match the current SHA-256 fixture.
@@ -188,4 +190,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a seed/version and opt-in height-generator checkpoint. Default runtime generation remains `flat_v1`; `height_v1` is guarded for explicit use through generator configuration, the existing RLE/storage chunk pipeline, and a live server smoke path. Cave, resource, structure, biome runtime, and default-world changes remain inactive until separate versioned implementations supply deterministic tests and downstream evidence. Current origin chunk flat strata, configured `flat_v1` byte hash, configured `height_v1` byte hash, `height_v1` RLE round-trip, edited `height_v1` reload, live `height_v1` server streaming, and global block-to-chunk coordinate mapping are guarded across positive, negative, and high positive chunk boundaries.
+This block is complete as a seed/version, opt-in height-generator, and metadata-only biome checkpoint. Default runtime generation remains `flat_v1`; `height_v1` is guarded for explicit use through generator configuration, the existing RLE/storage chunk pipeline, and a live server smoke path. Cave, resource, structure, biome runtime, and default-world changes remain inactive until separate versioned implementations supply deterministic tests and downstream evidence. Current origin chunk flat strata, configured `flat_v1` byte hash, configured `height_v1` byte hash, `height_v1` RLE round-trip, edited `height_v1` reload, live `height_v1` server streaming, metadata-only `biome_v1` sampling, and global block-to-chunk coordinate mapping are guarded across positive, negative, and high positive chunk boundaries.
