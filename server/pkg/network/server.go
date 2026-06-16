@@ -196,6 +196,10 @@ func (s *Server) handleInitialClientPacket(conn net.Conn, clientPacket *api.Pack
 }
 
 func (s *Server) handleInitialClientPacketWithState(conn net.Conn, clientPacket *api.Packet, streamState *clientChunkStreamState) error {
+	if clientPacket == nil {
+		log.Printf("Ignored nil client packet")
+		return nil
+	}
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
 		if p.Position == nil {
@@ -215,6 +219,10 @@ func (s *Server) handleInitialClientPacketWithState(conn net.Conn, clientPacket 
 }
 
 func (s *Server) handleInitialClientPacketForSession(client *clientSession, clientPacket *api.Packet) error {
+	if clientPacket == nil {
+		log.Printf("Ignored nil client packet")
+		return nil
+	}
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
 		if p.Position == nil {
@@ -238,6 +246,10 @@ func (s *Server) handleClientPacket(conn net.Conn, clientPacket *api.Packet, sen
 }
 
 func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Packet, streamState *clientChunkStreamState) error {
+	if clientPacket == nil {
+		log.Printf("Ignored nil client packet")
+		return nil
+	}
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
 		if p.Position == nil {
@@ -291,6 +303,10 @@ func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Pa
 }
 
 func (s *Server) handleClientPacketForSession(client *clientSession, clientPacket *api.Packet) error {
+	if clientPacket == nil {
+		log.Printf("Ignored nil client packet")
+		return nil
+	}
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
 		if p.Position == nil {
