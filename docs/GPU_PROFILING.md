@@ -212,6 +212,21 @@ sh scripts/gpu_streaming_scheduler_workload_matrix.sh logs/gpu_streaming_schedul
 
 The gate writes `gpu-streaming-scheduler-workload-matrix-summary.txt` and `gpu-streaming-scheduler-workload-matrix-cases.txt`; see `docs/GPU_STREAMING_SCHEDULER_WORKLOAD_MATRIX.md`.
 
+Use the streaming scheduler decision checkpoint after refreshing scheduler/runtime/residency evidence. It composes the prototype, workload matrix, chunk-boundary baseline, and buffer residency budget into one rollout-status summary while keeping scheduler/default runtime changes blocked:
+
+```sh
+sh scripts/gpu_streaming_scheduler_decision_checkpoint.sh logs/gpu_streaming_scheduler_decision_checkpoint_current
+```
+
+The checkpoint writes `gpu-streaming-scheduler-decision-checkpoint-summary.txt`; see `docs/GPU_STREAMING_SCHEDULER_DECISION_CHECKPOINT.md`.
+
+Use the optional boundary-backed scheduler matrix only when stabilizing scheduler lane captures through the chunk-boundary harness:
+
+```sh
+RUMPELMC_STREAMING_SCHEDULER_BOUNDARY_MATRIX_RUN_WORKLOADS=1 \
+sh scripts/gpu_streaming_scheduler_boundary_matrix.sh logs/gpu_streaming_scheduler_boundary_matrix_current
+```
+
 Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh

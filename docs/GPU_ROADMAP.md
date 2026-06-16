@@ -253,11 +253,11 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 57. Done 2026-06-16: added `scripts/gpu_streaming_priority_audit.sh` and `docs/GPU_STREAMING_PRIORITY_AUDIT.md` to audit server chunk ordering, client mesh/collision queue priority, chunk-boundary/rapid-turn readiness, unload churn, buffer residency, and diagnostic upload-failure fallback before any scheduler change.
 58. Done 2026-06-16: added default-off client streaming scheduler prototype `RUMPELMC_CLIENT_STREAMING_SCHEDULER` with `nearest`, `directional_tie_preview`, and `directional_tie` modes plus `scripts/gpu_streaming_scheduler_prototype.sh` / `docs/GPU_STREAMING_SCHEDULER_PROTOTYPE.md`; collision-refresh backpressure, caps, server defaults, quality, protocol, storage, worldgen, and chunk serialization remain unchanged.
 59. Done 2026-06-16: added `scripts/gpu_streaming_scheduler_workload_matrix.sh` and `docs/GPU_STREAMING_SCHEDULER_WORKLOAD_MATRIX.md` to compare `nearest`, `directional_tie_preview`, and `directional_tie` on identical movement workloads while preserving default `nearest`, scheduler-change lockout, and external profiler plus macOS/Windows validation blockers.
-60. Checkpoint streaming and residency decisions after fresh scheduler matrix runtime evidence.
+60. Done 2026-06-16: added `scripts/gpu_streaming_scheduler_decision_checkpoint.sh` and `docs/GPU_STREAMING_SCHEDULER_DECISION_CHECKPOINT.md` to checkpoint scheduler/runtime/residency decisions after matrix evidence while keeping scheduler rollout blocked by partial harness evidence, missing allocator/free-range proof, and missing external macOS/Windows profiler validation.
 
 ### Weeks 61-70: World Interaction Performance
 
-61. Refresh block-edit stress.
+61. Stabilize a boundary-backed or deterministic tie-heavy scheduler runtime harness before any scheduler profiler comparison.
 62. Benchmark repeated edits.
 63. Benchmark border edits.
 64. Refresh dirty partial-upload edge cases.

@@ -27,6 +27,7 @@ The current required GPU core rows are:
 - streaming priority audit
 - streaming scheduler prototype preflight
 - streaming scheduler workload matrix
+- streaming scheduler decision checkpoint
 - upload-failure fallback expected-failure artifact
 - strict load-scaling gate and its resident-set source summary
 - mass chunk-load gate
@@ -52,6 +53,7 @@ The index also lists optional governance and profiler rows even when they are mi
 - test strategy
 - external profiling campaign
 - shader profiler capture pack
+- streaming scheduler boundary matrix
 
 Missing optional rows keep the index visible but do not fail it. This prevents silent evidence gaps while still allowing focused GPU work on a checkout that does not have every historical log.
 
@@ -62,7 +64,7 @@ Fresh local evidence:
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt`
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index.txt`
 
-The current index passed with `28` rows, `19` required rows, `19` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
+The current index passed with `30` rows, `20` required rows, `20` required passes, `9` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
 
 Current normalized maxima:
 
@@ -74,6 +76,7 @@ Current normalized maxima:
 - Runtime priority status: `pass`
 - Streaming scheduler prototype: `prototype_only`
 - Streaming scheduler workload matrix: `matrix_harness_status=partial`, `candidate_scheduler_status=defer_matrix_harness_unstable`, `scheduler_change_allowed=0`
+- Streaming scheduler decision checkpoint: `decision_status=defer_matrix_harness_unstable`, `scheduler_change_allowed=0`
 - Upload fallback expected/injected failures: `1052` / `1052`
 - Upload fallback shadow path: `arraymesh`
 - Configured buffer bytes/budget: `67239936` / `95.709%`
@@ -97,13 +100,16 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming priority audit summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler prototype summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler workload matrix summary and case rows when present.
+- `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler decision checkpoint summary when present.
+- `scripts/gpu_terrain_report.sh` surfaces optional GPU streaming scheduler boundary matrix summary and case rows when present.
 - `scripts/gpu_terrain_report.sh` also surfaces the selected GPU buffer residency budget summary when present.
 - `scripts/test_strategy_gate.sh` requires the index summary and includes the index command in the nightly summary command.
 - `scripts/test_strategy_gate.sh` requires the streaming priority audit summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler prototype summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler workload matrix summary before the index.
+- `scripts/test_strategy_gate.sh` requires the streaming scheduler decision checkpoint summary before the index.
 - `scripts/test_strategy_gate.sh` requires the buffer residency budget summary before the index.
-- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, streaming priority audit, streaming scheduler prototype, streaming scheduler workload matrix, upload-failure fallback, and buffer residency budget visible as required rows.
+- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, streaming priority audit, streaming scheduler prototype, streaming scheduler workload matrix, streaming scheduler decision checkpoint, upload-failure fallback, and buffer residency budget visible as required rows.
 
 ## External Context
 

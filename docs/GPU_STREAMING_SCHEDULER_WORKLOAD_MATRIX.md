@@ -121,3 +121,4 @@ Use the matrix to choose the next capture target:
 
 - If `defer_no_runtime_signal`, add a deterministic tie-heavy movement fixture before changing policy.
 - If runtime signal exists without local regressions, capture external macOS Metal and Windows GPU profiler rows before any default scheduler decision.
+- Current follow-up is recorded in `docs/GPU_STREAMING_SCHEDULER_DECISION_CHECKPOINT.md`: the required decision checkpoint composes this matrix with chunk-boundary and residency evidence, while `scripts/gpu_streaming_scheduler_boundary_matrix.sh` remains an optional boundary-backed capture tool until its lanes are stable.

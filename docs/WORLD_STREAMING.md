@@ -343,6 +343,16 @@ Fresh check:
 - The current matrix passed as a decision gate with `matrix_harness_status=partial`, `expected_cases=9`, `completed_cases=9`, `runtime_signal=683`, max preview mismatches `117`, mesh/collision directional ties `361/10`, fifo fallbacks `902`, max queue/process/submit `6.174/0.070/0.408ms`, max packet queue lag `67.578ms`, and `candidate_scheduler_status=defer_matrix_harness_unstable`.
 - The matrix always emits `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
 
+## GPU Streaming Scheduler Decision Checkpoint
+
+The scheduler decision checkpoint is the required rollout-status summary. It composes the default-off scheduler prototype, the workload matrix, the current chunk-boundary baseline, and the buffer residency budget. It records the decision without changing runtime behavior.
+
+Fresh check:
+
+- `logs/gpu_streaming_scheduler_decision_checkpoint_current/gpu-streaming-scheduler-decision-checkpoint-summary.txt` passed with `workload_matrix_harness_status=partial`, `workload_runtime_signal=683`, `chunk_boundary_status=pass`, `chunk_boundary_upload_fail=0`, `chunk_boundary_ground_misses=0`, `chunk_boundary_unload_total=0`, `residency_status=pass`, `residency_pressure_class=high`, and `decision_status=defer_matrix_harness_unstable`.
+- The checkpoint emits `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
+- `scripts/gpu_streaming_scheduler_boundary_matrix.sh` is available as an optional boundary-backed scheduler capture tool. It is not a required default gate until the nested boundary lanes produce stable summaries.
+
 ## GPU Report System V2
 
 The V2 report wrapper keeps the existing aggregate report but explicitly separates fresh scoped metrics, fail gates, historical aggregate maxima, and warning-only local signals.
