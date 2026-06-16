@@ -97,12 +97,16 @@ require_token "$SERVER_MAIN" 'storage.OpenRocksChunkStore'
 
 client_state_status="$(field_metric status "$CLIENT_STATE_SUMMARY")"
 client_state_protocol_change="$(field_metric active_protocol_change "$CLIENT_STATE_SUMMARY")"
-block_edit_persistence_status="deferred"
-block_edit_visual_path="deferred"
-if [ -s "$BLOCK_EDIT_PERSISTENCE_SUMMARY" ]; then
-  block_edit_persistence_status="$(field_metric status "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
-  block_edit_visual_path="$(field_metric visual_collision_gpu_path "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
-fi
+test -s "$BLOCK_EDIT_PERSISTENCE_SUMMARY" || fail "missing required input $BLOCK_EDIT_PERSISTENCE_SUMMARY"
+block_edit_persistence_status="$(field_metric status "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+block_edit_visual_path="$(field_metric visual_collision_gpu_path "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+block_edit_active_protocol_change="$(field_metric active_protocol_change "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+block_edit_persisted_visual_smoke="$(field_metric persisted_visual_smoke "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+block_edit_persisted_visual_smoke_status="$(field_metric persisted_visual_smoke_status "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+block_edit_persisted_visual_scenarios="$(field_metric persisted_visual_scenarios "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+block_edit_persisted_visual_place_reload_status="$(field_metric persisted_visual_place_reload_status "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+block_edit_persisted_visual_destroy_after_reload_status="$(field_metric persisted_visual_destroy_after_reload_status "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
+block_edit_persisted_visual_edge_place_status="$(field_metric persisted_visual_edge_place_status "$BLOCK_EDIT_PERSISTENCE_SUMMARY")"
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 inventory_tests="skipped"
@@ -128,8 +132,15 @@ fi
 awk \
   -v client_state_status="${client_state_status:-missing}" \
   -v client_state_protocol_change="${client_state_protocol_change:-1}" \
-  -v block_edit_persistence_status="${block_edit_persistence_status:-deferred}" \
-  -v block_edit_visual_path="${block_edit_visual_path:-deferred}" \
+  -v block_edit_persistence_status="${block_edit_persistence_status:-missing}" \
+  -v block_edit_visual_path="${block_edit_visual_path:-missing}" \
+  -v block_edit_active_protocol_change="${block_edit_active_protocol_change:-1}" \
+  -v block_edit_persisted_visual_smoke="${block_edit_persisted_visual_smoke:-missing}" \
+  -v block_edit_persisted_visual_smoke_status="${block_edit_persisted_visual_smoke_status:-missing}" \
+  -v block_edit_persisted_visual_scenarios="${block_edit_persisted_visual_scenarios:-0}" \
+  -v block_edit_persisted_visual_place_reload_status="${block_edit_persisted_visual_place_reload_status:-missing}" \
+  -v block_edit_persisted_visual_destroy_after_reload_status="${block_edit_persisted_visual_destroy_after_reload_status:-missing}" \
+  -v block_edit_persisted_visual_edge_place_status="${block_edit_persisted_visual_edge_place_status:-missing}" \
   -v proto_diff_count="$proto_diff_count" \
   -v inventory_tests="$inventory_tests" \
   -v server_tests="$server_tests" \
@@ -142,8 +153,16 @@ awk \
     gameplay_loop_status = "foundation_guarded"
     inventory_foundation = "unit_guarded"
     server_edit_persistence = "store_save_boundary"
-    block_edit_visual_ok = block_edit_persistence_status == "pass" && block_edit_visual_path == "godot_persisted_reload_guarded"
-    full_reload_persistence = block_edit_visual_ok ? "block_41_visual_guarded" : "deferred"
+    block_edit_visual_ok = block_edit_persistence_status == "pass" &&
+      block_edit_visual_path == "godot_persisted_reload_guarded" &&
+      block_edit_active_protocol_change + 0 == 0 &&
+      block_edit_persisted_visual_smoke == "godot_guarded" &&
+      block_edit_persisted_visual_smoke_status == "pass" &&
+      block_edit_persisted_visual_scenarios + 0 >= 3 &&
+      block_edit_persisted_visual_place_reload_status == "pass" &&
+      block_edit_persisted_visual_destroy_after_reload_status == "pass" &&
+      block_edit_persisted_visual_edge_place_status == "pass"
+    full_reload_persistence = block_edit_visual_ok ? "block_41_visual_guarded" : "missing_block_41_visual_proof"
     active_protocol_change = proto_diff_count + 0
 
     state_ok = client_state_status == "pass" && client_state_protocol_change + 0 == 0
@@ -162,9 +181,12 @@ awk \
     } else if (!go_ok) {
       status = "fail"
       reason = "server_tests_failed"
+    } else if (!block_edit_visual_ok) {
+      status = "fail"
+      reason = "block_41_visual_proof_not_clean"
     }
 
-    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary)
+    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary)
     if (status != "pass") {
       exit 1
     }

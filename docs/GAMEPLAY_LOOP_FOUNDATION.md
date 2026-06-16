@@ -40,12 +40,12 @@ Assumptions:
 - Server `BlockAction` remains the only networked edit command.
 - Server `World.SetBlockGlobal` is the persistence-capable edit boundary because it calls `ChunkStore.SaveChunk` when a store is configured.
 - The current hotbar is creative-mode inventory, so counts are guard data and are not decremented by placement yet.
-- Full edit persistence verification belongs to Block 41.
+- Full edit persistence verification is supplied by the completed Block 41 persisted visual evidence chain.
 
 Done when:
 
 - The player hotbar has an explicit inventory slot model and tests.
-- A gameplay foundation gate checks the client inventory tests and the existing server edit/persistence path.
+- A gameplay foundation gate checks the client inventory tests, the existing server edit/persistence path, and the completed Block 41 persisted visual proof.
 
 Checks:
 
@@ -84,7 +84,7 @@ The gameplay foundation relies on the existing server boundary:
 - `World.SetBlockGlobal` persists the edited chunk only when `World` was created with a `ChunkStore`.
 - `World.SetBlockGlobal` rejects block edits outside `[0, ChunkHeight)` before creating/loading a chunk or returning an updated snapshot.
 - `server/cmd/server/main.go` creates the default server with `storage.OpenRocksChunkStore`, so normal server runs are persistence-capable.
-- Block 40 does not own save -> process restart -> reload -> visual/collision/GPU update proof. That evidence is collected by Block 41.
+- Block 40 consumes save -> process restart -> reload -> visual/collision/GPU update proof from Block 41 instead of duplicating that heavier runtime matrix.
 
 ## Deferred Work
 
@@ -115,7 +115,7 @@ Use:
 sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `server_edit_persistence=store_save_boundary`, and `active_protocol_change=0`. If the Block 41 persisted visual summary is present, the gate also reports `full_reload_persistence=block_41_visual_guarded`; otherwise it remains `full_reload_persistence=deferred`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
 
 The gate checks that:
 
@@ -123,10 +123,11 @@ The gate checks that:
 - The player source contains the hotbar inventory model and tests.
 - Server block edits still flow through `World.SetBlockGlobal`.
 - `World.SetBlockGlobal` still calls `ChunkStore.SaveChunk`.
+- The Block 41 block-edit persistence summary is present and its persisted visual/collision/GPU matrix is clean.
 - Previous client state-machine hardening is clean.
 - Focused Rust inventory tests and Go world/network/storage tests pass.
 - Protocol schema/generated files are unchanged.
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint. Full dirty chunk save/reload and visual/collision/GPU proof is owned by Block 41, with broader gameplay systems still deferred.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. Broader gameplay systems still remain outside this foundation checkpoint.
