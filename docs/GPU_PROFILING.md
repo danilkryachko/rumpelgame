@@ -161,6 +161,14 @@ sh scripts/gpu_terrain_rapid_camera_turn_stress.sh logs/gpu_terrain_rapid_camera
 
 The gate writes `rapid-camera-turn-stress-summary.txt`; see `docs/GPU_TERRAIN_RAPID_CAMERA_TURN_STRESS.md`.
 
+Use the GPU stress artifact index when checking whether current GPU world-loading/rendering evidence is complete enough to guide the next optimization. It is summary-only: required core GPU artifacts must pass, while missing optional governance/profiler rows are listed as gaps instead of silently skipped.
+
+```sh
+sh scripts/gpu_stress_artifact_index.sh logs/gpu_stress_artifact_index_current
+```
+
+The index writes `gpu-stress-artifact-index-summary.txt` and `gpu-stress-artifact-index.txt`; see `docs/GPU_STRESS_ARTIFACT_INDEX.md`.
+
 Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh

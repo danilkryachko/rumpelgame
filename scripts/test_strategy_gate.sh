@@ -18,6 +18,7 @@ RESOURCE_LIFECYCLE_SUMMARY="${RUMPELMC_TEST_STRATEGY_RESOURCE_LIFECYCLE_SUMMARY:
 MEMORY_BUDGET_SUMMARY="${RUMPELMC_TEST_STRATEGY_MEMORY_BUDGET_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_memory_budget_current/gpu-terrain-memory-budget-summary.txt"}"
 REPORT_V2_SUMMARY="${RUMPELMC_TEST_STRATEGY_REPORT_V2_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_report_v2_current/gpu-terrain-report-v2-summary.txt"}"
 BASELINE_GOVERNANCE_SUMMARY="${RUMPELMC_TEST_STRATEGY_BASELINE_GOVERNANCE_SUMMARY:-"$ROOT_DIR/logs/performance_baseline_governance_current/performance-baseline-governance-summary.txt"}"
+GPU_STRESS_INDEX_SUMMARY="${RUMPELMC_TEST_STRATEGY_GPU_STRESS_INDEX_SUMMARY:-"$ROOT_DIR/logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt"}"
 
 mkdir -p "$OUT_DIR"
 
@@ -78,6 +79,7 @@ test -x "$ROOT_DIR/scripts/gpu_resource_lifecycle_audit.sh" || fail "missing exe
 test -x "$ROOT_DIR/scripts/gpu_terrain_memory_budget.sh" || fail "missing executable memory budget gate"
 test -x "$ROOT_DIR/scripts/gpu_terrain_report_v2.sh" || fail "missing executable report V2 wrapper"
 test -x "$ROOT_DIR/scripts/performance_baseline_governance.sh" || fail "missing executable baseline governance wrapper"
+test -x "$ROOT_DIR/scripts/gpu_stress_artifact_index.sh" || fail "missing executable GPU stress artifact index"
 
 exploration_status="$(require_status exploration_soak "$EXPLORATION_SOAK_SUMMARY" status pass)"
 rapid_camera_turn_status="$(require_status rapid_camera_turn "$RAPID_CAMERA_TURN_SUMMARY" status pass)"
@@ -88,13 +90,14 @@ resource_status="$(require_status resource_lifecycle "$RESOURCE_LIFECYCLE_SUMMAR
 memory_status="$(require_status memory_budget "$MEMORY_BUDGET_SUMMARY" status pass)"
 report_v2_status="$(require_status report_v2 "$REPORT_V2_SUMMARY" status pass)"
 baseline_status="$(require_status baseline_governance "$BASELINE_GOVERNANCE_SUMMARY" status pass)"
+gpu_stress_index_status="$(require_status gpu_stress_index "$GPU_STRESS_INDEX_SUMMARY" status pass)"
 
 {
-  printf 'test_strategy_gate status=pass fast_command="%s" full_command="%s" nightly_runtime_command="%s" nightly_summary_command="%s" exploration_soak_status=%s rapid_camera_turn_status=%s chunk_boundary_status=%s load_scaling_status=%s upload_pressure_status=%s resource_lifecycle_status=%s memory_budget_status=%s report_v2_status=%s baseline_governance_status=%s exploration_soak_summary=%s rapid_camera_turn_summary=%s chunk_boundary_summary=%s load_scaling_summary=%s upload_pressure_summary=%s resource_lifecycle_summary=%s memory_budget_summary=%s report_v2_summary=%s baseline_governance_summary=%s\n' \
+  printf 'test_strategy_gate status=pass fast_command="%s" full_command="%s" nightly_runtime_command="%s" nightly_summary_command="%s" exploration_soak_status=%s rapid_camera_turn_status=%s chunk_boundary_status=%s load_scaling_status=%s upload_pressure_status=%s resource_lifecycle_status=%s memory_budget_status=%s report_v2_status=%s baseline_governance_status=%s gpu_stress_index_status=%s exploration_soak_summary=%s rapid_camera_turn_summary=%s chunk_boundary_summary=%s load_scaling_summary=%s upload_pressure_summary=%s resource_lifecycle_summary=%s memory_budget_summary=%s report_v2_summary=%s baseline_governance_summary=%s gpu_stress_index_summary=%s\n' \
     './scripts/check.sh fast' \
     './scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh' \
     'RUMPELMC_EXPLORATION_SOAK_REPEATS=3 ./scripts/world_streaming_exploration_soak.sh logs/nightly/world_streaming_exploration_soak && ./scripts/gpu_terrain_rapid_camera_turn_stress.sh logs/nightly/gpu_terrain_rapid_camera_turn_stress && ./scripts/gpu_terrain_chunk_boundary_stress.sh logs/nightly/gpu_terrain_chunk_boundary_stress && ./scripts/gpu_terrain_load_scaling.sh logs/nightly/gpu_terrain_load_scaling && ./scripts/gpu_terrain_upload_pressure.sh logs/nightly/gpu_terrain_upload_pressure' \
-    './scripts/gpu_resource_lifecycle_audit.sh logs/gpu_terrain_upload_pressure_smoke && ./scripts/gpu_terrain_memory_budget.sh logs/gpu_terrain_memory_budget_current && ./scripts/gpu_terrain_report_v2.sh logs/gpu_terrain_upload_pressure_smoke logs/gpu_terrain_report_v2_current && ./scripts/performance_baseline_governance.sh' \
+    './scripts/gpu_resource_lifecycle_audit.sh logs/gpu_terrain_upload_pressure_smoke && ./scripts/gpu_terrain_memory_budget.sh logs/gpu_terrain_memory_budget_current && ./scripts/gpu_terrain_report_v2.sh logs/gpu_terrain_upload_pressure_smoke logs/gpu_terrain_report_v2_current && ./scripts/performance_baseline_governance.sh && ./scripts/gpu_stress_artifact_index.sh logs/gpu_stress_artifact_index_current' \
     "$exploration_status" \
     "$rapid_camera_turn_status" \
     "$chunk_boundary_status" \
@@ -104,6 +107,7 @@ baseline_status="$(require_status baseline_governance "$BASELINE_GOVERNANCE_SUMM
     "$memory_status" \
     "$report_v2_status" \
     "$baseline_status" \
+    "$gpu_stress_index_status" \
     "$(relative_path "$EXPLORATION_SOAK_SUMMARY")" \
     "$(relative_path "$RAPID_CAMERA_TURN_SUMMARY")" \
     "$(relative_path "$CHUNK_BOUNDARY_SUMMARY")" \
@@ -112,7 +116,8 @@ baseline_status="$(require_status baseline_governance "$BASELINE_GOVERNANCE_SUMM
     "$(relative_path "$RESOURCE_LIFECYCLE_SUMMARY")" \
     "$(relative_path "$MEMORY_BUDGET_SUMMARY")" \
     "$(relative_path "$REPORT_V2_SUMMARY")" \
-    "$(relative_path "$BASELINE_GOVERNANCE_SUMMARY")"
+    "$(relative_path "$BASELINE_GOVERNANCE_SUMMARY")" \
+    "$(relative_path "$GPU_STRESS_INDEX_SUMMARY")"
 } > "$SUMMARY_PATH"
 
 cat "$SUMMARY_PATH"

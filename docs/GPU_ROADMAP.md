@@ -48,7 +48,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 27. Add block-edit stress.
 28. Done 2026-06-16: added `scripts/gpu_terrain_chunk_boundary_stress.sh` as the chunk enter/exit stress gate over `long-move`, `spiral`, `fast-turn`, `teleport-snap`, and bounded `high-resident` workload evidence.
 29. Done 2026-06-16: added `scripts/gpu_terrain_rapid_camera_turn_stress.sh` as a standalone `chunk_fast_turn` gate for rapid camera orientation changes inside one current chunk.
-30. Add a stress artifact index.
+30. Done 2026-06-16: added `scripts/gpu_stress_artifact_index.sh` as the current GPU stress artifact index over required streaming/residency/upload/draw/transparent evidence plus optional governance/profiler gap rows.
 
 ## Phase 4: GPU Memory And Residency
 
@@ -247,7 +247,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 51. Refresh resident chunk pressure baselines.
 52. Done 2026-06-16: refreshed chunk enter/exit stress and wired it into report V1/V2 plus the test strategy gate.
 53. Done 2026-06-16: refreshed rapid camera-turn stress and wired the summary into the aggregate report plus test strategy gate.
-54. Track max-resident memory trends.
+54. Done 2026-06-16: added the GPU stress artifact index to keep current max resident subchunks/draws/faces, draw-command occupancy, upload failures, and pending profiler/Windows gaps visible in one summary.
 55. Diagnose unload/reload churn.
 56. Define a buffer residency budget.
 57. Audit streaming priority behavior.

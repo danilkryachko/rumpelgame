@@ -269,6 +269,14 @@ Fresh local evidence:
 
 - `logs/gpu_terrain_rapid_camera_turn_stress_current/rapid-camera-turn-stress-summary.txt` passed with `motion_steps=8`, `motion_chunks=1`, current chunk `2,2`, max queue/process/submit `1.535/0.049/0.100ms`, GPU effective draws `634`, packet queue max drain `51`, unload total/neighbor refreshes `0/0`, upload failures `0`, ground misses `0`, terrain samples `416`, and final render/collision readiness.
 
+## GPU Stress Artifact Index
+
+`scripts/gpu_stress_artifact_index.sh` is the focused summary index for current GPU world-loading/rendering evidence. It fails on missing or non-passing required GPU core rows, upload-failure violations, ground-miss violations, or default-runtime-change approval, while still listing optional missing governance/profiler rows.
+
+Fresh local evidence:
+
+- `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt` passed with `22` indexed rows, `13` required passes, optional missing rows `8`, max GPU subchunks/draws/faces `2482/2482/6292`, draw-command occupancy `30.298%`, max queue/process/submit `3.928/0.059/5.677ms`, max packet queue lag `22.405ms`, cutout uploads `265`, stage-pool reuses `3128`, grouped draw saved records `2174`, `external_profiler_status=pending_external_profiler`, and `mac_windows_validation_status=pending_external_validation`.
+
 ## GPU Terrain Load Scaling
 
 The load-scaling gate requires a high resident set before treating GPU terrain scaling as covered: at least `2000` subchunks, `2000` draws, `3000` faces, and at least `25%` draw-command buffer occupancy with zero upload failures.
@@ -315,7 +323,7 @@ The check strategy separates daily `fast`, pre-merge `full`, and heavy/nightly p
 
 Fresh check:
 
-- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, load scaling, upload pressure, resource lifecycle, memory budget, report V2, and baseline governance.
+- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, rapid camera-turn, chunk-boundary, load scaling, upload pressure, resource lifecycle, memory budget, report V2, baseline governance, and the GPU stress artifact index.
 
 ## GPU Repack Activation Preflight
 

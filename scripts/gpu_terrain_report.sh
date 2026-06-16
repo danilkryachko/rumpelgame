@@ -838,6 +838,8 @@ error_scan() {
   metric_max_source frame_p95_ms | sed 's/^/- /'
 
   print_optional_file "Selected Movement Stress Summary" "$(latest_file movement-stress-summary.txt)"
+  print_optional_file "Selected GPU Stress Artifact Index Summary" "$(latest_file gpu-stress-artifact-index-summary.txt)"
+  print_optional_file "Selected GPU Stress Artifact Index" "$(latest_file gpu-stress-artifact-index.txt)"
   print_optional_file "Selected Rapid Camera-Turn Stress Summary" "$(latest_file rapid-camera-turn-stress-summary.txt)"
   print_optional_file "Selected Chunk Boundary Stress Summary" "$(latest_file chunk-boundary-stress-summary.txt)"
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
