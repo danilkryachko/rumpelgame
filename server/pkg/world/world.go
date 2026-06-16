@@ -137,10 +137,12 @@ func (w *World) SetBlockGlobal(x, y, z int32, block BlockID) (ChunkSnapshot, err
 	if err != nil {
 		return ChunkSnapshot{}, err
 	}
+	previousBlock := chunk.GetBlock(localX, int(y), localZ)
 	chunk.SetBlock(localX, int(y), localZ, block)
 
 	if w.store != nil {
 		if err := w.store.SaveChunk(chunk); err != nil {
+			chunk.SetBlock(localX, int(y), localZ, previousBlock)
 			return ChunkSnapshot{}, err
 		}
 	}

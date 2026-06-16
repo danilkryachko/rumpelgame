@@ -3,6 +3,7 @@ package world
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -401,6 +402,41 @@ func TestChunkSnapshotPropagatesStoreLoadErrorWithoutRegenerating(t *testing.T) 
 	assertSnapshotBlock(t, snapshot, 0, 0, 0, Stone)
 }
 
+func TestSetBlockGlobalRollsBackInMemoryBlockOnSaveError(t *testing.T) {
+	store := newSerializedChunkStore()
+	w := NewWorld(store)
+	blockX, blockY, blockZ := int32(1), int32(64), int32(1)
+
+	if _, err := w.SetBlockGlobal(blockX, blockY, blockZ, Wood); err != nil {
+		t.Fatalf("SetBlockGlobal(initial place) error = %v", err)
+	}
+	if store.saves != 1 {
+		t.Fatalf("store saves after initial place = %d, want 1", store.saves)
+	}
+
+	store.saveErr = errors.New("save failed")
+	if _, err := w.SetBlockGlobal(blockX, blockY, blockZ, Dirt); err == nil {
+		t.Fatal("SetBlockGlobal(failing save) error = nil, want save error")
+	}
+	if store.saves != 1 {
+		t.Fatalf("store saves after failing save = %d, want still 1", store.saves)
+	}
+
+	snapshot, err := w.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot(after failing save) error = %v", err)
+	}
+	assertSnapshotBlock(t, snapshot, int(blockX), int(blockY), int(blockZ), Wood)
+
+	store.saveErr = nil
+	reloadedWorld := NewWorld(store)
+	reloadedSnapshot, err := reloadedWorld.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot(reload after failing save) error = %v", err)
+	}
+	assertSnapshotBlock(t, reloadedSnapshot, int(blockX), int(blockY), int(blockZ), Wood)
+}
+
 func TestSetBlockGlobalRejectsOutOfRangeYWithoutSave(t *testing.T) {
 	store := newSerializedChunkStore()
 	w := NewWorld(store)
@@ -442,8 +478,9 @@ func TestChunkWithinRadius(t *testing.T) {
 }
 
 type serializedChunkStore struct {
-	data  map[ChunkCoord][]byte
-	saves int
+	data    map[ChunkCoord][]byte
+	saves   int
+	saveErr error
 }
 
 func newSerializedChunkStore() *serializedChunkStore {
@@ -463,6 +500,9 @@ func (s *serializedChunkStore) LoadChunk(x, z int32) (*Chunk, bool, error) {
 }
 
 func (s *serializedChunkStore) SaveChunk(chunk *Chunk) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
 	s.data[ChunkCoord{X: chunk.X, Z: chunk.Z}] = append([]byte(nil), chunk.Serialize()...)
 	s.saves++
 	return nil

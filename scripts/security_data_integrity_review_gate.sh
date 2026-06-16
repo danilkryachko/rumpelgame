@@ -189,6 +189,7 @@ require_token "$SERVER_STORAGE_TEST" 'want open context'
 require_token "$SERVER_STORAGE_TEST" 'want chunk decode context'
 require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsRepresentativeRunPatterns'
 require_token "$SERVER_WORLD_BEHAVIOR_TEST" 'TestSetBlockGlobalRejectsOutOfRangeYWithoutSave'
+require_token "$SERVER_WORLD_BEHAVIOR_TEST" 'TestSetBlockGlobalRollsBackInMemoryBlockOnSaveError'
 require_token "$CLIENT_RUNTIME_SOURCE" 'decode_serialized_chunk_rle_accepts_representative_runs'
 require_token "$ROOT_DIR/server/cmd/server/main_test.go" 'TestConfiguredServerAddressRejectsNonLoopbackOverrides'
 require_token "$ROOT_DIR/server/cmd/server/main_test.go" 'TestDefaultRocksDBPathUsesExplicitOverride'
@@ -203,6 +204,7 @@ networking_unknown_packet_policy="$(field_metric unknown_packet_policy "$NETWORK
 networking_conflict_semantics="$(field_metric conflict_semantics "$NETWORKING_SUMMARY")"
 persistence_status="$(field_metric status "$PERSISTENCE_SUMMARY")"
 persistence_protocol_change="$(field_metric active_protocol_change "$PERSISTENCE_SUMMARY")"
+persistence_save_failure_rollback="$(field_metric save_failure_rollback "$PERSISTENCE_SUMMARY")"
 arch_status="$(field_metric status "$ARCH_SUMMARY")"
 arch_runtime_change="$(field_metric runtime_change "$ARCH_SUMMARY")"
 observability_status="$(field_metric status "$OBSERVABILITY_SUMMARY")"
@@ -248,6 +250,7 @@ awk \
   -v networking_conflict_semantics="${networking_conflict_semantics:-missing}" \
   -v persistence_status="${persistence_status:-missing}" \
   -v persistence_protocol_change="${persistence_protocol_change:-1}" \
+  -v persistence_save_failure_rollback="${persistence_save_failure_rollback:-missing}" \
   -v arch_status="${arch_status:-missing}" \
   -v arch_runtime_change="${arch_runtime_change:-unknown}" \
   -v observability_status="${observability_status:-missing}" \
@@ -271,6 +274,7 @@ awk \
     storage_errors = "actionable_guarded"
     storage_lifecycle = "guarded"
     block_edit_validation = "y_bounds_guarded"
+    block_edit_save_failure_rollback = persistence_save_failure_rollback
     chunk_decode = "guarded"
     deterministic_property_tests = "guarded"
     unknown_packet_policy = networking_unknown_packet_policy
@@ -286,6 +290,7 @@ awk \
       networking_unknown_packet_policy == "ignored_guarded" &&
       networking_conflict_semantics == "last_write_wins_guarded" &&
       persistence_status == "pass" && persistence_protocol_change + 0 == 0 &&
+      persistence_save_failure_rollback == "guarded" &&
       arch_status == "pass" && arch_runtime_change == "none" &&
       observability_status == "pass" && observability_error_scan == "clean"
     tests_ok = (go_integrity_tests == "pass" || go_integrity_tests == "skipped") &&
@@ -303,7 +308,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s storage_integrity=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, storage_integrity, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s storage_integrity=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, storage_integrity, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
     if (status != "pass") {
       exit 1
     }

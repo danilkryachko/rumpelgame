@@ -82,6 +82,7 @@ require_token "$WORLD_SOURCE" 'w.store.LoadChunk(x, z)'
 require_token "$WORLD_TEST" 'TestSetBlockGlobalPersistsEditedChunkForReload'
 require_token "$WORLD_TEST" 'TestSetBlockGlobalPersistsNegativeBoundaryCoordinates'
 require_token "$WORLD_TEST" 'TestChunkSnapshotPropagatesStoreLoadErrorWithoutRegenerating'
+require_token "$WORLD_TEST" 'TestSetBlockGlobalRollsBackInMemoryBlockOnSaveError'
 require_token "$WORLD_TEST" 'newSerializedChunkStore'
 require_token "$WORLD_TEST" 'assertSnapshotBlock'
 require_token "$NETWORK_SOURCE" 'case *api.Packet_BlockAction:'
@@ -154,7 +155,7 @@ world_reload_test="skipped"
 storage_tests="skipped"
 network_tests="skipped"
 if [ "$RUN_GO_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/server" && go test ./pkg/world -run 'Test(SetBlockGlobalPersists(EditedChunkForReload|NegativeBoundaryCoordinates)|ChunkSnapshotPropagatesStoreLoadErrorWithoutRegenerating)' > "$OUT_DIR/go-test-world-reload.txt" 2>&1); then
+  if (cd "$ROOT_DIR/server" && go test ./pkg/world -run 'Test(SetBlockGlobalPersists(EditedChunkForReload|NegativeBoundaryCoordinates)|SetBlockGlobalRollsBackInMemoryBlockOnSaveError|ChunkSnapshotPropagatesStoreLoadErrorWithoutRegenerating)' > "$OUT_DIR/go-test-world-reload.txt" 2>&1); then
     world_reload_test="pass"
   else
     cat "$OUT_DIR/go-test-world-reload.txt" >&2 || true
@@ -228,6 +229,7 @@ awk \
     visual_collision_gpu_path = persisted_visual_ok ? "godot_persisted_reload_guarded" : "existing_update_chunk_path"
     negative_boundary_edits = "guarded"
     store_load_errors = "propagated_guarded"
+    save_failure_rollback = "guarded"
     active_protocol_change = proto_diff_count + 0
 
     gameplay_ok = gameplay_status == "pass" && gameplay_protocol_change + 0 == 0
@@ -256,7 +258,7 @@ awk \
       reason = "dirty_update_tests_failed"
     }
 
-    printf("block_edit_persistence status=%s reason=%s persistence_status=%s place_reload=%s destroy_reload=%s runtime_reload_smoke=%s runtime_reload_smoke_status=%s persisted_visual_smoke=%s persisted_visual_smoke_status=%s persisted_visual_scenarios=%d persisted_visual_place_reload_status=%s persisted_visual_destroy_after_reload_status=%s persisted_visual_edge_place_status=%s visual_collision_gpu_path=%s negative_boundary_edits=%s store_load_errors=%s active_protocol_change=%d world_reload_test=%s storage_tests=%s network_tests=%s dirty_update_tests=%s gameplay_status=%s gameplay_protocol_change=%d design_doc=%s gameplay_summary=%s runtime_reload_smoke_summary=%s persisted_visual_smoke_summary=%s\n", status, reason, persistence_status, place_reload, destroy_reload, runtime_reload_smoke, runtime_reload_smoke_status, persisted_visual_smoke, persisted_visual_smoke_status, persisted_visual_scenarios, persisted_visual_place_reload_status, persisted_visual_destroy_after_reload_status, persisted_visual_edge_place_status, visual_collision_gpu_path, negative_boundary_edits, store_load_errors, active_protocol_change, world_reload_test, storage_tests, network_tests, dirty_update_tests, gameplay_status, gameplay_protocol_change, design_doc, gameplay_summary, runtime_reload_smoke_summary, persisted_visual_smoke_summary)
+    printf("block_edit_persistence status=%s reason=%s persistence_status=%s place_reload=%s destroy_reload=%s runtime_reload_smoke=%s runtime_reload_smoke_status=%s persisted_visual_smoke=%s persisted_visual_smoke_status=%s persisted_visual_scenarios=%d persisted_visual_place_reload_status=%s persisted_visual_destroy_after_reload_status=%s persisted_visual_edge_place_status=%s visual_collision_gpu_path=%s negative_boundary_edits=%s store_load_errors=%s save_failure_rollback=%s active_protocol_change=%d world_reload_test=%s storage_tests=%s network_tests=%s dirty_update_tests=%s gameplay_status=%s gameplay_protocol_change=%d design_doc=%s gameplay_summary=%s runtime_reload_smoke_summary=%s persisted_visual_smoke_summary=%s\n", status, reason, persistence_status, place_reload, destroy_reload, runtime_reload_smoke, runtime_reload_smoke_status, persisted_visual_smoke, persisted_visual_smoke_status, persisted_visual_scenarios, persisted_visual_place_reload_status, persisted_visual_destroy_after_reload_status, persisted_visual_edge_place_status, visual_collision_gpu_path, negative_boundary_edits, store_load_errors, save_failure_rollback, active_protocol_change, world_reload_test, storage_tests, network_tests, dirty_update_tests, gameplay_status, gameplay_protocol_change, design_doc, gameplay_summary, runtime_reload_smoke_summary, persisted_visual_smoke_summary)
     if (status != "pass") {
       exit 1
     }

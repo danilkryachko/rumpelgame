@@ -58,6 +58,7 @@ Checks:
 
 - `BlockAction_PLACE` and `BlockAction_DESTROY` are applied by `server/pkg/network` through `World.SetBlockGlobal`.
 - `World.SetBlockGlobal` rejects block edits with `Y` outside `[0, ChunkHeight)` before chunk load/create/save, maps valid global block coordinates to chunk/local coordinates, updates the chunk, then calls `ChunkStore.SaveChunk` if a store exists.
+- If `ChunkStore.SaveChunk` fails, `World.SetBlockGlobal` rolls the in-memory block value back before returning the save error.
 - `ChunkStore.SaveChunk` persists serialized chunk bytes, not block diffs.
 - `World.getOrCreateLocked` checks `ChunkStore.LoadChunk` before generating a fresh flat chunk.
 - `World.getOrCreateLocked` propagates `ChunkStore.LoadChunk` errors and must not silently regenerate a flat chunk over a failed persisted load.
@@ -82,6 +83,8 @@ This proves the storage boundary without depending on RocksDB process state or a
 `TestSetBlockGlobalPersistsNegativeBoundaryCoordinates` proves valid edits at negative global chunk boundaries persist and reload from the expected chunk/local coordinates.
 
 `TestChunkSnapshotPropagatesStoreLoadErrorWithoutRegenerating` proves corrupt stored chunk bytes surface as a `ChunkSnapshot` error instead of being replaced with a newly generated flat chunk. After the bad stored bytes are removed, the same world can generate the chunk normally, proving the failed load did not cache replacement state.
+
+`TestSetBlockGlobalRollsBackInMemoryBlockOnSaveError` proves a failed chunk save does not leak an unpersisted edit into the authoritative in-memory snapshot. The test first persists `Wood`, forces a later `SaveChunk` failure for `Dirt`, then verifies both the same `World` and a fresh `World(store)` still expose `Wood`.
 
 ## Live Restart/Reload Smoke
 
@@ -139,7 +142,7 @@ Use:
 sh scripts/block_edit_persistence_gate.sh logs/block_edit_persistence_current
 ```
 
-The expected current result after collecting the live and persisted visual artifacts is `status=pass`, `persistence_status=runtime_guarded`, `place_reload=live_restart_guarded`, `destroy_reload=live_restart_guarded`, `runtime_reload_smoke=live_restart_guarded`, `runtime_reload_smoke_status=pass`, `persisted_visual_smoke=godot_guarded`, `persisted_visual_smoke_status=pass`, `persisted_visual_scenarios=3`, `persisted_visual_place_reload_status=pass`, `persisted_visual_destroy_after_reload_status=pass`, `persisted_visual_edge_place_status=pass`, `visual_collision_gpu_path=godot_persisted_reload_guarded`, `negative_boundary_edits=guarded`, `store_load_errors=propagated_guarded`, and `active_protocol_change=0`.
+The expected current result after collecting the live and persisted visual artifacts is `status=pass`, `persistence_status=runtime_guarded`, `place_reload=live_restart_guarded`, `destroy_reload=live_restart_guarded`, `runtime_reload_smoke=live_restart_guarded`, `runtime_reload_smoke_status=pass`, `persisted_visual_smoke=godot_guarded`, `persisted_visual_smoke_status=pass`, `persisted_visual_scenarios=3`, `persisted_visual_place_reload_status=pass`, `persisted_visual_destroy_after_reload_status=pass`, `persisted_visual_edge_place_status=pass`, `visual_collision_gpu_path=godot_persisted_reload_guarded`, `negative_boundary_edits=guarded`, `store_load_errors=propagated_guarded`, `save_failure_rollback=guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -148,6 +151,7 @@ The gate checks that:
 - `TestSetBlockGlobalRejectsOutOfRangeYWithoutSave` exists.
 - `TestSetBlockGlobalPersistsNegativeBoundaryCoordinates` exists.
 - `TestChunkSnapshotPropagatesStoreLoadErrorWithoutRegenerating` exists and is included in the focused world persistence test run.
+- `TestSetBlockGlobalRollsBackInMemoryBlockOnSaveError` exists and is included in the focused world persistence test run.
 - `World.SetBlockGlobal` still saves through `ChunkStore.SaveChunk`.
 - The client still runs edited snapshots through `update_chunk` dirty/collision/GPU queues.
 - The live server restart/reload smoke passes, when `RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_RUNTIME_RELOAD_SMOKE=1` is enabled or a current summary exists.
@@ -158,6 +162,6 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a fast persistence proof, negative-boundary edit persistence proof, persisted load-error propagation proof, live server restart/reload proof, and dedicated Godot persisted-reload visual/collision/GPU screenshot matrix for place, destroy-after-reload, and chunk-edge coordinates. Cross-chunk/non-current-chunk visual coverage remains future work.
+This block is complete as a fast persistence proof, negative-boundary edit persistence proof, save-failure rollback proof, persisted load-error propagation proof, live server restart/reload proof, and dedicated Godot persisted-reload visual/collision/GPU screenshot matrix for place, destroy-after-reload, and chunk-edge coordinates. Cross-chunk/non-current-chunk visual coverage remains future work.
 
 Fresh `logs/block_edit_persisted_visual_smoke_current/block-edit-persisted-visual-smoke-summary.txt` evidence reports `status=pass`, `scenarios=3`, `place_reload_status=pass`, `destroy_after_reload_status=pass`, `edge_place_status=pass`, and `protocol_change=0`. Scenario details: `place_reload` reloaded block `1,64,1` as id `4` with `current_chunk_collision=3`, `terrain_samples=288`, `gpu_frames=123`, `gpu_uploads=637`, and `gpu_upload_fail=0`; `destroy_after_reload` reloaded the same coordinate as `Air` with `current_chunk_collision=2`, `gpu_frames=414`, `gpu_uploads=385`, and `gpu_upload_fail=0`; `edge_place` reloaded block `31,64,31` as id `4` with `current_chunk_collision=3`, `gpu_frames=420`, `gpu_uploads=387`, and `gpu_upload_fail=0`.
