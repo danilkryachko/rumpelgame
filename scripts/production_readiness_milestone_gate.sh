@@ -115,6 +115,7 @@ baseline_warning_status="$(field_metric warning_status "$BASELINE_SUMMARY")"
 security_status="$(field_metric status "$SECURITY_SUMMARY")"
 security_protocol_change="$(field_metric active_protocol_change "$SECURITY_SUMMARY")"
 security_local_server_exposure="$(field_metric local_server_exposure "$SECURITY_SUMMARY")"
+security_smoke_bind_exposure="$(field_metric smoke_bind_exposure "$SECURITY_SUMMARY")"
 observability_status="$(field_metric status "$OBSERVABILITY_SUMMARY")"
 observability_error_scan="$(field_metric error_scan "$OBSERVABILITY_SUMMARY")"
 arch_status="$(field_metric status "$ARCH_SUMMARY")"
@@ -125,6 +126,7 @@ rc_status="$(field_metric status "$RC_SUMMARY")"
 rc_live_checks="$(field_metric live_checks "$RC_SUMMARY")"
 rc_security_deterministic_property_tests="$(field_metric security_deterministic_property_tests "$RC_SUMMARY")"
 rc_security_local_server_exposure="$(field_metric security_local_server_exposure "$RC_SUMMARY")"
+rc_security_smoke_bind_exposure="$(field_metric security_smoke_bind_exposure "$RC_SUMMARY")"
 external_status="$(field_metric status "$EXTERNAL_PROFILING_SUMMARY")"
 external_capture_readiness="$(field_metric capture_readiness "$EXTERNAL_PROFILING_SUMMARY")"
 external_profile_status="$(field_metric external_profile_status "$EXTERNAL_PROFILING_SUMMARY")"
@@ -143,8 +145,8 @@ transparent_acceptance_status="$(field_metric status "$TRANSPARENT_ACCEPTANCE_SU
   printf 'row=high_resident_set status=%s resident_draws=%s resident_subchunks=%s source=%s\n' "$resident_status" "$resident_gpu_draws" "$load_subchunks" "$RESIDENT_SUMMARY"
   printf 'row=predictable_performance status=%s baseline_warning_status=%s source=%s\n' "$baseline_status" "$baseline_warning_status" "$BASELINE_SUMMARY"
   printf 'row=resource_upload_health upload_status=%s memory_status=%s resource_status=%s upload_fail=%s fragmentation_pct=%s scene_target_replace=%s\n' "$upload_status" "$memory_status" "$resource_status" "$upload_fail" "$memory_fragmentation" "$resource_scene_replace"
-  printf 'row=storage_protocol_integrity status=%s active_protocol_change=%s local_server_exposure=%s source=%s\n' "$security_status" "$security_protocol_change" "$security_local_server_exposure" "$SECURITY_SUMMARY"
-  printf 'row=docs_reproducible_gates observability_status=%s architecture_status=%s handoff_status=%s rc_status=%s rc_security_deterministic_property_tests=%s rc_security_local_server_exposure=%s\n' "$observability_status" "$arch_status" "$handoff_status" "$rc_status" "$rc_security_deterministic_property_tests" "$rc_security_local_server_exposure"
+  printf 'row=storage_protocol_integrity status=%s active_protocol_change=%s local_server_exposure=%s smoke_bind_exposure=%s source=%s\n' "$security_status" "$security_protocol_change" "$security_local_server_exposure" "$security_smoke_bind_exposure" "$SECURITY_SUMMARY"
+  printf 'row=docs_reproducible_gates observability_status=%s architecture_status=%s handoff_status=%s rc_status=%s rc_security_deterministic_property_tests=%s rc_security_local_server_exposure=%s rc_security_smoke_bind_exposure=%s\n' "$observability_status" "$arch_status" "$handoff_status" "$rc_status" "$rc_security_deterministic_property_tests" "$rc_security_local_server_exposure" "$rc_security_smoke_bind_exposure"
   printf 'row=external_profiler status=%s capture_readiness=%s external_profile_status=%s rc_security_local_server_exposure=%s source=%s\n' "$external_status" "$external_capture_readiness" "$external_profile_status" "$external_rc_security_local_server_exposure" "$EXTERNAL_PROFILING_SUMMARY"
   printf 'row=native_shadow_direction status=%s active_prototype_allowed=%s shadow_retirement_status=%s retirement_allowed=%s\n' "$native_shadow_status" "$native_shadow_allowed" "$shadow_retirement_status" "$shadow_retirement_allowed"
   printf 'row=transparent_direction preflight_status=%s active_path_allowed=%s acceptance_status=%s\n' "$transparent_status" "$transparent_allowed" "$transparent_acceptance_status"
@@ -175,6 +177,7 @@ awk \
   -v security_status="${security_status:-missing}" \
   -v security_protocol_change="${security_protocol_change:-1}" \
   -v security_local_server_exposure="${security_local_server_exposure:-missing}" \
+  -v security_smoke_bind_exposure="${security_smoke_bind_exposure:-missing}" \
   -v observability_status="${observability_status:-missing}" \
   -v observability_error_scan="${observability_error_scan:-dirty}" \
   -v arch_status="${arch_status:-missing}" \
@@ -185,6 +188,7 @@ awk \
   -v rc_live_checks="${rc_live_checks:-missing}" \
   -v rc_security_deterministic_property_tests="${rc_security_deterministic_property_tests:-missing}" \
   -v rc_security_local_server_exposure="${rc_security_local_server_exposure:-missing}" \
+  -v rc_security_smoke_bind_exposure="${rc_security_smoke_bind_exposure:-missing}" \
   -v external_status="${external_status:-missing}" \
   -v external_capture_readiness="${external_capture_readiness:-missing}" \
   -v external_profile_status="${external_profile_status:-missing}" \
@@ -229,11 +233,11 @@ awk \
       status = "fail"
       reason = "resource_upload_health_not_clean"
       resource_upload_health = "fail"
-    } else if (!(security_status == "pass" && security_protocol_change + 0 == 0 && security_local_server_exposure == "loopback_default_guarded")) {
+    } else if (!(security_status == "pass" && security_protocol_change + 0 == 0 && security_local_server_exposure == "loopback_default_guarded" && security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "storage_protocol_integrity_not_clean"
       storage_protocol_integrity = "fail"
-    } else if (!(observability_status == "pass" && observability_error_scan == "clean" && arch_status == "pass" && arch_runtime_change == "none" && handoff_status == "pass" && handoff_quality_inputs == "present" && rc_status == "pass" && rc_security_deterministic_property_tests == "guarded" && rc_security_local_server_exposure == "loopback_default_guarded")) {
+    } else if (!(observability_status == "pass" && observability_error_scan == "clean" && arch_status == "pass" && arch_runtime_change == "none" && handoff_status == "pass" && handoff_quality_inputs == "present" && rc_status == "pass" && rc_security_deterministic_property_tests == "guarded" && rc_security_local_server_exposure == "loopback_default_guarded" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "docs_or_gates_not_clean"
       docs_reproducible_gates = "fail"
@@ -248,7 +252,7 @@ awk \
       reason = "transparent_deferred_state_unexpected"
     }
 
-    printf("production_readiness_milestone status=%s reason=%s production_readiness=%s stable_streaming=%s high_resident_set=%s predictable_performance=%s resource_upload_health=%s storage_protocol_integrity=%s docs_reproducible_gates=%s external_profiler=%s external_capture_readiness=%s external_rc_security_local_server_exposure=%s native_shadow_direction=%s transparent_direction=%s live_release_checks=%s rc_security_deterministic_property_tests=%s security_local_server_exposure=%s rc_security_local_server_exposure=%s resident_gpu_draws=%d resident_gpu_subchunks=%d upload_effective_draws=%d memory_fragmentation_pct=%.3f report=%s rc_summary=%s external_summary=%s\n", status, reason, production_readiness, stable_streaming, high_resident_set, predictable_performance, resource_upload_health, storage_protocol_integrity, docs_reproducible_gates, external_profiler, external_capture_readiness, external_rc_security_local_server_exposure, native_shadow_direction, transparent_direction, rc_live_checks, rc_security_deterministic_property_tests, security_local_server_exposure, rc_security_local_server_exposure, resident_gpu_draws, load_subchunks, upload_effective_draws, memory_fragmentation, report_path, rc_summary, external_summary)
+    printf("production_readiness_milestone status=%s reason=%s production_readiness=%s stable_streaming=%s high_resident_set=%s predictable_performance=%s resource_upload_health=%s storage_protocol_integrity=%s docs_reproducible_gates=%s external_profiler=%s external_capture_readiness=%s external_rc_security_local_server_exposure=%s native_shadow_direction=%s transparent_direction=%s live_release_checks=%s rc_security_deterministic_property_tests=%s security_local_server_exposure=%s security_smoke_bind_exposure=%s rc_security_local_server_exposure=%s rc_security_smoke_bind_exposure=%s resident_gpu_draws=%d resident_gpu_subchunks=%d upload_effective_draws=%d memory_fragmentation_pct=%.3f report=%s rc_summary=%s external_summary=%s\n", status, reason, production_readiness, stable_streaming, high_resident_set, predictable_performance, resource_upload_health, storage_protocol_integrity, docs_reproducible_gates, external_profiler, external_capture_readiness, external_rc_security_local_server_exposure, native_shadow_direction, transparent_direction, rc_live_checks, rc_security_deterministic_property_tests, security_local_server_exposure, security_smoke_bind_exposure, rc_security_local_server_exposure, rc_security_smoke_bind_exposure, resident_gpu_draws, load_subchunks, upload_effective_draws, memory_fragmentation, report_path, rc_summary, external_summary)
     if (status != "pass") {
       exit 1
     }

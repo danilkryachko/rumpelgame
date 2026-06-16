@@ -97,6 +97,11 @@ done
 
 require_token "$CLIENT_MAIN_SOURCE" 'const SERVER_HOST = "127.0.0.1"'
 require_token "$CLIENT_RUNTIME_SOURCE" 'const SERVER_ADDRESS: &str = "127.0.0.1:25565";'
+wildcard_bind_pattern='RUMPELMC_SERVER_ADDRESS="'
+wildcard_bind_pattern="${wildcard_bind_pattern}:"
+if grep -R -F "$wildcard_bind_pattern" "$ROOT_DIR/scripts" >/dev/null 2>&1; then
+  fail "server smoke scripts must bind explicit loopback addresses"
+fi
 
 for token in \
   'const maxPacketSize = 16 * 1024 * 1024' \
@@ -201,6 +206,7 @@ awk \
     chunk_decode = "guarded"
     deterministic_property_tests = "guarded"
     local_server_exposure = "loopback_default_guarded"
+    smoke_bind_exposure = "loopback_guarded"
     active_protocol_change = proto_diff_count + 0
 
     prereqs_ok = networking_status == "pass" && networking_protocol_change + 0 == 0 &&
@@ -225,7 +231,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s storage_integrity=%s chunk_decode=%s deterministic_property_tests=%s local_server_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, storage_integrity, chunk_decode, deterministic_property_tests, local_server_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s storage_integrity=%s chunk_decode=%s deterministic_property_tests=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, storage_integrity, chunk_decode, deterministic_property_tests, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
     if (status != "pass") {
       exit 1
     }
