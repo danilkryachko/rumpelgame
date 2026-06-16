@@ -177,6 +177,14 @@ sh scripts/gpu_stress_artifact_index.sh logs/gpu_stress_artifact_index_current
 
 The index writes `gpu-stress-artifact-index-summary.txt` and `gpu-stress-artifact-index.txt`; see `docs/GPU_STRESS_ARTIFACT_INDEX.md`.
 
+Use the buffer residency budget gate when checking whether current GPU terrain buffers are close to cross-backend residency limits before changing repack, eviction, or default streaming policy. It consumes current mass chunk-load, upload stage-pool load-scaling, grouped-draw, and cutout-pressure summaries, optionally consumes memory-budget allocator/free-range evidence, and keeps external profiler plus macOS/Windows validation blockers explicit:
+
+```sh
+sh scripts/gpu_buffer_residency_budget.sh logs/gpu_buffer_residency_budget_current
+```
+
+The gate writes `gpu-buffer-residency-budget-summary.txt`; see `docs/GPU_BUFFER_RESIDENCY_BUDGET.md`.
+
 Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh

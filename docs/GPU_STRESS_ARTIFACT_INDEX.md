@@ -26,6 +26,7 @@ The current required GPU core rows are:
 - chunk unload churn diagnosis
 - strict load-scaling gate and its resident-set source summary
 - mass chunk-load gate
+- buffer residency budget gate
 - upload budget gate
 - upload stage-pool load-scaling gate
 - grouped draw gate
@@ -57,12 +58,17 @@ Fresh local evidence:
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt`
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index.txt`
 
-The current index passed with `23` rows, `14` required rows, `14` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, and zero default-runtime-change violations.
+The current index passed with `24` rows, `15` required rows, `15` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, and zero default-runtime-change violations.
 
 Current normalized maxima:
 
 - GPU subchunks/draws/faces: `2482` / `2482` / `6292`
 - Draw-command occupancy: `30.298%`
+- Buffer residency pressure: `high`
+- Configured buffer bytes/budget: `67239936` / `95.709%`
+- Active face bytes/budget: `100672` / `2.400%`
+- Logical/submitted draw records: `2482` / `2482`
+- Draw-command headroom: `91360` bytes
 - Terrain queue max: `3.928ms`
 - Process wall p95: `0.059ms`
 - Compositor submit max: `5.677ms`
@@ -77,8 +83,10 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 ## Report And Strategy Wiring
 
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU stress artifact index summary and index rows.
+- `scripts/gpu_terrain_report.sh` also surfaces the selected GPU buffer residency budget summary when present.
 - `scripts/test_strategy_gate.sh` requires the index summary and includes the index command in the nightly summary command.
-- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis visible as a required row.
+- `scripts/test_strategy_gate.sh` requires the buffer residency budget summary before the index.
+- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis plus buffer residency budget visible as required rows.
 
 ## External Context
 

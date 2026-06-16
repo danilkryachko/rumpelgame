@@ -19,6 +19,7 @@ CHUNK_UNLOAD_CHURN_SUMMARY="${RUMPELMC_GPU_STRESS_INDEX_CHUNK_UNLOAD_CHURN_SUMMA
 LOAD_SCALING_SUMMARY="${RUMPELMC_GPU_STRESS_INDEX_LOAD_SCALING_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_load_scaling_radius16_summary_check/gpu-terrain-load-scaling-summary.txt"}"
 RESIDENT_SET_GROWTH_SUMMARY="${RUMPELMC_GPU_STRESS_INDEX_RESIDENT_SET_GROWTH_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_load_scaling_radius16_summary_check/resident-set-growth/resident-set-growth-summary.txt"}"
 MASS_CHUNK_LOAD_SUMMARY="${RUMPELMC_GPU_STRESS_INDEX_MASS_CHUNK_LOAD_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_mass_chunk_load_current/gpu-terrain-mass-chunk-load-summary.txt"}"
+BUFFER_RESIDENCY_BUDGET_SUMMARY="${RUMPELMC_GPU_STRESS_INDEX_BUFFER_RESIDENCY_BUDGET_SUMMARY:-"$ROOT_DIR/logs/gpu_buffer_residency_budget_current/gpu-buffer-residency-budget-summary.txt"}"
 UPLOAD_BUDGET_SUMMARY="${RUMPELMC_GPU_STRESS_INDEX_UPLOAD_BUDGET_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_upload_budget_current/gpu-terrain-upload-budget-summary.txt"}"
 UPLOAD_STAGE_POOL_LOAD_SCALING_SUMMARY="${RUMPELMC_GPU_STRESS_INDEX_UPLOAD_STAGE_POOL_LOAD_SCALING_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_upload_stage_pool_load_scaling_current/gpu-terrain-upload-stage-pool-load-scaling-summary.txt"}"
 GROUPED_DRAWS_SUMMARY="${RUMPELMC_GPU_STRESS_INDEX_GROUPED_DRAWS_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_grouped_draws_current/gpu-terrain-grouped-draws-summary.txt"}"
@@ -144,7 +145,7 @@ record_artifact() {
   rel_path="$(relative_path "$source_path")"
 
   if [ ! -s "$source_path" ]; then
-    printf 'gpu_artifact id=%s category=%s required=%s status=missing expected_status=%s path=%s bytes=0 mtime=0 root=missing gpu_subchunks=n/a gpu_draws=n/a gpu_faces=n/a draw_cmd_occupancy_pct=n/a terrain_queue_max_ms=n/a process_wall_p95_ms=n/a gpu_compositor_submit_max_ms=n/a gpu_upload_fail=n/a ground_misses=n/a packet_queue_lag_ms=n/a chunk_unload_total=n/a current_chunk_collision=n/a transparent_active=n/a transparent_fallback=n/a transparent_sort_active=n/a transparent_sort_ms=n/a transparent_cutout_uploads=n/a transparent_build_envelope_ms=n/a stage_pool_reuses=n/a grouped_saved_records=n/a default_runtime_change_allowed=n/a requires_external_profiler_before_default=n/a requires_mac_windows_validation=n/a external_profile_status=n/a caveat=missing_required_or_optional\n' \
+    printf 'gpu_artifact id=%s category=%s required=%s status=missing expected_status=%s path=%s bytes=0 mtime=0 root=missing gpu_subchunks=n/a gpu_draws=n/a gpu_faces=n/a draw_cmd_occupancy_pct=n/a configured_buffer_bytes=n/a configured_buffer_budget_pct=n/a active_face_bytes=n/a active_face_budget_pct=n/a logical_draw_records=n/a submitted_draw_records=n/a draw_cmd_headroom_bytes=n/a residency_pressure_class=n/a residency_proof_status=n/a allocator_evidence_status=n/a terrain_queue_max_ms=n/a process_wall_p95_ms=n/a gpu_compositor_submit_max_ms=n/a gpu_upload_fail=n/a ground_misses=n/a packet_queue_lag_ms=n/a chunk_unload_total=n/a current_chunk_collision=n/a transparent_active=n/a transparent_fallback=n/a transparent_sort_active=n/a transparent_sort_ms=n/a transparent_cutout_uploads=n/a transparent_build_envelope_ms=n/a stage_pool_reuses=n/a grouped_saved_records=n/a default_runtime_change_allowed=n/a requires_external_profiler_before_default=n/a requires_mac_windows_validation=n/a external_profile_status=n/a caveat=missing_required_or_optional\n' \
       "$id" "$category" "$required" "$expected_status" "$rel_path" >> "$INDEX_PATH"
     return
   fi
@@ -157,13 +158,23 @@ record_artifact() {
   bytes="$(wc -c < "$source_path" | tr -d ' ')"
   mtime="$(file_mtime "$source_path")"
   gpu_subchunks="$(field_first "$source_path" max_gpu_subchunks gpu_subchunks baseline_max_gpu_subchunks pooled_max_gpu_subchunks baseline_subchunks grouped_subchunks transparent_subchunks)"
-  gpu_draws="$(field_first "$source_path" max_gpu_draws gpu_draws gpu_effective_draws max_gpu_effective_draws baseline_max_gpu_draws baseline_draws grouped_logical_records grouped_draws transparent_draws)"
+  gpu_draws="$(field_first "$source_path" max_gpu_draws max_logical_draw_records max_submitted_draw_records gpu_draws gpu_effective_draws max_gpu_effective_draws baseline_max_gpu_draws baseline_draws grouped_logical_records grouped_draws transparent_draws)"
   gpu_faces="$(field_first "$source_path" max_gpu_faces gpu_faces baseline_max_gpu_faces pooled_max_gpu_faces baseline_faces grouped_faces transparent_faces pressure_build_faces)"
-  draw_cmd_occupancy_pct="$(field_first "$source_path" gpu_draw_cmd_occupancy_pct baseline_draw_cmd_occupancy_pct pooled_draw_cmd_occupancy_pct)"
+  draw_cmd_occupancy_pct="$(field_first "$source_path" max_draw_cmd_occupancy_pct gpu_draw_cmd_occupancy_pct baseline_draw_cmd_occupancy_pct pooled_draw_cmd_occupancy_pct)"
+  configured_buffer_bytes="$(field_first "$source_path" configured_buffer_bytes configured_terrain_buffer_bytes)"
+  configured_buffer_budget_pct="$(field_first "$source_path" configured_buffer_budget_pct)"
+  active_face_bytes="$(field_first "$source_path" active_face_bytes active_terrain_bytes)"
+  active_face_budget_pct="$(field_first "$source_path" active_face_budget_pct)"
+  logical_draw_records="$(field_first "$source_path" max_logical_draw_records grouped_logical_records)"
+  submitted_draw_records="$(field_first "$source_path" max_submitted_draw_records grouped_draws)"
+  draw_cmd_headroom_bytes="$(field_first "$source_path" min_draw_cmd_headroom_bytes gpu_draw_cmd_headroom_bytes)"
+  residency_pressure_class="$(field_first "$source_path" residency_pressure_class)"
+  residency_proof_status="$(field_first "$source_path" residency_proof_status)"
+  allocator_evidence_status="$(field_first "$source_path" allocator_evidence_status)"
   terrain_queue_max_ms="$(field_first "$source_path" max_terrain_queue_ms terrain_queue_max_ms baseline_terrain_queue_max_ms grouped_terrain_queue_max_ms pooled_terrain_queue_max_ms)"
   process_wall_p95_ms="$(field_first "$source_path" max_process_wall_p95_ms process_wall_p95_ms baseline_process_wall_p95_ms grouped_process_wall_p95_ms pooled_process_wall_p95_ms)"
   gpu_compositor_submit_max_ms="$(field_first "$source_path" max_gpu_compositor_submit_ms gpu_compositor_submit_max_ms baseline_gpu_compositor_submit_max_ms grouped_gpu_compositor_submit_max_ms pooled_gpu_compositor_submit_max_ms)"
-  gpu_upload_fail="$(field_first "$source_path" gpu_upload_fail max_upload_fail load_gpu_upload_fail movement_upload_fail baseline_upload_fail grouped_upload_fail pooled_upload_fail)"
+  gpu_upload_fail="$(field_first "$source_path" gpu_upload_fail upload_fail_total max_upload_fail load_gpu_upload_fail movement_upload_fail baseline_upload_fail grouped_upload_fail pooled_upload_fail)"
   ground_misses="$(field_first "$source_path" ground_misses readiness_ground_misses baseline_ground_misses grouped_ground_misses)"
   packet_queue_lag_ms="$(field_first "$source_path" packet_queue_lag_max_ms max_packet_queue_lag_ms)"
   chunk_unload_total="$(field_first "$source_path" chunk_unload_total max_chunk_unload_total)"
@@ -206,9 +217,9 @@ record_artifact() {
     caveat="needs_mac_windows_validation"
   fi
 
-  printf 'gpu_artifact id=%s category=%s required=%s status=%s expected_status=%s path=%s bytes=%s mtime=%s root=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s draw_cmd_occupancy_pct=%s terrain_queue_max_ms=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s gpu_upload_fail=%s ground_misses=%s packet_queue_lag_ms=%s chunk_unload_total=%s current_chunk_collision=%s transparent_active=%s transparent_fallback=%s transparent_sort_active=%s transparent_sort_ms=%s transparent_cutout_uploads=%s transparent_build_envelope_ms=%s stage_pool_reuses=%s grouped_saved_records=%s default_runtime_change_allowed=%s requires_external_profiler_before_default=%s requires_mac_windows_validation=%s external_profile_status=%s caveat=%s\n' \
+  printf 'gpu_artifact id=%s category=%s required=%s status=%s expected_status=%s path=%s bytes=%s mtime=%s root=%s gpu_subchunks=%s gpu_draws=%s gpu_faces=%s draw_cmd_occupancy_pct=%s configured_buffer_bytes=%s configured_buffer_budget_pct=%s active_face_bytes=%s active_face_budget_pct=%s logical_draw_records=%s submitted_draw_records=%s draw_cmd_headroom_bytes=%s residency_pressure_class=%s residency_proof_status=%s allocator_evidence_status=%s terrain_queue_max_ms=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s gpu_upload_fail=%s ground_misses=%s packet_queue_lag_ms=%s chunk_unload_total=%s current_chunk_collision=%s transparent_active=%s transparent_fallback=%s transparent_sort_active=%s transparent_sort_ms=%s transparent_cutout_uploads=%s transparent_build_envelope_ms=%s stage_pool_reuses=%s grouped_saved_records=%s default_runtime_change_allowed=%s requires_external_profiler_before_default=%s requires_mac_windows_validation=%s external_profile_status=%s caveat=%s\n' \
     "$id" "$category" "$required" "$status_value" "$expected_status" "$rel_path" "$bytes" "$mtime" "$root_token" \
-    "$gpu_subchunks" "$gpu_draws" "$gpu_faces" "$draw_cmd_occupancy_pct" "$terrain_queue_max_ms" "$process_wall_p95_ms" "$gpu_compositor_submit_max_ms" \
+    "$gpu_subchunks" "$gpu_draws" "$gpu_faces" "$draw_cmd_occupancy_pct" "$configured_buffer_bytes" "$configured_buffer_budget_pct" "$active_face_bytes" "$active_face_budget_pct" "$logical_draw_records" "$submitted_draw_records" "$draw_cmd_headroom_bytes" "$residency_pressure_class" "$residency_proof_status" "$allocator_evidence_status" "$terrain_queue_max_ms" "$process_wall_p95_ms" "$gpu_compositor_submit_max_ms" \
     "$gpu_upload_fail" "$ground_misses" "$packet_queue_lag_ms" "$chunk_unload_total" "$current_chunk_collision" \
     "$transparent_active" "$transparent_fallback" "$transparent_sort_active" "$transparent_sort_ms" "$transparent_cutout_uploads" "$transparent_build_envelope_ms" \
     "$stage_pool_reuses" "$grouped_saved_records" "$default_runtime_change_allowed" "$requires_external_profiler_before_default" "$requires_mac_windows_validation" "$external_profile_status" "$caveat" >> "$INDEX_PATH"
@@ -224,6 +235,7 @@ record_artifact chunk_unload_churn_diagnosis streaming 1 status pass "$CHUNK_UNL
 record_artifact load_scaling residency 1 status pass "$LOAD_SCALING_SUMMARY"
 record_artifact resident_set_growth_source residency 1 status pass "$RESIDENT_SET_GROWTH_SUMMARY"
 record_artifact mass_chunk_load residency 1 status pass "$MASS_CHUNK_LOAD_SUMMARY"
+record_artifact buffer_residency_budget residency 1 status pass "$BUFFER_RESIDENCY_BUDGET_SUMMARY"
 record_artifact upload_budget upload 1 status pass "$UPLOAD_BUDGET_SUMMARY"
 record_artifact upload_stage_pool_load_scaling upload 1 status pass "$UPLOAD_STAGE_POOL_LOAD_SCALING_SUMMARY"
 record_artifact grouped_draws draw_submission 1 status pass "$GROUPED_DRAWS_SUMMARY"
@@ -276,6 +288,20 @@ awk \
     }
     return "n/a"
   }
+  function min_update(key, target) {
+    if (is_number(f[key])) {
+      if (!(target in min_seen) || f[key] + 0 < min_value[target]) {
+        min_value[target] = f[key] + 0
+        min_seen[target] = 1
+      }
+    }
+  }
+  function min_text(target) {
+    if (target in min_seen) {
+      return sprintf("%.3f", min_value[target])
+    }
+    return "n/a"
+  }
   $1 == "gpu_artifact" {
     parse_fields()
     artifact_count++
@@ -313,10 +339,24 @@ awk \
     if (f["requires_mac_windows_validation"] == "1") {
       requires_mac_windows_validation_count++
     }
+    if (f["residency_pressure_class"] == "high") {
+      high_residency_pressure_count++
+    } else if (f["residency_pressure_class"] == "moderate") {
+      moderate_residency_pressure_count++
+    } else if (f["residency_pressure_class"] == "low") {
+      low_residency_pressure_count++
+    }
     max_update("gpu_subchunks", "gpu_subchunks")
     max_update("gpu_draws", "gpu_draws")
     max_update("gpu_faces", "gpu_faces")
     max_update("draw_cmd_occupancy_pct", "draw_cmd_occupancy_pct")
+    max_update("configured_buffer_bytes", "configured_buffer_bytes")
+    max_update("configured_buffer_budget_pct", "configured_buffer_budget_pct")
+    max_update("active_face_bytes", "active_face_bytes")
+    max_update("active_face_budget_pct", "active_face_budget_pct")
+    max_update("logical_draw_records", "logical_draw_records")
+    max_update("submitted_draw_records", "submitted_draw_records")
+    min_update("draw_cmd_headroom_bytes", "draw_cmd_headroom_bytes")
     max_update("terrain_queue_max_ms", "terrain_queue_max_ms")
     max_update("process_wall_p95_ms", "process_wall_p95_ms")
     max_update("gpu_compositor_submit_max_ms", "gpu_compositor_submit_max_ms")
@@ -347,7 +387,8 @@ awk \
     }
     external_profiler_status = pending_external_count + 0 > 0 ? "pending_external_profiler" : "not_indexed"
     mac_windows_validation_status = requires_mac_windows_validation_count + 0 > 0 ? "pending_external_validation" : "not_required_by_index"
-    printf("gpu_stress_artifact_index status=%s reason=%s artifact_count=%d pass_count=%d missing_count=%d required_count=%d required_pass_count=%d required_missing_count=%d required_bad_status_count=%d upload_fail_violations=%d ground_miss_violations=%d default_change_violations=%d pending_external_count=%d requires_external_profiler_count=%d requires_mac_windows_validation_count=%d external_profiler_status=%s mac_windows_validation_status=%s local_fps_status=report_only godot_gpu_timestamp_status=report_only max_gpu_subchunks=%s max_gpu_draws=%s max_gpu_faces=%s max_draw_cmd_occupancy_pct=%s max_terrain_queue_ms=%s max_process_wall_p95_ms=%s max_gpu_compositor_submit_ms=%s max_packet_queue_lag_ms=%s max_transparent_cutout_uploads=%s max_transparent_build_envelope_ms=%s max_stage_pool_reuses=%s max_grouped_saved_records=%s index=%s\n", status, reason, artifact_count, pass_count, missing_count, required_count, required_pass_count, required_missing_count, required_bad_status_count, upload_fail_violations, ground_miss_violations, default_change_violations, pending_external_count, requires_external_profiler_count, requires_mac_windows_validation_count, external_profiler_status, mac_windows_validation_status, max_text("gpu_subchunks"), max_text("gpu_draws"), max_text("gpu_faces"), max_text("draw_cmd_occupancy_pct"), max_text("terrain_queue_max_ms"), max_text("process_wall_p95_ms"), max_text("gpu_compositor_submit_max_ms"), max_text("packet_queue_lag_ms"), max_text("transparent_cutout_uploads"), max_text("transparent_build_envelope_ms"), max_text("stage_pool_reuses"), max_text("grouped_saved_records"), index_path)
+    residency_pressure_class = high_residency_pressure_count + 0 > 0 ? "high" : (moderate_residency_pressure_count + 0 > 0 ? "moderate" : (low_residency_pressure_count + 0 > 0 ? "low" : "n/a"))
+    printf("gpu_stress_artifact_index status=%s reason=%s artifact_count=%d pass_count=%d missing_count=%d required_count=%d required_pass_count=%d required_missing_count=%d required_bad_status_count=%d upload_fail_violations=%d ground_miss_violations=%d default_change_violations=%d pending_external_count=%d requires_external_profiler_count=%d requires_mac_windows_validation_count=%d external_profiler_status=%s mac_windows_validation_status=%s local_fps_status=report_only godot_gpu_timestamp_status=report_only residency_pressure_class=%s high_residency_pressure_count=%d moderate_residency_pressure_count=%d low_residency_pressure_count=%d max_configured_buffer_bytes=%s max_configured_buffer_budget_pct=%s max_active_face_bytes=%s max_active_face_budget_pct=%s max_logical_draw_records=%s max_submitted_draw_records=%s min_draw_cmd_headroom_bytes=%s max_gpu_subchunks=%s max_gpu_draws=%s max_gpu_faces=%s max_draw_cmd_occupancy_pct=%s max_terrain_queue_ms=%s max_process_wall_p95_ms=%s max_gpu_compositor_submit_ms=%s max_packet_queue_lag_ms=%s max_transparent_cutout_uploads=%s max_transparent_build_envelope_ms=%s max_stage_pool_reuses=%s max_grouped_saved_records=%s index=%s\n", status, reason, artifact_count, pass_count, missing_count, required_count, required_pass_count, required_missing_count, required_bad_status_count, upload_fail_violations, ground_miss_violations, default_change_violations, pending_external_count, requires_external_profiler_count, requires_mac_windows_validation_count, external_profiler_status, mac_windows_validation_status, residency_pressure_class, high_residency_pressure_count, moderate_residency_pressure_count, low_residency_pressure_count, max_text("configured_buffer_bytes"), max_text("configured_buffer_budget_pct"), max_text("active_face_bytes"), max_text("active_face_budget_pct"), max_text("logical_draw_records"), max_text("submitted_draw_records"), min_text("draw_cmd_headroom_bytes"), max_text("gpu_subchunks"), max_text("gpu_draws"), max_text("gpu_faces"), max_text("draw_cmd_occupancy_pct"), max_text("terrain_queue_max_ms"), max_text("process_wall_p95_ms"), max_text("gpu_compositor_submit_max_ms"), max_text("packet_queue_lag_ms"), max_text("transparent_cutout_uploads"), max_text("transparent_build_envelope_ms"), max_text("stage_pool_reuses"), max_text("grouped_saved_records"), index_path)
     if (status != "pass") {
       exit 1
     }
