@@ -133,7 +133,7 @@ done
 
 client_max_mesh_jobs="$(source_token_present_in "$CLIENT_SOURCE_PATH" 'const MAX_MESH_JOBS_PER_FRAME')"
 client_max_collision_rebuilds="$(source_token_present_in "$CLIENT_SOURCE_PATH" 'const MAX_COLLISION_REFRESH_REBUILDS_PER_FRAME')"
-client_pop_next_mesh_queue="$(source_token_present_in "$CLIENT_SOURCE_PATH" 'fn pop_next_mesh_queue_key(')"
+client_pop_next_mesh_queue="$(source_token_present_in "$CLIENT_SOURCE_PATH" 'fn pop_next_streaming_queue_key(')"
 client_collision_backpressure_fn="$(source_token_present_in "$CLIENT_SOURCE_PATH" 'fn should_process_mesh_queue_after_collision_refresh(')"
 client_player_fifo="$(source_token_present_in "$CLIENT_SOURCE_PATH" 'fn mesh_queue_pop_prioritizes_player_chunk_with_fifo_ties()')"
 client_initial_hint="$(source_token_present_in "$CLIENT_SOURCE_PATH" 'fn mesh_queue_uses_initial_chunk_hint_before_player_chunk_updates()')"

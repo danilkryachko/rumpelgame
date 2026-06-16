@@ -14,6 +14,7 @@ RAPID_CAMERA_TURN_SUMMARY="${RUMPELMC_TEST_STRATEGY_RAPID_CAMERA_TURN_SUMMARY:-"
 CHUNK_BOUNDARY_SUMMARY="${RUMPELMC_TEST_STRATEGY_CHUNK_BOUNDARY_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_chunk_boundary_stress_current/chunk-boundary-stress-summary.txt"}"
 CHUNK_UNLOAD_CHURN_SUMMARY="${RUMPELMC_TEST_STRATEGY_CHUNK_UNLOAD_CHURN_SUMMARY:-"$ROOT_DIR/logs/gpu_chunk_unload_churn_diagnosis_current/gpu-chunk-unload-churn-diagnosis-summary.txt"}"
 STREAMING_PRIORITY_AUDIT_SUMMARY="${RUMPELMC_TEST_STRATEGY_STREAMING_PRIORITY_AUDIT_SUMMARY:-"$ROOT_DIR/logs/gpu_streaming_priority_audit_current/gpu-streaming-priority-audit-summary.txt"}"
+STREAMING_SCHEDULER_PROTOTYPE_SUMMARY="${RUMPELMC_TEST_STRATEGY_STREAMING_SCHEDULER_PROTOTYPE_SUMMARY:-"$ROOT_DIR/logs/gpu_streaming_scheduler_prototype_current/gpu-streaming-scheduler-prototype-summary.txt"}"
 LOAD_SCALING_SUMMARY="${RUMPELMC_TEST_STRATEGY_LOAD_SCALING_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_load_scaling_radius16_summary_check/gpu-terrain-load-scaling-summary.txt"}"
 UPLOAD_PRESSURE_SUMMARY="${RUMPELMC_TEST_STRATEGY_UPLOAD_PRESSURE_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_upload_pressure_smoke/gpu-upload-pressure-summary.txt"}"
 RESOURCE_LIFECYCLE_SUMMARY="${RUMPELMC_TEST_STRATEGY_RESOURCE_LIFECYCLE_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_upload_pressure_smoke/gpu-resource-lifecycle-audit-summary.txt"}"
@@ -78,6 +79,7 @@ test -x "$ROOT_DIR/scripts/gpu_terrain_rapid_camera_turn_stress.sh" || fail "mis
 test -x "$ROOT_DIR/scripts/gpu_terrain_chunk_boundary_stress.sh" || fail "missing executable chunk boundary stress wrapper"
 test -x "$ROOT_DIR/scripts/gpu_chunk_unload_churn_diagnosis.sh" || fail "missing executable GPU chunk unload churn diagnosis wrapper"
 test -x "$ROOT_DIR/scripts/gpu_streaming_priority_audit.sh" || fail "missing executable GPU streaming priority audit wrapper"
+test -x "$ROOT_DIR/scripts/gpu_streaming_scheduler_prototype.sh" || fail "missing executable GPU streaming scheduler prototype wrapper"
 test -x "$ROOT_DIR/scripts/gpu_terrain_load_scaling.sh" || fail "missing executable load scaling wrapper"
 test -x "$ROOT_DIR/scripts/gpu_terrain_upload_pressure.sh" || fail "missing executable upload pressure wrapper"
 test -x "$ROOT_DIR/scripts/gpu_resource_lifecycle_audit.sh" || fail "missing executable resource lifecycle audit"
@@ -92,6 +94,7 @@ rapid_camera_turn_status="$(require_status rapid_camera_turn "$RAPID_CAMERA_TURN
 chunk_boundary_status="$(require_status chunk_boundary "$CHUNK_BOUNDARY_SUMMARY" status pass)"
 chunk_unload_churn_status="$(require_status chunk_unload_churn "$CHUNK_UNLOAD_CHURN_SUMMARY" status pass)"
 streaming_priority_audit_status="$(require_status streaming_priority_audit "$STREAMING_PRIORITY_AUDIT_SUMMARY" status pass)"
+streaming_scheduler_prototype_status="$(require_status streaming_scheduler_prototype "$STREAMING_SCHEDULER_PROTOTYPE_SUMMARY" status pass)"
 load_status="$(require_status load_scaling "$LOAD_SCALING_SUMMARY" status pass)"
 upload_status="$(require_status upload_pressure "$UPLOAD_PRESSURE_SUMMARY" status pass)"
 resource_status="$(require_status resource_lifecycle "$RESOURCE_LIFECYCLE_SUMMARY" resource_lifecycle_audit_status pass)"
@@ -102,16 +105,17 @@ baseline_status="$(require_status baseline_governance "$BASELINE_GOVERNANCE_SUMM
 gpu_stress_index_status="$(require_status gpu_stress_index "$GPU_STRESS_INDEX_SUMMARY" status pass)"
 
 {
-  printf 'test_strategy_gate status=pass fast_command="%s" full_command="%s" nightly_runtime_command="%s" nightly_summary_command="%s" exploration_soak_status=%s rapid_camera_turn_status=%s chunk_boundary_status=%s chunk_unload_churn_status=%s streaming_priority_audit_status=%s load_scaling_status=%s upload_pressure_status=%s resource_lifecycle_status=%s memory_budget_status=%s buffer_residency_budget_status=%s report_v2_status=%s baseline_governance_status=%s gpu_stress_index_status=%s exploration_soak_summary=%s rapid_camera_turn_summary=%s chunk_boundary_summary=%s chunk_unload_churn_summary=%s streaming_priority_audit_summary=%s load_scaling_summary=%s upload_pressure_summary=%s resource_lifecycle_summary=%s memory_budget_summary=%s buffer_residency_budget_summary=%s report_v2_summary=%s baseline_governance_summary=%s gpu_stress_index_summary=%s\n' \
+  printf 'test_strategy_gate status=pass fast_command="%s" full_command="%s" nightly_runtime_command="%s" nightly_summary_command="%s" exploration_soak_status=%s rapid_camera_turn_status=%s chunk_boundary_status=%s chunk_unload_churn_status=%s streaming_priority_audit_status=%s streaming_scheduler_prototype_status=%s load_scaling_status=%s upload_pressure_status=%s resource_lifecycle_status=%s memory_budget_status=%s buffer_residency_budget_status=%s report_v2_status=%s baseline_governance_status=%s gpu_stress_index_status=%s exploration_soak_summary=%s rapid_camera_turn_summary=%s chunk_boundary_summary=%s chunk_unload_churn_summary=%s streaming_priority_audit_summary=%s streaming_scheduler_prototype_summary=%s load_scaling_summary=%s upload_pressure_summary=%s resource_lifecycle_summary=%s memory_budget_summary=%s buffer_residency_budget_summary=%s report_v2_summary=%s baseline_governance_summary=%s gpu_stress_index_summary=%s\n' \
     './scripts/check.sh fast' \
     './scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh' \
     'RUMPELMC_EXPLORATION_SOAK_REPEATS=3 ./scripts/world_streaming_exploration_soak.sh logs/nightly/world_streaming_exploration_soak && ./scripts/gpu_terrain_rapid_camera_turn_stress.sh logs/nightly/gpu_terrain_rapid_camera_turn_stress && ./scripts/gpu_terrain_chunk_boundary_stress.sh logs/nightly/gpu_terrain_chunk_boundary_stress && ./scripts/gpu_terrain_load_scaling.sh logs/nightly/gpu_terrain_load_scaling && ./scripts/gpu_terrain_upload_pressure.sh logs/nightly/gpu_terrain_upload_pressure && ./scripts/gpu_terrain_upload_stage_pool_load_scaling_gate.sh logs/gpu_terrain_upload_stage_pool_load_scaling_current && ./scripts/gpu_terrain_grouped_draws_gate.sh logs/gpu_terrain_grouped_draws_current && ./scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh logs/gpu_terrain_cutout_pressure_load_scaling_current' \
-    './scripts/gpu_chunk_unload_churn_diagnosis.sh logs/gpu_chunk_unload_churn_diagnosis_current && ./scripts/gpu_resource_lifecycle_audit.sh logs/gpu_terrain_upload_pressure_smoke && ./scripts/gpu_terrain_memory_budget.sh logs/gpu_terrain_memory_budget_current && ./scripts/gpu_terrain_mass_chunk_load_gate.sh logs/gpu_terrain_mass_chunk_load_current && ./scripts/gpu_buffer_residency_budget.sh logs/gpu_buffer_residency_budget_current && ./scripts/gpu_streaming_priority_audit.sh logs/gpu_streaming_priority_audit_current && ./scripts/gpu_terrain_report_v2.sh logs/gpu_terrain_upload_pressure_smoke logs/gpu_terrain_report_v2_current && ./scripts/performance_baseline_governance.sh && ./scripts/gpu_stress_artifact_index.sh logs/gpu_stress_artifact_index_current' \
+    './scripts/gpu_chunk_unload_churn_diagnosis.sh logs/gpu_chunk_unload_churn_diagnosis_current && ./scripts/gpu_resource_lifecycle_audit.sh logs/gpu_terrain_upload_pressure_smoke && ./scripts/gpu_terrain_memory_budget.sh logs/gpu_terrain_memory_budget_current && ./scripts/gpu_terrain_mass_chunk_load_gate.sh logs/gpu_terrain_mass_chunk_load_current && ./scripts/gpu_buffer_residency_budget.sh logs/gpu_buffer_residency_budget_current && ./scripts/gpu_streaming_priority_audit.sh logs/gpu_streaming_priority_audit_current && ./scripts/gpu_streaming_scheduler_prototype.sh logs/gpu_streaming_scheduler_prototype_current && ./scripts/gpu_terrain_report_v2.sh logs/gpu_terrain_upload_pressure_smoke logs/gpu_terrain_report_v2_current && ./scripts/performance_baseline_governance.sh && ./scripts/gpu_stress_artifact_index.sh logs/gpu_stress_artifact_index_current' \
     "$exploration_status" \
     "$rapid_camera_turn_status" \
     "$chunk_boundary_status" \
     "$chunk_unload_churn_status" \
     "$streaming_priority_audit_status" \
+    "$streaming_scheduler_prototype_status" \
     "$load_status" \
     "$upload_status" \
     "$resource_status" \
@@ -125,6 +129,7 @@ gpu_stress_index_status="$(require_status gpu_stress_index "$GPU_STRESS_INDEX_SU
     "$(relative_path "$CHUNK_BOUNDARY_SUMMARY")" \
     "$(relative_path "$CHUNK_UNLOAD_CHURN_SUMMARY")" \
     "$(relative_path "$STREAMING_PRIORITY_AUDIT_SUMMARY")" \
+    "$(relative_path "$STREAMING_SCHEDULER_PROTOTYPE_SUMMARY")" \
     "$(relative_path "$LOAD_SCALING_SUMMARY")" \
     "$(relative_path "$UPLOAD_PRESSURE_SUMMARY")" \
     "$(relative_path "$RESOURCE_LIFECYCLE_SUMMARY")" \

@@ -25,6 +25,7 @@ The current required GPU core rows are:
 - chunk-boundary gate and its high-pressure suite source summary
 - chunk unload churn diagnosis
 - streaming priority audit
+- streaming scheduler prototype preflight
 - upload-failure fallback expected-failure artifact
 - strict load-scaling gate and its resident-set source summary
 - mass chunk-load gate
@@ -60,7 +61,7 @@ Fresh local evidence:
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt`
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index.txt`
 
-The current index passed with `26` rows, `17` required rows, `17` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
+The current index passed with `27` rows, `18` required rows, `18` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
 
 Current normalized maxima:
 
@@ -70,6 +71,7 @@ Current normalized maxima:
 - Streaming priority proof: `partial`
 - Source priority contracts: `pass`
 - Runtime priority status: `pass`
+- Streaming scheduler prototype: `prototype_only`
 - Upload fallback expected/injected failures: `1052` / `1052`
 - Upload fallback shadow path: `arraymesh`
 - Configured buffer bytes/budget: `67239936` / `95.709%`
@@ -91,11 +93,13 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU stress artifact index summary and index rows.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming priority audit summary when present.
+- `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler prototype summary when present.
 - `scripts/gpu_terrain_report.sh` also surfaces the selected GPU buffer residency budget summary when present.
 - `scripts/test_strategy_gate.sh` requires the index summary and includes the index command in the nightly summary command.
 - `scripts/test_strategy_gate.sh` requires the streaming priority audit summary before the index.
+- `scripts/test_strategy_gate.sh` requires the streaming scheduler prototype summary before the index.
 - `scripts/test_strategy_gate.sh` requires the buffer residency budget summary before the index.
-- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, streaming priority audit, upload-failure fallback, and buffer residency budget visible as required rows.
+- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, streaming priority audit, streaming scheduler prototype, upload-failure fallback, and buffer residency budget visible as required rows.
 
 ## External Context
 

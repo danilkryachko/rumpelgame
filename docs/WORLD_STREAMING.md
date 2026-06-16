@@ -323,6 +323,15 @@ Fresh check:
 
 - `logs/gpu_streaming_priority_audit_current/gpu-streaming-priority-audit-summary.txt` passed with `source_contracts_present=18`, `runtime_priority_status=pass`, `upload_fallback_status=pass`, `priority_proof_status=partial`, packet queue lag `27.437ms`, current chunk `2,2`, render/collision readiness `1/1`, current chunk submeshes/collision `2/2`, normal upload failures `0`, buffer upload failures `0`, diagnostic upload-fallback expected/injected failures `1052/1052`, `upload_fallback_shadow_path=arraymesh`, `residency_pressure_class=high`, and `scheduler_change_allowed=0`.
 
+## GPU Streaming Scheduler Prototype
+
+The streaming scheduler prototype is default-off and client-only. It adds `RUMPELMC_CLIENT_STREAMING_SCHEDULER` modes for `nearest`, `directional_tie_preview`, and `directional_tie`. The default remains nearest/FIFO, preview records equal-distance directional tie mismatches without changing pop order, and active mode changes only equal-distance client queue ties. Collision-refresh backpressure, frame caps, server defaults, quality settings, protocol, storage, worldgen, and chunk serialization remain unchanged.
+
+Fresh check:
+
+- `logs/gpu_streaming_scheduler_prototype_current/gpu-streaming-scheduler-prototype-summary.txt` passed with `source_contracts_present=21`, `priority_audit_status=pass`, `priority_scheduler_change_allowed=0`, `default_scheduler_mode=nearest`, `stream_scheduler_active_default=0`, `collision_backpressure_preserved=1`, `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, and `candidate_scheduler_status=prototype_only`.
+- `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt` passed with `27` indexed rows, `18` required passes, zero upload-failure/ground-miss/default-runtime/scheduler-change violations, and explicit external profiler plus macOS/Windows validation blockers.
+
 ## GPU Report System V2
 
 The V2 report wrapper keeps the existing aggregate report but explicitly separates fresh scoped metrics, fail gates, historical aggregate maxima, and warning-only local signals.
@@ -739,6 +748,7 @@ Set `RUMPELMC_SERVER_CHUNK_ENCODING=raw` for the rollback path.
 - For GPU terrain memory budget checks, use `scripts/gpu_terrain_memory_budget.sh`; see `docs/GPU_TERRAIN_MEMORY_BUDGETING.md`.
 - For GPU buffer residency budget checks, use `scripts/gpu_buffer_residency_budget.sh`; see `docs/GPU_BUFFER_RESIDENCY_BUDGET.md`.
 - For GPU streaming priority audits, use `scripts/gpu_streaming_priority_audit.sh`; see `docs/GPU_STREAMING_PRIORITY_AUDIT.md`.
+- For default-off client streaming scheduler prototype checks, use `scripts/gpu_streaming_scheduler_prototype.sh`; see `docs/GPU_STREAMING_SCHEDULER_PROTOTYPE.md`.
 - For classified GPU report output, use `scripts/gpu_terrain_report_v2.sh`; see `docs/GPU_REPORT_SYSTEM_V2.md`.
 - For accepted baseline comparison, use `scripts/performance_baseline_governance.sh`; see `docs/PERFORMANCE_BASELINE_GOVERNANCE.md`.
 - For fast/full/nightly strategy checks, use `scripts/test_strategy_gate.sh`; see `docs/TEST_STRATEGY.md`.

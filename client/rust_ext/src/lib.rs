@@ -102,6 +102,7 @@ pub struct GameClient {
     position_send_timer: f64,
     client_runtime_sec: f64,
     current_player_chunk: Option<(i32, i32)>,
+    current_player_chunk_direction: Option<(i32, i32)>,
     last_block_action: String,
     last_chunk_event: String,
     last_save_event: String,
@@ -137,6 +138,7 @@ impl INode for GameClient {
             position_send_timer: 0.0,
             client_runtime_sec: 0.0,
             current_player_chunk: None,
+            current_player_chunk_direction: None,
             last_block_action: "n/a".to_string(),
             last_chunk_event: "n/a".to_string(),
             last_save_event: "n/a".to_string(),
@@ -515,13 +517,17 @@ impl GameClient {
         let mut stale_drops = 0;
         let mut missing_chunk_drops = 0;
         let mut frame = MeshQueueFrame::default();
+        let scheduler = self.streaming_scheduler_selection();
         while processed < MAX_MESH_JOBS_PER_FRAME && drained < MAX_MESH_QUEUE_DRAINS_PER_FRAME {
-            let Some(key) = pop_next_mesh_queue_key(
+            let Some((key, scheduler_stats)) = pop_next_streaming_queue_key(
                 &mut self.mesh_queue,
                 player_chunk_queue_hint(self.current_player_chunk),
+                scheduler,
             ) else {
                 break;
             };
+            self.perf
+                .record_stream_scheduler_pop(StreamingSchedulerQueue::Mesh, scheduler_stats);
             drained += 1;
             let Some(reason) = self.queued_subchunks.remove(&key) else {
                 stale_drops += 1;
@@ -568,16 +574,20 @@ impl GameClient {
         let mut missing_chunk_drops = 0;
         let mut rebuilt = 0;
         let mut work_ms = 0.0;
+        let scheduler = self.streaming_scheduler_selection();
 
         while drained < MAX_COLLISION_REFRESH_DRAINS_PER_FRAME
             && rebuilt < MAX_COLLISION_REFRESH_REBUILDS_PER_FRAME
         {
-            let Some(key) = pop_next_mesh_queue_key(
+            let Some((key, scheduler_stats)) = pop_next_streaming_queue_key(
                 &mut self.collision_refresh_queue,
                 player_chunk_queue_hint(self.current_player_chunk),
+                scheduler,
             ) else {
                 break;
             };
+            self.perf
+                .record_stream_scheduler_pop(StreamingSchedulerQueue::Collision, scheduler_stats);
             drained += 1;
 
             if !self.queued_collision_refreshes.remove(&key) {
@@ -1299,6 +1309,8 @@ impl GameClient {
         let chunk = chunk_coord_for_position(pos.x, pos.z);
         let previous_chunk = self.current_player_chunk;
         if previous_chunk != Some(chunk) {
+            self.current_player_chunk_direction =
+                previous_chunk.and_then(|previous| player_chunk_direction(previous, chunk));
             self.current_player_chunk = Some(chunk);
             self.last_chunk_event = format!("player chunk {},{}", chunk.0, chunk.1);
             self.emit_debug_log(&format!("Player entered chunk {},{}", chunk.0, chunk.1));
@@ -1463,6 +1475,13 @@ impl GameClient {
                     chunk_z: coord.1,
                 });
             }
+        }
+    }
+
+    fn streaming_scheduler_selection(&self) -> StreamSchedulerSelection {
+        StreamSchedulerSelection {
+            mode: client_streaming_scheduler_mode(),
+            movement_direction: self.current_player_chunk_direction,
         }
     }
 
@@ -2239,20 +2258,134 @@ fn should_upload_gpu_subchunk_for_queue_reason(
     matches!(reason, MeshQueueReason::GeometryChanged) || !existing_gpu_slot
 }
 
+#[cfg(test)]
 fn pop_next_mesh_queue_key(
     queue: &mut VecDeque<SubchunkKey>,
     current_player_chunk: Option<(i32, i32)>,
 ) -> Option<SubchunkKey> {
+    pop_next_streaming_queue_key(
+        queue,
+        current_player_chunk,
+        StreamSchedulerSelection::default(),
+    )
+    .map(|(key, _)| key)
+}
+
+fn pop_next_streaming_queue_key(
+    queue: &mut VecDeque<SubchunkKey>,
+    current_player_chunk: Option<(i32, i32)>,
+    scheduler: StreamSchedulerSelection,
+) -> Option<(SubchunkKey, StreamSchedulerPopStats)> {
     let Some(center) = current_player_chunk else {
-        return queue.pop_front();
+        return queue
+            .pop_front()
+            .map(|key| (key, StreamSchedulerPopStats::default()));
     };
 
-    let best_idx = queue
+    let nearest_idx = queue
         .iter()
         .enumerate()
         .min_by_key(|(idx, key)| (subchunk_chunk_distance_sq(**key, center), *idx))
         .map(|(idx, _)| idx)?;
-    queue.remove(best_idx)
+    let nearest_distance = subchunk_chunk_distance_sq(queue[nearest_idx], center);
+    let mut selected_idx = nearest_idx;
+    let mut stats = StreamSchedulerPopStats::default();
+
+    if scheduler.mode != ClientStreamingSchedulerMode::Nearest {
+        if let Some(direction) = scheduler.movement_direction {
+            let directional_idx = queue
+                .iter()
+                .enumerate()
+                .filter(|(_, key)| subchunk_chunk_distance_sq(**key, center) == nearest_distance)
+                .min_by_key(|(idx, key)| {
+                    (-subchunk_direction_score(**key, center, direction), *idx)
+                })
+                .map(|(idx, _)| idx)
+                .unwrap_or(nearest_idx);
+
+            if directional_idx != nearest_idx {
+                stats.directional_tie = true;
+                if scheduler.mode == ClientStreamingSchedulerMode::DirectionalTie {
+                    selected_idx = directional_idx;
+                } else {
+                    stats.preview_mismatch = true;
+                }
+            } else {
+                stats.fifo_fallback = true;
+            }
+        } else {
+            stats.fifo_fallback = true;
+        }
+    }
+
+    queue.remove(selected_idx).map(|key| (key, stats))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClientStreamingSchedulerMode {
+    Nearest,
+    DirectionalTiePreview,
+    DirectionalTie,
+}
+
+impl Default for ClientStreamingSchedulerMode {
+    fn default() -> Self {
+        Self::Nearest
+    }
+}
+
+impl ClientStreamingSchedulerMode {
+    fn from_env_value(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "nearest" | "default" => Some(Self::Nearest),
+            "directional_tie_preview" | "directional-tie-preview" | "preview" => {
+                Some(Self::DirectionalTiePreview)
+            }
+            "directional_tie" | "directional-tie" => Some(Self::DirectionalTie),
+            _ => None,
+        }
+    }
+}
+
+fn client_streaming_scheduler_mode() -> ClientStreamingSchedulerMode {
+    static MODE: OnceLock<ClientStreamingSchedulerMode> = OnceLock::new();
+    *MODE.get_or_init(|| {
+        std::env::var(CLIENT_STREAMING_SCHEDULER_ENV)
+            .ok()
+            .and_then(|value| ClientStreamingSchedulerMode::from_env_value(&value))
+            .unwrap_or_default()
+    })
+}
+
+fn client_streaming_scheduler_mode_name(mode: ClientStreamingSchedulerMode) -> &'static str {
+    match mode {
+        ClientStreamingSchedulerMode::Nearest => "nearest",
+        ClientStreamingSchedulerMode::DirectionalTiePreview => "directional_tie_preview",
+        ClientStreamingSchedulerMode::DirectionalTie => "directional_tie",
+    }
+}
+
+fn client_streaming_scheduler_active(mode: ClientStreamingSchedulerMode) -> bool {
+    matches!(mode, ClientStreamingSchedulerMode::DirectionalTie)
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct StreamSchedulerSelection {
+    mode: ClientStreamingSchedulerMode,
+    movement_direction: Option<(i32, i32)>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct StreamSchedulerPopStats {
+    directional_tie: bool,
+    preview_mismatch: bool,
+    fifo_fallback: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StreamingSchedulerQueue {
+    Mesh,
+    Collision,
 }
 
 fn should_process_mesh_queue_after_collision_refresh(collision_rebuilds: usize) -> bool {
@@ -2267,6 +2400,24 @@ fn subchunk_chunk_distance_sq(key: SubchunkKey, center: (i32, i32)) -> i64 {
     let dx = i64::from(key.chunk_x - center.0);
     let dz = i64::from(key.chunk_z - center.1);
     dx * dx + dz * dz
+}
+
+fn subchunk_direction_score(key: SubchunkKey, center: (i32, i32), direction: (i32, i32)) -> i64 {
+    let dx = i64::from(key.chunk_x - center.0);
+    let dz = i64::from(key.chunk_z - center.1);
+    let dir_x = i64::from(direction.0);
+    let dir_z = i64::from(direction.1);
+    dx * dir_x + dz * dir_z
+}
+
+fn player_chunk_direction(previous: (i32, i32), current: (i32, i32)) -> Option<(i32, i32)> {
+    let dx = (current.0 - previous.0).signum();
+    let dz = (current.1 - previous.1).signum();
+    if dx == 0 && dz == 0 {
+        None
+    } else {
+        Some((dx, dz))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -2296,6 +2447,10 @@ struct PerfStats {
     last_mesh_queue_proxy_refresh_drained: usize,
     last_mesh_queue_stale_drops: usize,
     last_mesh_queue_missing_chunk_drops: usize,
+    stream_scheduler_preview_mismatches: u64,
+    mesh_scheduler_directional_ties: u64,
+    collision_scheduler_directional_ties: u64,
+    stream_scheduler_fifo_fallbacks: u64,
     mesh_jobs_completed: u64,
     last_mesh_ms: f64,
     avg_mesh_ms: f64,
@@ -2971,6 +3126,27 @@ impl PerfStats {
         self.last_mesh_queue_missing_chunk_drops = missing_chunk_drops;
     }
 
+    fn record_stream_scheduler_pop(
+        &mut self,
+        queue: StreamingSchedulerQueue,
+        stats: StreamSchedulerPopStats,
+    ) {
+        if stats.directional_tie {
+            match queue {
+                StreamingSchedulerQueue::Mesh => self.mesh_scheduler_directional_ties += 1,
+                StreamingSchedulerQueue::Collision => {
+                    self.collision_scheduler_directional_ties += 1
+                }
+            }
+        }
+        if stats.preview_mismatch {
+            self.stream_scheduler_preview_mismatches += 1;
+        }
+        if stats.fifo_fallback {
+            self.stream_scheduler_fifo_fallbacks += 1;
+        }
+    }
+
     fn record_collision_refresh(&mut self, batch: CollisionRefreshBatch) {
         self.collision_refresh_checked += batch.checked as u64;
         self.collision_refresh_skipped_empty += batch.skipped_empty as u64;
@@ -3217,6 +3393,7 @@ const GPU_TERRAIN_RENDER_DEFAULT_ENABLED: bool = false;
 const GPU_TERRAIN_STATS_ENV: &str = "RUMPELMC_GPU_TERRAIN_STATS";
 const GPU_TERRAIN_UPLOAD_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD";
 const GPU_TERRAIN_RENDER_ENV: &str = "RUMPELMC_GPU_TERRAIN_RENDER";
+const CLIENT_STREAMING_SCHEDULER_ENV: &str = "RUMPELMC_CLIENT_STREAMING_SCHEDULER";
 const GPU_TERRAIN_UPLOAD_FAILURE_INJECTION_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_UPLOAD_FAILURE_INJECTION";
 const GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD_ENV: &str = "RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD";
@@ -6342,8 +6519,16 @@ impl GameClient {
         let gpu_terrain_text = self.gpu_terrain_perf_text();
         let dirty_bounds = dirty_bounds_label(self.perf.last_dirty_bounds);
         let dirty_edges = dirty_edge_label(self.perf.last_dirty_edge_mask);
+        let stream_scheduler_mode = client_streaming_scheduler_mode();
+        let stream_scheduler_active = if client_streaming_scheduler_active(stream_scheduler_mode) {
+            1
+        } else {
+            0
+        };
+        let (stream_scheduler_direction_x, stream_scheduler_direction_z) =
+            self.current_player_chunk_direction.unwrap_or((0, 0));
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_depth_attachment_status={} native_shadow_depth_attachment_binding_count={} native_shadow_depth_attachment_clear_count={} native_shadow_resource_barrier_status={} native_shadow_resource_transition_count={} native_shadow_resource_barrier_error_count={} native_shadow_framebuffer_status={} native_shadow_framebuffer_rid_allocated={} native_shadow_framebuffer_attachment_count={} native_shadow_framebuffer_pass_compat_status={} native_shadow_framebuffer_pass_compat_error_count={} native_shadow_framebuffer_depth_only_enabled={} native_shadow_framebuffer_color_attachment_count={} native_shadow_framebuffer_attachment_owned={} native_shadow_framebuffer_attachment_reuse_count={} native_shadow_framebuffer_descriptor_valid={} native_shadow_framebuffer_descriptor_error_count={} native_shadow_framebuffer_bind_ready={} native_shadow_framebuffer_bind_error_count={} native_shadow_pass_descriptor_valid={} native_shadow_pass_descriptor_error_count={} native_shadow_pass_status={} native_shadow_pass_rid_allocated={} native_shadow_pass_submit_status={} native_shadow_pass_lifecycle_ready={} native_shadow_pass_lifecycle_error_count={} native_shadow_pass_begin_count={} native_shadow_pass_end_count={} native_shadow_command_buffer_status={} native_shadow_command_buffer_record_ready={} native_shadow_command_buffer_record_error_count={} native_shadow_command_buffer_submit_ready={} native_shadow_command_buffer_submit_error_count={} native_shadow_command_buffer_submit_count={} native_shadow_command_buffer_error_count={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_draw_status={} native_shadow_draw_call_count={} native_shadow_draw_face_count={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_shader_source_bytes={} native_shadow_shader_source_checksum={} native_shadow_shader_module_status={} native_shadow_shader_module_rid_allocated={} native_shadow_light_source={} native_shadow_light_space={} native_shadow_cascade_count={} native_shadow_light_matrix_bytes={} native_shadow_depth_clip_space={} native_shadow_depth_range_source={} native_shadow_depth_near_milli={} native_shadow_depth_far_chunks={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_cutout_uploads={} transparent_cutout_upload_bytes={} transparent_cutout_upload_faces={} transparent_cutout_upload_face_bytes={} transparent_cutout_last_upload_bytes={} transparent_cutout_last_upload_faces={} transparent_cutout_last_upload_face_bytes={} transparent_sort_policy={} transparent_sort_active={} transparent_sort_keys={} transparent_sort_ms={:.3} transparent_build_cost_source={} transparent_build_faces={} transparent_build_subchunks={} transparent_build_envelope_ms={:.3} transparent_build_uploads={} transparent_build_upload_bytes={} transparent_build_upload_faces={} transparent_build_upload_face_bytes={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} chunk_unload_scans={} chunk_unload_scanned={} chunk_unload_grace_kept={} chunk_unload_total={} chunk_unload_neighbor_refresh={} chunk_unload_last={} chunk_unload_last_grace_kept={} chunk_unload_last_neighbor_refresh={} chunk_unload_max={} chunk_unload_max_grace_kept={} chunk_unload_max_neighbor_refresh={} popin_frames={} popin_complete_frames={} popin_missing_frames={} popin_collision_missing_frames={} popin_missing_chunks={} popin_collision_missing_chunks={} popin_probe_last={} popin_missing_last={} popin_collision_missing_last={} popin_missing_max={} popin_collision_missing_max={} popin_probe_radius={} packet_q_frames={} packet_q_nonempty={} packet_q_drained={} packet_q_chunk_drained={} packet_q_last_drain={} packet_q_max_drain={} packet_q_last_chunk_drain={} packet_q_max_chunk_drain={} packet_q_lag_ms={:.3}/{:.3}/{:.3} packet_q_read_work_ms={:.3}/{:.3}/{:.3} packet_q_decode_work_ms={:.3}/{:.3}/{:.3} packet_q_reader_elapsed_ms={:.3}/{:.3} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_new_slots={}/{:.2}/{} terrain_queue_gpu_upload_replace_slots={}/{:.2}/{} terrain_queue_gpu_upload_new_slot_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_replace_slot_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_cutout_slots={}/{:.2}/{} terrain_queue_gpu_upload_cutout_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_cutout_faces={}/{:.2}/{} terrain_queue_gpu_upload_cutout_face_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_depth_attachment_status={} native_shadow_depth_attachment_binding_count={} native_shadow_depth_attachment_clear_count={} native_shadow_resource_barrier_status={} native_shadow_resource_transition_count={} native_shadow_resource_barrier_error_count={} native_shadow_framebuffer_status={} native_shadow_framebuffer_rid_allocated={} native_shadow_framebuffer_attachment_count={} native_shadow_framebuffer_pass_compat_status={} native_shadow_framebuffer_pass_compat_error_count={} native_shadow_framebuffer_depth_only_enabled={} native_shadow_framebuffer_color_attachment_count={} native_shadow_framebuffer_attachment_owned={} native_shadow_framebuffer_attachment_reuse_count={} native_shadow_framebuffer_descriptor_valid={} native_shadow_framebuffer_descriptor_error_count={} native_shadow_framebuffer_bind_ready={} native_shadow_framebuffer_bind_error_count={} native_shadow_pass_descriptor_valid={} native_shadow_pass_descriptor_error_count={} native_shadow_pass_status={} native_shadow_pass_rid_allocated={} native_shadow_pass_submit_status={} native_shadow_pass_lifecycle_ready={} native_shadow_pass_lifecycle_error_count={} native_shadow_pass_begin_count={} native_shadow_pass_end_count={} native_shadow_command_buffer_status={} native_shadow_command_buffer_record_ready={} native_shadow_command_buffer_record_error_count={} native_shadow_command_buffer_submit_ready={} native_shadow_command_buffer_submit_error_count={} native_shadow_command_buffer_submit_count={} native_shadow_command_buffer_error_count={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_draw_status={} native_shadow_draw_call_count={} native_shadow_draw_face_count={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_shader_source_bytes={} native_shadow_shader_source_checksum={} native_shadow_shader_module_status={} native_shadow_shader_module_rid_allocated={} native_shadow_light_source={} native_shadow_light_space={} native_shadow_cascade_count={} native_shadow_light_matrix_bytes={} native_shadow_depth_clip_space={} native_shadow_depth_range_source={} native_shadow_depth_near_milli={} native_shadow_depth_far_chunks={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_cutout_uploads={} transparent_cutout_upload_bytes={} transparent_cutout_upload_faces={} transparent_cutout_upload_face_bytes={} transparent_cutout_last_upload_bytes={} transparent_cutout_last_upload_faces={} transparent_cutout_last_upload_face_bytes={} transparent_sort_policy={} transparent_sort_active={} transparent_sort_keys={} transparent_sort_ms={:.3} transparent_build_cost_source={} transparent_build_faces={} transparent_build_subchunks={} transparent_build_envelope_ms={:.3} transparent_build_uploads={} transparent_build_upload_bytes={} transparent_build_upload_faces={} transparent_build_upload_face_bytes={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} chunk_unload_scans={} chunk_unload_scanned={} chunk_unload_grace_kept={} chunk_unload_total={} chunk_unload_neighbor_refresh={} chunk_unload_last={} chunk_unload_last_grace_kept={} chunk_unload_last_neighbor_refresh={} chunk_unload_max={} chunk_unload_max_grace_kept={} chunk_unload_max_neighbor_refresh={} popin_frames={} popin_complete_frames={} popin_missing_frames={} popin_collision_missing_frames={} popin_missing_chunks={} popin_collision_missing_chunks={} popin_probe_last={} popin_missing_last={} popin_collision_missing_last={} popin_missing_max={} popin_collision_missing_max={} popin_probe_radius={} packet_q_frames={} packet_q_nonempty={} packet_q_drained={} packet_q_chunk_drained={} packet_q_last_drain={} packet_q_max_drain={} packet_q_last_chunk_drain={} packet_q_max_chunk_drain={} packet_q_lag_ms={:.3}/{:.3}/{:.3} packet_q_read_work_ms={:.3}/{:.3}/{:.3} packet_q_decode_work_ms={:.3}/{:.3}/{:.3} packet_q_reader_elapsed_ms={:.3}/{:.3} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} stream_scheduler_mode={} stream_scheduler_active={} stream_scheduler_preview_mismatch={} stream_scheduler_direction_x={} stream_scheduler_direction_z={} mesh_scheduler_directional_ties={} collision_scheduler_directional_ties={} stream_scheduler_fifo_fallbacks={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_new_slots={}/{:.2}/{} terrain_queue_gpu_upload_replace_slots={}/{:.2}/{} terrain_queue_gpu_upload_new_slot_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_replace_slot_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_cutout_slots={}/{:.2}/{} terrain_queue_gpu_upload_cutout_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_cutout_faces={}/{:.2}/{} terrain_queue_gpu_upload_cutout_face_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -6623,6 +6808,14 @@ impl GameClient {
             self.perf.last_dirty_rebuild_subchunk_mask,
             dirty_bounds,
             dirty_edges,
+            client_streaming_scheduler_mode_name(stream_scheduler_mode),
+            stream_scheduler_active,
+            self.perf.stream_scheduler_preview_mismatches,
+            stream_scheduler_direction_x,
+            stream_scheduler_direction_z,
+            self.perf.mesh_scheduler_directional_ties,
+            self.perf.collision_scheduler_directional_ties,
+            self.perf.stream_scheduler_fifo_fallbacks,
             self.perf.terrain_queue_work_frames,
             self.perf.last_terrain_queue_work_ms,
             self.perf.avg_terrain_queue_work_ms,
@@ -9131,6 +9324,160 @@ mod tests {
                 .is_some_and(|key| key == current)
         );
         assert!(pop_next_mesh_queue_key(&mut queue, None).is_some_and(|key| key == far));
+    }
+
+    #[test]
+    fn streaming_scheduler_mode_parses_supported_values() {
+        assert_eq!(
+            ClientStreamingSchedulerMode::from_env_value("nearest"),
+            Some(ClientStreamingSchedulerMode::Nearest)
+        );
+        assert_eq!(
+            ClientStreamingSchedulerMode::from_env_value("directional_tie_preview"),
+            Some(ClientStreamingSchedulerMode::DirectionalTiePreview)
+        );
+        assert_eq!(
+            ClientStreamingSchedulerMode::from_env_value("directional-tie"),
+            Some(ClientStreamingSchedulerMode::DirectionalTie)
+        );
+        assert_eq!(
+            ClientStreamingSchedulerMode::from_env_value("invalid"),
+            None
+        );
+    }
+
+    #[test]
+    fn streaming_scheduler_preview_keeps_fifo_pop_and_reports_mismatch() {
+        let west = SubchunkKey {
+            chunk_x: -1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let east = SubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let mut queue = VecDeque::from([west, east]);
+
+        let (selected, stats) = pop_next_streaming_queue_key(
+            &mut queue,
+            Some((0, 0)),
+            StreamSchedulerSelection {
+                mode: ClientStreamingSchedulerMode::DirectionalTiePreview,
+                movement_direction: Some((1, 0)),
+            },
+        )
+        .expect("queue should pop");
+
+        assert!(selected == west);
+        assert_eq!(
+            stats,
+            StreamSchedulerPopStats {
+                directional_tie: true,
+                preview_mismatch: true,
+                fifo_fallback: false,
+            }
+        );
+        assert!(queue == VecDeque::from([east]));
+    }
+
+    #[test]
+    fn streaming_scheduler_active_changes_only_equal_distance_ties() {
+        let close_behind = SubchunkKey {
+            chunk_x: -1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let far_ahead = SubchunkKey {
+            chunk_x: 2,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let mut queue = VecDeque::from([far_ahead, close_behind]);
+        let active = StreamSchedulerSelection {
+            mode: ClientStreamingSchedulerMode::DirectionalTie,
+            movement_direction: Some((1, 0)),
+        };
+
+        let (selected, stats) = pop_next_streaming_queue_key(&mut queue, Some((0, 0)), active)
+            .expect("queue should pop");
+
+        assert!(selected == close_behind);
+        assert_eq!(
+            stats,
+            StreamSchedulerPopStats {
+                directional_tie: false,
+                preview_mismatch: false,
+                fifo_fallback: true,
+            }
+        );
+
+        let west = SubchunkKey {
+            chunk_x: -1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let east = SubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let mut tied_queue = VecDeque::from([west, east]);
+        let (selected, stats) = pop_next_streaming_queue_key(&mut tied_queue, Some((0, 0)), active)
+            .expect("queue should pop");
+
+        assert!(selected == east);
+        assert_eq!(
+            stats,
+            StreamSchedulerPopStats {
+                directional_tie: true,
+                preview_mismatch: false,
+                fifo_fallback: false,
+            }
+        );
+        assert!(tied_queue == VecDeque::from([west]));
+    }
+
+    #[test]
+    fn streaming_scheduler_without_direction_falls_back_to_fifo() {
+        let first = SubchunkKey {
+            chunk_x: -1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let second = SubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let mut queue = VecDeque::from([first, second]);
+
+        let (selected, stats) = pop_next_streaming_queue_key(
+            &mut queue,
+            Some((0, 0)),
+            StreamSchedulerSelection {
+                mode: ClientStreamingSchedulerMode::DirectionalTie,
+                movement_direction: None,
+            },
+        )
+        .expect("queue should pop");
+
+        assert!(selected == first);
+        assert_eq!(
+            stats,
+            StreamSchedulerPopStats {
+                directional_tie: false,
+                preview_mismatch: false,
+                fifo_fallback: true,
+            }
+        );
+    }
+
+    #[test]
+    fn player_chunk_direction_tracks_signed_chunk_steps() {
+        assert_eq!(player_chunk_direction((0, 0), (3, -2)), Some((1, -1)));
+        assert_eq!(player_chunk_direction((3, -2), (3, -2)), None);
     }
 
     #[test]

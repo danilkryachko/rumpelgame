@@ -193,6 +193,14 @@ sh scripts/gpu_streaming_priority_audit.sh logs/gpu_streaming_priority_audit_cur
 
 The gate writes `gpu-streaming-priority-audit-summary.txt`; see `docs/GPU_STREAMING_PRIORITY_AUDIT.md`.
 
+Use the streaming scheduler prototype preflight before comparing or enabling a client-side queue scheduler variant. It verifies the default-off `RUMPELMC_CLIENT_STREAMING_SCHEDULER` contract, checks that `nearest` remains the default, keeps collision-refresh backpressure and frame caps unchanged, and consumes the current streaming priority audit:
+
+```sh
+sh scripts/gpu_streaming_scheduler_prototype.sh logs/gpu_streaming_scheduler_prototype_current
+```
+
+The gate writes `gpu-streaming-scheduler-prototype-summary.txt`; see `docs/GPU_STREAMING_SCHEDULER_PROTOTYPE.md`.
+
 Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh
