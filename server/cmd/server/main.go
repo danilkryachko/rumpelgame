@@ -9,6 +9,8 @@ import (
 	"rumpelmc/server/pkg/network"
 	"rumpelmc/server/pkg/storage"
 	"rumpelmc/server/pkg/world"
+	"strconv"
+	"strings"
 )
 
 func main() {
@@ -20,7 +22,14 @@ func main() {
 		log.Fatalf("Failed to open RocksDB chunk store at %s: %v", dbPath, err)
 	}
 
-	gameWorld := world.NewWorld(store)
+	generatorConfig, err := configuredWorldGeneratorConfig()
+	if err != nil {
+		log.Fatalf("Invalid world generator config: %v", err)
+	}
+	gameWorld, err := world.NewWorldWithGeneratorConfig(store, generatorConfig)
+	if err != nil {
+		log.Fatalf("Failed to create world generator: %v", err)
+	}
 	defer gameWorld.Close()
 
 	address, err := configuredServerAddress()
@@ -54,6 +63,31 @@ func isLoopbackAddress(address string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func configuredWorldGeneratorConfig() (world.GeneratorConfig, error) {
+	config := world.DefaultGeneratorConfig()
+
+	if seed := strings.TrimSpace(os.Getenv("RUMPELMC_WORLD_SEED")); seed != "" {
+		parsedSeed, err := strconv.ParseInt(seed, 10, 64)
+		if err != nil {
+			return world.GeneratorConfig{}, fmt.Errorf("RUMPELMC_WORLD_SEED must be a signed 64-bit integer: %w", err)
+		}
+		config.Seed = parsedSeed
+	}
+
+	if dimensionID := strings.TrimSpace(os.Getenv("RUMPELMC_WORLD_DIMENSION_ID")); dimensionID != "" {
+		config.DimensionID = dimensionID
+	}
+
+	if version := strings.TrimSpace(os.Getenv("RUMPELMC_WORLD_GENERATOR_VERSION")); version != "" {
+		config.Version = world.GeneratorVersion(version)
+	}
+
+	if _, err := world.NewWorldGenerator(config); err != nil {
+		return world.GeneratorConfig{}, err
+	}
+	return config, nil
 }
 
 func defaultRocksDBPath() string {

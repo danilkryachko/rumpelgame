@@ -17,6 +17,8 @@ GENERATOR_SOURCE="${RUMPELMC_WORLDGEN_QUALITY_GENERATOR_SOURCE:-"$ROOT_DIR/serve
 WORLD_SOURCE="${RUMPELMC_WORLDGEN_QUALITY_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
 WORLD_TEST="${RUMPELMC_WORLDGEN_QUALITY_WORLD_TEST:-"$ROOT_DIR/server/pkg/world/world_test.go"}"
 GENERATOR_TEST="${RUMPELMC_WORLDGEN_QUALITY_GENERATOR_TEST:-"$ROOT_DIR/server/pkg/world/generator_test.go"}"
+SERVER_CMD_SOURCE="${RUMPELMC_WORLDGEN_QUALITY_SERVER_CMD_SOURCE:-"$ROOT_DIR/server/cmd/server/main.go"}"
+SERVER_CMD_TEST="${RUMPELMC_WORLDGEN_QUALITY_SERVER_CMD_TEST:-"$ROOT_DIR/server/cmd/server/main_test.go"}"
 RUN_GO_TESTS="${RUMPELMC_WORLDGEN_QUALITY_RUN_GO_TESTS:-1}"
 
 mkdir -p "$OUT_DIR"
@@ -52,7 +54,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$BIOME_SUMMARY" "$CHUNK_SOURCE" "$GENERATOR_SOURCE" "$WORLD_SOURCE" "$WORLD_TEST" "$GENERATOR_TEST"; do
+for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$BIOME_SUMMARY" "$CHUNK_SOURCE" "$GENERATOR_SOURCE" "$WORLD_SOURCE" "$WORLD_TEST" "$GENERATOR_TEST" "$SERVER_CMD_SOURCE" "$SERVER_CMD_TEST"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -92,6 +94,15 @@ require_token "$WORLD_TEST" "TestChunkCoordForPositionHandlesLargePositiveBounda
 require_token "$GENERATOR_TEST" "TestWorldGeneratorConfigIsExplicitSeedVersionContract"
 require_token "$GENERATOR_TEST" "TestConfiguredFlatV1GeneratorPreservesStableChunkBytes"
 require_token "$GENERATOR_TEST" "TestNewWorldWithGeneratorConfigRejectsUnknownVersion"
+require_token "$SERVER_CMD_SOURCE" "configuredWorldGeneratorConfig"
+require_token "$SERVER_CMD_SOURCE" "RUMPELMC_WORLD_SEED"
+require_token "$SERVER_CMD_SOURCE" "RUMPELMC_WORLD_DIMENSION_ID"
+require_token "$SERVER_CMD_SOURCE" "RUMPELMC_WORLD_GENERATOR_VERSION"
+require_token "$SERVER_CMD_SOURCE" "world.NewWorldWithGeneratorConfig"
+require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigDefaultsToFlatV1"
+require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigUsesEnvOverrides"
+require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigRejectsInvalidSeed"
+require_token "$SERVER_CMD_TEST" "TestConfiguredWorldGeneratorConfigRejectsUnknownVersion"
 
 biome_status="$(field_metric status "$BIOME_SUMMARY")"
 biome_runtime="$(field_metric visual_variety_runtime "$BIOME_SUMMARY")"
@@ -100,7 +111,7 @@ biome_serialization_change="$(field_metric active_serialization_change "$BIOME_S
 
 world_tests="skipped"
 if [ "$RUN_GO_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/server" && go test ./pkg/world > "$OUT_DIR/go-test-world.txt" 2>&1); then
+  if (cd "$ROOT_DIR/server" && go test ./pkg/world ./cmd/server > "$OUT_DIR/go-test-world.txt" 2>&1); then
     world_tests="pass"
   else
     cat "$OUT_DIR/go-test-world.txt" >&2 || true

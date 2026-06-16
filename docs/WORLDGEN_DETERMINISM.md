@@ -12,6 +12,7 @@ This note records the current deterministic world generation and serialization g
 - `Chunk.Serialize()` emits a stable little-endian `u16` block array with index order `x + y * ChunkWidth * ChunkDepth + z * ChunkWidth`.
 - `World.ChunkSnapshot()` preserves requested chunk coordinates and produces stable serialized bytes across independent `World` instances for identical coordinates.
 - `World` now owns an explicit generator configuration: `seed`, `dimension_id`, and `version=flat_v1`. The current `flat_v1` generator preserves the existing flat chunk byte vector for default and explicitly configured seeds.
+- Server startup validates `RUMPELMC_WORLD_SEED`, `RUMPELMC_WORLD_DIMENSION_ID`, and `RUMPELMC_WORLD_GENERATOR_VERSION` before creating `World`; default values remain seed `0`, dimension `overworld`, and generator version `flat_v1`.
 - These tests do not change generation behavior, storage, protocol, chunk dimensions, or payload encoding defaults.
 
 ## Guard
@@ -25,7 +26,7 @@ go test ./pkg/world
 
 Fresh check:
 
-- `go test ./pkg/world` passed on 2026-06-16 with deterministic generation, explicit seed/version generator configuration, flat byte-hash, stable serialization order, and world snapshot determinism coverage.
+- `go test ./pkg/world ./cmd/server` passed on 2026-06-16 with deterministic generation, explicit seed/version generator configuration, server env parsing, flat byte-hash, stable serialization order, and world snapshot determinism coverage.
 
 ## Biome Foundation
 

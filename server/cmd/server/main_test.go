@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"rumpelmc/server/pkg/world"
 	"testing"
 )
 
@@ -79,5 +80,58 @@ func TestDefaultRocksDBPathIgnoresPostgreSQLEnvironment(t *testing.T) {
 	}
 	if got := defaultRocksDBPath(); got != want {
 		t.Fatalf("defaultRocksDBPath() = %q, want %q", got, want)
+	}
+}
+
+func TestConfiguredWorldGeneratorConfigDefaultsToFlatV1(t *testing.T) {
+	t.Setenv("RUMPELMC_WORLD_SEED", "")
+	t.Setenv("RUMPELMC_WORLD_DIMENSION_ID", "")
+	t.Setenv("RUMPELMC_WORLD_GENERATOR_VERSION", "")
+
+	got, err := configuredWorldGeneratorConfig()
+	if err != nil {
+		t.Fatalf("configuredWorldGeneratorConfig() error = %v", err)
+	}
+	if want := world.DefaultGeneratorConfig(); got != want {
+		t.Fatalf("configuredWorldGeneratorConfig() = %+v, want %+v", got, want)
+	}
+}
+
+func TestConfiguredWorldGeneratorConfigUsesEnvOverrides(t *testing.T) {
+	t.Setenv("RUMPELMC_WORLD_SEED", "-42")
+	t.Setenv("RUMPELMC_WORLD_DIMENSION_ID", "test_dimension")
+	t.Setenv("RUMPELMC_WORLD_GENERATOR_VERSION", string(world.GeneratorVersionFlatV1))
+
+	got, err := configuredWorldGeneratorConfig()
+	if err != nil {
+		t.Fatalf("configuredWorldGeneratorConfig() error = %v", err)
+	}
+	want := world.GeneratorConfig{
+		Seed:        -42,
+		DimensionID: "test_dimension",
+		Version:     world.GeneratorVersionFlatV1,
+	}
+	if got != want {
+		t.Fatalf("configuredWorldGeneratorConfig() = %+v, want %+v", got, want)
+	}
+}
+
+func TestConfiguredWorldGeneratorConfigRejectsInvalidSeed(t *testing.T) {
+	t.Setenv("RUMPELMC_WORLD_SEED", "not-a-number")
+	t.Setenv("RUMPELMC_WORLD_DIMENSION_ID", "")
+	t.Setenv("RUMPELMC_WORLD_GENERATOR_VERSION", "")
+
+	if got, err := configuredWorldGeneratorConfig(); err == nil {
+		t.Fatalf("configuredWorldGeneratorConfig() = %+v, want invalid seed error", got)
+	}
+}
+
+func TestConfiguredWorldGeneratorConfigRejectsUnknownVersion(t *testing.T) {
+	t.Setenv("RUMPELMC_WORLD_SEED", "")
+	t.Setenv("RUMPELMC_WORLD_DIMENSION_ID", "")
+	t.Setenv("RUMPELMC_WORLD_GENERATOR_VERSION", "unknown_v99")
+
+	if got, err := configuredWorldGeneratorConfig(); err == nil {
+		t.Fatalf("configuredWorldGeneratorConfig() = %+v, want unsupported version error", got)
 	}
 }

@@ -79,6 +79,7 @@ Checks:
 - RocksDB keys keep the stable chunk-coordinate key format.
 - RocksDB tests cover missing chunks, save/reopen round-trip, overwrite isolation, concurrent distinct-key save/load, corrupt payload rejection, empty-path rejection before the C API boundary, missing-parent path creation, regular-file parent path rejection, regular-file database path rejection, key format, and signed coordinate ordering.
 - Server config tests prove `RUMPELMC_SERVER_ROCKSDB_PATH` is the current chunk-store override and PostgreSQL environment variables do not select a runtime chunk backend.
+- Server config tests prove world generator env parsing rejects invalid seeds and unknown generator versions before startup creates `World`.
 - The review gate reports `storage_package_smoke=guarded` after running `scripts/storage_package_smoke.sh` and validating that the storage smoke needs no external secret, ignores PostgreSQL environment variables for runtime chunk backend selection, and keeps approved databases at PostgreSQL/RocksDB.
 - The review gate reports `storage_config=path_guarded` after validating empty path rejection, the RocksDB path/config documentation, and the current server config tests.
 - The review gate reports `storage_backend_policy=approved_only_guarded` after scanning runtime source areas for unapproved database engine references.
