@@ -40,25 +40,35 @@ func main() {
 	timeout := flag.Duration("timeout", 3*time.Second, "per-read/write timeout")
 	action := flag.String("action", string(actionExpect), "smoke action: select, expect, place-expect, or destroy-expect")
 	playerID := flag.String("player-id", "local_player", "player id to send in ClientPosition")
+	positionX := flag.Float64("position-x", 1.5, "client position x to send in ClientPosition")
+	positionY := flag.Float64("position-y", 68, "client position y to send in ClientPosition")
+	positionZ := flag.Float64("position-z", 1.5, "client position z to send in ClientPosition")
 	slot := flag.Uint("slot", 1, "selected inventory slot to persist or expect")
 	blockID := flag.Uint("block-id", 1, "block id to place for place-expect")
 	expectCount := flag.Int("expect-count", -1, "expected selected slot count; negative disables count check")
 	flag.Parse()
 
-	if err := run(*addr, *timeout, smokeAction(*action), *playerID, uint32(*slot), uint32(*blockID), *expectCount); err != nil {
+	position := clientPosition{x: *positionX, y: *positionY, z: *positionZ}
+	if err := run(*addr, *timeout, smokeAction(*action), *playerID, position, uint32(*slot), uint32(*blockID), *expectCount); err != nil {
 		fmt.Fprintf(os.Stderr, "player_inventory_reconnect_smoke status=fail action=%s player_id=%q slot=%d error=%q\n", *action, *playerID, *slot, err)
 		os.Exit(1)
 	}
 }
 
-func run(addr string, timeout time.Duration, action smokeAction, playerID string, slot uint32, blockID uint32, expectCount int) error {
+type clientPosition struct {
+	x float64
+	y float64
+	z float64
+}
+
+func run(addr string, timeout time.Duration, action smokeAction, playerID string, position clientPosition, slot uint32, blockID uint32, expectCount int) error {
 	client, err := dialClient(addr, timeout)
 	if err != nil {
 		return err
 	}
 	defer client.conn.Close()
 
-	if err := client.sendPosition(playerID, timeout); err != nil {
+	if err := client.sendPosition(playerID, position, timeout); err != nil {
 		return err
 	}
 
@@ -104,13 +114,13 @@ func dialClient(addr string, timeout time.Duration) (*smokeClient, error) {
 	return &smokeClient{conn: conn}, nil
 }
 
-func (c *smokeClient) sendPosition(playerID string, timeout time.Duration) error {
+func (c *smokeClient) sendPosition(playerID string, position clientPosition, timeout time.Duration) error {
 	return c.writePacket(&api.Packet{
 		Payload: &api.Packet_Position{
 			Position: &api.ClientPosition{
-				X:        1.5,
-				Y:        68,
-				Z:        1.5,
+				X:        float32(position.x),
+				Y:        float32(position.y),
+				Z:        float32(position.z),
 				PlayerId: playerID,
 			},
 		},

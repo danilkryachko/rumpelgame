@@ -38,6 +38,8 @@ const maxClientsEnv = "RUMPELMC_SERVER_MAX_CLIENTS"
 const inventoryModeEnv = "RUMPELMC_SERVER_INVENTORY_MODE"
 const initialClientPacketTimeout = 250 * time.Millisecond
 const maxPlayerIDLength = 64
+const serverBlockActionReach = 7.0
+const serverBlockActionReachSquared = serverBlockActionReach * serverBlockActionReach
 
 type networkErrorClass string
 
@@ -272,6 +274,7 @@ func (s *Server) handleInitialClientPacketForSession(client *clientSession, clie
 		if err := s.sendChunksAroundWithRadiusForSession(client, center.X, center.Z, s.bootstrapRadius, world.ChunkOrder{}); err != nil {
 			return fmt.Errorf("send bootstrap chunks around %d,%d: %w", center.X, center.Z, err)
 		}
+		client.recordPosition(p.Position)
 		client.recordCenter(center)
 		return nil
 	default:
@@ -379,6 +382,7 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 		if err := s.sendChunksAroundForSession(client, center.X, center.Z, order); err != nil {
 			return fmt.Errorf("send chunks around %d,%d: %w", center.X, center.Z, err)
 		}
+		client.recordPosition(p.Position)
 		client.recordCenter(center)
 
 	case *api.Packet_BlockAction:
@@ -403,6 +407,10 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			applyInventoryPlacement = true
 		default:
 			log.Printf("Ignored unknown block action=%v", action.Action)
+			return nil
+		}
+		if !client.blockActionInReach(action) {
+			log.Printf("Ignored out-of-reach block action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
 			return nil
 		}
 
@@ -544,9 +552,17 @@ type clientSession struct {
 	stateMu               sync.Mutex
 	writeMu               sync.Mutex
 	streamState           clientChunkStreamState
+	lastPosition          clientPositionState
 	inventory             playerinventory.Inventory
 	selectedInventorySlot uint32
 	playerID              string
+}
+
+type clientPositionState struct {
+	x  float64
+	y  float64
+	z  float64
+	ok bool
 }
 
 func (s *Server) newClientSession(conn net.Conn) *clientSession {
@@ -591,6 +607,48 @@ func (c *clientSession) recordCenter(center world.ChunkCoord) {
 	defer c.stateMu.Unlock()
 
 	c.streamState.recordCenter(center)
+}
+
+func (c *clientSession) recordPosition(position *api.ClientPosition) {
+	if position == nil {
+		return
+	}
+
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	c.lastPosition = clientPositionState{
+		x:  float64(position.GetX()),
+		y:  float64(position.GetY()),
+		z:  float64(position.GetZ()),
+		ok: true,
+	}
+}
+
+func (c *clientSession) blockActionInReach(action *api.BlockAction) bool {
+	if action == nil {
+		return false
+	}
+
+	c.stateMu.Lock()
+	position := c.lastPosition
+	c.stateMu.Unlock()
+
+	return blockActionWithinReach(position, action)
+}
+
+func blockActionWithinReach(position clientPositionState, action *api.BlockAction) bool {
+	if !position.ok || action == nil {
+		return false
+	}
+
+	blockCenterX := float64(action.GetX()) + 0.5
+	blockCenterY := float64(action.GetY()) + 0.5
+	blockCenterZ := float64(action.GetZ()) + 0.5
+	dx := blockCenterX - position.x
+	dy := blockCenterY - position.y
+	dz := blockCenterZ - position.z
+	return dx*dx+dy*dy+dz*dz <= serverBlockActionReachSquared
 }
 
 func (c *clientSession) hasSentChunk(coord world.ChunkCoord) bool {

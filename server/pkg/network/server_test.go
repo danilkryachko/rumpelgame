@@ -825,6 +825,7 @@ func TestHandleClientPacketRejectsPlaceWhenSessionInventoryLacksBlock(t *testing
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
 	origin := newClientSession(&recordingConn{})
+	recordReachableBlockActionPosition(origin)
 	origin.inventory = playerinventory.NewCounted([]playerinventory.Slot{
 		{BlockID: world.Stone, Count: 1},
 	})
@@ -861,6 +862,7 @@ func TestHandleClientPacketDoesNotConsumeInventoryWhenBlockUpdateFails(t *testin
 	server := NewServer(":0", world.NewWorld(nil))
 
 	origin := newClientSession(&recordingConn{})
+	recordReachableOutOfRangeYPosition(origin)
 	origin.inventory = playerinventory.NewCounted([]playerinventory.Slot{
 		{BlockID: world.Stone, Count: 1},
 	})
@@ -881,6 +883,111 @@ func TestHandleClientPacketDoesNotConsumeInventoryWhenBlockUpdateFails(t *testin
 	}
 	if !origin.inventory.CanPlaceBlock(world.Stone) {
 		t.Fatal("failed block update consumed inventory count")
+	}
+}
+
+func TestHandleClientPacketRejectsBlockActionBeforePosition(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	origin := newClientSession(&recordingConn{})
+	watcher := newClientSession(&recordingConn{})
+	watcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
+
+	server.registerClient(watcher)
+	defer server.unregisterClient(watcher)
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       64,
+				Z:       1,
+				BlockId: uint32(world.Wood),
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(origin, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if got := len(recordedFrames(t, origin.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("origin frames = %d, want 0", got)
+	}
+	if got := len(recordedFrames(t, watcher.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("watcher frames = %d, want 0", got)
+	}
+	snapshot, err := server.world.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot() error = %v", err)
+	}
+	chunk, err := world.DeserializeChunk(snapshot.X, snapshot.Z, snapshot.Blocks)
+	if err != nil {
+		t.Fatalf("DeserializeChunk() error = %v", err)
+	}
+	if got := chunk.GetBlock(1, 64, 1); got != world.Air {
+		t.Fatalf("block after positionless action = %v, want Air", got)
+	}
+}
+
+func TestHandleClientPacketRejectsOutOfReachBlockAction(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	origin := newClientSession(&recordingConn{})
+	recordReachableBlockActionPosition(origin)
+	origin.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 1},
+	})
+	watcher := newClientSession(&recordingConn{})
+	watcher.streamState.sentChunks[world.ChunkCoord{X: 2, Z: 2}] = true
+
+	server.registerClient(watcher)
+	defer server.unregisterClient(watcher)
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       32,
+				Y:       64,
+				Z:       32,
+				BlockId: uint32(world.Stone),
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(origin, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if !origin.inventory.CanPlaceBlock(world.Stone) {
+		t.Fatal("out-of-reach block action consumed inventory count")
+	}
+	if got := len(recordedFrames(t, origin.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("origin frames = %d, want 0", got)
+	}
+	if got := len(recordedFrames(t, watcher.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("watcher frames = %d, want 0", got)
+	}
+}
+
+func TestBlockActionWithinReachRequiresPositionAndBoundedDistance(t *testing.T) {
+	position := clientPositionState{x: 1.5, y: 68, z: 1.5, ok: true}
+	nearAction := &api.BlockAction{X: 1, Y: 64, Z: 1}
+	farAction := &api.BlockAction{X: 32, Y: 64, Z: 32}
+
+	if !blockActionWithinReach(position, nearAction) {
+		t.Fatal("near block action rejected, want within reach")
+	}
+	if blockActionWithinReach(position, farAction) {
+		t.Fatal("far block action accepted, want out of reach")
+	}
+	if blockActionWithinReach(clientPositionState{}, nearAction) {
+		t.Fatal("block action without recorded position accepted")
+	}
+	if blockActionWithinReach(position, nil) {
+		t.Fatal("nil block action accepted")
 	}
 }
 
@@ -1177,6 +1284,7 @@ func TestHandleClientPacketPlacePersistsInventoryAfterCountedPlacement(t *testin
 	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 	client := newClientSession(&recordingConn{})
+	recordReachableBlockActionPosition(client)
 	client.bindPlayerID("local_player")
 	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
 		{BlockID: world.Stone, Count: 1},
@@ -1251,6 +1359,7 @@ func TestHandleClientPacketPlaceSendsInventorySnapshotAfterCountedPlacement(t *t
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
 	client := newClientSession(&recordingConn{})
+	recordReachableBlockActionPosition(client)
 	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
 		{BlockID: world.Stone, Count: 1},
 		{BlockID: world.Wood, Count: 1},
@@ -1296,6 +1405,7 @@ func TestHandleClientPacketDestroyAddsBlockToCountedInventoryAndSendsSnapshot(t 
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
 	client := newClientSession(&recordingConn{})
+	recordReachableStoneDestroyPosition(client)
 	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
 		{BlockID: world.Stone, Count: 0},
 		{BlockID: world.Wood, Count: 1},
@@ -1340,6 +1450,7 @@ func TestHandleClientPacketDestroyPersistsCollectedCountedDrop(t *testing.T) {
 	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 	client := newClientSession(&recordingConn{})
+	recordReachableStoneDestroyPosition(client)
 	client.bindPlayerID("local_player")
 	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
 		{BlockID: world.Stone, Count: 0},
@@ -1378,6 +1489,7 @@ func TestHandleClientPacketDestroyDoesNotCollectAir(t *testing.T) {
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
 	client := newClientSession(&recordingConn{})
+	recordReachableBlockActionPosition(client)
 	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
 		{BlockID: world.Stone, Count: 0},
 	})
@@ -1412,6 +1524,7 @@ func TestHandleClientPacketDestroyDoesNotCollectAir(t *testing.T) {
 func TestHandleClientPacketDestroyDoesNotCollectWhenBlockUpdateFails(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	client := newClientSession(&recordingConn{})
+	recordReachableOutOfRangeYPosition(client)
 	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
 		{BlockID: world.Stone, Count: 0},
 	})
@@ -1443,6 +1556,7 @@ func TestHandleClientPacketRejectsOutOfRangeBlockAction(t *testing.T) {
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
 	origin := newClientSession(&recordingConn{})
+	recordReachableOutOfRangeYPosition(origin)
 	watcher := newClientSession(&recordingConn{})
 	watcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
 
@@ -1481,6 +1595,7 @@ func TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients(t *testing.T
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
 	origin := newClientSession(&recordingConn{})
+	recordReachableBlockActionPosition(origin)
 	watcher := newClientSession(&recordingConn{})
 	uninterested := newClientSession(&recordingConn{})
 
@@ -1551,7 +1666,9 @@ func TestHandleClientPacketConflictingBlockActionsUseLastWriteSnapshot(t *testin
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
 	first := newClientSession(&recordingConn{})
+	recordReachableBlockActionPosition(first)
 	second := newClientSession(&recordingConn{})
+	recordReachableBlockActionPosition(second)
 	coord := world.ChunkCoord{X: 0, Z: 0}
 	first.streamState.sentChunks[coord] = true
 	second.streamState.sentChunks[coord] = true
@@ -1643,6 +1760,7 @@ func TestBroadcastDisconnectsFailedInterestedClient(t *testing.T) {
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
 	origin := newClientSession(&recordingConn{})
+	recordReachableBlockActionPosition(origin)
 	failedWatcherConn := &failingWriteConn{writeErr: errors.New("write failed")}
 	failedWatcher := newClientSession(failedWatcherConn)
 	failedWatcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
@@ -1855,6 +1973,18 @@ func decodedPacket(t *testing.T, frame []byte) *api.Packet {
 		t.Fatalf("unmarshal frame: %v", err)
 	}
 	return decoded
+}
+
+func recordReachableBlockActionPosition(client *clientSession) {
+	client.recordPosition(&api.ClientPosition{X: 1.5, Y: 68, Z: 1.5})
+}
+
+func recordReachableStoneDestroyPosition(client *clientSession) {
+	client.recordPosition(&api.ClientPosition{X: 1.5, Y: 65.5, Z: 1.5})
+}
+
+func recordReachableOutOfRangeYPosition(client *clientSession) {
+	client.recordPosition(&api.ClientPosition{X: 1.5, Y: float32(world.ChunkHeight) + 0.5, Z: 1.5})
 }
 
 type failingWriteConn struct {

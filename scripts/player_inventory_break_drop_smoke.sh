@@ -20,6 +20,7 @@ PLAYER_ID="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_PLAYER_ID:-break_drop_pl
 SELECTED_SLOT="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_SLOT:-0}"
 DESTROYED_BLOCK_ID="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_BLOCK_ID:-1}"
 EXPECTED_COUNT="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_EXPECTED_COUNT:-9}"
+DESTROY_POSITION_Y="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_POSITION_Y:-65.5}"
 SERVER_PID=""
 
 mkdir -p "$OUT_DIR"
@@ -146,7 +147,7 @@ rm -f "$SUMMARY_PATH"
 rm -rf "$SMOKE_DB"
 
 start_server "destroy"
-destroy_summary="$(run_phase destroy -action destroy-expect -expect-count "$EXPECTED_COUNT")"
+destroy_summary="$(run_phase destroy -action destroy-expect -position-y "$DESTROY_POSITION_Y" -expect-count "$EXPECTED_COUNT")"
 cleanup_server
 
 start_server "verify-restart"
