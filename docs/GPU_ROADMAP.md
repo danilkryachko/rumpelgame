@@ -86,9 +86,9 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 55. Done 2026-06-16: reduced GPU upload staging allocation churn with a default-off exact-size `PackedByteArray` stage pool and marker telemetry.
 56. Done 2026-06-16: reused the packed-face upload scratch buffer where safe and added an isolated in-place upload gate for the opt-in same-face-count subchunk update path.
 57. Done 2026-06-16: prototyped the upload stage pool behind `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=1` without changing default upload behavior.
-58. Done 2026-06-16: compared pooled and current upload paths with `scripts/gpu_terrain_upload_stage_pool_gate.sh`; fresh release evidence had baseline `850` uploads with pool creates/reuses `0/0`, pooled `850` uploads with `8` creates and `842` reuses, and upload failures `0`.
-59. Keep the pool only with better metrics.
-60. Record upload invariants in agent memory if they become stable.
+58. Done 2026-06-16: compared pooled and current upload paths with `scripts/gpu_terrain_upload_stage_pool_gate.sh`; fresh release evidence had movement baseline `850` uploads with pool creates/reuses `0/0`, movement pooled `851` uploads with `8` creates and `843` reuses, and upload failures `0`.
+59. Done 2026-06-16: kept the upload stage pool default-off and broadened its gate to movement plus in-place dirty upload evidence; the in-place pooled lane had `853` uploads, `1` in-place upload, `8` stage creates, `845` stage reuses, and zero upload failures/retry/backoff.
+60. Done 2026-06-16: recorded the stage-pool invariants in `docs/AGENT_MEMORY.md`: baseline must stay disabled, pooled creates must stay below uploads, in-place dirty upload must still execute, and the pool must not be defaulted on without broader pressure/profiler evidence.
 
 ## Phase 7: Dirty Updates
 

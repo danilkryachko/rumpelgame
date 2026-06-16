@@ -128,7 +128,7 @@ sh scripts/gpu_terrain_upload_budget.sh logs/gpu_terrain_upload_budget_current
 
 The gate writes `gpu-terrain-upload-budget-summary.txt`; see `docs/GPU_TERRAIN_UPLOAD_BUDGETING.md` and `docs/GPU_UPLOAD_RETRY_BACKOFF_TELEMETRY.md`.
 
-Use the upload stage pool gate after changing CPU-side GPU upload staging, `PackedByteArray` creation/reuse, or `RenderingDevice::buffer_update` handoff code. It runs baseline and pooled movement captures against isolated RocksDB paths and fails unless the baseline stays pool-disabled, the pooled run creates fewer stage arrays than total uploads, and upload failure/retry/backoff counters remain clean:
+Use the upload stage pool gate after changing CPU-side GPU upload staging, `PackedByteArray` creation/reuse, or `RenderingDevice::buffer_update` handoff code. It runs baseline and pooled movement plus in-place dirty upload captures against isolated RocksDB paths and fails unless each baseline stays pool-disabled, each pooled run creates fewer stage arrays than total uploads, in-place dirty upload still executes, and upload failure/retry/backoff counters remain clean:
 
 ```sh
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \

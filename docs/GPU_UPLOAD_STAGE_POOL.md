@@ -43,20 +43,24 @@ GODOT_TIMEOUT_SEC=240 \
 sh scripts/gpu_terrain_upload_stage_pool_gate.sh logs/gpu_terrain_upload_stage_pool_current
 ```
 
-The gate runs two isolated movement stress captures:
+The gate runs four isolated captures:
 
-- Baseline with `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=0`.
-- Pooled with `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=1`.
+- Movement baseline with `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=0`.
+- Movement pooled with `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=1`.
+- In-place dirty upload baseline with `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=0`.
+- In-place dirty upload pooled with `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=1`.
 
-The baseline must keep the pool disabled and report zero pooled `PackedByteArray` creates/reuses. The pooled run must show at least one pool entry, at least one create, at least the configured reuse count, fewer creates than total uploads, and zero upload failure/retry/backoff activity.
+Each baseline must keep the pool disabled and report zero pooled `PackedByteArray` creates/reuses. Each pooled run must show at least one pool entry, at least one create, at least the configured reuse count, fewer creates than total uploads, and zero upload failure/retry/backoff activity. The in-place lane also proves the same-face-count dirty upload path still executes while the staging pool is enabled.
 
 ## Fresh Evidence
 
 Fresh local release evidence from `logs/gpu_terrain_upload_stage_pool_current/gpu-terrain-upload-stage-pool-summary.txt`:
 
-- Baseline: `baseline_uploads=850`, `baseline_stage_pool_enabled=0`, `baseline_stage_pba_creates=0`, `baseline_stage_pba_reuses=0`, upload failures `0`.
-- Pooled: `pooled_uploads=850`, `pooled_stage_pool_enabled=1`, `pooled_stage_pool_entries=8`, `pooled_stage_pool_bytes=720`, `pooled_stage_pba_creates=8`, `pooled_stage_pba_reuses=842`, upload failures `0`.
-- Pooled movement summary stayed within the local CPU-side budgets: `terrain_queue_max_ms=1.993`, `process_wall_p95_ms=0.052`, `gpu_compositor_submit_max_ms=0.145`.
+- Movement baseline: `movement_baseline_uploads=850`, pool enabled/creates/reuses `0/0/0`, upload failures `0`.
+- Movement pooled: `movement_pooled_uploads=851`, pool enabled `1`, entries `8`, bytes `720`, creates `8`, reuses `843`, upload failures `0`.
+- In-place baseline: `in_place_baseline_uploads=853`, `in_place_baseline_in_place_uploads=1`, pool enabled/creates/reuses `0/0/0`, upload failures `0`.
+- In-place pooled: `in_place_pooled_uploads=853`, `in_place_pooled_in_place_uploads=1`, pool enabled `1`, entries `8`, bytes `720`, creates `8`, reuses `845`, upload failures `0`.
+- Pooled dirty upload summary stayed within local CPU-side budgets: `terrain_queue_max_ms=2.141`, `process_wall_p95_ms=0.054`, `gpu_compositor_submit_max_ms=0.148`, retry/backoff `none/0`.
 
 ## Rollout Rules
 
