@@ -140,6 +140,18 @@ sh scripts/gpu_terrain_upload_stage_pool_gate.sh logs/gpu_terrain_upload_stage_p
 
 The gate writes `gpu-terrain-upload-stage-pool-summary.txt`; see `docs/GPU_UPLOAD_STAGE_POOL.md`.
 
+Use the upload stage-pool load-scaling gate after the short stage-pool gate when deciding whether the pool has survived high resident-set pressure. It runs or consumes baseline and pooled `gpu_terrain_load_scaling` summaries, requires the existing resident pressure thresholds and CPU-side budgets, and rejects old summaries that do not expose upload/stage-pool counters:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=36000 \
+GODOT_TIMEOUT_SEC=600 \
+sh scripts/gpu_terrain_upload_stage_pool_load_scaling_gate.sh logs/gpu_terrain_upload_stage_pool_load_scaling_current
+```
+
+The gate writes `gpu-terrain-upload-stage-pool-load-scaling-summary.txt`; current 2026-06-16 runtime probes are negative face-pressure evidence, not default-on evidence.
+
 Use the upload failure recovery unit guards after touching mesh-build planning, proxy refresh reuse, GPU slot state, or CPU fallback removal:
 
 ```sh

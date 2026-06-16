@@ -88,7 +88,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 57. Done 2026-06-16: prototyped the upload stage pool behind `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=1` without changing default upload behavior.
 58. Done 2026-06-16: compared pooled and current upload paths with `scripts/gpu_terrain_upload_stage_pool_gate.sh`; fresh release evidence had movement baseline `850` uploads with pool creates/reuses `0/0`, movement pooled `851` uploads with `8` creates and `843` reuses, and upload failures `0`.
 59. Done 2026-06-16: kept the upload stage pool default-off and broadened its gate to movement plus in-place dirty upload evidence; the in-place pooled lane had `853` uploads, `1` in-place upload, `8` stage creates, `845` stage reuses, and zero upload failures/retry/backoff.
-60. Done 2026-06-16: recorded the stage-pool invariants in `docs/AGENT_MEMORY.md`: baseline must stay disabled, pooled creates must stay below uploads, in-place dirty upload must still execute, and the pool must not be defaulted on without broader pressure/profiler evidence.
+60. Done 2026-06-16: recorded the stage-pool invariants in `docs/AGENT_MEMORY.md` and added `scripts/gpu_terrain_upload_stage_pool_load_scaling_gate.sh` for high resident-set baseline/pooled comparison. Baseline must stay disabled, pooled creates must stay below uploads, in-place dirty upload must still execute, old summaries without upload/stage fields must be rejected, and the pool must not be defaulted on without fresh resident pressure plus external profiler evidence. Current fresh load-scaling probes failed the existing `min_gpu_faces=3000` pressure threshold, so this remains rollout-blocking evidence rather than default-on evidence.
 
 ## Phase 7: Dirty Updates
 

@@ -60,9 +60,15 @@ awk \
       if (key == "terrain_queue_max_ms" && value > max_queue) max_queue = value
       if (key == "process_wall_p95_ms" && value > max_process) max_process = value
       if (key == "gpu_compositor_submit_max_ms" && value > max_submit) max_submit = value
+      if (key == "gpu_uploads" && value > max_uploads) max_uploads = value
       if (key == "gpu_upload_fail") upload_fail += value
       if (key == "gpu_upload_fail_capacity") upload_fail_capacity += value
       if (key == "gpu_upload_fail_fragmented") upload_fail_fragmented += value
+      if (key == "gpu_upload_stage_pool_enabled" && value > max_stage_pool_enabled) max_stage_pool_enabled = value
+      if (key == "gpu_upload_stage_pool_entries" && value > max_stage_pool_entries) max_stage_pool_entries = value
+      if (key == "gpu_upload_stage_pool_bytes" && value > max_stage_pool_bytes) max_stage_pool_bytes = value
+      if (key == "gpu_upload_stage_pba_creates" && value > max_stage_pba_creates) max_stage_pba_creates = value
+      if (key == "gpu_upload_stage_pba_reuses" && value > max_stage_pba_reuses) max_stage_pba_reuses = value
     }
   }
   END {
@@ -70,7 +76,7 @@ awk \
     if (max_draws < min_gpu_draws || upload_fail > 0 || upload_fail_capacity > 0 || upload_fail_fragmented > 0) {
       status = "fail"
     }
-    printf("resident_set_growth status=%s server_view_distance=%s client_keep_chunk_distance=%s smoke_delay_sec=%s target_fps=%s min_gpu_draws=%d max_gpu_subchunks=%d max_gpu_draws=%d max_gpu_faces=%d max_gpu_draw_cmd_bytes=%d max_gpu_draw_cmd_capacity_bytes=%d max_terrain_queue_ms=%.3f max_process_wall_p95_ms=%.3f max_gpu_compositor_submit_ms=%.3f gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d matrix_summary=%s\n", status, server_view_distance, client_keep_chunk_distance, smoke_delay_sec, target_fps, min_gpu_draws, max_subchunks, max_draws, max_faces, max_draw_cmd_bytes, max_draw_cmd_capacity_bytes, max_queue, max_process, max_submit, upload_fail, upload_fail_capacity, upload_fail_fragmented, matrix_summary)
+    printf("resident_set_growth status=%s server_view_distance=%s client_keep_chunk_distance=%s smoke_delay_sec=%s target_fps=%s min_gpu_draws=%d max_gpu_subchunks=%d max_gpu_draws=%d max_gpu_faces=%d max_gpu_draw_cmd_bytes=%d max_gpu_draw_cmd_capacity_bytes=%d max_terrain_queue_ms=%.3f max_process_wall_p95_ms=%.3f max_gpu_compositor_submit_ms=%.3f max_gpu_uploads=%d gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d max_gpu_upload_stage_pool_enabled=%d max_gpu_upload_stage_pool_entries=%d max_gpu_upload_stage_pool_bytes=%d max_gpu_upload_stage_pba_creates=%d max_gpu_upload_stage_pba_reuses=%d matrix_summary=%s\n", status, server_view_distance, client_keep_chunk_distance, smoke_delay_sec, target_fps, min_gpu_draws, max_subchunks, max_draws, max_faces, max_draw_cmd_bytes, max_draw_cmd_capacity_bytes, max_queue, max_process, max_submit, max_uploads, upload_fail, upload_fail_capacity, upload_fail_fragmented, max_stage_pool_enabled, max_stage_pool_entries, max_stage_pool_bytes, max_stage_pba_creates, max_stage_pba_reuses, matrix_summary)
     if (status != "pass") {
       exit 1
     }
