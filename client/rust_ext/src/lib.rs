@@ -3282,9 +3282,11 @@ const GPU_TERRAIN_NATIVE_SHADOW_DEPTH_CLIP_SPACE: &str = "zero_to_one";
 const GPU_TERRAIN_NATIVE_SHADOW_DEPTH_RANGE_SOURCE: &str = "scene_shadow_radius";
 const GPU_TERRAIN_NATIVE_SHADOW_DEPTH_NEAR_MILLI: u32 = 100;
 const GPU_TERRAIN_TRANSPARENT_ENV: &str = "RUMPELMC_GPU_TERRAIN_TRANSPARENT";
+const GPU_TERRAIN_CUTOUT_PROTOTYPE_ENV: &str = "RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE";
 const GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY";
 const GPU_TERRAIN_TRANSPARENT_IMPLEMENTED: bool = false;
+const GPU_TERRAIN_CUTOUT_PROTOTYPE_IMPLEMENTED: bool = true;
 const TRANSPARENT_FIXTURE_OVERLAY_ENTRIES: [TransparentFixtureOverlayEntry; 5] = [
     TransparentFixtureOverlayEntry::new("front_transparent", (0, 2, 0)),
     TransparentFixtureOverlayEntry::new("behind_wall_transparent", (0, 2, -2)),
@@ -4682,9 +4684,12 @@ fn gpu_native_shadow_resource_descriptor(
 fn gpu_terrain_transparent_active() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
+        let cutout_requested = gpu_terrain_cutout_prototype_requested();
         gpu_terrain_transparent_active_decision(
             gpu_terrain_transparent_requested(),
             GPU_TERRAIN_TRANSPARENT_IMPLEMENTED,
+            cutout_requested,
+            GPU_TERRAIN_CUTOUT_PROTOTYPE_IMPLEMENTED,
         )
     })
 }
@@ -4692,16 +4697,40 @@ fn gpu_terrain_transparent_active() -> bool {
 fn gpu_terrain_transparent_requested() -> bool {
     static REQUESTED: OnceLock<bool> = OnceLock::new();
     *REQUESTED.get_or_init(|| {
-        gpu_terrain_transparent_requested_decision(env_flag_state(GPU_TERRAIN_TRANSPARENT_ENV))
+        gpu_terrain_transparent_requested_decision(
+            env_flag_state(GPU_TERRAIN_TRANSPARENT_ENV),
+            gpu_terrain_cutout_prototype_requested(),
+        )
     })
 }
 
-fn gpu_terrain_transparent_requested_decision(env_state: Option<bool>) -> bool {
+fn gpu_terrain_cutout_prototype_requested() -> bool {
+    static REQUESTED: OnceLock<bool> = OnceLock::new();
+    *REQUESTED.get_or_init(|| {
+        gpu_terrain_cutout_prototype_requested_decision(env_flag_state(
+            GPU_TERRAIN_CUTOUT_PROTOTYPE_ENV,
+        ))
+    })
+}
+
+fn gpu_terrain_transparent_requested_decision(
+    transparent_env_state: Option<bool>,
+    cutout_requested: bool,
+) -> bool {
+    transparent_env_state.unwrap_or(false) || cutout_requested
+}
+
+fn gpu_terrain_cutout_prototype_requested_decision(env_state: Option<bool>) -> bool {
     env_state.unwrap_or(false)
 }
 
-fn gpu_terrain_transparent_active_decision(requested: bool, implementation_ready: bool) -> bool {
-    requested && implementation_ready
+fn gpu_terrain_transparent_active_decision(
+    requested: bool,
+    implementation_ready: bool,
+    cutout_requested: bool,
+    cutout_ready: bool,
+) -> bool {
+    requested && (implementation_ready || (cutout_requested && cutout_ready))
 }
 
 fn gpu_terrain_transparent_fallback_decision(requested: bool, active: bool) -> bool {
@@ -4744,8 +4773,32 @@ fn gpu_terrain_transparent_fixture_overlay_metadata_counts(requested: bool) -> (
     }
 }
 
-fn gpu_terrain_transparent_workload_counts(_active: bool) -> (u32, u32, u32, u32) {
-    (0, 0, 0, 0)
+fn gpu_terrain_transparent_workload_counts(
+    active: bool,
+    cutout_requested: bool,
+    cutout_block_count: u32,
+    gpu_stats: Option<gpu_terrain::GpuTerrainStats>,
+) -> (u32, u32, u32, u32) {
+    if !active || !cutout_requested {
+        return (0, 0, 0, 0);
+    }
+
+    let Some(stats) = gpu_stats else {
+        return (cutout_block_count, 0, 0, 0);
+    };
+
+    let cutout_faces = saturating_u32(stats.cutout_faces);
+    let cutout_subchunks = saturating_u32(stats.cutout_subchunks);
+    (
+        cutout_block_count,
+        cutout_faces,
+        cutout_subchunks,
+        cutout_subchunks,
+    )
+}
+
+fn saturating_u32(value: usize) -> u32 {
+    value.min(u32::MAX as usize) as u32
 }
 
 fn gpu_terrain_shadow_proxy_chunk_distance_override() -> Option<i32> {
@@ -5307,6 +5360,16 @@ fn chunk_subchunk_has_blocks(blocks: &[u8], sub_y: i32) -> bool {
     false
 }
 
+fn count_cutout_alpha_test_blocks(blocks: &[u8]) -> usize {
+    blocks
+        .chunks_exact(BLOCK_BYTES)
+        .filter(|block| {
+            let block_id = u16::from_le_bytes([block[0], block[1]]) as u32;
+            blocks::is_cutout_alpha_test(block_id)
+        })
+        .count()
+}
+
 fn chunk_byte_index(x: usize, y: usize, z: usize) -> usize {
     (x + y * CHUNK_W * CHUNK_D + z * CHUNK_W) * BLOCK_BYTES
 }
@@ -5728,6 +5791,15 @@ impl GameClient {
         GString::from(text.as_str())
     }
 
+    fn loaded_cutout_alpha_test_block_count(&self) -> u32 {
+        let count = self
+            .chunk_blocks
+            .values()
+            .map(|blocks| count_cutout_alpha_test_blocks(blocks))
+            .sum::<usize>();
+        saturating_u32(count)
+    }
+
     fn gpu_terrain_perf_text(&self) -> String {
         self
             .gpu_terrain
@@ -6086,8 +6158,20 @@ impl GameClient {
         let transparent_active = gpu_terrain_transparent_active();
         let transparent_fallback =
             gpu_terrain_transparent_fallback_decision(transparent_requested, transparent_active);
+        let transparent_cutout_requested = gpu_terrain_cutout_prototype_requested();
+        let gpu_terrain_stats = self.gpu_terrain.as_ref().map(|pool| pool.stats());
+        let transparent_cutout_blocks = if transparent_active && transparent_cutout_requested {
+            self.loaded_cutout_alpha_test_block_count()
+        } else {
+            0
+        };
         let (transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks) =
-            gpu_terrain_transparent_workload_counts(transparent_active);
+            gpu_terrain_transparent_workload_counts(
+                transparent_active,
+                transparent_cutout_requested,
+                transparent_cutout_blocks,
+                gpu_terrain_stats,
+            );
         let transparent_fixture_overlay_requested =
             gpu_terrain_transparent_fixture_overlay_requested();
         let transparent_fixture_overlay_active =
@@ -7590,19 +7674,69 @@ mod tests {
     }
 
     #[test]
-    fn gpu_transparent_gate_stays_disabled_until_implemented() {
-        assert!(!gpu_terrain_transparent_requested_decision(None));
-        assert!(!gpu_terrain_transparent_requested_decision(Some(false)));
-        assert!(gpu_terrain_transparent_requested_decision(Some(true)));
-        assert!(!gpu_terrain_transparent_active_decision(false, false));
-        assert!(!gpu_terrain_transparent_active_decision(false, true));
-        assert!(!gpu_terrain_transparent_active_decision(true, false));
-        assert!(gpu_terrain_transparent_active_decision(true, true));
+    fn gpu_transparent_gate_keeps_legacy_fallback_and_allows_cutout_prototype() {
+        assert!(!gpu_terrain_cutout_prototype_requested_decision(None));
+        assert!(!gpu_terrain_cutout_prototype_requested_decision(Some(
+            false
+        )));
+        assert!(gpu_terrain_cutout_prototype_requested_decision(Some(true)));
+        assert!(!gpu_terrain_transparent_requested_decision(None, false));
+        assert!(!gpu_terrain_transparent_requested_decision(
+            Some(false),
+            false
+        ));
+        assert!(gpu_terrain_transparent_requested_decision(
+            Some(true),
+            false
+        ));
+        assert!(gpu_terrain_transparent_requested_decision(None, true));
+        assert!(!gpu_terrain_transparent_active_decision(
+            false, false, false, true
+        ));
+        assert!(!gpu_terrain_transparent_active_decision(
+            false, true, false, true
+        ));
+        assert!(!gpu_terrain_transparent_active_decision(
+            true, false, false, true
+        ));
+        assert!(gpu_terrain_transparent_active_decision(
+            true, true, false, true
+        ));
+        assert!(gpu_terrain_transparent_active_decision(
+            true, false, true, true
+        ));
+        assert!(!gpu_terrain_transparent_active_decision(
+            true, false, true, false
+        ));
         assert!(!gpu_terrain_transparent_fallback_decision(false, false));
         assert!(!gpu_terrain_transparent_fallback_decision(false, true));
         assert!(gpu_terrain_transparent_fallback_decision(true, false));
         assert!(!gpu_terrain_transparent_fallback_decision(true, true));
-        assert_eq!(gpu_terrain_transparent_workload_counts(false), (0, 0, 0, 0));
+        assert_eq!(
+            gpu_terrain_transparent_workload_counts(false, true, 7, None),
+            (0, 0, 0, 0)
+        );
+        assert_eq!(
+            gpu_terrain_transparent_workload_counts(true, false, 7, None),
+            (0, 0, 0, 0)
+        );
+        assert_eq!(
+            gpu_terrain_transparent_workload_counts(true, true, 7, None),
+            (7, 0, 0, 0)
+        );
+        assert_eq!(
+            gpu_terrain_transparent_workload_counts(
+                true,
+                true,
+                7,
+                Some(gpu_terrain::GpuTerrainStats {
+                    cutout_faces: 12,
+                    cutout_subchunks: 3,
+                    ..Default::default()
+                }),
+            ),
+            (7, 12, 3, 3)
+        );
         assert!(!gpu_terrain_transparent_fixture_overlay_requested_decision(
             None
         ));

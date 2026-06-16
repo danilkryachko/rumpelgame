@@ -35,6 +35,7 @@ MIN_PROXY_SHADOW="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_PROXY_SHADOW:-0}"
 MIN_PROXY_SHADOW_ONLY="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_PROXY_SHADOW_ONLY:-0}"
 MIN_COMPACT_SHADOW_PROXY="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_COMPACT_SHADOW_PROXY:-0}"
 MIN_PROXY_REFRESH_REUSE="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_PROXY_REFRESH_REUSE:-0}"
+CUTOUT_PROTOTYPE="${RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE:-0}"
 
 fail() {
   echo "gpu_terrain_block_edit_stress: $*" >&2
@@ -138,6 +139,15 @@ write_summary() {
       "$(metric proxy_shadow_only "$marker_path")" \
       "$(metric compact_shadow_proxy "$marker_path")" \
       "$(metric proxy_refresh_reuse "$marker_path")"
+    printf 'block_edit_transparent transparent_requested=%s transparent_active=%s transparent_fallback=%s transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s gpu_upload_fail=%s\n' \
+      "$(metric transparent_requested "$marker_path")" \
+      "$(metric transparent_active "$marker_path")" \
+      "$(metric transparent_fallback "$marker_path")" \
+      "$(metric transparent_blocks "$marker_path")" \
+      "$(metric transparent_faces "$marker_path")" \
+      "$(metric transparent_draws "$marker_path")" \
+      "$(metric transparent_subchunks "$marker_path")" \
+      "$(metric gpu_upload_fail "$marker_path")"
   } > "$summary_path"
   cat "$summary_path"
 }
@@ -222,6 +232,17 @@ fi
 if [ "$MIN_PROXY_REFRESH_REUSE" -gt 0 ]; then
   require_metric_ge "$marker_path" proxy_refresh_reuse "$MIN_PROXY_REFRESH_REUSE"
 fi
+case "$CUTOUT_PROTOTYPE" in
+  1|true|TRUE|yes|YES|on|ON|enabled|ENABLED)
+    require_metric_eq "$marker_path" transparent_requested 1
+    require_metric_eq "$marker_path" transparent_active 1
+    require_metric_eq "$marker_path" transparent_fallback 0
+    require_metric_ge "$marker_path" transparent_blocks 1
+    require_metric_ge "$marker_path" transparent_faces 1
+    require_metric_ge "$marker_path" transparent_draws 1
+    require_metric_ge "$marker_path" transparent_subchunks 1
+    ;;
+esac
 write_summary
 
 echo "GPU terrain block edit stress artifacts: $OUT_DIR"

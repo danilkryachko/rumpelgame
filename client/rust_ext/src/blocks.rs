@@ -36,6 +36,7 @@ pub struct BlockDefinition {
     pub name: &'static str,
     pub solid: bool,
     pub opaque: bool,
+    pub cutout_alpha_test: bool,
     pub placeable: bool,
     pub textures: BlockTextures,
 }
@@ -54,6 +55,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Air",
         solid: false,
         opaque: false,
+        cutout_alpha_test: false,
         placeable: false,
         textures: same_texture(FALLBACK_TEXTURE_TILE),
     },
@@ -62,6 +64,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Stone",
         solid: true,
         opaque: true,
+        cutout_alpha_test: false,
         placeable: true,
         textures: same_texture(TILE_STONE),
     },
@@ -70,6 +73,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Dirt",
         solid: true,
         opaque: true,
+        cutout_alpha_test: false,
         placeable: true,
         textures: same_texture(TILE_SOIL),
     },
@@ -78,6 +82,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Grass",
         solid: true,
         opaque: true,
+        cutout_alpha_test: false,
         placeable: true,
         textures: BlockTextures {
             top: TILE_GRASS_TOP,
@@ -90,6 +95,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Wood",
         solid: true,
         opaque: true,
+        cutout_alpha_test: false,
         placeable: true,
         textures: BlockTextures {
             top: TILE_WOOD_TOP,
@@ -102,6 +108,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Leaves",
         solid: true,
         opaque: true,
+        cutout_alpha_test: true,
         placeable: true,
         textures: same_texture(TILE_LEAVES),
     },
@@ -129,6 +136,10 @@ pub fn is_solid(id: BlockId) -> bool {
 
 pub fn is_opaque_solid(id: BlockId) -> bool {
     is_solid(id) && definition(id).is_some_and(|block| block.opaque)
+}
+
+pub fn is_cutout_alpha_test(id: BlockId) -> bool {
+    definition(id).is_some_and(|block| block.cutout_alpha_test)
 }
 
 pub fn tile_for_face(id: BlockId, face_idx: u32, face_top: u32, face_bottom: u32) -> u32 {

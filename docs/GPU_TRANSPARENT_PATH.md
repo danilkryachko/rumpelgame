@@ -1,6 +1,6 @@
 # GPU Transparent Terrain Path
 
-This is the Phase 12 design checkpoint for adding transparent terrain blocks to the GPU terrain renderer. It is a design document only; current runtime behavior remains unchanged.
+This is the Phase 12 design checkpoint for adding transparent terrain blocks to the GPU terrain renderer. The default runtime path remains opaque-only. A default-off cutout alpha-test prototype now exists for leaf-style blocks behind `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`; blended transparency, sorting, and split transparent buffers remain deferred.
 
 ## Technical Brief
 
@@ -25,9 +25,9 @@ Scope:
 
 - Design the rollout order, data contracts, rollback gate, required telemetry, and correctness gates.
 
-Out of scope:
+Out of scope for the default runtime:
 
-- No Rust runtime, shader, Godot scene, protocol, storage, world generation, atlas, or quality changes.
+- No default-on Rust runtime, Godot scene, protocol, storage, world generation, atlas, or quality changes.
 - No new block IDs or transparent assets.
 - No default render behavior changes from local design work alone.
 
@@ -100,7 +100,7 @@ Risk:
 
 Current decision, 2026-06-16: use `cutout_only_first` as the first transparent-family prototype shape.
 
-This is a planning/runtime-readiness decision, not an active render path. `scripts/transparent_prototype_shape_decision_gate.sh` must pass with `active_prototype_allowed=0` and `default_runtime_change_allowed=0` while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
+This started as a planning/runtime-readiness decision. `scripts/transparent_prototype_shape_decision_gate.sh` remains the guard before broadening the prototype shape; split buffers and blended alpha stay blocked while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` and no sorting/depth/profiler evidence exists.
 
 Rationale:
 
@@ -121,6 +121,39 @@ sh scripts/transparent_prototype_shape_decision_gate.sh logs/transparent_prototy
 ```
 
 The gate consumes active-path preflight, sorting/depth, fixture acceptance, and block-material metadata summaries. It rejects unexpected nonzero transparent workload or active implementation changes before another reviewed prototype slice.
+
+## Cutout Prototype Slice
+
+Current default-off prototype, 2026-06-16:
+
+- `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1` enables a leaf-only cutout alpha-test path inside the existing GPU terrain opaque pass.
+- `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1` remains the reserved future full-transparent request and still falls back while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
+- `LEAVES` keeps the existing block ID, atlas tile, `solid=true`, and `opaque=true` default contract, with additional `cutout_alpha_test=true` metadata for the prototype.
+- Packed GPU faces keep their 16-byte layout. Bit `12` in the low `extent` word marks cutout faces; chunk/subchunk packing and indirect draw stride are unchanged.
+- The vertex shader forwards the cutout bit as a `flat uint`; the fragment shader discards texels with `alpha < 0.5` only for marked faces, then still writes `alpha=1.0` for surviving pixels.
+- There is no alpha blending, no transparent pass, and no transparent sorting in this slice.
+- When the prototype is active, opaque faces next to cutout leaves remain visible because cutout leaves do not fully occlude neighbors.
+- Same-material cutout seam policy is conservative in this first slice; full seam/sorting policy remains future work.
+- `transparent_blocks` counts loaded cutout metadata blocks only when the cutout prototype is active; `transparent_faces`, `transparent_draws`, and `transparent_subchunks` come from the GPU packed-face pool.
+
+Use a leaf block-edit smoke for runtime evidence:
+
+```sh
+RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1 \
+RUMPELMC_BLOCK_EDIT_STRESS_ACTION=place \
+RUMPELMC_BLOCK_EDIT_STRESS_BLOCK_ID=5 \
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+sh scripts/gpu_terrain_block_edit_stress.sh logs/gpu_transparent_cutout_prototype_current
+```
+
+The block-edit stress summary now includes `block_edit_transparent ...`. With the cutout prototype flag enabled it must report `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero transparent workload counts, and `gpu_upload_fail=0`.
+
+Fresh local evidence, 2026-06-16:
+
+- `logs/gpu_transparent_cutout_prototype_current/block-edit-stress-summary.txt` placed block ID `5` (`LEAVES`) in release mode with the cutout prototype enabled.
+- The summary passed with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=1`, `transparent_faces=5`, `transparent_draws=1`, `transparent_subchunks=1`, `gpu_upload_fail=0`, `terrain_samples=384`, and `ground_misses=0`.
+- This is local macOS/Metal cutout-only evidence, not blended transparency, sorting, default-on, or external profiler evidence.
 
 ## Required Telemetry
 
@@ -189,7 +222,7 @@ Required future marker fields:
 Acceptance gates:
 
 - With the transparent env flag unset, ordinary opaque terrain markers and parity gates remain unchanged.
-- While `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, the env-on fixture must still report requested-but-fallback markers: `transparent_requested=1`, `transparent_active=0`, and `transparent_fallback=1`.
+- While `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, the legacy `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1` env-on fixture must still report requested-but-fallback markers: `transparent_requested=1`, `transparent_active=0`, and `transparent_fallback=1`.
 - A future active transparent path must prove `transparent_active=1`, `transparent_fallback=0`, `gpu_upload_fail=0`, non-sky terrain samples, opaque-depth occlusion, explicit collision-by-solidity behavior, and visible opaque faces next to transparent fixture blocks.
 - CPU/GPU parity and external profiler evidence are required before the transparent path can move beyond fixture/prototype status.
 
@@ -200,12 +233,13 @@ Non-goals for this contract:
 
 ## Current Implementation Slice
 
-The current code slice is telemetry/test scaffolding, not blended rendering:
+The current code slice is a default-off cutout prototype, not blended rendering:
 
 - `RUMPELMC_GPU_TERRAIN_TRANSPARENT` is reserved as a future opt-in flag.
 - `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` keeps the requested flag inactive, so current runtime behavior stays opaque-only even when the env flag is set.
+- `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1` activates only the cutout alpha-test prototype and does not make blended transparency active.
 - Perf markers expose `transparent_requested`, `transparent_active`, and `transparent_fallback`.
-- Perf markers expose current transparent workload fields: `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`. They are expected to stay `0` while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
+- Perf markers expose current transparent workload fields: `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`. They stay `0` for the legacy transparent fallback path and become nonzero only for active default-off cutout workload.
 - Perf markers expose client-only fixture overlay metadata counts as `transparent_fixture_overlay_roles` and `transparent_fixture_overlay_blocks`. They are expected to stay `5` only when `RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1` is requested, and `0` otherwise.
 - `scripts/gpu_terrain_report.sh` aggregates those marker fields and records metric origins.
 - The env-on release movement smoke in `logs/gpu_transparent_fallback_capture` passed with `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.

@@ -163,7 +163,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 114. Add shadow correctness smoke.
 115. Done 2026-06-16: transparent block GPU path design is recorded in `docs/GPU_TRANSPARENT_PATH.md`, with opaque rollback, material/collision separation, fixture gates, and external-profiler requirements.
 116. Done 2026-06-16: added `scripts/transparent_prototype_shape_decision_gate.sh` to choose `cutout_only_first` as the first prototype shape while keeping split buffers and full blended alpha deferred until active workload, sorting/depth, and profiler evidence exist.
-117. Prototype transparent terrain behind an env flag.
+117. Done 2026-06-16: added the default-off `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1` leaf cutout alpha-test prototype behind the existing GPU terrain opaque pass. Fresh release block-edit smoke placed block ID `5` and passed with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=1`, `transparent_faces=5`, `transparent_draws=1`, `transparent_subchunks=1`, and `gpu_upload_fail=0`. Full blended transparency, split transparent buffers, sorting, and any default-on behavior remain deferred until parity/depth, external profiler, and Windows validation evidence are captured.
 118. In progress 2026-06-16: shader profiler capture pack now emits macOS Metal and Windows GPU capture rows, and `scripts/gpu_shader_profiler_results_check.sh` validates captured rows for the current render shader hot path; full cross-platform validation still needs real external profiler artifacts.
 119. Keep a trend log for important GPU metrics.
 120. Checkpoint the roadmap and choose the next bottleneck from data.

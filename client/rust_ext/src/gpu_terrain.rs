@@ -52,6 +52,9 @@ const GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD_ENV: &str =
 const GPU_TERRAIN_UPLOAD_STAGE_POOL_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL";
 const GPU_TERRAIN_GROUPED_DRAWS_ENV: &str = "RUMPELMC_GPU_TERRAIN_GROUPED_DRAWS";
 const GPU_TERRAIN_UPLOAD_RETRY_POLICY_NONE: &str = "none";
+const GPU_TERRAIN_CUTOUT_PROTOTYPE_ENV: &str = "RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE";
+const PACKED_FACE_EXTENT_FLAGS_MASK: u32 = 0x0000_f000;
+const PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG: u32 = 1 << 12;
 
 pub const FACE_LEFT: u32 = 0;
 pub const FACE_RIGHT: u32 = 1;
@@ -85,6 +88,7 @@ struct PackedFaceExtent {
 }
 
 impl PackedFace {
+    #[cfg(test)]
     pub fn new(x: u32, y: u32, z: u32, face: u32, tile: u32, block_id: u32) -> Self {
         Self::with_extent(
             x,
@@ -97,6 +101,7 @@ impl PackedFace {
         )
     }
 
+    #[cfg(test)]
     fn with_extent(
         x: u32,
         y: u32,
@@ -106,6 +111,19 @@ impl PackedFace {
         block_id: u32,
         extent: PackedFaceExtent,
     ) -> Self {
+        Self::with_extent_and_flags(x, y, z, face, tile, block_id, extent, 0)
+    }
+
+    fn with_extent_and_flags(
+        x: u32,
+        y: u32,
+        z: u32,
+        face: u32,
+        tile: u32,
+        block_id: u32,
+        extent: PackedFaceExtent,
+        extent_flags: u32,
+    ) -> Self {
         debug_assert!(x < 64);
         debug_assert!(y < 64);
         debug_assert!(z < 64);
@@ -113,10 +131,11 @@ impl PackedFace {
         debug_assert!(tile < 2048);
         debug_assert!(extent.u > 0 && extent.u < 64);
         debug_assert!(extent.v > 0 && extent.v < 64);
+        debug_assert_eq!(extent_flags & !PACKED_FACE_EXTENT_FLAGS_MASK, 0);
         Self {
             pos_face_tile: x | (y << 6) | (z << 12) | (face << 18) | (tile << 21),
             block_flags: block_id & 0xffff,
-            extent: extent.u | (extent.v << 6),
+            extent: extent.u | (extent.v << 6) | extent_flags,
             _pad: 0,
         }
     }
@@ -152,6 +171,10 @@ impl PackedFace {
     fn extent_v(self) -> u32 {
         (self.extent >> 6) & 0x3f
     }
+
+    fn cutout_alpha_test(self) -> bool {
+        self.extent & PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG != 0
+    }
 }
 
 #[derive(Debug, Default)]
@@ -181,6 +204,13 @@ impl PackedFaceBatch {
 
     pub fn face_count(&self) -> usize {
         self.faces.len()
+    }
+
+    pub fn cutout_face_count(&self) -> usize {
+        self.faces
+            .iter()
+            .filter(|face| face.cutout_alpha_test())
+            .count()
     }
 
     pub fn byte_len(&self) -> usize {
@@ -1548,6 +1578,8 @@ fn should_upload_subchunk_in_place(
 pub struct GpuTerrainStats {
     pub subchunks: usize,
     pub faces: usize,
+    pub cutout_faces: usize,
+    pub cutout_subchunks: usize,
     pub bytes: usize,
     pub draw_count: usize,
     pub draw_command_bytes: usize,
@@ -1926,6 +1958,8 @@ pub struct GpuTerrainBufferPool {
     indirect_buffer_rid: Rid,
     allocator: FaceRangeAllocator,
     slots: HashMap<GpuSubchunkKey, GpuTerrainSlot>,
+    cutout_face_counts: HashMap<GpuSubchunkKey, usize>,
+    cutout_face_count: usize,
     draw_keys: Vec<GpuSubchunkKey>,
     draw_indices: HashMap<GpuSubchunkKey, usize>,
     upload_scratch: Vec<u8>,
@@ -2027,6 +2061,8 @@ impl GpuTerrainBufferPool {
             indirect_buffer_rid,
             allocator: FaceRangeAllocator::new(MAX_GPU_TERRAIN_FACES),
             slots: HashMap::new(),
+            cutout_face_counts: HashMap::new(),
+            cutout_face_count: 0,
             draw_keys: Vec::new(),
             draw_indices: HashMap::new(),
             upload_scratch: Vec::new(),
@@ -2107,6 +2143,7 @@ impl GpuTerrainBufferPool {
         if should_upload_subchunk_in_place(in_place_enabled, existing_slot, face_count) {
             let slot = existing_slot.expect("in-place upload requires an existing slot");
             self.upload_batch_to_slot(key, batch, slot);
+            self.record_cutout_face_count(key, batch.cutout_face_count());
             self.in_place_uploads += 1;
             self.refresh_repack_upload_preview();
             return Some(slot);
@@ -2131,6 +2168,7 @@ impl GpuTerrainBufferPool {
         };
         self.upload_batch_to_slot(key, batch, slot);
         self.slots.insert(key, slot);
+        self.record_cutout_face_count(key, batch.cutout_face_count());
         self.used_faces += range.len;
         self.insert_draw_command(key, slot);
         self.refresh_repack_upload_preview();
@@ -2225,6 +2263,7 @@ impl GpuTerrainBufferPool {
 
     fn remove_subchunk_inner(&mut self, key: GpuSubchunkKey) {
         self.repack_sources.remove(&key);
+        self.remove_cutout_face_count(key);
         let Some(slot) = self.slots.remove(&key) else {
             return;
         };
@@ -2235,6 +2274,22 @@ impl GpuTerrainBufferPool {
             start: slot.start_face,
             len: slot.face_count,
         });
+    }
+
+    fn record_cutout_face_count(&mut self, key: GpuSubchunkKey, face_count: usize) {
+        self.remove_cutout_face_count(key);
+        if face_count == 0 {
+            return;
+        }
+
+        self.cutout_face_counts.insert(key, face_count);
+        self.cutout_face_count = self.cutout_face_count.saturating_add(face_count);
+    }
+
+    fn remove_cutout_face_count(&mut self, key: GpuSubchunkKey) {
+        if let Some(face_count) = self.cutout_face_counts.remove(&key) {
+            self.cutout_face_count = self.cutout_face_count.saturating_sub(face_count);
+        }
     }
 
     pub fn has_subchunk(&self, key: GpuSubchunkKey) -> bool {
@@ -2248,6 +2303,8 @@ impl GpuTerrainBufferPool {
         GpuTerrainStats {
             subchunks: self.slots.len(),
             faces: self.used_faces,
+            cutout_faces: self.cutout_face_count,
+            cutout_subchunks: self.cutout_face_counts.len(),
             bytes: self.used_faces * PACKED_FACE_BYTES,
             draw_count: self.draw_count,
             draw_command_bytes: draw_command_active_bytes(self.draw_count),
@@ -3826,6 +3883,13 @@ fn gpu_terrain_grouped_draws_enabled() -> bool {
     })
 }
 
+fn gpu_terrain_cutout_prototype_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(std::env::var(GPU_TERRAIN_CUTOUT_PROTOTYPE_ENV).ok())
+    })
+}
+
 fn gpu_terrain_buffer_repack_from_env(value: Option<String>) -> bool {
     matches!(
         value
@@ -3855,7 +3919,11 @@ fn polygon_front_face_label(front_face: PolygonFrontFace) -> &'static str {
 }
 
 pub fn build_packed_faces(padded_blocks: &[u8]) -> PackedFaceBatch {
-    let block_lookup = PackedBlockLookup::from_definitions();
+    build_packed_faces_with_cutout(padded_blocks, gpu_terrain_cutout_prototype_enabled())
+}
+
+fn build_packed_faces_with_cutout(padded_blocks: &[u8], cutout_prototype: bool) -> PackedFaceBatch {
+    let block_lookup = PackedBlockLookup::from_definitions_with_cutout(cutout_prototype);
     let mut faces = Vec::with_capacity(4096);
 
     for y in 0..SUBCHUNK_H {
@@ -3916,7 +3984,7 @@ fn greedy_merge_packed_faces(faces: &[PackedFace]) -> Vec<PackedFace> {
                         face.face() == face_idx && collision_face_plane_uv(**face) == (plane, u, v)
                     })
                     .expect("greedy cell has source face");
-                merged.push(PackedFace::with_extent(
+                merged.push(PackedFace::with_extent_and_flags(
                     x as u32,
                     y as u32,
                     z as u32,
@@ -3927,6 +3995,7 @@ fn greedy_merge_packed_faces(faces: &[PackedFace]) -> Vec<PackedFace> {
                         u: width as u32,
                         v: height as u32,
                     },
+                    sample.extent & PACKED_FACE_EXTENT_FLAGS_MASK,
                 ));
                 true
             },
@@ -3936,7 +4005,7 @@ fn greedy_merge_packed_faces(faces: &[PackedFace]) -> Vec<PackedFace> {
 }
 
 fn greedy_face_merge_key(face: PackedFace) -> u32 {
-    face.block_id() | (face.tile() << 16)
+    face.block_id() | (face.tile() << 16) | ((face.cutout_alpha_test() as u32) << 31)
 }
 
 fn greedy_face_origin(face_idx: u32, plane: usize, u: usize, v: usize) -> (usize, usize, usize) {
@@ -3966,17 +4035,24 @@ fn push_visible_face(
     block_info: PackedBlockInfo,
     candidate: FaceCandidate,
 ) {
-    if block_lookup.is_solid(candidate.neighbor_block_id) {
+    if block_lookup.occludes_neighbor(candidate.neighbor_block_id) {
         return;
     }
 
-    faces.push(PackedFace::new(
+    let extent_flags = if block_info.cutout_alpha_test {
+        PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG
+    } else {
+        0
+    };
+    faces.push(PackedFace::with_extent_and_flags(
         candidate.x as u32,
         candidate.y as u32,
         candidate.z as u32,
         candidate.face,
         block_info.tile_for_face(candidate.face),
         candidate.block_id,
+        PackedFaceExtent { u: 1, v: 1 },
+        extent_flags,
     ));
 }
 
@@ -3985,6 +4061,7 @@ struct PackedBlockInfo {
     top_tile: u32,
     side_tile: u32,
     bottom_tile: u32,
+    cutout_alpha_test: bool,
 }
 
 impl PackedBlockInfo {
@@ -4004,7 +4081,7 @@ struct PackedBlockLookup {
 }
 
 impl PackedBlockLookup {
-    fn from_definitions() -> Self {
+    fn from_definitions_with_cutout(cutout_prototype: bool) -> Self {
         let max_id = blocks::definitions()
             .iter()
             .map(|block| block.id as usize)
@@ -4020,6 +4097,7 @@ impl PackedBlockLookup {
                 top_tile: block.textures.top,
                 side_tile: block.textures.side,
                 bottom_tile: block.textures.bottom,
+                cutout_alpha_test: cutout_prototype && block.cutout_alpha_test,
             });
         }
 
@@ -4032,8 +4110,14 @@ impl PackedBlockLookup {
         self.blocks.get(block_id as usize).copied().flatten()
     }
 
+    #[cfg(test)]
     fn is_solid(&self, block_id: u32) -> bool {
         self.info(block_id).is_some()
+    }
+
+    fn occludes_neighbor(&self, block_id: u32) -> bool {
+        self.info(block_id)
+            .is_some_and(|block| !block.cutout_alpha_test)
     }
 }
 
@@ -4299,6 +4383,48 @@ mod tests {
     }
 
     #[test]
+    fn cutout_prototype_marks_leaf_faces_without_changing_default_lookup() {
+        let mut blocks_data = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        write_block(&mut blocks_data, 1, 1, 1, blocks::LEAVES as u16);
+
+        let default_lookup = PackedBlockLookup::from_definitions_with_cutout(false);
+        let cutout_lookup = PackedBlockLookup::from_definitions_with_cutout(true);
+        assert!(default_lookup.is_solid(blocks::LEAVES));
+        assert!(default_lookup.occludes_neighbor(blocks::LEAVES));
+        assert!(!cutout_lookup.occludes_neighbor(blocks::LEAVES));
+
+        let default_batch = build_packed_faces_with_cutout(&blocks_data, false);
+        let cutout_batch = build_packed_faces_with_cutout(&blocks_data, true);
+
+        assert_eq!(default_batch.face_count(), 6);
+        assert_eq!(default_batch.cutout_face_count(), 0);
+        assert_eq!(cutout_batch.face_count(), 6);
+        assert_eq!(cutout_batch.cutout_face_count(), 6);
+        assert!(
+            cutout_batch
+                .faces()
+                .iter()
+                .all(|face| face.cutout_alpha_test())
+        );
+    }
+
+    #[test]
+    fn cutout_prototype_keeps_opaque_neighbor_faces_visible() {
+        let mut blocks_data = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        write_block(&mut blocks_data, 1, 1, 1, blocks::STONE as u16);
+        write_block(&mut blocks_data, 2, 1, 1, blocks::LEAVES as u16);
+
+        let default_batch = build_packed_faces_with_cutout(&blocks_data, false);
+        let cutout_batch = build_packed_faces_with_cutout(&blocks_data, true);
+        let stone_right_face =
+            |face: &PackedFace| face.block_id() == blocks::STONE && face.face() == FACE_RIGHT;
+
+        assert!(!default_batch.faces().iter().any(stone_right_face));
+        assert!(cutout_batch.faces().iter().any(stone_right_face));
+        assert!(cutout_batch.cutout_face_count() > 0);
+    }
+
+    #[test]
     fn subchunk_bytes_preserve_extent_low_bits() {
         let batch = PackedFaceBatch {
             faces: vec![PackedFace::with_extent(
@@ -4319,6 +4445,34 @@ mod tests {
         });
 
         assert_eq!(read_u32(&bytes, 8) & 0xffff, 5 | (6 << 6));
+        assert_eq!(read_u32(&bytes, 8) >> 16, pack_signed_i16(-3));
+    }
+
+    #[test]
+    fn subchunk_bytes_preserve_cutout_extent_flag() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::with_extent_and_flags(
+                1,
+                2,
+                3,
+                FACE_TOP,
+                7,
+                blocks::LEAVES,
+                PackedFaceExtent { u: 5, v: 6 },
+                PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG,
+            )],
+        };
+
+        let bytes = batch.to_bytes_for_subchunk(GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: -3,
+        });
+
+        assert_eq!(
+            read_u32(&bytes, 8) & 0xffff,
+            5 | (6 << 6) | PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG
+        );
         assert_eq!(read_u32(&bytes, 8) >> 16, pack_signed_i16(-3));
     }
 
@@ -4408,14 +4562,18 @@ mod tests {
             assert!(blocks::is_solid(block_id));
             assert!(blocks::is_opaque_solid(block_id));
         }
+        assert!(blocks::is_cutout_alpha_test(blocks::LEAVES));
+        assert!(!blocks::is_cutout_alpha_test(blocks::STONE));
     }
 
     #[test]
-    fn solid_gpu_terrain_fragment_forces_opaque_alpha() {
+    fn solid_gpu_terrain_fragment_forces_opaque_alpha_after_cutout_discard() {
         let (_, fragment_source) = split_render_shader_source().expect("render shader stages");
 
         assert!(fragment_source.contains("frag_color = vec4(texel.rgb * lighting_in, 1.0);"));
-        assert!(!fragment_source.contains("texel.a"));
+        assert!(fragment_source.contains("texel.a < CUTOUT_ALPHA_THRESHOLD"));
+        assert!(fragment_source.contains("discard;"));
+        assert!(!fragment_source.contains("frag_color = texel"));
     }
 
     #[test]
@@ -4460,8 +4618,10 @@ mod tests {
 
         assert!(vertex_source.contains("layout(location = 0) out vec2 uv_out;"));
         assert!(vertex_source.contains("layout(location = 1) flat out vec2 tile_offset_out;"));
+        assert!(vertex_source.contains("layout(location = 3) flat out uint cutout_flags_out;"));
         assert!(fragment_source.contains("layout(location = 0) in vec2 uv_in;"));
         assert!(fragment_source.contains("layout(location = 1) flat in vec2 tile_offset_in;"));
+        assert!(fragment_source.contains("layout(location = 3) flat in uint cutout_flags_in;"));
         assert!(!vertex_source.contains("out vec4 uv_tile_out"));
         assert!(!fragment_source.contains("in vec4 uv_tile_in"));
         assert!(
@@ -4474,9 +4634,13 @@ mod tests {
         assert!(vertex_source.contains(
             "vec2 extent = vec2(float(face.extent & 63u), float((face.extent >> 6u) & 63u));"
         ));
+        assert!(vertex_source.contains(
+            "uint cutout_flags = (face.extent >> PACKED_FACE_EXTENT_FLAGS_SHIFT) & PACKED_FACE_EXTENT_FLAGS_MASK;"
+        ));
         assert!(vertex_source.contains("face_corner(face_idx, corner_idx, extent)"));
         assert!(vertex_source.contains("uv_out = face_uv(face_idx, corner_idx, extent);"));
         assert!(vertex_source.contains("tile_offset_out = atlas_tile_offset(tile);"));
+        assert!(vertex_source.contains("cutout_flags_out = cutout_flags;"));
         assert!(fragment_source.contains("vec2 atlas_uv(vec2 tile_uv, vec2 tile_offset)"));
         assert!(fragment_source.contains("vec2 tiled_uv = fract(tile_uv);"));
         assert!(
@@ -4487,6 +4651,22 @@ mod tests {
         assert!(!fragment_source.contains("mod("));
         assert!(!fragment_source.contains("floor("));
         assert!(!fragment_source.contains("terrain_push.atlas_layout.z"));
+    }
+
+    #[test]
+    fn render_shader_applies_cutout_without_enabling_alpha_blending() {
+        let (vertex_source, fragment_source) =
+            split_render_shader_source().expect("render shader stages");
+
+        assert!(vertex_source.contains("const uint PACKED_FACE_EXTENT_FLAGS_SHIFT = 12u;"));
+        assert!(vertex_source.contains("const uint PACKED_FACE_EXTENT_FLAGS_MASK = 15u;"));
+        assert!(fragment_source.contains("const uint PACKED_FACE_CUTOUT_ALPHA_TEST = 1u;"));
+        assert!(fragment_source.contains("const float CUTOUT_ALPHA_THRESHOLD = 0.5;"));
+        assert!(fragment_source.contains(
+            "if ((cutout_flags_in & PACKED_FACE_CUTOUT_ALPHA_TEST) != 0u && texel.a < CUTOUT_ALPHA_THRESHOLD) {"
+        ));
+        assert!(fragment_source.contains("discard;"));
+        assert!(fragment_source.contains("frag_color = vec4(texel.rgb * lighting_in, 1.0);"));
     }
 
     #[test]

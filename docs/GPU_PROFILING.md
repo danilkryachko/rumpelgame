@@ -35,7 +35,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 - GPU terrain lighting push constants are sanitized on the Rust side before packing, so the render shader now reads direction, ambient, color, and energy directly instead of repeating per-vertex `normalize`, `clamp`, and `max` guards. Keep `terrain_lighting_sanitizes_marker_and_push_constant_values` green before relying on this shader contract.
 - GPU terrain atlas tile `col/row` is computed in the vertex shader and carried through `flat` `tile_offset_out` / `tile_offset_in`, while tiled UV stays in the interpolated `uv_out` / `uv_in` path. The fragment shader still applies `fract(tile_uv)` so merged-face texture repetition is preserved, but it no longer performs per-fragment tile-index `mod`/`floor`. Terrain lighting is also passed as `flat` `lighting_out` / `lighting_in` because it is constant per packed face. Triangle corner selection uses the global `TRIANGLE_CORNER_INDICES` table instead of declaring a local array in `main()`.
 - `scripts/gpu_terrain_parity_smoke.sh` writes `parity-summary.txt` after a passing full or validate-only parity run. Use it as the compact evidence for atlas/depth, lighting/shadow, low-angle lighting, compact-shadow including low-angle compact-vs-full shadow proxy, and texture-stand visual deltas before deciding whether another shader change needs fresh captures.
-- The render shader contract is guarded in Rust tests: vertex code computes lighting from `face_normal(face_idx)` and sanitized lighting push constants, precomputes atlas tile offsets, passes interpolated UV separately from `flat` tile offsets and `flat` lighting, and fragment code only applies repeated atlas UV plus lighting to the sampled atlas texel with opaque alpha. Scene depth remains guarded separately as reverse-Z `GREATER_OR_EQUAL`.
+- The render shader contract is guarded in Rust tests: vertex code computes lighting from `face_normal(face_idx)` and sanitized lighting push constants, precomputes atlas tile offsets, passes interpolated UV separately from `flat` tile offsets, `flat` lighting, and a `flat` cutout flag, and fragment code only applies repeated atlas UV plus lighting to the sampled atlas texel with opaque alpha after the default-off cutout discard. Scene depth remains guarded separately as reverse-Z `GREATER_OR_EQUAL`.
 - Runtime markers expose the sanitized lighting push block as `gpu_light_dir`, `gpu_light_color`, `gpu_light_energy`, and `gpu_light_ambient`. Use these fields to prove which scene light values were rendered before comparing lighting variants or shadow paths.
 - `RUMPELMC_VISUAL_SMOKE_POSE=lighting_low_angle` is a smoke-only controlled lighting variant. It keeps the existing visual smoke path and Godot shadow proxy but changes the `SunLight` rotation/energy for comparison captures, and the marker records `lighting_variant="low_angle"`.
 - Native-shadow fallback markers expose `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, `native_shadow_implemented`, `native_shadow_resource_*`, and native-shadow coverage counters. Movement-stress summaries also surface these existing marker values in a compact `movement_native_shadow` row. While `native_shadow_implemented=0`, env-on captures must remain on `shadow_path=godot_proxy` with `requested=1`, `active=0`, `fallback=1`, `native_shadow_resource_status=disabled`, and zero native-shadow resource lifecycle plus coverage counters.
@@ -431,13 +431,26 @@ sh scripts/transparent_fixture_acceptance_suite.sh logs/transparent_fixture_acce
 
 The gate writes `transparent-fixture-acceptance-suite-summary.txt`; see `docs/TRANSPARENT_FIXTURE_ACCEPTANCE_SUITE.md`.
 
-Use transparent prototype shape decision before building the first active prototype behind an env flag. The current expected decision is `cutout_only_first`, with active/default runtime changes still disallowed while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`:
+Use transparent prototype shape decision before broadening beyond the current cutout-only prototype. The current expected decision is `cutout_only_first`, with default runtime changes still disallowed while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`:
 
 ```sh
 sh scripts/transparent_prototype_shape_decision_gate.sh logs/transparent_prototype_shape_decision_current
 ```
 
 The gate writes `transparent-prototype-shape-decision-summary.txt`; see `docs/GPU_TRANSPARENT_PATH.md`.
+
+Use the cutout prototype block-edit smoke after touching leaf cutout metadata, packed-face cutout flags, transparent workload markers, or the render shader cutout branch. This is a default-off cutout/alpha-test prototype only; it does not validate blended transparency or sorting:
+
+```sh
+RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1 \
+RUMPELMC_BLOCK_EDIT_STRESS_ACTION=place \
+RUMPELMC_BLOCK_EDIT_STRESS_BLOCK_ID=5 \
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+sh scripts/gpu_terrain_block_edit_stress.sh logs/gpu_transparent_cutout_prototype_current
+```
+
+The block-edit summary must include `block_edit_transparent` with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero transparent workload counts, and `gpu_upload_fail=0`.
 
 Use the external profiling campaign gate before citing cross-platform GPU profiler state:
 
