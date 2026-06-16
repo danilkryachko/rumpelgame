@@ -31,7 +31,7 @@ func configuredServerAddress() string {
 	if address := os.Getenv("RUMPELMC_SERVER_ADDRESS"); address != "" {
 		return address
 	}
-	return ":25565"
+	return "127.0.0.1:25565"
 }
 
 func defaultRocksDBPath() string {

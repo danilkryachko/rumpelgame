@@ -10,10 +10,12 @@ esac
 
 SUMMARY_PATH="$OUT_DIR/security-data-integrity-review-summary.txt"
 DESIGN_DOC="${RUMPELMC_SECURITY_REVIEW_DOC:-"$ROOT_DIR/docs/SECURITY_DATA_INTEGRITY_REVIEW.md"}"
+SERVER_CMD_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_CMD_SOURCE:-"$ROOT_DIR/server/cmd/server/main.go"}"
 SERVER_NETWORK_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
 SERVER_WORLD_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
 SERVER_NETWORK_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_TEST:-"$ROOT_DIR/server/pkg/network/framing_test.go"}"
 SERVER_WORLD_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_TEST:-"$ROOT_DIR/server/pkg/world/chunk_encoding_test.go"}"
+CLIENT_MAIN_SOURCE="${RUMPELMC_SECURITY_REVIEW_CLIENT_MAIN_SOURCE:-"$ROOT_DIR/client/main.gd"}"
 CLIENT_NETWORK_SOURCE="${RUMPELMC_SECURITY_REVIEW_CLIENT_NETWORK_SOURCE:-"$ROOT_DIR/client/rust_ext/src/network.rs"}"
 CLIENT_RUNTIME_SOURCE="${RUMPELMC_SECURITY_REVIEW_CLIENT_RUNTIME_SOURCE:-"$ROOT_DIR/client/rust_ext/src/lib.rs"}"
 NETWORKING_SUMMARY="${RUMPELMC_SECURITY_REVIEW_NETWORKING_SUMMARY:-"$ROOT_DIR/logs/networking_robustness_current/networking-robustness-summary.txt"}"
@@ -58,10 +60,12 @@ require_token() {
 
 for path in \
   "$DESIGN_DOC" \
+  "$SERVER_CMD_SOURCE" \
   "$SERVER_NETWORK_SOURCE" \
   "$SERVER_WORLD_SOURCE" \
   "$SERVER_NETWORK_TEST" \
   "$SERVER_WORLD_TEST" \
+  "$CLIENT_MAIN_SOURCE" \
   "$CLIENT_NETWORK_SOURCE" \
   "$CLIENT_RUNTIME_SOURCE" \
   "$NETWORKING_SUMMARY" \
@@ -77,11 +81,22 @@ for token in \
   'Chunk Serialization' \
   'Storage Integrity' \
   'Block Edit Boundary' \
+  'Local-Only Threat Model' \
   'MCP Review Notes' \
   'Deferred Work' \
   'Compatibility Rules'; do
   require_token "$DESIGN_DOC" "$token"
 done
+
+for token in \
+  'func configuredServerAddress' \
+  'RUMPELMC_SERVER_ADDRESS' \
+  'return "127.0.0.1:25565"'; do
+  require_token "$SERVER_CMD_SOURCE" "$token"
+done
+
+require_token "$CLIENT_MAIN_SOURCE" 'const SERVER_HOST = "127.0.0.1"'
+require_token "$CLIENT_RUNTIME_SOURCE" 'const SERVER_ADDRESS: &str = "127.0.0.1:25565";'
 
 for token in \
   'const maxPacketSize = 16 * 1024 * 1024' \
@@ -185,6 +200,7 @@ awk \
     storage_integrity = "guarded"
     chunk_decode = "guarded"
     deterministic_property_tests = "guarded"
+    local_server_exposure = "loopback_default_guarded"
     active_protocol_change = proto_diff_count + 0
 
     prereqs_ok = networking_status == "pass" && networking_protocol_change + 0 == 0 &&
@@ -209,7 +225,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s storage_integrity=%s chunk_decode=%s deterministic_property_tests=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, storage_integrity, chunk_decode, deterministic_property_tests, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s storage_integrity=%s chunk_decode=%s deterministic_property_tests=%s local_server_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, storage_integrity, chunk_decode, deterministic_property_tests, local_server_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
     if (status != "pass") {
       exit 1
     }

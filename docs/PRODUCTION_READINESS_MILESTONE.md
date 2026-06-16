@@ -37,7 +37,7 @@ Out of scope:
 Assumptions:
 
 - The milestone is an evidence checkpoint, not a deployment action.
-- `release_candidate_gate` summary mode proves reproducible evidence is clean, including `security_deterministic_property_tests=guarded`; live full release checks remain a separate explicit release action and must be repeated for a real release branch.
+- `release_candidate_gate` summary mode proves reproducible evidence is clean, including `security_deterministic_property_tests=guarded` and `security_local_server_exposure=loopback_default_guarded`; live full release checks remain a separate explicit release action and must be repeated for a real release branch.
 - Pending external-profiler evidence blocks shadow-retirement decisions but does not block documenting the current milestone.
 
 Implementation plan:
@@ -76,6 +76,8 @@ Current expected milestone verdict:
 - `storage_protocol_integrity=pass`
 - `docs_reproducible_gates=pass`
 - `rc_security_deterministic_property_tests=guarded`
+- `security_local_server_exposure=loopback_default_guarded`
+- `rc_security_local_server_exposure=loopback_default_guarded`
 - `external_profiler=pending_external_profiler`
 - `external_capture_readiness=ready_for_external_capture`
 - `native_shadow_direction=deferred_implementation_gate`
@@ -88,9 +90,9 @@ This means the current architecture has a reproducible evidence chain and releas
 
 Fresh 2026-06-16 current artifacts:
 
-- `logs/release_candidate_gate_current/release-candidate-gate-summary.txt` reported `status=pass`, `live_checks=skipped`, `active_protocol_change=0`, `security_deterministic_property_tests=guarded`, `observability_error_scan=clean`, and `baseline_warning_status=ok`. This is a summary-mode refresh; use the live RC flags below for a final release action.
+- `logs/release_candidate_gate_current/release-candidate-gate-summary.txt` reported `status=pass`, `live_checks=skipped`, `active_protocol_change=0`, `security_deterministic_property_tests=guarded`, `security_local_server_exposure=loopback_default_guarded`, `observability_error_scan=clean`, and `baseline_warning_status=ok`. This is a summary-mode refresh; use the live RC flags below for a final release action.
 - `logs/external_profiling_campaign_current/external-profiling-campaign-summary.txt` reported `status=pass`, `reason=external_profiler_pending`, `capture_readiness=ready_for_external_capture`, `external_profile_status=pending_external_profiler`, `results_file_status=missing`, `results_template_status=todo`, `results_check_status=missing`, `xctrace_review_packet_status=pass`, `xctrace_overhead_status=pass`, `xctrace_overhead_estimate_p50_ms=1.965`, `xctrace_overhead_candidate_status=single_missing_encoder_navigation_only`, `xctrace_overhead_candidate_p50_ms=0.007`, `captured_rows=0`, `missing_rows=4`, `rc_live_checks=skipped`, and `rc_security_deterministic_property_tests=guarded`; `external-profiling-results-intake.txt` is an operator intake contract, and the xctrace review packet plus overhead/candidate summaries are navigation artifacts, not profiler evidence.
-- `logs/production_readiness_milestone_current/production-readiness-milestone-summary.txt` reported `status=pass`, `reason=milestone_reached`, `production_readiness=rc_evidence_ready`, `stable_streaming=pass`, `high_resident_set=pass`, `predictable_performance=pass`, `resource_upload_health=pass`, `storage_protocol_integrity=pass`, `docs_reproducible_gates=pass`, `external_profiler=pending_external_profiler`, `external_capture_readiness=ready_for_external_capture`, `native_shadow_direction=deferred_implementation_gate`, `transparent_direction=deferred_implementation_gate`, `live_release_checks=skipped`, `rc_security_deterministic_property_tests=guarded`, `resident_gpu_draws=2482`, `resident_gpu_subchunks=2482`, `upload_effective_draws=21216`, and `memory_fragmentation_pct=0.000`.
+- `logs/production_readiness_milestone_current/production-readiness-milestone-summary.txt` reported `status=pass`, `reason=milestone_reached`, `production_readiness=rc_evidence_ready`, `stable_streaming=pass`, `high_resident_set=pass`, `predictable_performance=pass`, `resource_upload_health=pass`, `storage_protocol_integrity=pass`, `docs_reproducible_gates=pass`, `external_profiler=pending_external_profiler`, `external_capture_readiness=ready_for_external_capture`, `native_shadow_direction=deferred_implementation_gate`, `transparent_direction=deferred_implementation_gate`, `live_release_checks=skipped`, `rc_security_deterministic_property_tests=guarded`, `security_local_server_exposure=loopback_default_guarded`, `rc_security_local_server_exposure=loopback_default_guarded`, `resident_gpu_draws=2482`, `resident_gpu_subchunks=2482`, `upload_effective_draws=21216`, and `memory_fragmentation_pct=0.000`.
 
 ## Deferred Release Blockers
 

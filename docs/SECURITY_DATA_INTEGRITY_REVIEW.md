@@ -31,6 +31,7 @@ Scope:
 - Validate chunk serialization, RLE compatibility guards, and deterministic packet/RLE property coverage.
 - Validate storage/load/save integrity guards.
 - Validate block edit persistence and invalid place-block rejection.
+- Record the local-only server exposure boundary before any non-local deployment.
 - Record current guarded runtime boundaries and remaining security/data-integrity work.
 
 Out of scope:
@@ -39,7 +40,8 @@ Out of scope:
 
 Assumptions:
 
-- This project currently runs a local development server and does not yet expose a production auth/trust boundary.
+- This project currently defaults to a local loopback development server and does not yet expose a production auth/trust boundary.
+- Any non-local bind is an explicit operator override through `RUMPELMC_SERVER_ADDRESS` and is not production-safe without a separate auth/encryption review.
 - Packet and storage correctness are the most relevant release-candidate integrity gates for the current architecture.
 - MCP findings are bounded static heuristics and must be interpreted against local tests and source.
 
@@ -97,6 +99,13 @@ Checks:
 - Block edit persistence is guarded at the world/storage boundary, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
 - These runtime guards do not add authentication, packet replay, adaptive admission, or new wire semantics.
 
+### Local-Only Threat Model
+
+- `server/cmd/server/main.go` defaults `configuredServerAddress()` to `127.0.0.1:25565`, so a normal server launch listens on loopback only.
+- The Godot client default host is `127.0.0.1`, and the Rust client default address remains `127.0.0.1:25565`.
+- `RUMPELMC_SERVER_ADDRESS` remains the explicit override for smoke scripts and operator-controlled non-default binds; setting it to a non-loopback address does not add authentication, encryption, replay protection, or production monitoring.
+- Smoke scripts that bind isolated test ports are local runtime evidence only. They do not authorize exposing the server outside localhost.
+
 ## MCP Review Notes
 
 - Fresh 2026-06-16 server error topology showed expected validation/check sites such as invalid place-block rejection and env parsing; no findings were emitted.
@@ -108,7 +117,7 @@ Checks:
 
 Still needed:
 
-- Authentication/encryption or explicit local-only threat model before any non-local server exposure.
+- Authentication/encryption before any non-local server exposure; the current loopback default only makes local development safe by default.
 - Sustained overload/admission sizing and backpressure policy beyond the opt-in max-client cap, bounded admission matrix, bounded write-timeout, and bounded slow-reader matrix guards.
 - Longer reconnect failure/idle soak and broad client loaded-state reset policy beyond the bounded reconnect/rebootstrap guards.
 - Corrupt edit recovery policy beyond current corrupt chunk load rejection.
@@ -132,12 +141,13 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `local_server_exposure=loopback_default_guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records reviewed boundaries, MCP notes, deferred work, and compatibility rules.
 - Server/Rust sources still contain packet-size, exact-read, decode, and block-edit validation hooks.
+- Server and client defaults still keep normal runtime traffic on loopback, with non-local bind requiring explicit `RUMPELMC_SERVER_ADDRESS`.
 - Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
 - Focused deterministic packet/RLE property tests are present in Go and Rust test sources and surfaced in the summary as `deterministic_property_tests=guarded`.
 - Focused Go protocol/network/storage/world tests pass.
@@ -147,4 +157,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and external fuzz campaigns remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, loopback-by-default local server exposure, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and external fuzz campaigns remain future work.
