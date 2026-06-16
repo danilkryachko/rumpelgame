@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -279,6 +280,40 @@ func TestRocksChunkStoreConcurrentSaveLoadDistinctChunks(t *testing.T) {
 		if got := loaded.GetBlock(want.localX, want.y, want.localZ); got != want.block {
 			t.Fatalf("final block at chunk %d,%d = %d, want %d", want.x, want.z, got, want.block)
 		}
+	}
+}
+
+func TestRocksChunkStoreRejectsOperationsAfterClose(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+
+	store.Close()
+	store.Close()
+
+	if _, ok, err := store.LoadChunk(0, 0); !errors.Is(err, errRocksChunkStoreClosed) {
+		t.Fatalf("LoadChunk() error = %v, want closed store error", err)
+	} else if ok {
+		t.Fatal("LoadChunk() ok = true, want false for closed store")
+	}
+
+	if err := store.SaveChunk(world.NewChunk(0, 0)); !errors.Is(err, errRocksChunkStoreClosed) {
+		t.Fatalf("SaveChunk() error = %v, want closed store error", err)
+	} else if !strings.Contains(err.Error(), "save RocksDB chunk 0,0") {
+		t.Fatalf("SaveChunk() error = %q, want chunk context", err)
+	}
+}
+
+func TestRocksChunkStoreRejectsNilChunkSave(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	if err := store.SaveChunk(nil); !errors.Is(err, errNilRocksChunk) {
+		t.Fatalf("SaveChunk(nil) error = %v, want nil chunk error", err)
 	}
 }
 

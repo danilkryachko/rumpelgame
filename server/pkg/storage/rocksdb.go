@@ -9,12 +9,18 @@ import "C"
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"unsafe"
 
 	"rumpelmc/server/pkg/world"
+)
+
+var (
+	errRocksChunkStoreClosed = errors.New("RocksDB chunk store is closed")
+	errNilRocksChunk         = errors.New("RocksDB chunk store cannot save nil chunk")
 )
 
 type RocksChunkStore struct {
@@ -60,6 +66,10 @@ func OpenRocksChunkStore(path string) (*RocksChunkStore, error) {
 }
 
 func (s *RocksChunkStore) LoadChunk(x, z int32) (*world.Chunk, bool, error) {
+	if err := s.ensureOpen(); err != nil {
+		return nil, false, fmt.Errorf("load RocksDB chunk %d,%d: %w", x, z, err)
+	}
+
 	key := chunkKey(x, z)
 
 	var cErr *C.char
@@ -89,6 +99,13 @@ func (s *RocksChunkStore) LoadChunk(x, z int32) (*world.Chunk, bool, error) {
 }
 
 func (s *RocksChunkStore) SaveChunk(chunk *world.Chunk) error {
+	if chunk == nil {
+		return fmt.Errorf("save RocksDB chunk: %w", errNilRocksChunk)
+	}
+	if err := s.ensureOpen(); err != nil {
+		return fmt.Errorf("save RocksDB chunk %d,%d: %w", chunk.X, chunk.Z, err)
+	}
+
 	key := chunkKey(chunk.X, chunk.Z)
 	data := chunk.Serialize()
 	if err := s.putChunkData(key, data); err != nil {
@@ -98,6 +115,10 @@ func (s *RocksChunkStore) SaveChunk(chunk *world.Chunk) error {
 }
 
 func (s *RocksChunkStore) putChunkData(key, data []byte) error {
+	if err := s.ensureOpen(); err != nil {
+		return err
+	}
+
 	var cErr *C.char
 	C.rocksdb_put(
 		s.db,
@@ -127,6 +148,13 @@ func (s *RocksChunkStore) Close() {
 		C.rocksdb_close(s.db)
 		s.db = nil
 	}
+}
+
+func (s *RocksChunkStore) ensureOpen() error {
+	if s == nil || s.db == nil || s.ro == nil || s.wo == nil {
+		return errRocksChunkStoreClosed
+	}
+	return nil
 }
 
 func takeRocksError(cErr *C.char) error {

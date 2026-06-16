@@ -23,6 +23,7 @@ Do not introduce, expand, or migrate to another database engine without explicit
 - RocksDB open-path behavior is guarded: missing parent directories are created, and existing regular-file database paths are rejected.
 - RocksDB concurrent access is guarded for distinct chunk keys: concurrent save/load operations on one open store must preserve each chunk payload.
 - RocksDB open/read/write/decode errors include path or chunk-coordinate context so failures are actionable from logs and test output.
+- RocksDB lifecycle behavior is guarded: double close is safe, operations after close return Go errors, and nil chunk saves are rejected before reaching the C API.
 - PostgreSQL is approved for project storage, but its exact project role should be documented when implemented or changed.
 - Current RocksDB persistence foundation coverage is documented in `docs/STORAGE_PERSISTENCE_FOUNDATION.md`.
 
