@@ -106,7 +106,9 @@ require_token "$SERVER_TEST" "TestSendChunkToSessionSetsAndClearsWriteDeadline"
 require_token "$SERVER_TEST" "TestConfiguredMaxClientsParsesSupportedValues"
 require_token "$SERVER_TEST" "TestTryRegisterClientHonorsMaxClients"
 require_token "$SERVER_TEST" "TestHandleConnectionRejectsWhenMaxClientsReached"
+require_token "$LIVE_SMOKE_SCRIPT" "server_multi_client_detail"
 require_token "$LIVE_SMOKE_SCRIPT" "server_multi_client_smoke status=pass"
+require_token "$LIVE_SMOKE_SCRIPT" "detail_status=pass"
 require_token "$LIVE_SMOKE_SCRIPT" "server_resource_samples="
 require_token "$ADMISSION_LIMIT_SMOKE_SCRIPT" "server_admission_limit_smoke status=pass"
 require_token "$ADMISSION_LIMIT_SMOKE_SCRIPT" "admission_result=rejected"
@@ -156,11 +158,15 @@ esac
 worldgen_quality_status="$(field_metric status "$WORLDGEN_QUALITY_SUMMARY")"
 worldgen_runtime_quality="$(field_metric runtime_quality_pass "$WORLDGEN_QUALITY_SUMMARY")"
 live_load_status="deferred"
+live_detail_status="deferred"
+live_detail_clients="0"
 live_resource_samples="0"
 live_resource_rss_kb_max="0"
 live_resource_cpu_pct_max="0"
 if [ -s "$LIVE_SMOKE_SUMMARY" ]; then
   live_load_status="$(field_metric status "$LIVE_SMOKE_SUMMARY")"
+  live_detail_status="$(field_metric detail_status "$LIVE_SMOKE_SUMMARY")"
+  live_detail_clients="$(field_metric detail_clients "$LIVE_SMOKE_SUMMARY")"
   live_resource_samples="$(field_metric server_resource_samples "$LIVE_SMOKE_SUMMARY")"
   live_resource_rss_kb_max="$(field_metric server_rss_kb_max "$LIVE_SMOKE_SUMMARY")"
   live_resource_cpu_pct_max="$(field_metric server_cpu_pct_max "$LIVE_SMOKE_SUMMARY")"
@@ -169,6 +175,8 @@ broader_live_load_status="deferred"
 broader_live_clients="0"
 broader_live_initial_chunks="0"
 broader_live_fanout_updates="0"
+broader_live_detail_status="deferred"
+broader_live_detail_clients="0"
 broader_live_resource_samples="0"
 broader_live_resource_rss_kb_max="0"
 broader_live_resource_cpu_pct_max="0"
@@ -177,6 +185,8 @@ if [ -s "$BROADER_LIVE_SMOKE_SUMMARY" ]; then
   broader_live_clients="$(field_metric clients "$BROADER_LIVE_SMOKE_SUMMARY")"
   broader_live_initial_chunks="$(field_metric initial_chunks "$BROADER_LIVE_SMOKE_SUMMARY")"
   broader_live_fanout_updates="$(field_metric fanout_updates "$BROADER_LIVE_SMOKE_SUMMARY")"
+  broader_live_detail_status="$(field_metric detail_status "$BROADER_LIVE_SMOKE_SUMMARY")"
+  broader_live_detail_clients="$(field_metric detail_clients "$BROADER_LIVE_SMOKE_SUMMARY")"
   broader_live_resource_samples="$(field_metric server_resource_samples "$BROADER_LIVE_SMOKE_SUMMARY")"
   broader_live_resource_rss_kb_max="$(field_metric server_rss_kb_max "$BROADER_LIVE_SMOKE_SUMMARY")"
   broader_live_resource_cpu_pct_max="$(field_metric server_cpu_pct_max "$BROADER_LIVE_SMOKE_SUMMARY")"
@@ -246,6 +256,8 @@ awk \
   -v worldgen_runtime_quality="${worldgen_runtime_quality:-active}" \
   -v proto_diff_count="$proto_diff_count" \
   -v live_load_status="${live_load_status:-missing}" \
+  -v live_detail_status="${live_detail_status:-deferred}" \
+  -v live_detail_clients="${live_detail_clients:-0}" \
   -v live_resource_samples="${live_resource_samples:-0}" \
   -v live_resource_rss_kb_max="${live_resource_rss_kb_max:-0}" \
   -v live_resource_cpu_pct_max="${live_resource_cpu_pct_max:-0}" \
@@ -254,6 +266,8 @@ awk \
   -v broader_live_clients="${broader_live_clients:-0}" \
   -v broader_live_initial_chunks="${broader_live_initial_chunks:-0}" \
   -v broader_live_fanout_updates="${broader_live_fanout_updates:-0}" \
+  -v broader_live_detail_status="${broader_live_detail_status:-deferred}" \
+  -v broader_live_detail_clients="${broader_live_detail_clients:-0}" \
   -v broader_live_resource_samples="${broader_live_resource_samples:-0}" \
   -v broader_live_resource_rss_kb_max="${broader_live_resource_rss_kb_max:-0}" \
   -v broader_live_resource_cpu_pct_max="${broader_live_resource_cpu_pct_max:-0}" \
@@ -287,6 +301,12 @@ awk \
       broader_live_clients + 0 >= broader_live_min_clients + 0 &&
       broader_live_initial_chunks + 0 == broader_live_clients + 0 &&
       broader_live_fanout_updates + 0 == broader_live_clients + 0
+    live_detail_ok = live_load_status == "pass" &&
+      live_detail_status == "pass" &&
+      live_detail_clients + 0 == 2
+    broader_live_detail_ok = broader_live_ok &&
+      broader_live_detail_status == "pass" &&
+      broader_live_detail_clients + 0 == broader_live_clients + 0
     live_resource_ok = live_load_status == "pass" &&
       live_resource_samples + 0 >= 1 &&
       live_resource_rss_kb_max + 0 > 0
@@ -326,9 +346,15 @@ awk \
     } else if (!live_ok) {
       status = "fail"
       reason = "live_multi_client_smoke_failed"
+    } else if (live_load_status == "pass" && !live_detail_ok) {
+      status = "fail"
+      reason = "live_detail_missing"
     } else if (!broader_required_ok) {
       status = "fail"
       reason = "broader_live_multi_client_smoke_failed"
+    } else if (broader_live_ok && !broader_live_detail_ok) {
+      status = "fail"
+      reason = "broader_live_detail_missing"
     } else if (broader_live_ok && !broader_live_resource_ok) {
       status = "fail"
       reason = "broader_live_resource_profile_missing"
@@ -346,7 +372,7 @@ awk \
       reason = "network_tests_failed"
     }
 
-    printf("server_scalability_pass status=%s reason=%s scalability_status=%s resource_profile_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s admission_policy=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s live_resource_samples=%d live_resource_rss_kb_max=%d live_resource_cpu_pct_max=%.1f broader_live_load_status=%s broader_live_clients=%d broader_live_initial_chunks=%d broader_live_fanout_updates=%d broader_live_resource_samples=%d broader_live_resource_rss_kb_max=%d broader_live_resource_cpu_pct_max=%.1f admission_limit_smoke_status=%s admission_limit_max_clients=%d admission_limit_attempted_clients=%d admission_limit_admitted_clients=%d admission_limit_rejected_clients=%d admission_limit_rejection_log=%d connection_lifecycle_status=%s connection_lifecycle_connected=%d connection_lifecycle_rejected=%d connection_lifecycle_disconnected=%d connection_lifecycle_close_failures=%d connection_lifecycle_accept_failures=%d network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s broader_live_smoke_summary=%s admission_limit_smoke_summary=%s connection_lifecycle_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, resource_profile_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, admission_policy, active_protocol_change, disconnect_cleanup_status, live_load_status, live_resource_samples, live_resource_rss_kb_max, live_resource_cpu_pct_max, broader_live_load_status, broader_live_clients, broader_live_initial_chunks, broader_live_fanout_updates, broader_live_resource_samples, broader_live_resource_rss_kb_max, broader_live_resource_cpu_pct_max, admission_limit_status, admission_limit_max_clients, admission_limit_attempted_clients, admission_limit_admitted_clients, admission_limit_rejected_clients, admission_limit_rejection_log, connection_lifecycle_status, connection_lifecycle_connected, connection_lifecycle_rejected, connection_lifecycle_disconnected, connection_lifecycle_close_failures, connection_lifecycle_accept_failures, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, broader_live_smoke_summary, admission_limit_smoke_summary, connection_lifecycle_summary, worldgen_quality_summary)
+    printf("server_scalability_pass status=%s reason=%s scalability_status=%s resource_profile_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s admission_policy=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s live_detail_status=%s live_detail_clients=%d live_resource_samples=%d live_resource_rss_kb_max=%d live_resource_cpu_pct_max=%.1f broader_live_load_status=%s broader_live_clients=%d broader_live_initial_chunks=%d broader_live_fanout_updates=%d broader_live_detail_status=%s broader_live_detail_clients=%d broader_live_resource_samples=%d broader_live_resource_rss_kb_max=%d broader_live_resource_cpu_pct_max=%.1f admission_limit_smoke_status=%s admission_limit_max_clients=%d admission_limit_attempted_clients=%d admission_limit_admitted_clients=%d admission_limit_rejected_clients=%d admission_limit_rejection_log=%d connection_lifecycle_status=%s connection_lifecycle_connected=%d connection_lifecycle_rejected=%d connection_lifecycle_disconnected=%d connection_lifecycle_close_failures=%d connection_lifecycle_accept_failures=%d network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s broader_live_smoke_summary=%s admission_limit_smoke_summary=%s connection_lifecycle_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, resource_profile_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, admission_policy, active_protocol_change, disconnect_cleanup_status, live_load_status, live_detail_status, live_detail_clients, live_resource_samples, live_resource_rss_kb_max, live_resource_cpu_pct_max, broader_live_load_status, broader_live_clients, broader_live_initial_chunks, broader_live_fanout_updates, broader_live_detail_status, broader_live_detail_clients, broader_live_resource_samples, broader_live_resource_rss_kb_max, broader_live_resource_cpu_pct_max, admission_limit_status, admission_limit_max_clients, admission_limit_attempted_clients, admission_limit_admitted_clients, admission_limit_rejected_clients, admission_limit_rejection_log, connection_lifecycle_status, connection_lifecycle_connected, connection_lifecycle_rejected, connection_lifecycle_disconnected, connection_lifecycle_close_failures, connection_lifecycle_accept_failures, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, broader_live_smoke_summary, admission_limit_smoke_summary, connection_lifecycle_summary, worldgen_quality_summary)
     if (status != "pass") {
       exit 1
     }

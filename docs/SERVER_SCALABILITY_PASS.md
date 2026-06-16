@@ -87,7 +87,7 @@ These tests lock core fairness, fanout, failed-write cleanup, and admission-cap 
 
 `scripts/server_multi_client_smoke.sh` builds and starts the Go server on an isolated local smoke port and temporary RocksDB path, then runs `server/cmd/multi_client_smoke` against it. The smoke uses the real 4-byte little-endian frame prefix and protobuf `Packet` schema.
 
-The live client opens TCP sessions, sends initial positions for each, waits for each client to receive chunk `0,0`, sends a `BlockAction_PLACE` for wood at `1,64,1`, and verifies that every interested client receives the updated chunk with that block present. The wrapper samples server RSS and CPU percentage while the client smoke runs and writes `server-resource-samples.tsv`. The default remains two clients. Set `RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS=<n>` for broader load evidence. The client accepts both raw and RLE chunk encodings and decodes RLE through the server world package.
+The live client opens TCP sessions, sends initial positions for each, waits for each client to receive chunk `0,0`, sends a `BlockAction_PLACE` for wood at `1,64,1`, and verifies that every interested client receives the updated chunk with that block present. The wrapper writes per-client initial/update detail rows to `server-multi-client-details.tsv`, samples server RSS and CPU percentage while the client smoke runs, and writes `server-resource-samples.tsv`. The default remains two clients. Set `RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS=<n>` for broader load evidence. The client accepts both raw and RLE chunk encodings and decodes RLE through the server world package.
 
 Use:
 
@@ -98,7 +98,7 @@ sh scripts/server_multi_client_smoke.sh logs/server_multi_client_smoke_current
 Expected summary:
 
 ```text
-server_multi_client_smoke status=pass clients=2 origin_initial=1 watcher_initial=1 origin_update=1 watcher_update=1 ... server_resource_samples=6 server_rss_kb_max=27440 server_cpu_pct_max=0.2 protocol_change=0
+server_multi_client_smoke status=pass clients=2 origin_initial=1 watcher_initial=1 origin_update=1 watcher_update=1 ... detail_status=pass detail_clients=2 server_resource_samples=7 server_rss_kb_max=26512 server_cpu_pct_max=1.4 protocol_change=0
 ```
 
 This is a live fanout/bootstrap/resource-sampling smoke, not a throughput benchmark, production profiler capture, slow-reader harness, or overload benchmark.
@@ -114,21 +114,21 @@ RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS=6 sh scripts/server_multi_client_smok
 Expected summary:
 
 ```text
-server_multi_client_smoke status=pass clients=6 initial_chunks=6 fanout_updates=6 ... server_resource_samples=3 server_rss_kb_max=31616 server_cpu_pct_max=2.0 protocol_change=0
+server_multi_client_smoke status=pass clients=6 initial_chunks=6 fanout_updates=6 ... detail_status=pass detail_clients=6 server_resource_samples=6 server_rss_kb_max=31584 server_cpu_pct_max=5.2 protocol_change=0
 ```
 
 This proves a single live server can bootstrap and fan out one block edit to more than two interested clients while exposing bounded RSS/CPU samples. It does not claim throughput capacity, production memory headroom, admission behavior, slow-reader fairness, or overload policy.
 
 ## Resource Profile Evidence
 
-`scripts/server_multi_client_smoke.sh` writes process resource samples for the live Go server to `server-resource-samples.tsv` and appends `server_resource_samples`, `server_rss_kb_max`, `server_rss_kb_avg`, `server_cpu_pct_max`, and `server_cpu_pct_avg` to the smoke summary.
+`scripts/server_multi_client_smoke.sh` writes per-client observations to `server-multi-client-details.tsv`, writes process resource samples for the live Go server to `server-resource-samples.tsv`, and appends detail and resource fields to the smoke summary. The detail fields include `detail_status`, `detail_clients`, `detail_initial_chunks`, `detail_update_chunks`, `detail_initial_ms_max`, and `detail_update_ms_max`; resource fields include `server_resource_samples`, `server_rss_kb_max`, `server_rss_kb_avg`, `server_cpu_pct_max`, and `server_cpu_pct_avg`.
 
 Current bounded evidence:
 
-- Two-client fanout smoke: `server_resource_samples=6`, `server_rss_kb_max=27440`, and `server_cpu_pct_max=0.2`.
-- Six-client fanout/load smoke: `server_resource_samples=3`, `server_rss_kb_max=31616`, and `server_cpu_pct_max=2.0`.
+- Two-client fanout smoke: `detail_clients=2`, `server_resource_samples=7`, `server_rss_kb_max=26512`, and `server_cpu_pct_max=1.4`.
+- Six-client fanout/load smoke: `detail_clients=6`, `server_resource_samples=6`, `server_rss_kb_max=31584`, and `server_cpu_pct_max=5.2`.
 
-The scalability gate reports `resource_profile_status=broader_live_guarded` when the broader live smoke summary has at least one server resource sample and a nonzero RSS maximum.
+The scalability gate reports `resource_profile_status=broader_live_guarded` when the broader live smoke summary has per-client detail rows for every client, at least one server resource sample, and a nonzero RSS maximum.
 
 ## Live Admission Limit Smoke
 
@@ -189,7 +189,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result after collecting the broader live and admission-limit artifacts is `status=pass`, `scalability_status=broader_live_guarded`, `resource_profile_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live and admission-limit artifacts is `status=pass`, `scalability_status=broader_live_guarded`, `resource_profile_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
 
 To run the live smoke inside the gate:
 
@@ -221,6 +221,7 @@ The gate checks that:
 - `server.go` still has per-session `clientChunkStreamState`, connection close cleanup, block-edit fanout, and write deadlines.
 - `server.go` still has the opt-in max-client admission cap and rejected-connection log marker.
 - The live smoke script exists and records `server_multi_client_smoke status=pass`.
+- The live smoke script records per-client detail fields in its summary.
 - The live smoke script records server resource sample fields in its summary.
 - The admission-limit smoke script exists and records `server_admission_limit_smoke status=pass`.
 - The broader live smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1`.

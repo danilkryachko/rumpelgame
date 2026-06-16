@@ -22,6 +22,14 @@ type smokeClient struct {
 	conn net.Conn
 }
 
+type clientObservation struct {
+	name          string
+	initialChunk  int
+	updateChunk   int
+	initialReadMS float64
+	updateReadMS  float64
+}
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:25565", "server TCP address")
 	timeout := flag.Duration("timeout", 3*time.Second, "per-read/write timeout")
@@ -40,6 +48,7 @@ func run(addr string, timeout time.Duration, clientCount int) error {
 	}
 
 	clients := make([]*smokeClient, 0, clientCount)
+	observations := make([]clientObservation, 0, clientCount)
 	for i := 0; i < clientCount; i++ {
 		name := fmt.Sprintf("client-%d", i)
 		if i == 0 {
@@ -53,6 +62,7 @@ func run(addr string, timeout time.Duration, clientCount int) error {
 			return err
 		}
 		clients = append(clients, client)
+		observations = append(observations, clientObservation{name: name})
 	}
 	defer closeClients(clients)
 
@@ -64,14 +74,17 @@ func run(addr string, timeout time.Duration, clientCount int) error {
 	}
 
 	initialChunks := 0
-	for _, client := range clients {
+	for i, client := range clients {
+		started := time.Now()
 		initial, err := client.readChunk(timeout)
 		if err != nil {
 			return err
 		}
+		observations[i].initialReadMS = millisecondsSince(started)
 		if err := assertChunk(initial, client.name+" initial", 0, 0); err != nil {
 			return err
 		}
+		observations[i].initialChunk = 1
 		initialChunks++
 	}
 
@@ -80,17 +93,30 @@ func run(addr string, timeout time.Duration, clientCount int) error {
 	}
 
 	fanoutUpdates := 0
-	for _, client := range clients {
+	for i, client := range clients {
+		started := time.Now()
 		update, err := client.readChunk(timeout)
 		if err != nil {
 			return err
 		}
+		observations[i].updateReadMS = millisecondsSince(started)
 		if err := assertUpdatedChunk(update, client.name+" update"); err != nil {
 			return err
 		}
+		observations[i].updateChunk = 1
 		fanoutUpdates++
 	}
 
+	for _, observation := range observations {
+		fmt.Printf(
+			"server_multi_client_detail status=pass name=%s initial_chunk=%d update_chunk=%d initial_ms=%.3f update_ms=%.3f\n",
+			observation.name,
+			observation.initialChunk,
+			observation.updateChunk,
+			observation.initialReadMS,
+			observation.updateReadMS,
+		)
+	}
 	fmt.Printf(
 		"server_multi_client_smoke status=pass clients=%d initial_chunks=%d fanout_updates=%d origin_initial=1 watcher_initial=1 origin_update=1 watcher_update=1 chunk=0,0 block_x=1 block_y=64 block_z=1 block_id=%d protocol_change=0\n",
 		clientCount,
@@ -99,6 +125,10 @@ func run(addr string, timeout time.Duration, clientCount int) error {
 		world.Wood,
 	)
 	return nil
+}
+
+func millisecondsSince(started time.Time) float64 {
+	return float64(time.Since(started).Microseconds()) / 1000.0
 }
 
 func closeClients(clients []*smokeClient) {

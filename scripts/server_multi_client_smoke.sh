@@ -16,6 +16,7 @@ SMOKE_DB="$OUT_DIR/rocksdb"
 SERVER_LOG="$OUT_DIR/server.log"
 CLIENT_LOG="$OUT_DIR/client.log"
 RESOURCE_SAMPLES="$OUT_DIR/server-resource-samples.tsv"
+DETAILS_PATH="$OUT_DIR/server-multi-client-details.tsv"
 SUMMARY_PATH="$OUT_DIR/server-multi-client-smoke-summary.txt"
 BUILD_SERVER="${RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_BUILD_SERVER:-1}"
 CLIENTS="${RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS:-2}"
@@ -126,6 +127,60 @@ resource_summary_fields() {
   ' "$RESOURCE_SAMPLES"
 }
 
+write_detail_tsv() {
+  awk '
+    BEGIN {
+      print "name\tinitial_chunk\tupdate_chunk\tinitial_ms\tupdate_ms"
+    }
+    /^server_multi_client_detail status=pass / {
+      name = field_value($0, "name")
+      initial_chunk = field_value($0, "initial_chunk")
+      update_chunk = field_value($0, "update_chunk")
+      initial_ms = field_value($0, "initial_ms")
+      update_ms = field_value($0, "update_ms")
+      if (name != "") {
+        printf("%s\t%d\t%d\t%.3f\t%.3f\n", name, initial_chunk + 0, update_chunk + 0, initial_ms + 0.0, update_ms + 0.0)
+      }
+    }
+
+    function field_value(line, key, i, parts, prefix, value, part_count) {
+      part_count = split(line, parts, /[[:space:]]+/)
+      prefix = key "="
+      for (i = 1; i <= part_count; i++) {
+        if (index(parts[i], prefix) == 1) {
+          value = substr(parts[i], length(prefix) + 1)
+          gsub(/^[",]+/, "", value)
+          gsub(/[",]+$/, "", value)
+          return value
+        }
+      }
+      return ""
+    }
+  ' "$CLIENT_LOG" > "$DETAILS_PATH"
+}
+
+detail_summary_fields() {
+  awk -v want="$CLIENTS" '
+    NR > 1 {
+      clients++
+      initial_chunks += $2 + 0
+      update_chunks += $3 + 0
+      initial_ms = $4 + 0.0
+      update_ms = $5 + 0.0
+      if (initial_ms > max_initial_ms) {
+        max_initial_ms = initial_ms
+      }
+      if (update_ms > max_update_ms) {
+        max_update_ms = update_ms
+      }
+    }
+    END {
+      status = clients == want && initial_chunks == want && update_chunks == want ? "pass" : "fail"
+      printf("detail_status=%s detail_clients=%d detail_initial_chunks=%d detail_update_chunks=%d detail_initial_ms_max=%.3f detail_update_ms_max=%.3f", status, clients, initial_chunks, update_chunks, max_initial_ms, max_update_ms)
+    }
+  ' "$DETAILS_PATH"
+}
+
 listener="$(listener_pid || true)"
 if [ -n "$listener" ]; then
   fail "port $SMOKE_PORT is already in use; choose another RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_PORT"
@@ -146,7 +201,7 @@ case "$BUILD_SERVER" in
     ;;
 esac
 
-rm -f "$SERVER_LOG" "$CLIENT_LOG" "$RESOURCE_SAMPLES" "$SUMMARY_PATH"
+rm -f "$SERVER_LOG" "$CLIENT_LOG" "$RESOURCE_SAMPLES" "$DETAILS_PATH" "$SUMMARY_PATH"
 rm -rf "$SMOKE_DB"
 printf 'epoch_s\tpid\trss_kb\tcpu_pct\n' > "$RESOURCE_SAMPLES"
 
@@ -193,6 +248,15 @@ if [ -z "$summary" ]; then
   fail "missing passing smoke summary"
 fi
 
+write_detail_tsv
+detail_fields="$(detail_summary_fields)"
+case "$detail_fields" in
+  *"detail_status=pass"*) ;;
+  *)
+    cat "$DETAILS_PATH" >&2 || true
+    fail "per-client smoke details did not match client count"
+    ;;
+esac
 resource_fields="$(resource_summary_fields)"
-printf '%s %s resource_samples=%s server_log=%s client_log=%s\n' "$summary" "$resource_fields" "$RESOURCE_SAMPLES" "$SERVER_LOG" "$CLIENT_LOG" > "$SUMMARY_PATH"
+printf '%s %s %s detail_path=%s resource_samples=%s server_log=%s client_log=%s\n' "$summary" "$detail_fields" "$resource_fields" "$DETAILS_PATH" "$RESOURCE_SAMPLES" "$SERVER_LOG" "$CLIENT_LOG" > "$SUMMARY_PATH"
 cat "$SUMMARY_PATH"
