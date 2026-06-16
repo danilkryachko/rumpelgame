@@ -44,7 +44,7 @@ Assumptions:
 
 Done when:
 
-- The player hotbar has an explicit inventory slot model and tests.
+- The player hotbar has an explicit inventory slot model, selected slot state, and tests.
 - A gameplay foundation gate checks the client inventory tests, the existing server edit/persistence path, and the completed Block 41 persisted visual proof.
 
 Checks:
@@ -69,9 +69,12 @@ The client now has a local creative hotbar inventory model:
 - `InventorySlot { block_id, count }`
 - `PLAYER_HOTBAR_SLOTS = 5`
 - `CREATIVE_HOTBAR_STACK_COUNT = 999`
+- `selected_hotbar_slot` stores the active slot separately from `selected_block`
 - `initial_hotbar_inventory()` derives slots from `blocks::PLACEABLE_BLOCKS`
 - `inventory_slot_can_place()` requires positive count and a placeable block ID
 - `inventory_has_placeable_block()` gates right-click placement
+- `first_placeable_hotbar_slot()` initializes selection from the first usable slot
+- `selected_hotbar_state_after_request()` updates slot and block ID together only for usable slots
 - `hotbar_key_for_slot()` keeps key mapping bounded to slots `1..5`
 
 This is intentionally client-local and behavior-preserving for the existing hotbar. It gives future survival/server-inventory work a small seam without adding protocol or persistence fields now.
@@ -115,12 +118,12 @@ Use:
 sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records mining/building flow, inventory foundation, persistence boundary, deferred work, and compatibility rules.
-- The player source contains the hotbar inventory model and tests.
+- The player source contains the hotbar inventory model, selected slot state, selection helpers, and tests.
 - Server block edits still flow through `World.SetBlockGlobal`.
 - `World.SetBlockGlobal` still calls `ChunkStore.SaveChunk`.
 - The Block 41 block-edit persistence summary is present and its persisted visual/collision/GPU matrix is clean.
@@ -130,4 +133,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. Broader gameplay systems still remain outside this foundation checkpoint.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID. Broader gameplay systems still remain outside this foundation checkpoint.

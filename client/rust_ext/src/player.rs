@@ -39,6 +39,7 @@ pub struct Player {
     selection_outline: Option<Gd<MeshInstance3D>>,
     mouse_sensitivity: f32,
     selected_block: i32,
+    selected_hotbar_slot: usize,
     hotbar: [InventorySlot; PLAYER_HOTBAR_SLOTS],
     fly_mode: bool,
     default_collision_layer: u32,
@@ -48,13 +49,19 @@ pub struct Player {
 #[godot_api]
 impl ICharacterBody3D for Player {
     fn init(base: Base<CharacterBody3D>) -> Self {
+        let hotbar = initial_hotbar_inventory();
+        let selected_hotbar_slot = first_placeable_hotbar_slot(&hotbar).unwrap_or(0);
+        let selected_block = selected_block_for_hotbar_slot(&hotbar, selected_hotbar_slot)
+            .unwrap_or(crate::blocks::STONE) as i32;
+
         Self {
             base,
             camera: None,
             selection_outline: None,
             mouse_sensitivity: 0.002,
-            selected_block: 1,
-            hotbar: initial_hotbar_inventory(),
+            selected_block,
+            selected_hotbar_slot,
+            hotbar,
             fly_mode: false,
             default_collision_layer: 1,
             default_collision_mask: 1,
@@ -351,13 +358,20 @@ impl Player {
     }
 
     fn update_selected_block_from_hotbar(&mut self, input: &Gd<Input>) {
-        for (slot, item) in self.hotbar.iter().enumerate() {
+        for slot in 0..self.hotbar.len() {
             let Some(key) = hotbar_key_for_slot(slot) else {
                 continue;
             };
 
-            if input.is_physical_key_pressed(key) && inventory_slot_can_place(item) {
-                self.selected_block = item.block_id as i32;
+            if input.is_physical_key_pressed(key) {
+                let (selected_slot, selected_block) = selected_hotbar_state_after_request(
+                    &self.hotbar,
+                    self.selected_hotbar_slot,
+                    self.selected_block as crate::blocks::BlockId,
+                    slot,
+                );
+                self.selected_hotbar_slot = selected_slot;
+                self.selected_block = selected_block as i32;
             }
         }
     }
@@ -442,6 +456,31 @@ fn initial_hotbar_inventory() -> [InventorySlot; PLAYER_HOTBAR_SLOTS] {
 
 fn inventory_slot_can_place(slot: &InventorySlot) -> bool {
     slot.count > 0 && crate::blocks::is_placeable(slot.block_id)
+}
+
+fn first_placeable_hotbar_slot(hotbar: &[InventorySlot]) -> Option<usize> {
+    hotbar.iter().position(inventory_slot_can_place)
+}
+
+fn selected_block_for_hotbar_slot(
+    hotbar: &[InventorySlot],
+    slot: usize,
+) -> Option<crate::blocks::BlockId> {
+    hotbar
+        .get(slot)
+        .filter(|item| inventory_slot_can_place(item))
+        .map(|item| item.block_id)
+}
+
+fn selected_hotbar_state_after_request(
+    hotbar: &[InventorySlot],
+    current_slot: usize,
+    current_block_id: crate::blocks::BlockId,
+    requested_slot: usize,
+) -> (usize, crate::blocks::BlockId) {
+    selected_block_for_hotbar_slot(hotbar, requested_slot)
+        .map(|block_id| (requested_slot, block_id))
+        .unwrap_or((current_slot, current_block_id))
 }
 
 fn inventory_has_placeable_block(
@@ -597,5 +636,61 @@ mod tests {
             assert!(hotbar_key_for_slot(slot).is_some());
         }
         assert!(hotbar_key_for_slot(PLAYER_HOTBAR_SLOTS).is_none());
+    }
+
+    #[test]
+    fn hotbar_first_placeable_slot_picks_available_block() {
+        let mut hotbar = [InventorySlot {
+            block_id: crate::blocks::AIR,
+            count: 0,
+        }; PLAYER_HOTBAR_SLOTS];
+        hotbar[2] = InventorySlot {
+            block_id: crate::blocks::DIRT,
+            count: 1,
+        };
+
+        assert_eq!(first_placeable_hotbar_slot(&hotbar), Some(2));
+    }
+
+    #[test]
+    fn selected_hotbar_state_tracks_placeable_slot() {
+        let hotbar = initial_hotbar_inventory();
+
+        let (slot, block_id) =
+            selected_hotbar_state_after_request(&hotbar, 0, crate::blocks::STONE, 3);
+
+        assert_eq!(slot, 3);
+        assert_eq!(block_id, crate::blocks::WOOD);
+    }
+
+    #[test]
+    fn selected_hotbar_state_ignores_unplaceable_or_empty_slot() {
+        let mut hotbar = initial_hotbar_inventory();
+        hotbar[1] = InventorySlot {
+            block_id: crate::blocks::DIRT,
+            count: 0,
+        };
+        hotbar[2] = InventorySlot {
+            block_id: crate::blocks::AIR,
+            count: CREATIVE_HOTBAR_STACK_COUNT,
+        };
+
+        assert_eq!(
+            selected_hotbar_state_after_request(&hotbar, 0, crate::blocks::STONE, 1),
+            (0, crate::blocks::STONE)
+        );
+        assert_eq!(
+            selected_hotbar_state_after_request(&hotbar, 0, crate::blocks::STONE, 2),
+            (0, crate::blocks::STONE)
+        );
+        assert_eq!(
+            selected_hotbar_state_after_request(
+                &hotbar,
+                0,
+                crate::blocks::STONE,
+                PLAYER_HOTBAR_SLOTS
+            ),
+            (0, crate::blocks::STONE)
+        );
     }
 }

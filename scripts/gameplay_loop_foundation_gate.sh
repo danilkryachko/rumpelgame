@@ -74,9 +74,13 @@ require_token "$PROTOCOL_DOC" '`Packet.block_action = 3`'
 require_token "$PLAYER_SOURCE" 'struct InventorySlot'
 require_token "$PLAYER_SOURCE" 'PLAYER_HOTBAR_SLOTS'
 require_token "$PLAYER_SOURCE" 'CREATIVE_HOTBAR_STACK_COUNT'
+require_token "$PLAYER_SOURCE" 'selected_hotbar_slot: usize'
 require_token "$PLAYER_SOURCE" 'hotbar: [InventorySlot; PLAYER_HOTBAR_SLOTS]'
 require_token "$PLAYER_SOURCE" 'fn initial_hotbar_inventory'
 require_token "$PLAYER_SOURCE" 'fn inventory_slot_can_place'
+require_token "$PLAYER_SOURCE" 'fn first_placeable_hotbar_slot'
+require_token "$PLAYER_SOURCE" 'fn selected_block_for_hotbar_slot'
+require_token "$PLAYER_SOURCE" 'fn selected_hotbar_state_after_request'
 require_token "$PLAYER_SOURCE" 'fn inventory_has_placeable_block'
 require_token "$PLAYER_SOURCE" 'fn hotbar_key_for_slot'
 require_token "$PLAYER_SOURCE" 'block_broken'
@@ -85,6 +89,9 @@ require_token "$PLAYER_SOURCE" 'initial_hotbar_inventory_contains_placeable_bloc
 require_token "$PLAYER_SOURCE" 'inventory_slot_can_place_requires_count_and_placeable_block'
 require_token "$PLAYER_SOURCE" 'inventory_has_placeable_block_accepts_only_available_hotbar_blocks'
 require_token "$PLAYER_SOURCE" 'hotbar_key_mapping_is_bounded_to_inventory_slots'
+require_token "$PLAYER_SOURCE" 'hotbar_first_placeable_slot_picks_available_block'
+require_token "$PLAYER_SOURCE" 'selected_hotbar_state_tracks_placeable_slot'
+require_token "$PLAYER_SOURCE" 'selected_hotbar_state_ignores_unplaceable_or_empty_slot'
 require_token "$CLIENT_SOURCE" 'fn on_block_broken'
 require_token "$CLIENT_SOURCE" 'fn on_block_placed'
 require_token "$CLIENT_SOURCE" 'BlockAction'
@@ -152,6 +159,7 @@ awk \
     reason = "ok"
     gameplay_loop_status = "foundation_guarded"
     inventory_foundation = "unit_guarded"
+    hotbar_selection = "unit_guarded"
     server_edit_persistence = "store_save_boundary"
     block_edit_visual_ok = block_edit_persistence_status == "pass" &&
       block_edit_visual_path == "godot_persisted_reload_guarded" &&
@@ -186,7 +194,7 @@ awk \
       reason = "block_41_visual_proof_not_clean"
     }
 
-    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary)
+    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary)
     if (status != "pass") {
       exit 1
     }

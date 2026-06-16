@@ -41,7 +41,7 @@
 - The client lifecycle model tracks connecting, waiting_chunks, spawning, active, reconnecting, and shutdown.
 - The packet reader feeds the main-thread packet queue; packet queue metrics are observational and do not implement backpressure or dropping.
 - Chunk replacements run through dirty-update detection. Partial dirty GPU upload is default-on; `RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD=0` is the full-rebuild rollback path.
-- Local creative hotbar state is client-side gameplay foundation. Server authority for block edits still flows through `BlockAction` and `World.SetBlockGlobal`.
+- Local creative hotbar state, including the selected slot and selected block ID, is client-side gameplay foundation. Server authority for block edits still flows through `BlockAction` and `World.SetBlockGlobal`.
 - Reconnect execution, slow-client policy, block-edit broadcast fanout, and opt-in max-client admission with bounded live rejection evidence are guarded; adaptive overload/backpressure behavior remains deferred policy work.
 
 ## GPU Terrain Contract
