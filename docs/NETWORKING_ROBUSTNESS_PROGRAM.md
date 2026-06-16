@@ -64,7 +64,7 @@ Checks:
 - Server `handleConnection` logs receive errors as disconnects and closes the connection through `defer conn.Close()`.
 - Server packet and write errors are classified into stable `packet_error_class` labels: `eof`, `short_frame`, `oversized_frame`, `malformed_protobuf`, `timeout`, `short_write`, `encode_error`, and `other`.
 - `scripts/packet_error_class_summary.sh` aggregates those labels from server log files, rejects unknown classes, and writes a count summary plus TSV.
-- `scripts/packet_error_alert_threshold_gate.sh` runs the class summary over current live server smoke logs and applies operational thresholds to the classified labels.
+- `scripts/packet_error_alert_threshold_gate.sh` runs the class summary over current live server smoke logs, including the slow-reader matrix logs when present, and applies operational thresholds to the classified labels.
 - Server `receiveInitialClientPacket` has a bounded read deadline for startup probing and clears the deadline before normal streaming.
 - Server `sendPacket` writes the length prefix and payload through `writeFull`, which rejects zero-byte writes with `io.ErrShortWrite`.
 - Live session chunk writes set and clear a bounded write deadline using `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS`; `0` disables it as a rollback/control.
@@ -162,14 +162,14 @@ When this matrix is present and clean, the networking gate reports `slow_client_
 
 ## Packet Error Alert Thresholds
 
-`scripts/packet_error_alert_threshold_gate.sh` is the current operational alert threshold gate for live `packet_error_class` evidence. It intentionally uses live server smoke logs instead of the synthetic parser fixture used by `networking_robustness_gate.sh`.
+`scripts/packet_error_alert_threshold_gate.sh` is the current operational alert threshold gate for live `packet_error_class` evidence. It intentionally uses live server smoke logs, including the bounded slow-reader matrix logs when present, instead of the synthetic parser fixture used by `networking_robustness_gate.sh`.
 
 Default thresholds:
 
 - Unknown classes: `0`
 - Protocol error classes (`short_frame`, `oversized_frame`, `malformed_protobuf`): `0`
 - Write/internal error classes (`short_write`, `encode_error`, `other`): `0`
-- Timeout class: `2`, matching the current bounded slow-reader smoke evidence
+- Timeout class: `4`, matching the current bounded slow-reader smoke plus matrix evidence
 - EOF class: high default threshold, because clean client shutdowns currently log EOF disconnects
 
 Use:
@@ -181,7 +181,7 @@ sh scripts/packet_error_alert_threshold_gate.sh logs/packet_error_alert_threshol
 Expected current summary:
 
 ```text
-packet_error_alert_threshold status=pass alert_status=threshold_guarded classified_events=29 unknown_classes=0 eof=27 timeout=2 protocol_errors=0 write_errors=0
+packet_error_alert_threshold status=pass alert_status=threshold_guarded classified_events=42 unknown_classes=0 eof=38 timeout=4 protocol_errors=0 write_errors=0
 ```
 
 This is not authentication, abuse detection, or production monitoring. It is a deterministic local alert boundary for the classified labels already emitted by the server.

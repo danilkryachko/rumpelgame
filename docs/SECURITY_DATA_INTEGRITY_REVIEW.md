@@ -91,7 +91,7 @@ Checks:
 - Opt-in max-client admission rejection is unit-guarded, bounded-live-guarded, and matrix-guarded by the server scalability gate without adding wire semantics.
 - Classified server packet-error labels are guarded through the networking gate as `packet_error_classification`.
 - Classified server packet-error aggregation is guarded through the networking gate as `packet_error_aggregation`.
-- Classified server packet-error alert thresholds are guarded through the networking gate as `packet_error_alerts`.
+- Classified server packet-error alert thresholds, including current slow-reader matrix timeout evidence, are guarded through the networking gate as `packet_error_alerts`.
 - Client reconnect/rebootstrap is guarded by live disconnect/server-restart smoke and a bounded repeated reconnect soak, with reader-session stale-packet filtering covered by Rust unit tests.
 - Block edit persistence is guarded at the world/storage boundary, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
 - These runtime guards do not add authentication, packet replay, adaptive admission, or new wire semantics.

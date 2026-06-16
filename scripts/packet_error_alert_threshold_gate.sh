@@ -18,7 +18,7 @@ LOG_LIST="$OUT_DIR/packet-error-alert-log-files.txt"
 MAX_UNKNOWN="${RUMPELMC_PACKET_ERROR_ALERT_MAX_UNKNOWN:-0}"
 MAX_PROTOCOL_ERRORS="${RUMPELMC_PACKET_ERROR_ALERT_MAX_PROTOCOL_ERRORS:-0}"
 MAX_WRITE_ERRORS="${RUMPELMC_PACKET_ERROR_ALERT_MAX_WRITE_ERRORS:-0}"
-MAX_TIMEOUT="${RUMPELMC_PACKET_ERROR_ALERT_MAX_TIMEOUT:-2}"
+MAX_TIMEOUT="${RUMPELMC_PACKET_ERROR_ALERT_MAX_TIMEOUT:-4}"
 MAX_EOF="${RUMPELMC_PACKET_ERROR_ALERT_MAX_EOF:-999999}"
 MIN_CLASSIFIED="${RUMPELMC_PACKET_ERROR_ALERT_MIN_CLASSIFIED:-1}"
 
@@ -95,6 +95,9 @@ else
     "$ROOT_DIR/logs/server_multi_client_repeat_smoke_current/run-2_current/server.log" \
     "$ROOT_DIR/logs/server_multi_client_repeat_smoke_current/run-3_current/server.log" \
     "$ROOT_DIR/logs/server_slow_reader_smoke_current/server.log" \
+    "$ROOT_DIR/logs/server_slow_reader_matrix_current/fast-1_current/server.log" \
+    "$ROOT_DIR/logs/server_slow_reader_matrix_current/fast-2_current/server.log" \
+    "$ROOT_DIR/logs/server_slow_reader_matrix_current/fast-4_current/server.log" \
     "$ROOT_DIR/logs/server_admission_limit_smoke_current/server.log"; do
     if [ -s "$path" ]; then
       printf '%s\n' "$path" >> "$LOG_LIST"
