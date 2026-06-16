@@ -216,6 +216,20 @@ server_connection_lifecycle status=pass connected_clients=9 rejected_clients=1 d
 
 This is log-summary evidence for connection cleanup and disconnect classification visibility. It is not a reconnect policy, long-run leak detector, or production session metric pipeline.
 
+## Server Session Monitoring Contract
+
+`scripts/server_session_monitoring_contract_gate.sh` converts the current scalability, admission, lifecycle, resource-sampling, and observability evidence into a local metrics export contract for release gates.
+
+Use:
+
+```sh
+sh scripts/server_session_monitoring_contract_gate.sh logs/server_session_monitoring_contract_current
+```
+
+Expected summary fields include `monitoring_contract=export_ready`, `metrics_export=present`, `scalability_guard=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `admission_policy=matrix_live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `close_failures=0`, `accept_failures=0`, `missing_active_client_fields=0`, `index_scalability_status=present`, and `index_lifecycle_status=present`.
+
+The generated `server-session-monitoring-metrics.txt` is a line-oriented local export for CI/artifact ingestion. It is not an external monitoring service, network endpoint, daemon, retention policy, production capacity claim, adaptive overload policy, or packet/protocol/storage change.
+
 ## Scalability Gaps
 
 Still needed before claiming full live multi-client scalability:
@@ -223,7 +237,7 @@ Still needed before claiming full live multi-client scalability:
 - Longer CPU/memory profiling under multiple active clients beyond the bounded RSS/CPU smoke sampling.
 - Longer multi-client load evidence beyond the bounded repeated three-run smoke.
 - Broader slow-client handling evidence under more clients and broadcast load; the networking robustness block now owns the bounded two-client slow-reader smoke.
-- Production session metrics beyond the bounded smoke-log lifecycle parser.
+- External session metric upload/retention beyond the local server session monitoring contract.
 - Sustained max-client sizing for representative hardware and gameplay workloads beyond the bounded admission matrix.
 - Fair scheduling or backpressure design if one client can monopolize generation/send work.
 
@@ -307,4 +321,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with guarded world-owned chunk request ordering, nil sent-state handling, guarded view-distance configuration, bounded live two-client and six-client fanout/resource/detail smokes, a bounded repeated six-client smoke, a bounded live opt-in max-client admission smoke, a bounded admission-limit matrix, and bounded classified connection lifecycle metrics. Longer CPU/memory profiling, broad slow-reader/load harnesses, sustained admission sizing, adaptive overload policy, and production session metric pipelines remain outside this checkpoint.
+This block is complete as a unit-guard/checkpoint block with guarded world-owned chunk request ordering, nil sent-state handling, guarded view-distance configuration, bounded live two-client and six-client fanout/resource/detail smokes, a bounded repeated six-client smoke, a bounded live opt-in max-client admission smoke, a bounded admission-limit matrix, bounded classified connection lifecycle metrics, and a local server session monitoring export contract. Longer CPU/memory profiling, broad slow-reader/load harnesses, sustained admission sizing, adaptive overload policy, and external session metric upload/retention remain outside this checkpoint.

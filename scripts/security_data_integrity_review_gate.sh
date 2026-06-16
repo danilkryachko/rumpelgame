@@ -30,10 +30,12 @@ ARCH_SUMMARY="${RUMPELMC_SECURITY_REVIEW_ARCH_SUMMARY:-"$ROOT_DIR/logs/architect
 OBSERVABILITY_SUMMARY="${RUMPELMC_SECURITY_REVIEW_OBSERVABILITY_SUMMARY:-"$ROOT_DIR/logs/observability_logs_cleanup_current/observability-logs-cleanup-summary.txt"}"
 STORAGE_SMOKE_SUMMARY="${RUMPELMC_SECURITY_REVIEW_STORAGE_SMOKE_SUMMARY:-"$ROOT_DIR/logs/storage_package_smoke_current/storage-package-smoke-summary.txt"}"
 PACKET_ERROR_MONITORING_SUMMARY="${RUMPELMC_SECURITY_REVIEW_PACKET_ERROR_MONITORING_SUMMARY:-"$ROOT_DIR/logs/packet_error_monitoring_contract_current/packet-error-monitoring-contract-summary.txt"}"
+SERVER_SESSION_MONITORING_SUMMARY="${RUMPELMC_SECURITY_REVIEW_SERVER_SESSION_MONITORING_SUMMARY:-"$ROOT_DIR/logs/server_session_monitoring_contract_current/server-session-monitoring-contract-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_SECURITY_REVIEW_RUN_GO_TESTS:-1}"
 RUN_RUST_TESTS="${RUMPELMC_SECURITY_REVIEW_RUN_RUST_TESTS:-1}"
 RUN_STORAGE_SMOKE="${RUMPELMC_SECURITY_REVIEW_RUN_STORAGE_SMOKE:-1}"
 RUN_PACKET_ERROR_MONITORING="${RUMPELMC_SECURITY_REVIEW_RUN_PACKET_ERROR_MONITORING:-1}"
+RUN_SERVER_SESSION_MONITORING="${RUMPELMC_SECURITY_REVIEW_RUN_SERVER_SESSION_MONITORING:-1}"
 UNAPPROVED_DB_SCAN="$OUT_DIR/unapproved-database-reference-scan.txt"
 
 mkdir -p "$OUT_DIR"
@@ -99,6 +101,11 @@ case "$RUN_PACKET_ERROR_MONITORING" in
   *) fail "RUMPELMC_SECURITY_REVIEW_RUN_PACKET_ERROR_MONITORING must be 0 or 1" ;;
 esac
 
+case "$RUN_SERVER_SESSION_MONITORING" in
+  0|1) ;;
+  *) fail "RUMPELMC_SECURITY_REVIEW_RUN_SERVER_SESSION_MONITORING must be 0 or 1" ;;
+esac
+
 if [ "$RUN_STORAGE_SMOKE" = "1" ]; then
   STORAGE_SMOKE_OUT_DIR="$(dirname -- "$STORAGE_SMOKE_SUMMARY")"
   sh "$ROOT_DIR/scripts/storage_package_smoke.sh" "$STORAGE_SMOKE_OUT_DIR" > "$OUT_DIR/storage-package-smoke-check.txt" 2>&1 || {
@@ -112,6 +119,14 @@ if [ "$RUN_PACKET_ERROR_MONITORING" = "1" ]; then
   sh "$ROOT_DIR/scripts/packet_error_monitoring_contract_gate.sh" "$PACKET_ERROR_MONITORING_OUT_DIR" > "$OUT_DIR/packet-error-monitoring-contract-check.txt" 2>&1 || {
     cat "$OUT_DIR/packet-error-monitoring-contract-check.txt" >&2 || true
     fail "packet error monitoring contract failed"
+  }
+fi
+
+if [ "$RUN_SERVER_SESSION_MONITORING" = "1" ]; then
+  SERVER_SESSION_MONITORING_OUT_DIR="$(dirname -- "$SERVER_SESSION_MONITORING_SUMMARY")"
+  sh "$ROOT_DIR/scripts/server_session_monitoring_contract_gate.sh" "$SERVER_SESSION_MONITORING_OUT_DIR" > "$OUT_DIR/server-session-monitoring-contract-check.txt" 2>&1 || {
+    cat "$OUT_DIR/server-session-monitoring-contract-check.txt" >&2 || true
+    fail "server session monitoring contract failed"
   }
 fi
 
@@ -136,7 +151,8 @@ for path in \
   "$ARCH_SUMMARY" \
   "$OBSERVABILITY_SUMMARY" \
   "$STORAGE_SMOKE_SUMMARY" \
-  "$PACKET_ERROR_MONITORING_SUMMARY"; do
+  "$PACKET_ERROR_MONITORING_SUMMARY" \
+  "$SERVER_SESSION_MONITORING_SUMMARY"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -283,6 +299,12 @@ packet_error_monitoring_metrics_export="$(field_metric metrics_export "$PACKET_E
 packet_error_monitoring_unknown_classes="$(field_metric unknown_classes "$PACKET_ERROR_MONITORING_SUMMARY")"
 packet_error_monitoring_protocol_errors="$(field_metric protocol_errors "$PACKET_ERROR_MONITORING_SUMMARY")"
 packet_error_monitoring_write_errors="$(field_metric write_errors "$PACKET_ERROR_MONITORING_SUMMARY")"
+server_session_monitoring_status="$(field_metric status "$SERVER_SESSION_MONITORING_SUMMARY")"
+server_session_monitoring_contract="$(field_metric monitoring_contract "$SERVER_SESSION_MONITORING_SUMMARY")"
+server_session_monitoring_metrics_export="$(field_metric metrics_export "$SERVER_SESSION_MONITORING_SUMMARY")"
+server_session_monitoring_close_failures="$(field_metric close_failures "$SERVER_SESSION_MONITORING_SUMMARY")"
+server_session_monitoring_accept_failures="$(field_metric accept_failures "$SERVER_SESSION_MONITORING_SUMMARY")"
+server_session_monitoring_missing_active_client_fields="$(field_metric missing_active_client_fields "$SERVER_SESSION_MONITORING_SUMMARY")"
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 go_integrity_tests="skipped"
@@ -344,6 +366,12 @@ awk \
   -v packet_error_monitoring_unknown_classes="${packet_error_monitoring_unknown_classes:-1}" \
   -v packet_error_monitoring_protocol_errors="${packet_error_monitoring_protocol_errors:-1}" \
   -v packet_error_monitoring_write_errors="${packet_error_monitoring_write_errors:-1}" \
+  -v server_session_monitoring_status="${server_session_monitoring_status:-missing}" \
+  -v server_session_monitoring_contract="${server_session_monitoring_contract:-missing}" \
+  -v server_session_monitoring_metrics_export="${server_session_monitoring_metrics_export:-missing}" \
+  -v server_session_monitoring_close_failures="${server_session_monitoring_close_failures:-1}" \
+  -v server_session_monitoring_accept_failures="${server_session_monitoring_accept_failures:-1}" \
+  -v server_session_monitoring_missing_active_client_fields="${server_session_monitoring_missing_active_client_fields:-1}" \
   -v proto_diff_count="$proto_diff_count" \
   -v go_integrity_tests="$go_integrity_tests" \
   -v rust_packet_tests="$rust_packet_tests" \
@@ -353,13 +381,15 @@ awk \
   -v arch_summary="$ARCH_SUMMARY" \
   -v observability_summary="$OBSERVABILITY_SUMMARY" \
   -v storage_smoke_summary="$STORAGE_SMOKE_SUMMARY" \
-  -v packet_error_monitoring_summary="$PACKET_ERROR_MONITORING_SUMMARY" '
+  -v packet_error_monitoring_summary="$PACKET_ERROR_MONITORING_SUMMARY" \
+  -v server_session_monitoring_summary="$SERVER_SESSION_MONITORING_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
     security_status = "reviewed"
     packet_boundary = "guarded"
     packet_error_monitoring = packet_error_monitoring_contract
+    server_session_monitoring = server_session_monitoring_contract
     storage_integrity = "guarded"
     storage_package_smoke = "guarded"
     storage_config = "path_guarded"
@@ -402,6 +432,12 @@ awk \
       packet_error_monitoring_unknown_classes + 0 == 0 &&
       packet_error_monitoring_protocol_errors + 0 == 0 &&
       packet_error_monitoring_write_errors + 0 == 0 &&
+      server_session_monitoring_status == "pass" &&
+      server_session_monitoring_contract == "export_ready" &&
+      server_session_monitoring_metrics_export == "present" &&
+      server_session_monitoring_close_failures + 0 == 0 &&
+      server_session_monitoring_accept_failures + 0 == 0 &&
+      server_session_monitoring_missing_active_client_fields + 0 == 0 &&
       storage_smoke_status == "pass" &&
       storage_smoke_guard == "guarded" &&
       storage_smoke_external_secret_required + 0 == 0 &&
@@ -422,7 +458,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s packet_error_monitoring=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_package_smoke=%s storage_config=%s storage_backend_policy=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s overload_status=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s storage_smoke_status=%s storage_smoke_external_secret_required=%d storage_smoke_database_env_policy=%s storage_smoke_approved_databases=%s packet_error_monitoring_status=%s packet_error_monitoring_unknown_classes=%d packet_error_monitoring_protocol_errors=%d packet_error_monitoring_write_errors=%d networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s storage_smoke_summary=%s packet_error_monitoring_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, packet_error_monitoring, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_package_smoke, storage_config, storage_backend_policy, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, overload_status, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, storage_smoke_status, storage_smoke_external_secret_required, storage_smoke_database_env_policy, storage_smoke_approved_databases, packet_error_monitoring_status, packet_error_monitoring_unknown_classes, packet_error_monitoring_protocol_errors, packet_error_monitoring_write_errors, networking_summary, persistence_summary, arch_summary, observability_summary, storage_smoke_summary, packet_error_monitoring_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s packet_error_monitoring=%s server_session_monitoring=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_package_smoke=%s storage_config=%s storage_backend_policy=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s overload_status=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s storage_smoke_status=%s storage_smoke_external_secret_required=%d storage_smoke_database_env_policy=%s storage_smoke_approved_databases=%s packet_error_monitoring_status=%s packet_error_monitoring_unknown_classes=%d packet_error_monitoring_protocol_errors=%d packet_error_monitoring_write_errors=%d server_session_monitoring_status=%s server_session_monitoring_close_failures=%d server_session_monitoring_accept_failures=%d server_session_monitoring_missing_active_client_fields=%d networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s storage_smoke_summary=%s packet_error_monitoring_summary=%s server_session_monitoring_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, packet_error_monitoring, server_session_monitoring, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_package_smoke, storage_config, storage_backend_policy, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, overload_status, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, storage_smoke_status, storage_smoke_external_secret_required, storage_smoke_database_env_policy, storage_smoke_approved_databases, packet_error_monitoring_status, packet_error_monitoring_unknown_classes, packet_error_monitoring_protocol_errors, packet_error_monitoring_write_errors, server_session_monitoring_status, server_session_monitoring_close_failures, server_session_monitoring_accept_failures, server_session_monitoring_missing_active_client_fields, networking_summary, persistence_summary, arch_summary, observability_summary, storage_smoke_summary, packet_error_monitoring_summary, server_session_monitoring_summary)
     if (status != "pass") {
       exit 1
     }
