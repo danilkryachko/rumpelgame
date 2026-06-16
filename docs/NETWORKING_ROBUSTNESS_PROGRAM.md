@@ -131,7 +131,7 @@ sh scripts/server_slow_reader_smoke.sh logs/server_slow_reader_smoke_current
 Expected summary:
 
 ```text
-server_slow_reader_smoke status=pass slow_client=1 fast_client=1 fast_bootstrap_chunk=1 slow_timeout_observed=1 ... protocol_change=0
+server_slow_reader_smoke status=pass slow_client=1 fast_client=1 fast_bootstrap_chunk=1 slow_timeout_observed=1 slow_timeout_class=timeout ... protocol_change=0
 ```
 
 This is a bounded isolation smoke, not a throughput benchmark, admission-control policy, reconnect harness, or proof of broadcast/backpressure fairness under large client counts.
@@ -199,7 +199,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
 
 To run the slow-reader smoke inside the gate:
 

@@ -150,5 +150,5 @@ if ! wait_for_slow_timeout_log; then
   fail "missing slow-reader write timeout evidence in server log"
 fi
 
-printf '%s slow_timeout_observed=1 write_timeout_ms=%s server_log=%s client_log=%s\n' "$summary" "$WRITE_TIMEOUT_MS" "$SERVER_LOG" "$CLIENT_LOG" > "$SUMMARY_PATH"
+printf '%s slow_timeout_observed=1 slow_timeout_class=timeout write_timeout_ms=%s server_log=%s client_log=%s\n' "$summary" "$WRITE_TIMEOUT_MS" "$SERVER_LOG" "$CLIENT_LOG" > "$SUMMARY_PATH"
 cat "$SUMMARY_PATH"

@@ -174,9 +174,11 @@ case "$RUN_RECONNECT_SOAK" in
 esac
 slow_reader_smoke_status="deferred"
 slow_reader_timeout_observed="0"
+slow_reader_timeout_class="missing"
 if [ -s "$SLOW_READER_SMOKE_SUMMARY" ]; then
   slow_reader_smoke_status="$(field_metric status "$SLOW_READER_SMOKE_SUMMARY")"
   slow_reader_timeout_observed="$(field_metric slow_timeout_observed "$SLOW_READER_SMOKE_SUMMARY")"
+  slow_reader_timeout_class="$(field_metric slow_timeout_class "$SLOW_READER_SMOKE_SUMMARY")"
 fi
 reconnect_smoke_status="deferred"
 reconnect_smoke_client_state="missing"
@@ -258,6 +260,7 @@ awk \
   -v server_scalability_live_load="${server_scalability_live_load:-deferred}" \
   -v slow_reader_smoke_status="${slow_reader_smoke_status:-deferred}" \
   -v slow_reader_timeout_observed="${slow_reader_timeout_observed:-0}" \
+  -v slow_reader_timeout_class="${slow_reader_timeout_class:-missing}" \
   -v slow_reader_required="$RUN_SLOW_READER_SMOKE" \
   -v reconnect_smoke_status="${reconnect_smoke_status:-deferred}" \
   -v reconnect_smoke_client_state="${reconnect_smoke_client_state:-missing}" \
@@ -304,13 +307,13 @@ awk \
     packet_error_classification = server_boundary_tests == "pass" ? "unit_guarded" : "source_guarded"
     packet_error_summary_ok = packet_error_summary_status == "pass" && packet_error_summary_events + 0 == 8 && packet_error_summary_unknown + 0 == 0
     packet_error_aggregation = packet_error_summary_ok ? "parser_guarded" : "fail"
-    slow_client_status = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1 ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred")
+    slow_reader_ok = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1 && slow_reader_timeout_class == "timeout"
+    slow_client_status = slow_reader_ok ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred")
     multi_client_live_status = server_scalability_live_load
     overload_status = "deferred"
     active_protocol_change = proto_diff_count + 0
 
     scalability_ok = server_scalability_status == "pass" && server_scalability_protocol_change + 0 == 0
-    slow_reader_ok = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1
     server_tests_ok = server_boundary_tests == "pass" || server_boundary_tests == "skipped"
     client_tests_ok = client_boundary_tests == "pass" || client_boundary_tests == "skipped"
 
@@ -340,7 +343,7 @@ awk \
       reason = "packet_error_summary_failed"
     }
 
-    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s stale_packet_policy=%s packet_error_classification=%s packet_error_aggregation=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s packet_error_summary=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, stale_packet_policy, packet_error_classification, packet_error_aggregation, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, packet_error_summary, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
+    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s stale_packet_policy=%s packet_error_classification=%s packet_error_aggregation=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d slow_reader_timeout_class=%s multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s packet_error_summary=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, stale_packet_policy, packet_error_classification, packet_error_aggregation, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, slow_reader_timeout_class, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, packet_error_summary, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
     if (status != "pass") {
       exit 1
     }
