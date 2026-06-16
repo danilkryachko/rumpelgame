@@ -8,6 +8,7 @@ const (
 	GeneratorVersionFlatV1        GeneratorVersion = "flat_v1"
 	GeneratorVersionHeightV1      GeneratorVersion = "height_v1"
 	GeneratorVersionBiomeHeightV1 GeneratorVersion = "biome_height_v1"
+	GeneratorVersionCaveHeightV1  GeneratorVersion = "cave_height_v1"
 
 	DefaultWorldSeed   int64  = 0
 	DefaultDimensionID string = "overworld"
@@ -70,6 +71,10 @@ func (g WorldGenerator) GenerateChunk(x, z int32) (*Chunk, error) {
 		chunk := NewChunk(x, z)
 		g.generateBiomeHeightV1(chunk)
 		return chunk, nil
+	case GeneratorVersionCaveHeightV1:
+		chunk := NewChunk(x, z)
+		g.generateCaveHeightV1(chunk)
+		return chunk, nil
 	default:
 		return nil, fmt.Errorf("unsupported world generator version %q", config.Version)
 	}
@@ -90,7 +95,7 @@ func validateGeneratorConfig(config GeneratorConfig) error {
 		return fmt.Errorf("world generator dimension id must not be empty")
 	}
 	switch config.Version {
-	case GeneratorVersionFlatV1, GeneratorVersionHeightV1, GeneratorVersionBiomeHeightV1:
+	case GeneratorVersionFlatV1, GeneratorVersionHeightV1, GeneratorVersionBiomeHeightV1, GeneratorVersionCaveHeightV1:
 		return nil
 	default:
 		return fmt.Errorf("unsupported world generator version %q", config.Version)
@@ -118,6 +123,31 @@ func (g WorldGenerator) generateBiomeHeightV1(chunk *Chunk) {
 			surfaceBlock, subsurfaceBlock := biomeHeightV1ColumnBlocks(g.SampleBiome(worldX, worldZ).ID)
 
 			fillHeightColumn(chunk, localX, localZ, surfaceY, surfaceBlock, subsurfaceBlock)
+		}
+	}
+}
+
+func (g WorldGenerator) generateCaveHeightV1(chunk *Chunk) {
+	for localX := 0; localX < ChunkWidth; localX++ {
+		for localZ := 0; localZ < ChunkDepth; localZ++ {
+			worldX := int64(chunk.X)*int64(ChunkWidth) + int64(localX)
+			worldZ := int64(chunk.Z)*int64(ChunkDepth) + int64(localZ)
+			surfaceY := g.heightV1SurfaceY(worldX, worldZ)
+
+			fillHeightColumn(chunk, localX, localZ, surfaceY, Grass, Dirt)
+			g.carveCaveHeightV1Column(chunk, localX, localZ, worldX, worldZ, surfaceY)
+		}
+	}
+}
+
+func (g WorldGenerator) carveCaveHeightV1Column(chunk *Chunk, localX, localZ int, worldX, worldZ int64, surfaceY int) {
+	maxCaveY := surfaceY - 3
+	if maxCaveY > caveV1MaxY {
+		maxCaveY = caveV1MaxY
+	}
+	for y := caveV1MinY; y <= maxCaveY; y++ {
+		if g.SampleCave(worldX, y, worldZ).ID == CaveOpen {
+			chunk.SetBlock(localX, y, localZ, Air)
 		}
 	}
 }

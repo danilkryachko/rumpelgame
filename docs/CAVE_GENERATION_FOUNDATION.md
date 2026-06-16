@@ -51,4 +51,4 @@ Expected current result:
 
 ## Current Status
 
-This layer is complete as a deterministic metadata foundation. Cave sampling is guarded and reproducible, while cave carving remains inactive until a versioned generator applies the cave mask to approved chunk block content and supplies downstream serialization, storage, streaming, collision, and visual evidence.
+This layer is complete as a deterministic metadata foundation. Cave sampling is guarded and reproducible. The separate opt-in `cave_height_v1` generator applies this mask to chunk block content with downstream serialization evidence, while default `flat_v1` generation remains unchanged.

@@ -496,7 +496,8 @@ awk \
     deps_ok = worldgen_quality_status == "pass" &&
       (worldgen_runtime_quality == "deferred" ||
         worldgen_runtime_quality == "opt_in_height_v1_guarded" ||
-        worldgen_runtime_quality == "opt_in_biome_height_v1_guarded")
+        worldgen_runtime_quality == "opt_in_biome_height_v1_guarded" ||
+        worldgen_runtime_quality == "opt_in_cave_height_v1_guarded")
     tests_ok = (network_tests == "pass" || network_tests == "skipped") &&
       (world_tests == "pass" || world_tests == "skipped")
     live_ok = live_load_status == "pass" || live_required != "1"
