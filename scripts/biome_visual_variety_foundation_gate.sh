@@ -16,6 +16,7 @@ BIOME_TEST="${RUMPELMC_BIOME_TEST:-"$ROOT_DIR/server/pkg/world/biome_test.go"}"
 CHUNK_SOURCE="${RUMPELMC_BIOME_CHUNK_SOURCE:-"$ROOT_DIR/server/pkg/world/chunk.go"}"
 CHUNK_TEST="${RUMPELMC_BIOME_CHUNK_TEST:-"$ROOT_DIR/server/pkg/world/chunk_test.go"}"
 WORLD_TEST="${RUMPELMC_BIOME_WORLD_TEST:-"$ROOT_DIR/server/pkg/world/world_test.go"}"
+BIOME_MATRIX_SUMMARY="${RUMPELMC_BIOME_MATRIX_SUMMARY:-"$ROOT_DIR/logs/biome_sampler_matrix_current/biome-sampler-matrix-summary.txt"}"
 BLOCK_MATERIAL_SUMMARY="${RUMPELMC_BIOME_BLOCK_MATERIAL_SUMMARY:-"$ROOT_DIR/logs/block_material_metadata_design_current/block-material-metadata-design-summary.txt"}"
 ATLAS_SUMMARY="${RUMPELMC_BIOME_ATLAS_SUMMARY:-"$ROOT_DIR/logs/texture_atlas_evolution_current/texture-atlas-evolution-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_BIOME_FOUNDATION_RUN_GO_TESTS:-1}"
@@ -53,7 +54,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$BIOME_SOURCE" "$BIOME_TEST" "$CHUNK_SOURCE" "$CHUNK_TEST" "$WORLD_TEST" "$BLOCK_MATERIAL_SUMMARY" "$ATLAS_SUMMARY"; do
+for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$BIOME_SOURCE" "$BIOME_TEST" "$CHUNK_SOURCE" "$CHUNK_TEST" "$WORLD_TEST" "$BIOME_MATRIX_SUMMARY" "$BLOCK_MATERIAL_SUMMARY" "$ATLAS_SUMMARY"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -95,6 +96,11 @@ require_token "$WORLD_TEST" "TestChunkSnapshotIsDeterministicAcrossWorldInstance
 
 block_material_status="$(field_metric status "$BLOCK_MATERIAL_SUMMARY")"
 block_material_schema_change="$(field_metric active_schema_change "$BLOCK_MATERIAL_SUMMARY")"
+biome_matrix_status="$(field_metric status "$BIOME_MATRIX_SUMMARY")"
+biome_matrix_guard="$(field_metric matrix_status "$BIOME_MATRIX_SUMMARY")"
+biome_matrix_worldgen_change="$(field_metric active_worldgen_change "$BIOME_MATRIX_SUMMARY")"
+biome_matrix_serialization_change="$(field_metric active_serialization_change "$BIOME_MATRIX_SUMMARY")"
+biome_matrix_protocol_change="$(field_metric protocol_change "$BIOME_MATRIX_SUMMARY")"
 atlas_status="$(field_metric status "$ATLAS_SUMMARY")"
 atlas_asset_change="$(field_metric active_asset_change "$ATLAS_SUMMARY")"
 atlas_shader_change="$(field_metric shader_layout_change "$ATLAS_SUMMARY")"
@@ -113,6 +119,11 @@ fi
 awk \
   -v block_material_status="${block_material_status:-missing}" \
   -v block_material_schema_change="${block_material_schema_change:-1}" \
+  -v biome_matrix_status="${biome_matrix_status:-missing}" \
+  -v biome_matrix_guard="${biome_matrix_guard:-missing}" \
+  -v biome_matrix_worldgen_change="${biome_matrix_worldgen_change:-1}" \
+  -v biome_matrix_serialization_change="${biome_matrix_serialization_change:-1}" \
+  -v biome_matrix_protocol_change="${biome_matrix_protocol_change:-1}" \
   -v atlas_status="${atlas_status:-missing}" \
   -v atlas_asset_change="${atlas_asset_change:-1}" \
   -v atlas_shader_change="${atlas_shader_change:-1}" \
@@ -127,6 +138,7 @@ awk \
     reason = "ok"
     biome_foundation_status = "designed"
     biome_sampler = "guarded"
+    biome_matrix = "guarded"
     metadata_layer = "guarded"
     active_worldgen_change = chunk_source_diff_count + 0
     active_serialization_change = chunk_source_diff_count + 0
@@ -134,6 +146,11 @@ awk \
 
     dependencies_ok = block_material_status == "pass" &&
       block_material_schema_change + 0 == 0 &&
+      biome_matrix_status == "pass" &&
+      biome_matrix_guard == "guarded" &&
+      biome_matrix_worldgen_change + 0 == 0 &&
+      biome_matrix_serialization_change + 0 == 0 &&
+      biome_matrix_protocol_change + 0 == 0 &&
       atlas_status == "pass" &&
       atlas_asset_change + 0 == 0 &&
       atlas_shader_change + 0 == 0
@@ -150,7 +167,7 @@ awk \
       reason = "world_tests_failed"
     }
 
-    printf("biome_visual_variety_foundation status=%s reason=%s biome_foundation_status=%s biome_sampler=%s metadata_layer=%s active_worldgen_change=%d active_serialization_change=%d visual_variety_runtime=%s deterministic_model=designed world_tests=%s block_material_status=%s block_material_active_schema_change=%d atlas_status=%s atlas_active_asset_change=%d atlas_shader_layout_change=%d design_doc=%s worldgen_doc=%s block_material_summary=%s atlas_summary=%s\n", status, reason, biome_foundation_status, biome_sampler, metadata_layer, active_worldgen_change, active_serialization_change, visual_variety_runtime, world_tests, block_material_status, block_material_schema_change, atlas_status, atlas_asset_change, atlas_shader_change, design_doc, worldgen_doc, block_material_summary, atlas_summary)
+    printf("biome_visual_variety_foundation status=%s reason=%s biome_foundation_status=%s biome_sampler=%s biome_matrix=%s metadata_layer=%s active_worldgen_change=%d active_serialization_change=%d visual_variety_runtime=%s deterministic_model=designed world_tests=%s block_material_status=%s block_material_active_schema_change=%d atlas_status=%s atlas_active_asset_change=%d atlas_shader_layout_change=%d design_doc=%s worldgen_doc=%s block_material_summary=%s atlas_summary=%s\n", status, reason, biome_foundation_status, biome_sampler, biome_matrix, metadata_layer, active_worldgen_change, active_serialization_change, visual_variety_runtime, world_tests, block_material_status, block_material_schema_change, atlas_status, atlas_asset_change, atlas_shader_change, design_doc, worldgen_doc, block_material_summary, atlas_summary)
     if (status != "pass") {
       exit 1
     }

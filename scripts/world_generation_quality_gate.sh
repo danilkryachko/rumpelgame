@@ -123,6 +123,7 @@ biome_runtime="$(field_metric visual_variety_runtime "$BIOME_SUMMARY")"
 biome_worldgen_change="$(field_metric active_worldgen_change "$BIOME_SUMMARY")"
 biome_serialization_change="$(field_metric active_serialization_change "$BIOME_SUMMARY")"
 biome_sampler="$(field_metric biome_sampler "$BIOME_SUMMARY")"
+biome_matrix="$(field_metric biome_matrix "$BIOME_SUMMARY")"
 height_smoke_status="$(field_metric status "$HEIGHT_SMOKE_SUMMARY")"
 height_smoke_generator="$(field_metric generator_version "$HEIGHT_SMOKE_SUMMARY")"
 height_smoke_encoding="$(field_metric encoding "$HEIGHT_SMOKE_SUMMARY")"
@@ -145,6 +146,7 @@ awk \
   -v biome_worldgen_change="${biome_worldgen_change:-1}" \
   -v biome_serialization_change="${biome_serialization_change:-1}" \
   -v biome_sampler="${biome_sampler:-missing}" \
+  -v biome_matrix="${biome_matrix:-missing}" \
   -v height_smoke_status="${height_smoke_status:-missing}" \
   -v height_smoke_generator="${height_smoke_generator:-missing}" \
   -v height_smoke_encoding="${height_smoke_encoding:-missing}" \
@@ -170,6 +172,7 @@ awk \
 
     biome_ok = biome_status == "pass" &&
       biome_sampler == "guarded" &&
+      biome_matrix == "guarded" &&
       biome_runtime == "deferred" &&
       biome_worldgen_change + 0 == 0 &&
       biome_serialization_change + 0 == 0
@@ -191,7 +194,7 @@ awk \
       reason = "world_tests_failed"
     }
 
-    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s worldgen_seed_version=%s worldgen_height_v1=%s height_v1_serialization=%s height_v1_live_smoke=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s origin_chunk=%s flat_byte_hash=%s world_tests=%s biome_status=%s biome_sampler=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d height_smoke_status=%s height_smoke_encoding=%s design_doc=%s biome_summary=%s\n", status, reason, quality_pass_status, worldgen_seed_version, worldgen_height_v1, height_v1_serialization, height_v1_live_smoke, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, origin_chunk, flat_byte_hash, world_tests, biome_status, biome_sampler, biome_runtime, biome_worldgen_change, biome_serialization_change, height_smoke_status, height_smoke_encoding, design_doc, biome_summary)
+    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s worldgen_seed_version=%s worldgen_height_v1=%s height_v1_serialization=%s height_v1_live_smoke=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s origin_chunk=%s flat_byte_hash=%s world_tests=%s biome_status=%s biome_sampler=%s biome_matrix=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d height_smoke_status=%s height_smoke_encoding=%s design_doc=%s biome_summary=%s\n", status, reason, quality_pass_status, worldgen_seed_version, worldgen_height_v1, height_v1_serialization, height_v1_live_smoke, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, origin_chunk, flat_byte_hash, world_tests, biome_status, biome_sampler, biome_matrix, biome_runtime, biome_worldgen_change, biome_serialization_change, height_smoke_status, height_smoke_encoding, design_doc, biome_summary)
     if (status != "pass") {
       exit 1
     }
