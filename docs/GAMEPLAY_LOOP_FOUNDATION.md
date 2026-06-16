@@ -59,7 +59,7 @@ Checks:
 - `GameClient.on_block_broken` sends `BlockAction_DESTROY`.
 - `GameClient.on_block_placed` validates client block placeability and sends `BlockAction_PLACE`.
 - Server `handleClientPacketWithState` validates placeable block IDs before applying `PLACE`.
-- Server `World.SetBlockGlobal` updates the in-memory chunk and calls `ChunkStore.SaveChunk` when a store is configured.
+- Server `World.SetBlockGlobal` rejects out-of-height `Y` coordinates before updating or saving a chunk, then updates the in-memory chunk and calls `ChunkStore.SaveChunk` when a store is configured.
 - Server sends the updated chunk snapshot back to the editing client, which drives visual, collision, and GPU dirty update handling through the normal `update_chunk` path.
 
 ## Inventory Foundation
@@ -82,6 +82,7 @@ The gameplay foundation relies on the existing server boundary:
 
 - `BlockAction_PLACE` and `BlockAction_DESTROY` both flow through `World.SetBlockGlobal`.
 - `World.SetBlockGlobal` persists the edited chunk only when `World` was created with a `ChunkStore`.
+- `World.SetBlockGlobal` rejects block edits outside `[0, ChunkHeight)` before creating/loading a chunk or returning an updated snapshot.
 - `server/cmd/server/main.go` creates the default server with `storage.OpenRocksChunkStore`, so normal server runs are persistence-capable.
 - Block 40 does not own save -> process restart -> reload -> visual/collision/GPU update proof. That evidence is collected by Block 41.
 

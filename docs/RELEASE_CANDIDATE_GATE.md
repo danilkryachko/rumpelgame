@@ -72,7 +72,7 @@ Review gates:
 The default gate is evidence-only and is intended to be quick. It verifies:
 
 - Fast, full, and nightly command wiring through `scripts/test_strategy_gate.sh`.
-- Current security/data-integrity review is clean and reports `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, and `smoke_bind_exposure=loopback_guarded`.
+- Current security/data-integrity review is clean and reports `deterministic_property_tests=guarded`, `block_edit_validation=y_bounds_guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, and `smoke_bind_exposure=loopback_guarded`.
 - Observability current-lane summary index and error scan are clean.
 - Architecture refresh reports no runtime behavior change.
 - Performance baseline governance is clean.
@@ -117,7 +117,7 @@ Default summaries:
 
 Fresh 2026-06-16 current artifact:
 
-- `logs/release_candidate_gate_current/release-candidate-gate-summary.txt` reported `status=pass`, `reason=ok`, `rc_status=summary_ready`, `perf_matrix=summary_ready`, `visual_smoke=summary_ready`, `storage_protocol_compatibility=guarded`, `active_protocol_change=0`, `security_deterministic_property_tests=guarded`, `security_conflict_semantics=last_write_wins_guarded`, `security_local_server_exposure=loopback_enforced`, `security_smoke_bind_exposure=loopback_guarded`, `observability_error_scan=clean`, `observability_summary_count=69`, `current_summary_count=69`, `arch_runtime_change=none`, `baseline_warning_status=ok`, `shadow_active_native=deferred`, `transparent_active_fixture=deferred`, `lighting_ambient_status=deferred`, `live_checks=full`, `fast_check=pass`, `full_check=pass`, `diff_check=pass`, `diff_guard=pass`, `security_status=pass`, `observability_status=pass`, and `test_strategy_status=pass`.
+- `logs/release_candidate_gate_current/release-candidate-gate-summary.txt` reported `status=pass`, `reason=ok`, `rc_status=summary_ready`, `perf_matrix=summary_ready`, `visual_smoke=summary_ready`, `storage_protocol_compatibility=guarded`, `active_protocol_change=0`, `security_deterministic_property_tests=guarded`, `security_block_edit_validation=y_bounds_guarded`, `security_conflict_semantics=last_write_wins_guarded`, `security_local_server_exposure=loopback_enforced`, `security_smoke_bind_exposure=loopback_guarded`, `observability_error_scan=clean`, `observability_summary_count=69`, `current_summary_count=69`, `arch_runtime_change=none`, `baseline_warning_status=ok`, `shadow_active_native=deferred`, `transparent_active_fixture=deferred`, `lighting_ambient_status=deferred`, `live_checks=full`, `fast_check=pass`, `full_check=pass`, `diff_check=pass`, `diff_guard=pass`, `security_status=pass`, `observability_status=pass`, and `test_strategy_status=pass`.
 - This was a strict live RC refresh after the conflict-semantics evidence update; future release branches must rerun `RUMPELMC_RC_REQUIRE_LIVE_CHECKS=1` with the same live flags on the exact release branch.
 
 Fresh 2026-06-15 current artifact:

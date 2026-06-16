@@ -57,7 +57,7 @@ Checks:
 ## Persistence Contract
 
 - `BlockAction_PLACE` and `BlockAction_DESTROY` are applied by `server/pkg/network` through `World.SetBlockGlobal`.
-- `World.SetBlockGlobal` maps global block coordinates to chunk/local coordinates, updates the chunk, then calls `ChunkStore.SaveChunk` if a store exists.
+- `World.SetBlockGlobal` rejects block edits with `Y` outside `[0, ChunkHeight)` before chunk load/create/save, maps valid global block coordinates to chunk/local coordinates, updates the chunk, then calls `ChunkStore.SaveChunk` if a store exists.
 - `ChunkStore.SaveChunk` persists serialized chunk bytes, not block diffs.
 - `World.getOrCreateLocked` checks `ChunkStore.LoadChunk` before generating a fresh flat chunk.
 - `World.ChunkSnapshot` serializes the loaded edited chunk and returns the full snapshot to the network layer.
@@ -75,6 +75,8 @@ Checks:
 - Create another new `World(store)` and assert `ChunkSnapshot` reloads the destroyed block.
 
 This proves the storage boundary without depending on RocksDB process state or a Godot runtime.
+
+`TestSetBlockGlobalRejectsOutOfRangeYWithoutSave` proves invalid block heights fail before any serialized chunk save or stored chunk entry is created. The paired network test `TestHandleClientPacketRejectsOutOfRangeBlockAction` proves that the server handler returns an error and emits no updated chunk frame to the editor or interested clients.
 
 ## Live Restart/Reload Smoke
 
@@ -136,6 +138,7 @@ The gate checks that:
 
 - This document records the persistence contract, added unit guard, update path, deferred work, and compatibility rules.
 - `TestSetBlockGlobalPersistsEditedChunkForReload` exists.
+- `TestSetBlockGlobalRejectsOutOfRangeYWithoutSave` exists.
 - `World.SetBlockGlobal` still saves through `ChunkStore.SaveChunk`.
 - The client still runs edited snapshots through `update_chunk` dirty/collision/GPU queues.
 - The live server restart/reload smoke passes, when `RUMPELMC_BLOCK_EDIT_PERSISTENCE_RUN_RUNTIME_RELOAD_SMOKE=1` is enabled or a current summary exists.

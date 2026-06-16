@@ -503,6 +503,44 @@ func TestHandleClientPacketIgnoresUnknownBlockAction(t *testing.T) {
 	}
 }
 
+func TestHandleClientPacketRejectsOutOfRangeBlockAction(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	origin := newClientSession(&recordingConn{})
+	watcher := newClientSession(&recordingConn{})
+	watcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
+
+	server.registerClient(watcher)
+	defer server.unregisterClient(watcher)
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       int32(world.ChunkHeight),
+				Z:       1,
+				BlockId: uint32(world.Wood),
+			},
+		},
+	}
+
+	err := server.handleClientPacketForSession(origin, packet)
+	if err == nil {
+		t.Fatal("handleClientPacketForSession() error = nil, want out-of-range block update error")
+	}
+	if !strings.Contains(err.Error(), "block y coordinate") {
+		t.Fatalf("handleClientPacketForSession() error = %v, want block y coordinate error", err)
+	}
+	if got := len(recordedFrames(t, origin.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("origin frames = %d, want 0", got)
+	}
+	if got := len(recordedFrames(t, watcher.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("watcher frames = %d, want 0", got)
+	}
+}
+
 func TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW

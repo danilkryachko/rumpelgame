@@ -1,6 +1,7 @@
 package world
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -122,6 +123,10 @@ func chunkDirectionScore(coord ChunkCoord, centerX, centerZ int32, order ChunkOr
 }
 
 func (w *World) SetBlockGlobal(x, y, z int32, block BlockID) (ChunkSnapshot, error) {
+	if y < 0 || y >= int32(ChunkHeight) {
+		return ChunkSnapshot{}, fmt.Errorf("block y coordinate %d out of range [0,%d)", y, ChunkHeight)
+	}
+
 	chunkX, localX := GlobalToChunkLocal(x, ChunkWidth)
 	chunkZ, localZ := GlobalToChunkLocal(z, ChunkDepth)
 

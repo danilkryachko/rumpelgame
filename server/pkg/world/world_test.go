@@ -130,6 +130,24 @@ func TestSetBlockGlobalPersistsEditedChunkForReload(t *testing.T) {
 	assertSnapshotBlock(t, destroyedSnapshot, localX, int(blockY), localZ, Air)
 }
 
+func TestSetBlockGlobalRejectsOutOfRangeYWithoutSave(t *testing.T) {
+	store := newSerializedChunkStore()
+	w := NewWorld(store)
+
+	for _, y := range []int32{-1, int32(ChunkHeight)} {
+		if _, err := w.SetBlockGlobal(1, y, 1, Wood); err == nil {
+			t.Fatalf("SetBlockGlobal(y=%d) error = nil, want out-of-range error", y)
+		}
+	}
+
+	if store.saves != 0 {
+		t.Fatalf("store saves = %d, want 0", store.saves)
+	}
+	if len(store.data) != 0 {
+		t.Fatalf("store chunks = %d, want 0", len(store.data))
+	}
+}
+
 func TestChunkWithinRadius(t *testing.T) {
 	tests := []struct {
 		name   string
