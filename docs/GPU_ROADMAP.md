@@ -101,7 +101,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 67. Smoke-test breaking a block.
 68. Smoke-test placing a block.
 69. Smoke-test repeated edits.
-70. Smoke-test edits near chunk borders.
+70. Done 2026-06-16: added local-X/Z pressure fixture controls and `scripts/gpu_terrain_pressure_dirty_compare.sh` to smoke-test high-volume edits at chunk border/corner local block `31,31` without reducing view distance or visible quality.
 
 ## Phase 8: Dirty Update Correctness
 
@@ -109,11 +109,11 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 72. Verify collision refresh after edits.
 73. Verify shadow proxy refresh after edits.
 74. Done 2026-06-16: verified opt-in GPU slot reuse after same-face-count dirty edits with `scripts/gpu_terrain_in_place_upload_gate.sh`; mismatched face counts still fall back to the existing remove/allocate/insert path.
-75. Compare dirty update against full rebuild.
-76. Add dirty update perf report.
+75. Done 2026-06-16: compared full-rebuild rollback and partial-dirty lanes under the same `chunk_disc` pressure fixture; full stayed partial-disabled and partial produced edge-neighbor refresh plus saved subchunks.
+76. Done 2026-06-16: added dirty pressure compare summary fields for fixture identity, dirty blocks, partial subchunks, saved subchunks, edge-neighbor chunks/subchunks, last bounds/edges, collision refresh, current collision, ground misses, and CPU-side budgets.
 77. Make dirty update default only after stable parity.
 78. Keep dirty update rollback env.
-79. Record stable dirty update invariants.
+79. Done 2026-06-16: recorded stable dirty pressure invariants in `docs/AGENT_MEMORY.md`, `docs/GPU_TERRAIN_LOAD_SCALING.md`, `docs/GPU_PROFILING.md`, and `docs/GPU_TRENDS.md`.
 80. Update handoff docs.
 
 ## Phase 9: Draw Submission

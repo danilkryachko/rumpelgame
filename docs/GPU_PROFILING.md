@@ -120,6 +120,18 @@ RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 
 The gate writes `gpu-in-place-upload-summary.txt`.
 
+Use the pressure dirty compare gate after changing partial dirty upload, border/neighbor dirty refresh, terrain pressure fixtures, or workload-matrix summary plumbing. It runs full-rebuild and partial-dirty lanes against isolated RocksDB paths with the same high-pressure `chunk_disc` fixture at local block `31,31`, then fails unless full control stays partial-disabled, partial dirty saves subchunks and refreshes edge neighbors, upload failures stay zero, queue/process/submit budgets remain within the 150 FPS frame budget, and collision/ground/terrain samples stay valid:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=42000 \
+GODOT_TIMEOUT_SEC=900 \
+sh scripts/gpu_terrain_pressure_dirty_compare.sh logs/gpu_terrain_pressure_dirty_compare_current
+```
+
+The gate writes `gpu-terrain-pressure-dirty-compare-summary.txt`; see `docs/GPU_TERRAIN_LOAD_SCALING.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh
