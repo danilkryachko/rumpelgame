@@ -145,7 +145,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 ## Phase 11: Shader Hot Path
 
 101. Done 2026-06-16: audited render shader branch sites; face-dependent normal, UV, corner, and signed-coordinate unpack paths are covered by Rust source-contract tests.
-102. Done 2026-06-16: simplified the vertex hot path with branchless lookup tables for face normals, tiled UVs, face corners, signed 16-bit chunk/subchunk coordinate unpack, and direct reads of Rust-sanitized lighting push constants while preserving packed-face layout.
+102. Done 2026-06-16: simplified the shader hot path with branchless lookup tables for face normals, tiled UVs, face corners, signed 16-bit chunk/subchunk coordinate unpack, direct reads of Rust-sanitized lighting push constants, vertex-stage atlas tile-offset precompute, and global triangle corner indices while preserving packed-face layout.
 103. Done: atlas UV parity is covered by the parity smoke summary contract and the render shader tiled-UV source contract.
 104. Done: lighting parity is covered by default and low-angle lighting parity gates plus the render shader lighting handoff contract.
 105. Done: depth parity is covered by atlas/depth parity evidence and the reverse-Z `GREATER_OR_EQUAL` depth-state unit guard.

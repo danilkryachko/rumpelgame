@@ -4458,23 +4458,32 @@ mod tests {
         let (vertex_source, fragment_source) =
             split_render_shader_source().expect("render shader stages");
 
+        assert!(vertex_source.contains("layout(location = 0) out vec4 uv_tile_out;"));
+        assert!(fragment_source.contains("layout(location = 0) in vec4 uv_tile_in;"));
         assert!(
             vertex_source.contains("vec3 face_corner(uint face_idx, uint corner_idx, vec2 extent)")
         );
         assert!(
             vertex_source.contains("vec2 face_uv(uint face_idx, uint corner_idx, vec2 extent)")
         );
+        assert!(vertex_source.contains("vec2 atlas_tile_offset(uint tile)"));
         assert!(vertex_source.contains(
             "vec2 extent = vec2(float(face.extent & 63u), float((face.extent >> 6u) & 63u));"
         ));
         assert!(vertex_source.contains("face_corner(face_idx, corner_idx, extent)"));
+        assert!(vertex_source.contains(
+            "uv_tile_out = vec4(face_uv(face_idx, corner_idx, extent), atlas_tile_offset(tile));"
+        ));
+        assert!(fragment_source.contains("vec2 atlas_uv(vec4 tile_uv_offset)"));
+        assert!(fragment_source.contains("vec2 tiled_uv = fract(tile_uv_offset.xy);"));
         assert!(
-            vertex_source.contains(
-                "uv_tile_out = vec3(face_uv(face_idx, corner_idx, extent), float(tile));"
-            )
+            fragment_source
+                .contains("return (tile_uv_offset.zw + tiled_uv) * terrain_push.atlas_layout.xy;")
         );
-        assert!(fragment_source.contains("vec2 tiled_uv = fract(tile_uv);"));
-        assert!(fragment_source.contains("vec2 uv_in = atlas_uv(uv_tile_in.xy, uv_tile_in.z);"));
+        assert!(fragment_source.contains("vec2 uv_in = atlas_uv(uv_tile_in);"));
+        assert!(!fragment_source.contains("mod("));
+        assert!(!fragment_source.contains("floor("));
+        assert!(!fragment_source.contains("terrain_push.atlas_layout.z"));
     }
 
     #[test]
@@ -4483,7 +4492,12 @@ mod tests {
 
         assert!(vertex_source.contains("uint face_instance = uint(gl_InstanceIndex);"));
         assert!(vertex_source.contains("PackedFace face = face_buffer.faces[face_instance];"));
-        assert!(vertex_source.contains("uint corner_idx = corner_map[uint(gl_VertexIndex) % 6u];"));
+        assert!(vertex_source.contains("const uint TRIANGLE_CORNER_INDICES[6] = uint[6]("));
+        assert!(
+            vertex_source
+                .contains("uint corner_idx = TRIANGLE_CORNER_INDICES[uint(gl_VertexIndex) % 6u];")
+        );
+        assert!(!vertex_source.contains("uint corner_map[6]"));
     }
 
     #[test]
