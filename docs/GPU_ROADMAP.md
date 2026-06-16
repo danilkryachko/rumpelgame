@@ -164,7 +164,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 115. Design transparent block GPU path. See `docs/GPU_TRANSPARENT_PATH.md`.
 116. Split opaque and transparent pass design.
 117. Prototype transparent terrain behind an env flag.
-118. Add cross-platform GPU validation matrix.
+118. In progress 2026-06-16: shader profiler capture pack now emits macOS Metal and Windows GPU capture rows for the current render shader hot path; full cross-platform validation still needs real external profiler rows.
 119. Keep a trend log for important GPU metrics.
 120. Checkpoint the roadmap and choose the next bottleneck from data.
 
@@ -201,7 +201,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 ### Weeks 21-30: Binding, Shader, Shadow, And Transparent Fixture Setup
 
 21. Clean up binding/frame data only where measured churn justifies it.
-22. Prepare shader profiler capture packs for the current branchless shader path.
+22. Done 2026-06-16: prepared `scripts/gpu_shader_profiler_capture_pack.sh` for the current branchless shader path. It validates the latest movement summary, source-level shader contracts, and emits pending macOS Metal plus Windows GPU profiler rows without treating the checklist as profiler evidence.
 23. Integrate validated external profiler results into reports when available.
 24. Decide the next shadow proxy optimization from measured cost.
 25. Checkpoint the shadow path; keep native shadow work behind a rollback flag.

@@ -73,6 +73,12 @@ RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 ./scripts/gpu_terrain_movement_stress.sh logs/gpu_terrain_profile_movement
 ```
 
+Use the shader profiler capture pack after shader hot-path changes or before external macOS/Windows shader captures. It validates the current movement artifact, the render shader source contracts, and emits a manifest for Xcode/Metal plus Windows PIX/RenderDoc/vendor profiler follow-up. The generated pack is pending handoff state, not profiler evidence:
+
+```sh
+sh scripts/gpu_shader_profiler_capture_pack.sh logs/gpu_shader_profiler_capture_pack_current
+```
+
 Use the low-angle lighting pose when comparing directional-light behavior without changing the default scene:
 
 ```sh
