@@ -154,7 +154,7 @@ transparent_acceptance_status="$(field_metric status "$TRANSPARENT_ACCEPTANCE_SU
   printf 'row=external_profiler status=%s capture_readiness=%s external_profile_status=%s rc_security_conflict_semantics=%s rc_security_local_server_exposure=%s rc_security_smoke_bind_exposure=%s source=%s\n' "$external_status" "$external_capture_readiness" "$external_profile_status" "$external_rc_security_conflict_semantics" "$external_rc_security_local_server_exposure" "$external_rc_security_smoke_bind_exposure" "$EXTERNAL_PROFILING_SUMMARY"
   printf 'row=native_shadow_direction status=%s active_prototype_allowed=%s shadow_retirement_status=%s retirement_allowed=%s\n' "$native_shadow_status" "$native_shadow_allowed" "$shadow_retirement_status" "$shadow_retirement_allowed"
   printf 'row=transparent_direction preflight_status=%s active_path_allowed=%s acceptance_status=%s\n' "$transparent_status" "$transparent_allowed" "$transparent_acceptance_status"
-  printf 'row=live_release_checks status=%s note=summary_mode_does_not_replace_final_release_run\n' "$rc_live_checks"
+  printf 'row=live_release_checks status=%s note=live_rc_required_for_milestone\n' "$rc_live_checks"
 } > "$REPORT_PATH"
 
 awk \
@@ -245,11 +245,11 @@ awk \
       status = "fail"
       reason = "storage_protocol_integrity_not_clean"
       storage_protocol_integrity = "fail"
-    } else if (!(observability_status == "pass" && observability_error_scan == "clean" && arch_status == "pass" && arch_runtime_change == "none" && handoff_status == "pass" && handoff_quality_inputs == "present" && rc_status == "pass" && rc_security_deterministic_property_tests == "guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_local_server_exposure == "loopback_default_guarded" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
+    } else if (!(observability_status == "pass" && observability_error_scan == "clean" && arch_status == "pass" && arch_runtime_change == "none" && handoff_status == "pass" && handoff_quality_inputs == "present" && rc_status == "pass" && rc_live_checks == "full" && rc_security_deterministic_property_tests == "guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_local_server_exposure == "loopback_default_guarded" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "docs_or_gates_not_clean"
       docs_reproducible_gates = "fail"
-    } else if (!(external_status == "pass" && external_profile_status == "pending_external_profiler" && (external_capture_readiness == "ready_for_external_capture" || external_capture_readiness == "live_rc_ready_for_external_capture") && external_rc_security_conflict_semantics == "last_write_wins_guarded" && external_rc_security_local_server_exposure == "loopback_default_guarded" && external_rc_security_smoke_bind_exposure == "loopback_guarded")) {
+    } else if (!(external_status == "pass" && external_profile_status == "pending_external_profiler" && external_capture_readiness == "live_rc_ready_for_external_capture" && external_rc_security_conflict_semantics == "last_write_wins_guarded" && external_rc_security_local_server_exposure == "loopback_default_guarded" && external_rc_security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "external_profiler_state_unexpected"
     } else if (!(native_shadow_status == "deferred" && native_shadow_allowed + 0 == 0 && shadow_retirement_status == "deferred" && shadow_retirement_allowed + 0 == 0)) {

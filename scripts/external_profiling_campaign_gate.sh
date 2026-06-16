@@ -160,7 +160,7 @@ external_profile_status="pending_external_profiler"
 results_check_status="missing"
 captured_rows="0"
 missing_rows="$capture_pack_rows"
-capture_readiness="ready_for_external_capture"
+capture_readiness="live_rc_checks_required"
 if [ "${rc_live_checks:-skipped}" = "full" ]; then
   capture_readiness="live_rc_ready_for_external_capture"
 fi
@@ -352,7 +352,7 @@ awk \
     if (!(shadow_status == "pass" && shadow_profiler_status == "pending_external_profiler" && shadow_profiler_rows + 0 >= 4)) {
       status = "fail"
       reason = "shadow_profiler_plan_not_pending"
-    } else if (!(rc_status == "pass" && rc_visual_smoke == "summary_ready" && rc_perf_matrix == "summary_ready" && rc_security_deterministic_property_tests == "guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_local_server_exposure == "loopback_default_guarded" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
+    } else if (!(rc_status == "pass" && rc_visual_smoke == "summary_ready" && rc_perf_matrix == "summary_ready" && rc_live_checks == "full" && rc_security_deterministic_property_tests == "guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_local_server_exposure == "loopback_default_guarded" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "release_candidate_evidence_not_clean"
     } else if (!(capture_pack_status == "pending_external_profiler" && capture_pack_rows + 0 >= 4)) {

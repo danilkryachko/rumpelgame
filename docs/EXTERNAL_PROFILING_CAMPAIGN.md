@@ -26,7 +26,7 @@ Scope:
 - Add `scripts/external_profiling_campaign_gate.sh`.
 - Add this campaign document.
 - Add the optional sanitized macOS `xctrace --attach` helper command to the operator handoff.
-- Validate the current pending capture pack and release-candidate evidence, including `security_deterministic_property_tests=guarded`, `security_conflict_semantics=last_write_wins_guarded`, `security_local_server_exposure=loopback_default_guarded`, and `security_smoke_bind_exposure=loopback_guarded`.
+- Validate the current pending capture pack and live release-candidate evidence, including `live_checks=full`, `security_deterministic_property_tests=guarded`, `security_conflict_semantics=last_write_wins_guarded`, `security_local_server_exposure=loopback_default_guarded`, and `security_smoke_bind_exposure=loopback_guarded`.
 - Generate a campaign plan artifact for external profiler operators.
 - Generate a results-intake artifact that records the trusted row format, validator command, and trust boundary.
 
@@ -159,7 +159,7 @@ The campaign gate is still useful because it verifies:
 
 - The profiler capture pack exists and has planned rows.
 - Shadow quality parity still treats profiler evidence as pending.
-- Release-candidate evidence is clean and reports `security_deterministic_property_tests=guarded`, `security_conflict_semantics=last_write_wins_guarded`, `security_local_server_exposure=loopback_default_guarded`, and `security_smoke_bind_exposure=loopback_guarded` before external capture.
+- Release-candidate evidence is live-checked and reports `live_checks=full`, `security_deterministic_property_tests=guarded`, `security_conflict_semantics=last_write_wins_guarded`, `security_local_server_exposure=loopback_default_guarded`, and `security_smoke_bind_exposure=loopback_guarded` before external capture.
 - Future captured rows have a deterministic validator.
 
 ## Deferred Work

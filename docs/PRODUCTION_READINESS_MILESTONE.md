@@ -45,6 +45,7 @@ Implementation plan:
 - Validate stable streaming and high resident-set summaries.
 - Validate GPU load scaling, upload pressure, memory budget, and performance baseline summaries.
 - Validate security/data-integrity, observability, architecture, handoff, RC, and external profiling campaign summaries.
+- Require the RC summary to report `live_checks=full` and require the external profiling campaign to report `capture_readiness=live_rc_ready_for_external_capture`.
 - Validate expected deferred lanes for native shadow, shadow proxy retirement, active transparency, and external profiler capture.
 - Generate a milestone report with ready/deferred rows.
 
