@@ -157,13 +157,22 @@ sh scripts/gpu_terrain_cutout_prototype_acceptance_gate.sh logs/gpu_transparent_
 
 The gate validates the leaf placement smoke, source contracts, and report surfacing together. It requires block ID `5`, `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero cutout workload counts, `gpu_upload_fail=0`, `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, and no blended/sorted/default-on claim.
 
+Promote the same default-off cutout path into a high resident-set world-loading pressure artifact with:
+
+```sh
+sh scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh logs/gpu_terrain_cutout_pressure_load_scaling_current
+```
+
+The pressure gate runs the existing load-scaling stack with `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`, a `pressure` workload, the `chunk_disc` terrain pressure fixture, and leaf block ID `5`. It requires the load-scaling prerequisite to pass, `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, high nonzero transparent workload, `gpu_upload_fail=0`, queue/process/submit budgets under `6.667ms`, and aggregate report surfacing. The cutout pressure thresholds are deliberately separate from opaque stone pressure: leaf/cutout faces occupy less of the indirect command buffer in this fixture, so the current gate requires at least `1800` GPU subchunks/draws, `3000` faces, and `22.0%` draw-command occupancy instead of treating the older `25.0%` opaque-pressure floor as a cutout invariant.
+
 Fresh local evidence, 2026-06-16:
 
 - `logs/gpu_transparent_cutout_prototype_current/block-edit-stress-summary.txt` placed block ID `5` (`LEAVES`) in release mode with the cutout prototype enabled.
 - `logs/gpu_transparent_cutout_prototype_current/transparent-cutout-prototype-acceptance-summary.txt` passed the acceptance/report gate and links the runtime smoke to `logs/gpu_transparent_cutout_prototype_current/gpu-terrain-cutout-prototype-report.txt`.
+- `logs/gpu_terrain_cutout_pressure_load_scaling_current/gpu-terrain-cutout-pressure-load-scaling-summary.txt` passed the high resident-set cutout pressure gate with `terrain_pressure_fixture=chunk_disc`, `terrain_pressure_fixture_block_id=5`, `max_gpu_subchunks=1880`, `max_gpu_draws=1880`, `max_gpu_faces=3838`, `gpu_draw_cmd_occupancy_pct=22.949`, `transparent_blocks=709`, `transparent_faces=1716`, `transparent_draws=286`, `transparent_subchunks=286`, `max_terrain_queue_ms=2.349`, `max_process_wall_p95_ms=0.003`, `max_gpu_compositor_submit_ms=0.149`, and `gpu_upload_fail=0`.
 - `logs/transparent_fixture_acceptance_suite_current/transparent-fixture-acceptance-suite-summary.txt` passed after refreshing the fixture scene smoke and deferred active/sorting preflight summaries; the legacy full-transparent fixture remains requested-but-fallback while cutout stays the only active prototype path.
 - The runtime smoke passed with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=1`, `transparent_faces=5`, `transparent_draws=1`, `transparent_subchunks=1`, `gpu_upload_fail=0`, `terrain_samples=384` from the movement marker, and `ground_misses=0` from the movement summary.
-- This is local macOS/Metal cutout-only evidence, not blended transparency, sorting, default-on, or external profiler evidence.
+- This is local macOS/Metal cutout-only evidence, not blended transparency, sorting, default-on, Windows validation, or external profiler evidence.
 
 ## Required Telemetry
 
@@ -254,6 +263,7 @@ The current code slice is a default-off cutout prototype, not blended rendering:
 - Perf markers expose client-only fixture overlay metadata counts as `transparent_fixture_overlay_roles` and `transparent_fixture_overlay_blocks`. They are expected to stay `5` only when `RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1` is requested, and `0` otherwise.
 - `scripts/gpu_terrain_report.sh` aggregates those marker fields and records metric origins.
 - `scripts/gpu_terrain_cutout_prototype_acceptance_gate.sh` validates a default-off cutout block-edit smoke and requires the aggregate report to surface its selected acceptance summary.
+- `scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh` validates the same default-off cutout path under high resident-set `pressure` world-loading evidence and requires the aggregate report to surface its selected pressure summary.
 - The env-on release movement smoke in `logs/gpu_transparent_fallback_capture` passed with `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.
 - `scripts/gpu_terrain_movement_stress.sh` now fails env-on transparent captures unless those same requested/active/fallback marker values are present.
 - `scripts/gpu_terrain_transparent_fixture_plan.sh` validates this fixture contract plus the current movement-stress fallback guard and writes a line-oriented `transparent-fixture-plan.txt` checklist.

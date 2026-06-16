@@ -21,6 +21,7 @@ TERRAIN_PRESSURE_FIXTURE_CHUNK_ROWS="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE
 TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS:-15}"
 TERRAIN_PRESSURE_FIXTURE_LOCAL_X="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_LOCAL_X:-16}"
 TERRAIN_PRESSURE_FIXTURE_LOCAL_Z="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_LOCAL_Z:-16}"
+TERRAIN_PRESSURE_FIXTURE_BLOCK_ID="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID:-1}"
 TERRAIN_PRESSURE_FIXTURE_WAIT_SEC="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC:-20.0}"
 TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC:-30.0}"
 TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE:-16}"
@@ -36,6 +37,7 @@ elif [ "$CASE_SET" = "pressure" ]; then
   TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS:-15}"
   TERRAIN_PRESSURE_FIXTURE_LOCAL_X="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_LOCAL_X:-16}"
   TERRAIN_PRESSURE_FIXTURE_LOCAL_Z="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_LOCAL_Z:-16}"
+  TERRAIN_PRESSURE_FIXTURE_BLOCK_ID="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID:-1}"
   TERRAIN_PRESSURE_FIXTURE_WAIT_SEC="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC:-90.0}"
   TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC="${RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC:-90.0}"
 else
@@ -138,6 +140,7 @@ run_case() {
     RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS="$TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS" \
     RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_LOCAL_X="$TERRAIN_PRESSURE_FIXTURE_LOCAL_X" \
     RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_LOCAL_Z="$TERRAIN_PRESSURE_FIXTURE_LOCAL_Z" \
+    RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID="$TERRAIN_PRESSURE_FIXTURE_BLOCK_ID" \
     RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC="$TERRAIN_PRESSURE_FIXTURE_WAIT_SEC" \
     RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC="$TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC" \
     RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE="$TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE" \
@@ -194,6 +197,13 @@ summary_line() {
   terrain_pressure_fixture="$(text_metric terrain_pressure_fixture "$marker_path")"
   terrain_pressure_fixture_blocks="$(metric terrain_pressure_fixture_blocks "$marker_path")"
   terrain_pressure_fixture_dirty_observed="$(metric terrain_pressure_fixture_dirty_observed "$marker_path")"
+  transparent_requested="$(metric transparent_requested "$marker_path")"
+  transparent_active="$(metric transparent_active "$marker_path")"
+  transparent_fallback="$(metric transparent_fallback "$marker_path")"
+  transparent_blocks="$(metric transparent_blocks "$marker_path")"
+  transparent_faces="$(metric transparent_faces "$marker_path")"
+  transparent_draws="$(metric transparent_draws "$marker_path")"
+  transparent_subchunks="$(metric transparent_subchunks "$marker_path")"
   chunk_replace="$(metric chunk_replace "$marker_path")"
   dirty_chunks="$(metric dirty_chunks "$marker_path")"
   dirty_blocks="$(metric dirty_blocks "$marker_path")"
@@ -281,8 +291,16 @@ summary_line() {
     -v gpu_upload_stage_pba_creates="${gpu_upload_stage_pba_creates:-0}" \
     -v gpu_upload_stage_pba_reuses="${gpu_upload_stage_pba_reuses:-0}" \
     -v terrain_pressure_fixture="${terrain_pressure_fixture:-none}" \
+    -v terrain_pressure_fixture_block_id="${TERRAIN_PRESSURE_FIXTURE_BLOCK_ID:-1}" \
     -v terrain_pressure_fixture_blocks="${terrain_pressure_fixture_blocks:-0}" \
     -v terrain_pressure_fixture_dirty_observed="${terrain_pressure_fixture_dirty_observed:-0}" \
+    -v transparent_requested="${transparent_requested:-0}" \
+    -v transparent_active="${transparent_active:-0}" \
+    -v transparent_fallback="${transparent_fallback:-0}" \
+    -v transparent_blocks="${transparent_blocks:-0}" \
+    -v transparent_faces="${transparent_faces:-0}" \
+    -v transparent_draws="${transparent_draws:-0}" \
+    -v transparent_subchunks="${transparent_subchunks:-0}" \
     -v chunk_replace="${chunk_replace:-0}" \
     -v dirty_chunks="${dirty_chunks:-0}" \
     -v dirty_blocks="${dirty_blocks:-0}" \
@@ -329,7 +347,7 @@ summary_line() {
       BEGIN {
         gsub(/^"/, "", terrain_pressure_fixture)
         gsub(/"$/, "", terrain_pressure_fixture)
-        printf("%s server_reused=%d motion_steps=%d motion_chunks=%d gpu_subchunks=%d gpu_draws=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_draw_grouped_enabled=%d gpu_draw_records_logical=%d gpu_draw_records_grouped=%d gpu_draw_grouped_saved_records=%d gpu_scene_target_create=%d gpu_scene_target_reuse=%d gpu_scene_target_replace=%d gpu_uniform_set_create=%d gpu_atlas_texture_create=%d gpu_atlas_sampler_create=%d gpu_push_constant_bytes=%d gpu_push_constant_updates=%d gpu_push_constant_total_bytes=%d gpu_push_constant_avg_bytes=%.1f gpu_push_constant_camera_bytes=%d gpu_push_constant_lighting_bytes=%d gpu_push_constant_atlas_bytes=%d gpu_faces=%d cpu_proxy=%d gpu_uploads=%d gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d gpu_upload_stage_pool_enabled=%d gpu_upload_stage_pool_entries=%d gpu_upload_stage_pool_bytes=%d gpu_upload_stage_pba_creates=%d gpu_upload_stage_pba_reuses=%d terrain_pressure_fixture=%s terrain_pressure_fixture_blocks=%d terrain_pressure_fixture_dirty_observed=%d chunk_replace=%d dirty_chunks=%d dirty_blocks=%d dirty_changed_subchunks=%d dirty_rebuild_subchunks=%d dirty_edge_chunks=%d dirty_edge_neighbor_chunks=%d dirty_edge_neighbor_subchunks=%d dirty_last_edge_neighbor_chunks=%d dirty_last_edge_neighbor_subchunks=%d dirty_partial_chunks=%d dirty_partial_subchunks=%d dirty_partial_saved_subchunks=%d dirty_last_blocks=%d dirty_last_rebuild_subchunks=%d dirty_last_partial_subchunks=%d dirty_last_partial_saved_subchunks=%d dirty_last_bounds=%s dirty_last_edges=%s collision_refresh_rebuilt=%d collision_refresh_last_rebuilt=%d current_chunk_collision=%d ground_misses=%d proxy_shadow=%d gpu_free_ranges=%d gpu_free_faces=%d gpu_largest_free=%d gpu_fragmented_free_faces=%d gpu_fragmentation_pct=%.1f terrain_samples=%d terrain_queue_avg_ms=%.3f terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_max_us=%.1f frame_p95_ms=%.3f fps_p05=%.1f\n", label, server_reused, motion_steps, motion_chunks, gpu_subchunks, gpu_draws, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_draw_grouped_enabled, gpu_draw_records_logical, gpu_draw_records_grouped, gpu_draw_grouped_saved_records, gpu_scene_target_create, gpu_scene_target_reuse, gpu_scene_target_replace, gpu_uniform_set_create, gpu_atlas_texture_create, gpu_atlas_sampler_create, gpu_push_constant_bytes, gpu_push_constant_updates, gpu_push_constant_total_bytes, gpu_push_constant_avg_bytes, gpu_push_constant_camera_bytes, gpu_push_constant_lighting_bytes, gpu_push_constant_atlas_bytes, gpu_faces, cpu_proxy, gpu_uploads, gpu_upload_fail, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, gpu_upload_stage_pool_enabled, gpu_upload_stage_pool_entries, gpu_upload_stage_pool_bytes, gpu_upload_stage_pba_creates, gpu_upload_stage_pba_reuses, terrain_pressure_fixture, terrain_pressure_fixture_blocks, terrain_pressure_fixture_dirty_observed, chunk_replace, dirty_chunks, dirty_blocks, dirty_changed_subchunks, dirty_rebuild_subchunks, dirty_edge_chunks, dirty_edge_neighbor_chunks, dirty_edge_neighbor_subchunks, dirty_last_edge_neighbor_chunks, dirty_last_edge_neighbor_subchunks, dirty_partial_chunks, dirty_partial_subchunks, dirty_partial_saved_subchunks, dirty_last_blocks, dirty_last_rebuild_subchunks, dirty_last_partial_subchunks, dirty_last_partial_saved_subchunks, dirty_last_bounds, dirty_last_edges, collision_refresh_rebuilt, collision_refresh_last_rebuilt, current_chunk_collision, ground_misses, proxy_shadow, gpu_free_ranges, gpu_free_faces, gpu_largest_free, gpu_fragmented_free_faces, gpu_fragmentation_pct, terrain_samples, queue_avg, queue_max, process_wall_p95, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_us_max, frame_p95, fps_p05)
+        printf("%s server_reused=%d motion_steps=%d motion_chunks=%d gpu_subchunks=%d gpu_draws=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_draw_grouped_enabled=%d gpu_draw_records_logical=%d gpu_draw_records_grouped=%d gpu_draw_grouped_saved_records=%d gpu_scene_target_create=%d gpu_scene_target_reuse=%d gpu_scene_target_replace=%d gpu_uniform_set_create=%d gpu_atlas_texture_create=%d gpu_atlas_sampler_create=%d gpu_push_constant_bytes=%d gpu_push_constant_updates=%d gpu_push_constant_total_bytes=%d gpu_push_constant_avg_bytes=%.1f gpu_push_constant_camera_bytes=%d gpu_push_constant_lighting_bytes=%d gpu_push_constant_atlas_bytes=%d gpu_faces=%d cpu_proxy=%d gpu_uploads=%d gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d gpu_upload_stage_pool_enabled=%d gpu_upload_stage_pool_entries=%d gpu_upload_stage_pool_bytes=%d gpu_upload_stage_pba_creates=%d gpu_upload_stage_pba_reuses=%d terrain_pressure_fixture=%s terrain_pressure_fixture_block_id=%d terrain_pressure_fixture_blocks=%d terrain_pressure_fixture_dirty_observed=%d transparent_requested=%d transparent_active=%d transparent_fallback=%d transparent_blocks=%d transparent_faces=%d transparent_draws=%d transparent_subchunks=%d chunk_replace=%d dirty_chunks=%d dirty_blocks=%d dirty_changed_subchunks=%d dirty_rebuild_subchunks=%d dirty_edge_chunks=%d dirty_edge_neighbor_chunks=%d dirty_edge_neighbor_subchunks=%d dirty_last_edge_neighbor_chunks=%d dirty_last_edge_neighbor_subchunks=%d dirty_partial_chunks=%d dirty_partial_subchunks=%d dirty_partial_saved_subchunks=%d dirty_last_blocks=%d dirty_last_rebuild_subchunks=%d dirty_last_partial_subchunks=%d dirty_last_partial_saved_subchunks=%d dirty_last_bounds=%s dirty_last_edges=%s collision_refresh_rebuilt=%d collision_refresh_last_rebuilt=%d current_chunk_collision=%d ground_misses=%d proxy_shadow=%d gpu_free_ranges=%d gpu_free_faces=%d gpu_largest_free=%d gpu_fragmented_free_faces=%d gpu_fragmentation_pct=%.1f terrain_samples=%d terrain_queue_avg_ms=%.3f terrain_queue_max_ms=%.3f process_wall_p95_ms=%.3f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_max_us=%.1f frame_p95_ms=%.3f fps_p05=%.1f\n", label, server_reused, motion_steps, motion_chunks, gpu_subchunks, gpu_draws, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_draw_grouped_enabled, gpu_draw_records_logical, gpu_draw_records_grouped, gpu_draw_grouped_saved_records, gpu_scene_target_create, gpu_scene_target_reuse, gpu_scene_target_replace, gpu_uniform_set_create, gpu_atlas_texture_create, gpu_atlas_sampler_create, gpu_push_constant_bytes, gpu_push_constant_updates, gpu_push_constant_total_bytes, gpu_push_constant_avg_bytes, gpu_push_constant_camera_bytes, gpu_push_constant_lighting_bytes, gpu_push_constant_atlas_bytes, gpu_faces, cpu_proxy, gpu_uploads, gpu_upload_fail, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, gpu_upload_stage_pool_enabled, gpu_upload_stage_pool_entries, gpu_upload_stage_pool_bytes, gpu_upload_stage_pba_creates, gpu_upload_stage_pba_reuses, terrain_pressure_fixture, terrain_pressure_fixture_block_id, terrain_pressure_fixture_blocks, terrain_pressure_fixture_dirty_observed, transparent_requested, transparent_active, transparent_fallback, transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks, chunk_replace, dirty_chunks, dirty_blocks, dirty_changed_subchunks, dirty_rebuild_subchunks, dirty_edge_chunks, dirty_edge_neighbor_chunks, dirty_edge_neighbor_subchunks, dirty_last_edge_neighbor_chunks, dirty_last_edge_neighbor_subchunks, dirty_partial_chunks, dirty_partial_subchunks, dirty_partial_saved_subchunks, dirty_last_blocks, dirty_last_rebuild_subchunks, dirty_last_partial_subchunks, dirty_last_partial_saved_subchunks, dirty_last_bounds, dirty_last_edges, collision_refresh_rebuilt, collision_refresh_last_rebuilt, current_chunk_collision, ground_misses, proxy_shadow, gpu_free_ranges, gpu_free_faces, gpu_largest_free, gpu_fragmented_free_faces, gpu_fragmentation_pct, terrain_samples, queue_avg, queue_max, process_wall_p95, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_us_max, frame_p95, fps_p05)
       }
     '
 }
@@ -399,7 +417,7 @@ if [ "$REPEAT_COUNT" -gt 1 ]; then
 
   repeat_summary_path="$OUT_DIR/workload-repeat-summary.txt"
   {
-    printf 'GPU terrain workload repeat summary repeats=%s target_fps=%s server_view_distance=%s client_keep_distance=%s server_chunks_per_update=%s case_set=%s terrain_pressure_fixture=%s terrain_pressure_fixture_local_x=%s terrain_pressure_fixture_local_z=%s\n' "$REPEAT_COUNT" "$TARGET_FPS" "${SERVER_VIEW_DISTANCE:-default}" "${CLIENT_KEEP_CHUNK_DISTANCE:-default}" "$SERVER_CHUNKS_PER_UPDATE" "$CASE_SET" "$TERRAIN_PRESSURE_FIXTURE" "$TERRAIN_PRESSURE_FIXTURE_LOCAL_X" "$TERRAIN_PRESSURE_FIXTURE_LOCAL_Z"
+    printf 'GPU terrain workload repeat summary repeats=%s target_fps=%s server_view_distance=%s client_keep_distance=%s server_chunks_per_update=%s case_set=%s terrain_pressure_fixture=%s terrain_pressure_fixture_local_x=%s terrain_pressure_fixture_local_z=%s terrain_pressure_fixture_block_id=%s\n' "$REPEAT_COUNT" "$TARGET_FPS" "${SERVER_VIEW_DISTANCE:-default}" "${CLIENT_KEEP_CHUNK_DISTANCE:-default}" "$SERVER_CHUNKS_PER_UPDATE" "$CASE_SET" "$TERRAIN_PRESSURE_FIXTURE" "$TERRAIN_PRESSURE_FIXTURE_LOCAL_X" "$TERRAIN_PRESSURE_FIXTURE_LOCAL_Z" "$TERRAIN_PRESSURE_FIXTURE_BLOCK_ID"
     for label in $(matrix_labels); do
       repeat_metric_line "$label" gpu_compositor_submit_max_ms "$OUT_DIR"/run-*/workload-matrix-summary.txt
       repeat_metric_line "$label" terrain_queue_max_ms "$OUT_DIR"/run-*/workload-matrix-summary.txt
@@ -426,7 +444,7 @@ fi
 
 summary_path="$OUT_DIR/workload-matrix-summary.txt"
 {
-  printf 'GPU terrain workload matrix target_fps=%s server_view_distance=%s client_keep_distance=%s server_chunks_per_update=%s case_set=%s terrain_pressure_fixture=%s terrain_pressure_fixture_local_x=%s terrain_pressure_fixture_local_z=%s\n' "$TARGET_FPS" "${SERVER_VIEW_DISTANCE:-default}" "${CLIENT_KEEP_CHUNK_DISTANCE:-default}" "$SERVER_CHUNKS_PER_UPDATE" "$CASE_SET" "$TERRAIN_PRESSURE_FIXTURE" "$TERRAIN_PRESSURE_FIXTURE_LOCAL_X" "$TERRAIN_PRESSURE_FIXTURE_LOCAL_Z"
+  printf 'GPU terrain workload matrix target_fps=%s server_view_distance=%s client_keep_distance=%s server_chunks_per_update=%s case_set=%s terrain_pressure_fixture=%s terrain_pressure_fixture_local_x=%s terrain_pressure_fixture_local_z=%s terrain_pressure_fixture_block_id=%s\n' "$TARGET_FPS" "${SERVER_VIEW_DISTANCE:-default}" "${CLIENT_KEEP_CHUNK_DISTANCE:-default}" "$SERVER_CHUNKS_PER_UPDATE" "$CASE_SET" "$TERRAIN_PRESSURE_FIXTURE" "$TERRAIN_PRESSURE_FIXTURE_LOCAL_X" "$TERRAIN_PRESSURE_FIXTURE_LOCAL_Z" "$TERRAIN_PRESSURE_FIXTURE_BLOCK_ID"
   if [ "$CASE_SET" = "pressure" ]; then
     summary_line pressure "$OUT_DIR/pressure/gpu-terrain-movement-stress.png.txt" "$OUT_DIR/pressure/movement-stress-summary.txt" "$OUT_DIR/pressure/run.log"
   else
