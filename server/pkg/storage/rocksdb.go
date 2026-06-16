@@ -76,26 +76,14 @@ func (s *RocksChunkStore) LoadChunk(x, z int32) (*world.Chunk, bool, error) {
 	}
 
 	key := chunkKey(x, z)
-
-	var cErr *C.char
-	var valueLen C.size_t
-	value := C.rocksdb_get(
-		s.db,
-		s.ro,
-		(*C.char)(unsafe.Pointer(&key[0])),
-		C.size_t(len(key)),
-		&valueLen,
-		&cErr,
-	)
-	if cErr != nil {
-		return nil, false, fmt.Errorf("load RocksDB chunk %d,%d: %w", x, z, takeRocksError(cErr))
+	data, ok, err := s.getData(key)
+	if err != nil {
+		return nil, false, fmt.Errorf("load RocksDB chunk %d,%d: %w", x, z, err)
 	}
-	if value == nil {
+	if !ok {
 		return nil, false, nil
 	}
-	defer C.rocksdb_free(unsafe.Pointer(value))
 
-	data := C.GoBytes(unsafe.Pointer(value), C.int(valueLen))
 	chunk, err := world.DeserializeChunk(x, z, data)
 	if err != nil {
 		return nil, false, fmt.Errorf("decode RocksDB chunk %d,%d: %w", x, z, err)
@@ -113,15 +101,50 @@ func (s *RocksChunkStore) SaveChunk(chunk *world.Chunk) error {
 
 	key := chunkKey(chunk.X, chunk.Z)
 	data := chunk.Serialize()
-	if err := s.putChunkData(key, data); err != nil {
+	if err := s.putData(key, data); err != nil {
 		return fmt.Errorf("save RocksDB chunk %d,%d: %w", chunk.X, chunk.Z, err)
 	}
 	return nil
 }
 
-func (s *RocksChunkStore) putChunkData(key, data []byte) error {
+func (s *RocksChunkStore) getData(key []byte) ([]byte, bool, error) {
+	if err := s.ensureOpen(); err != nil {
+		return nil, false, err
+	}
+	if len(key) == 0 {
+		return nil, false, errors.New("RocksDB key cannot be empty")
+	}
+
+	var cErr *C.char
+	var valueLen C.size_t
+	value := C.rocksdb_get(
+		s.db,
+		s.ro,
+		(*C.char)(unsafe.Pointer(&key[0])),
+		C.size_t(len(key)),
+		&valueLen,
+		&cErr,
+	)
+	if cErr != nil {
+		return nil, false, takeRocksError(cErr)
+	}
+	if value == nil {
+		return nil, false, nil
+	}
+	defer C.rocksdb_free(unsafe.Pointer(value))
+
+	return C.GoBytes(unsafe.Pointer(value), C.int(valueLen)), true, nil
+}
+
+func (s *RocksChunkStore) putData(key, data []byte) error {
 	if err := s.ensureOpen(); err != nil {
 		return err
+	}
+	if len(key) == 0 {
+		return errors.New("RocksDB key cannot be empty")
+	}
+	if len(data) == 0 {
+		return errors.New("RocksDB value cannot be empty")
 	}
 
 	var cErr *C.char

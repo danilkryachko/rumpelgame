@@ -21,6 +21,7 @@ use std::sync::{
 };
 
 const SERVER_ADDRESS: &str = "127.0.0.1:25565";
+const LOCAL_PLAYER_ID: &str = "local_player";
 const RECONNECT_RETRY_INTERVAL_SEC: f64 = 0.5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -106,6 +107,19 @@ fn inventory_action_select_slot_packet(slot: u32) -> crate::api::Packet {
             crate::api::InventoryAction {
                 action: crate::api::inventory_action::ActionType::SelectSlot as i32,
                 slot,
+            },
+        )),
+    }
+}
+
+fn client_position_packet(x: f32, y: f32, z: f32) -> crate::api::Packet {
+    crate::api::Packet {
+        payload: Some(crate::api::packet::Payload::Position(
+            crate::api::ClientPosition {
+                x,
+                y,
+                z,
+                player_id: LOCAL_PLAYER_ID.to_string(),
             },
         )),
     }
@@ -515,26 +529,16 @@ impl GameClient {
     }
 
     fn current_or_initial_position_packet(&self) -> crate::api::Packet {
-        let position = self
+        let (x, y, z) = self
             .base()
             .try_get_node_as::<godot::classes::Node3D>("Player")
             .map(|player| {
                 let pos = player.get_global_position();
-                crate::api::ClientPosition {
-                    x: pos.x,
-                    y: pos.y,
-                    z: pos.z,
-                }
+                (pos.x, pos.y, pos.z)
             })
-            .unwrap_or(crate::api::ClientPosition {
-                x: INITIAL_PLAYER_X,
-                y: INITIAL_PLAYER_Y,
-                z: INITIAL_PLAYER_Z,
-            });
+            .unwrap_or((INITIAL_PLAYER_X, INITIAL_PLAYER_Y, INITIAL_PLAYER_Z));
 
-        crate::api::Packet {
-            payload: Some(crate::api::packet::Payload::Position(position)),
-        }
+        client_position_packet(x, y, z)
     }
 
     fn shutdown_runtime_resources(&mut self) {
@@ -1515,15 +1519,7 @@ impl GameClient {
             self.enqueue_cpu_proxy_refresh(previous_chunk, chunk);
         }
 
-        let packet = crate::api::Packet {
-            payload: Some(crate::api::packet::Payload::Position(
-                crate::api::ClientPosition {
-                    x: pos.x,
-                    y: pos.y,
-                    z: pos.z,
-                },
-            )),
-        };
+        let packet = client_position_packet(pos.x, pos.y, pos.z);
         self.send_packet_to_server(&packet);
         self.unload_far_chunks(chunk);
     }
@@ -6794,6 +6790,16 @@ mod tests {
         packet.encode(&mut encoded).unwrap();
 
         assert_eq!(encoded, vec![0x2a, 0x02, 0x10, 0x03]);
+    }
+
+    #[test]
+    fn client_position_packet_includes_local_player_id() {
+        let packet = client_position_packet(1.0, 2.0, 3.0);
+        let Some(crate::api::packet::Payload::Position(position)) = packet.payload else {
+            panic!("position packet payload missing");
+        };
+
+        assert_eq!(position.player_id, LOCAL_PLAYER_ID);
     }
 
     #[test]

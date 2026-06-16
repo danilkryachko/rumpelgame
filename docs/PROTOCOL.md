@@ -42,6 +42,13 @@
 - `Packet.inventory_action = 5`: client-to-server `InventoryAction`.
 - Packets with no active payload, nil `ClientPosition`/`BlockAction`/`InventoryAction` bodies, or an unsupported payload shape are ignored by current handlers and must not emit chunk updates.
 
+## Client Position
+
+- `ClientPosition.x = 1`, `y = 2`, and `z = 3` are the client position coordinates.
+- `ClientPosition.player_id = 4` is an optional stable local-player identity for server-side player inventory persistence.
+- Clients that omit `player_id` keep session-local creative inventory behavior.
+- The current Rust client sends `player_id = "local_player"` on bootstrap and periodic position packets for the loopback local-server path.
+
 ## Chunk Data
 
 - `ChunkData.x` and `ChunkData.z` are chunk coordinates, not block coordinates.
@@ -74,6 +81,7 @@
 - `Packet.inventory_action = 5` carries client slot-selection requests.
 - `InventoryAction.action = 1`, `InventoryAction.slot = 2`, and `InventoryAction SELECT_SLOT = 0` keep their current meanings.
 - Server session inventory remains authoritative for placement approval.
+- When a valid `ClientPosition.player_id` is present and a player inventory store is configured, the server loads and saves inventory slots plus selected slot under that player identity.
 - New inventory packet payloads must use new `Packet.payload` tags greater than `5`.
 - New `BlockAction` fields must use field numbers greater than `5`.
 - Run `scripts/inventory_protocol_compatibility_gate.sh` before finishing inventory work that claims protocol compatibility.

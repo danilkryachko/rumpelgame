@@ -6,7 +6,7 @@ This document records the inventory action and snapshot wire-compatibility check
 
 ## Current Decision
 
-The current inventory protocol checkpoint adds a server-authoritative selected-slot action and keeps snapshot delivery guarded.
+The current inventory protocol checkpoint adds a server-authoritative selected-slot action, keeps snapshot delivery guarded, and uses optional `ClientPosition.player_id` for local-player inventory persistence.
 
 The current inventory runtime uses three packet paths:
 
@@ -16,9 +16,11 @@ The current inventory runtime uses three packet paths:
 - The server sends `Packet.inventory_snapshot = 4` after a client is admitted.
 - The Rust client accepts `InventorySnapshot` and stores the latest authoritative slot list plus selected slot.
 - The Rust client sends `Packet.inventory_action = 5` with `InventoryAction SELECT_SLOT` when the player chooses a valid hotbar slot.
+- The Rust client sends `ClientPosition.player_id = "local_player"` on bootstrap and periodic position packets.
 - The server validates `InventoryAction.slot` against the connected session inventory before changing the selected slot.
 - Accepted slot changes are echoed through a fresh `InventorySnapshot`.
 - Successful counted placements send the editing client a chunk update followed by an updated `InventorySnapshot`.
+- The server loads and saves bound player inventory state through RocksDB when `ClientPosition.player_id` is valid.
 - A rejected placement does not apply a world edit, does not consume a counted server stack, and does not emit a chunk update.
 - Creative session inventory retains counts, so existing creative placement behavior stays compatible with current clients.
 
@@ -29,6 +31,7 @@ The current inventory runtime uses three packet paths:
 - `Packet.block_action = 3` is the current client-to-server edit payload.
 - `Packet.inventory_snapshot = 4` is the current server-to-client inventory snapshot payload.
 - `Packet.inventory_action = 5` is the current client-to-server selected-slot action payload.
+- `ClientPosition.player_id = 4` is the optional client-to-server local-player identity used by inventory persistence.
 - `BlockAction.action = 1`, `x = 2`, `y = 3`, `z = 4`, and `block_id = 5` keep their current meanings.
 - `BlockAction DESTROY` ignores `block_id`.
 - `BlockAction PLACE` treats `block_id` as a requested block placement and leaves final authority on the server.
@@ -67,8 +70,9 @@ Additional inventory schema work must use new field numbers:
 
 - Do not change or reuse `Packet.inventory_snapshot = 4`.
 - Do not change or reuse `Packet.inventory_action = 5`.
+- Do not change or reuse `ClientPosition.player_id = 4`.
 - Do not hand-edit generated protocol files.
-- Do not persist inventory stacks until a storage design defines the record ownership, migration behavior, and rollback path.
+- Persist inventory stacks only through the RocksDB player-inventory record format documented in `docs/STORAGE.md`.
 - Old clients that only send `BlockAction PLACE` must continue to work against creative session inventory.
 - Current server placement validation must remain server-owned and must not trust client-only hotbar state.
 - Keep `World.SetBlockGlobal` as the persistence-capable world-edit boundary after inventory validation passes.
@@ -82,12 +86,13 @@ Use:
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected post-commit result is `status=pass`, `inventory_protocol_status=action_guarded`, `active_schema_change=0`, `current_wire_contract=block_action_inventory_snapshot_and_action`, `inventory_snapshot_schema=tag_4_guarded`, `inventory_action_schema=tag_5_guarded`, `future_packet_tags=packet_gt_5`, `future_block_action_fields=block_action_gt_5`, `protocol_generated_drift=guarded`, `server_inventory_status=session_guarded`, and `gameplay_inventory_status=session_guarded`.
+The expected post-commit result is `status=pass`, `inventory_protocol_status=action_guarded`, `active_schema_change=0`, `current_wire_contract=block_action_inventory_snapshot_action_and_player_id`, `position_identity_schema=tag_4_guarded`, `inventory_snapshot_schema=tag_4_guarded`, `inventory_action_schema=tag_5_guarded`, `future_packet_tags=packet_gt_5`, `future_block_action_fields=block_action_gt_5`, `protocol_generated_drift=guarded`, `server_inventory_status=session_guarded`, and `gameplay_inventory_status=session_guarded`.
 
 The gate checks that:
 
 - This document records the current decision, wire contract, inventory snapshot contract, inventory action contract, reserved allocation, and compatibility rules.
 - `api/schema/packets.proto` has the current `Packet.payload` tags `chunk=1`, `position=2`, `block_action=3`, `inventory_snapshot=4`, and `inventory_action=5`.
+- `ClientPosition.player_id` uses field number `4`.
 - `BlockAction.block_id` still uses field number `5`.
 - `InventorySlot`, `InventorySnapshot`, and `InventoryAction` field numbers are guarded.
 - Protocol schema and generated Go protocol files have no active diff.

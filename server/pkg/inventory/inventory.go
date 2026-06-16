@@ -16,6 +16,12 @@ type Slot struct {
 	Count   uint32
 }
 
+type State struct {
+	Slots           []Slot
+	PlacementPolicy PlacementPolicy
+	SelectedSlot    uint32
+}
+
 type Inventory struct {
 	slots           []Slot
 	placementPolicy PlacementPolicy
@@ -33,6 +39,10 @@ func New(slots []Slot, placementPolicy PlacementPolicy) Inventory {
 
 func NewCounted(slots []Slot) Inventory {
 	return New(slots, PlacementPolicyConsume)
+}
+
+func NewFromState(state State) Inventory {
+	return New(state.Slots, state.PlacementPolicy)
 }
 
 func NewCreativeHotbar() Inventory {
@@ -96,6 +106,14 @@ func (i *Inventory) Slots() []Slot {
 	copiedSlots := make([]Slot, len(i.slots))
 	copy(copiedSlots, i.slots)
 	return copiedSlots
+}
+
+func (i *Inventory) State(selectedSlot uint32) State {
+	return State{
+		Slots:           i.Slots(),
+		PlacementPolicy: i.placementPolicy,
+		SelectedSlot:    selectedSlot,
+	}
 }
 
 func (i *Inventory) placeableSlotIndex(blockID world.BlockID) (int, bool) {

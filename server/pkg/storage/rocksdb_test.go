@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	playerinventory "rumpelmc/server/pkg/inventory"
 	"rumpelmc/server/pkg/world"
 )
 
@@ -387,11 +388,125 @@ func TestRocksChunkStoreRejectsCorruptChunkPayload(t *testing.T) {
 	}
 }
 
+func TestRocksChunkStorePlayerInventoryRoundTrip(t *testing.T) {
+	path := t.TempDir()
+
+	store, err := OpenRocksChunkStore(path)
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+
+	state := playerinventory.State{
+		Slots: []playerinventory.Slot{
+			{BlockID: world.Stone, Count: 12},
+			{BlockID: world.Wood, Count: 3},
+		},
+		PlacementPolicy: playerinventory.PlacementPolicyConsume,
+		SelectedSlot:    1,
+	}
+	if err := store.SavePlayerInventory("local_player", state); err != nil {
+		t.Fatalf("SavePlayerInventory() error = %v", err)
+	}
+	store.Close()
+
+	store, err = OpenRocksChunkStore(path)
+	if err != nil {
+		t.Fatalf("reopen OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	loaded, ok, err := store.LoadPlayerInventory("local_player")
+	if err != nil {
+		t.Fatalf("LoadPlayerInventory() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("LoadPlayerInventory() ok = false")
+	}
+	if loaded.SelectedSlot != 1 {
+		t.Fatalf("selected slot = %d, want 1", loaded.SelectedSlot)
+	}
+	if loaded.PlacementPolicy != playerinventory.PlacementPolicyConsume {
+		t.Fatalf("placement policy = %q, want %q", loaded.PlacementPolicy, playerinventory.PlacementPolicyConsume)
+	}
+	if len(loaded.Slots) != 2 {
+		t.Fatalf("loaded slots = %d, want 2", len(loaded.Slots))
+	}
+	if loaded.Slots[0] != (playerinventory.Slot{BlockID: world.Stone, Count: 12}) {
+		t.Fatalf("slot 0 = %+v, want Stone x12", loaded.Slots[0])
+	}
+	if loaded.Slots[1] != (playerinventory.Slot{BlockID: world.Wood, Count: 3}) {
+		t.Fatalf("slot 1 = %+v, want Wood x3", loaded.Slots[1])
+	}
+}
+
+func TestRocksChunkStorePlayerInventoryKeyIsSeparateFromChunkKey(t *testing.T) {
+	playerKey, err := playerInventoryKey("local_player")
+	if err != nil {
+		t.Fatalf("playerInventoryKey() error = %v", err)
+	}
+	chunkKey := chunkKey(0, 0)
+
+	if bytes.Equal(playerKey, chunkKey) {
+		t.Fatalf("player inventory key % x matches chunk key % x", playerKey, chunkKey)
+	}
+	if playerKey[0] != 'p' || playerKey[1] != 'i' || playerKey[2] != 0 {
+		t.Fatalf("player inventory key prefix = % x, want 70 69 00", playerKey[:3])
+	}
+}
+
+func TestRocksChunkStorePlayerInventoryRejectsCorruptPayload(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	key, err := playerInventoryKey("local_player")
+	if err != nil {
+		t.Fatalf("playerInventoryKey() error = %v", err)
+	}
+	if err := store.putData(key, []byte(`{"version":99,"slots":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, ok, err := store.LoadPlayerInventory("local_player")
+	if err == nil {
+		t.Fatal("LoadPlayerInventory() error = nil, want corrupt payload error")
+	}
+	if !strings.Contains(err.Error(), `decode RocksDB player inventory "local_player"`) {
+		t.Fatalf("LoadPlayerInventory() error = %q, want decode context", err)
+	}
+	if ok {
+		t.Fatal("LoadPlayerInventory() ok = true, want false for corrupt payload")
+	}
+	if len(loaded.Slots) != 0 {
+		t.Fatalf("LoadPlayerInventory() loaded = %+v, want zero state", loaded)
+	}
+}
+
+func TestRocksChunkStorePlayerInventoryRejectsEmptyID(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	inventory := playerinventory.NewCreativeHotbar()
+	if err := store.SavePlayerInventory("", inventory.State(0)); !errors.Is(err, errEmptyPlayerInventoryID) {
+		t.Fatalf("SavePlayerInventory(empty) error = %v, want empty id error", err)
+	}
+	if _, ok, err := store.LoadPlayerInventory(""); !errors.Is(err, errEmptyPlayerInventoryID) {
+		t.Fatalf("LoadPlayerInventory(empty) error = %v, want empty id error", err)
+	} else if ok {
+		t.Fatal("LoadPlayerInventory(empty) ok = true, want false")
+	}
+}
+
 func putRawChunkPayload(t *testing.T, store *RocksChunkStore, x, z int32, data []byte) {
 	t.Helper()
 
 	key := chunkKey(x, z)
-	if err := store.putChunkData(key, data); err != nil {
+	if err := store.putData(key, data); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -2,7 +2,7 @@
 
 Date: 2026-06-15
 
-Decision: no protocol change is needed for the current streaming work. RLE already uses compatible `ChunkData.encoding = 4` and `ChunkData.uncompressed_size = 5`, and Block 6 evidence does not justify another compression packet shape. Inventory snapshot sync is a gameplay protocol extension, not a streaming packet change.
+Decision: no streaming protocol change is needed for the current streaming work. RLE already uses compatible `ChunkData.encoding = 4` and `ChunkData.uncompressed_size = 5`, and Block 6 evidence does not justify another compression packet shape. Inventory snapshot/action sync and `ClientPosition.player_id` are gameplay protocol extensions, not streaming packet changes.
 
 ## Current Wire Contract
 
@@ -13,6 +13,7 @@ Decision: no protocol change is needed for the current streaming work. RLE alrea
 - `Packet.inventory_snapshot = 4`: server-to-client `InventorySnapshot`.
 - `Packet.inventory_action = 5`: client-to-server `InventoryAction`.
 - `ChunkData.x = 1`, `ChunkData.z = 2`, `ChunkData.blocks = 3`, `ChunkData.encoding = 4`, `ChunkData.uncompressed_size = 5`.
+- `ClientPosition.x = 1`, `y = 2`, `z = 3`, and optional `player_id = 4`.
 - `CHUNK_ENCODING_RAW = 0` remains compatibility default.
 - `CHUNK_ENCODING_RLE = 1` remains current default server encoding.
 

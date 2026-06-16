@@ -14,6 +14,8 @@ INVENTORY_SOURCE="${RUMPELMC_SERVER_INVENTORY_SOURCE:-"$ROOT_DIR/server/pkg/inve
 INVENTORY_TEST="${RUMPELMC_SERVER_INVENTORY_TEST:-"$ROOT_DIR/server/pkg/inventory/inventory_test.go"}"
 NETWORK_SOURCE="${RUMPELMC_SERVER_INVENTORY_NETWORK_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
 NETWORK_TEST="${RUMPELMC_SERVER_INVENTORY_NETWORK_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
+STORAGE_SOURCE="${RUMPELMC_SERVER_INVENTORY_STORAGE_SOURCE:-"$ROOT_DIR/server/pkg/storage/player_inventory.go"}"
+STORAGE_TEST="${RUMPELMC_SERVER_INVENTORY_STORAGE_TEST:-"$ROOT_DIR/server/pkg/storage/rocksdb_test.go"}"
 PROTOCOL_DOC="${RUMPELMC_SERVER_INVENTORY_PROTOCOL_DOC:-"$ROOT_DIR/docs/PROTOCOL.md"}"
 RUN_GO_TESTS="${RUMPELMC_SERVER_INVENTORY_RUN_GO_TESTS:-1}"
 
@@ -31,7 +33,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$INVENTORY_SOURCE" "$INVENTORY_TEST" "$NETWORK_SOURCE" "$NETWORK_TEST" "$PROTOCOL_DOC"; do
+for path in "$DESIGN_DOC" "$INVENTORY_SOURCE" "$INVENTORY_TEST" "$NETWORK_SOURCE" "$NETWORK_TEST" "$STORAGE_SOURCE" "$STORAGE_TEST" "$PROTOCOL_DOC"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -48,14 +50,17 @@ done
 require_token "$PROTOCOL_DOC" '`Packet.block_action = 3`'
 require_token "$INVENTORY_SOURCE" 'type Inventory struct'
 require_token "$INVENTORY_SOURCE" 'type Slot struct'
+require_token "$INVENTORY_SOURCE" 'type State struct'
 require_token "$INVENTORY_SOURCE" 'CreativeStackCount'
 require_token "$INVENTORY_SOURCE" 'func NewCreativeHotbar'
 require_token "$INVENTORY_SOURCE" 'func NewCounted'
+require_token "$INVENTORY_SOURCE" 'func NewFromState'
 require_token "$INVENTORY_SOURCE" 'func (i *Inventory) CanPlaceBlock'
 require_token "$INVENTORY_SOURCE" 'func (i *Inventory) CanSelectSlot'
 require_token "$INVENTORY_SOURCE" 'func (i *Inventory) FirstPlaceableSlot'
 require_token "$INVENTORY_SOURCE" 'func (i *Inventory) PlaceableBlockAtSlot'
 require_token "$INVENTORY_SOURCE" 'func (i *Inventory) PlaceBlock'
+require_token "$INVENTORY_SOURCE" 'func (i *Inventory) State'
 require_token "$INVENTORY_SOURCE" 'world.IsPlaceable'
 require_token "$INVENTORY_TEST" 'TestCreativeHotbarContainsCurrentPlaceableBlocks'
 require_token "$INVENTORY_TEST" 'TestCreativeHotbarPlaceBlockRetainsCounts'
@@ -64,16 +69,34 @@ require_token "$INVENTORY_TEST" 'TestInventorySlotsReturnsCopy'
 require_token "$INVENTORY_TEST" 'TestInventorySlotSelectionRequiresAvailablePlaceableSlot'
 require_token "$INVENTORY_TEST" 'TestInventoryFirstPlaceableSlotSkipsUnavailableSlots'
 require_token "$NETWORK_SOURCE" 'playerinventory "rumpelmc/server/pkg/inventory"'
+require_token "$NETWORK_SOURCE" 'type playerInventoryStore interface'
+require_token "$NETWORK_SOURCE" 'NewServerWithPlayerInventoryStore'
+require_token "$NETWORK_SOURCE" 'LoadPlayerInventory'
+require_token "$NETWORK_SOURCE" 'SavePlayerInventory'
 require_token "$NETWORK_SOURCE" 'inventory             playerinventory.Inventory'
 require_token "$NETWORK_SOURCE" 'selectedInventorySlot uint32'
+require_token "$NETWORK_SOURCE" 'playerID              string'
 require_token "$NETWORK_SOURCE" 'playerinventory.NewCreativeHotbar()'
 require_token "$NETWORK_SOURCE" 'inventory.FirstPlaceableSlot()'
 require_token "$NETWORK_SOURCE" 'client.selectInventorySlot(action.Slot)'
-require_token "$NETWORK_SOURCE" 'client.normalizeSelectedInventorySlot()'
+require_token "$NETWORK_SOURCE" 'client.placeInventoryBlock(block)'
+require_token "$NETWORK_SOURCE" 's.saveClientInventory(client)'
 require_token "$NETWORK_SOURCE" 'client.inventory.CanPlaceBlock'
-require_token "$NETWORK_SOURCE" 'client.inventory.PlaceBlock'
+require_token "$NETWORK_SOURCE" 'normalizedPlayerID'
 require_token "$NETWORK_SOURCE" 'world.IsPlaceable(block)'
+require_token "$STORAGE_SOURCE" 'func (s *RocksChunkStore) LoadPlayerInventory'
+require_token "$STORAGE_SOURCE" 'func (s *RocksChunkStore) SavePlayerInventory'
+require_token "$STORAGE_SOURCE" 'playerInventoryRecordVersion'
+require_token "$STORAGE_SOURCE" "[]byte{'p', 'i', 0}"
+require_token "$STORAGE_TEST" 'TestRocksChunkStorePlayerInventoryRoundTrip'
+require_token "$STORAGE_TEST" 'TestRocksChunkStorePlayerInventoryKeyIsSeparateFromChunkKey'
+require_token "$STORAGE_TEST" 'TestRocksChunkStorePlayerInventoryRejectsCorruptPayload'
 require_token "$NETWORK_TEST" 'TestNewClientSessionStartsWithServerAuthoritativeCreativeInventory'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketPositionLoadsPersistedPlayerInventory'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketPositionCreatesPlayerInventoryRecord'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketPositionIgnoresInvalidPlayerIDForPersistence'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketInventoryActionPersistsSelectedSlot'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketPlacePersistsInventoryAfterCountedPlacement'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketInventoryActionSelectsSlotAndSendsSnapshot'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketInventoryActionRejectsUnavailableSlot'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketPlaceSendsInventorySnapshotAfterCountedPlacement'
@@ -85,7 +108,7 @@ storage_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- server/pkg/storage 
 
 go_tests="skipped"
 if [ "$RUN_GO_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/server" && go test ./pkg/inventory ./pkg/network > "$OUT_DIR/go-test-server-inventory.txt" 2>&1); then
+  if (cd "$ROOT_DIR/server" && go test ./pkg/inventory ./pkg/storage ./pkg/network > "$OUT_DIR/go-test-server-inventory.txt" 2>&1); then
     go_tests="pass"
   else
     cat "$OUT_DIR/go-test-server-inventory.txt" >&2 || true
@@ -107,6 +130,7 @@ awk \
     creative_inventory = "unit_guarded"
     counted_inventory = "unit_guarded"
     block_action_inventory = "session_guarded"
+    player_inventory_persistence = "rocksdb_guarded"
     go_ok = go_tests == "pass" || go_tests == "skipped"
 
     if (protocol_diff_count + 0 != 0) {
@@ -120,7 +144,7 @@ awk \
       reason = "go_tests_failed"
     }
 
-    printf("server_inventory_foundation status=%s reason=%s server_inventory_status=%s creative_inventory=%s counted_inventory=%s block_action_inventory=%s active_protocol_change=%d active_storage_change=%d go_tests=%s design_doc=%s inventory_source=%s network_source=%s\n", status, reason, server_inventory_status, creative_inventory, counted_inventory, block_action_inventory, protocol_diff_count, storage_diff_count, go_tests, design_doc, inventory_source, network_source)
+    printf("server_inventory_foundation status=%s reason=%s server_inventory_status=%s creative_inventory=%s counted_inventory=%s block_action_inventory=%s player_inventory_persistence=%s active_protocol_change=%d active_storage_change=%d go_tests=%s design_doc=%s inventory_source=%s network_source=%s\n", status, reason, server_inventory_status, creative_inventory, counted_inventory, block_action_inventory, player_inventory_persistence, protocol_diff_count, storage_diff_count, go_tests, design_doc, inventory_source, network_source)
     if (status != "pass") {
       exit 1
     }

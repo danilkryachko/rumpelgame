@@ -924,6 +924,190 @@ func TestHandleClientPacketInventoryActionSelectsSlotAndSendsSnapshot(t *testing
 	}
 }
 
+func TestHandleClientPacketPositionLoadsPersistedPlayerInventory(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	store.states["local_player"] = playerinventory.State{
+		Slots: []playerinventory.Slot{
+			{BlockID: world.Stone, Count: 2},
+			{BlockID: world.Wood, Count: 7},
+		},
+		PlacementPolicy: playerinventory.PlacementPolicyConsume,
+		SelectedSlot:    1,
+	}
+
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	client := newClientSession(&recordingConn{})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_Position{
+			Position: &api.ClientPosition{
+				X:        1,
+				Y:        68,
+				Z:        1,
+				PlayerId: "local_player",
+			},
+		},
+	}
+
+	if err := server.handleInitialClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleInitialClientPacketForSession() error = %v", err)
+	}
+	if got := client.selectedSlot(); got != 1 {
+		t.Fatalf("selected slot = %d, want persisted slot 1", got)
+	}
+	if !client.inventory.CanPlaceBlock(world.Wood) {
+		t.Fatal("persisted inventory cannot place Wood")
+	}
+	if got := store.loadCount; got != 1 {
+		t.Fatalf("load count = %d, want 1", got)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 2 {
+		t.Fatalf("frames = %d, want persisted snapshot plus chunk", got)
+	}
+	snapshot := decodedPacket(t, frames[0]).GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("first frame inventory snapshot = nil")
+	}
+	if got := snapshot.GetSelectedSlot(); got != 1 {
+		t.Fatalf("snapshot selected slot = %d, want 1", got)
+	}
+	if got := snapshot.GetSlots()[1].GetCount(); got != 7 {
+		t.Fatalf("snapshot slot 1 count = %d, want 7", got)
+	}
+	if decodedPacket(t, frames[1]).GetChunk() == nil {
+		t.Fatal("second frame chunk = nil")
+	}
+}
+
+func TestHandleClientPacketPositionCreatesPlayerInventoryRecord(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	client := newClientSession(&recordingConn{})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_Position{
+			Position: &api.ClientPosition{X: 1, Y: 68, Z: 1, PlayerId: "local_player"},
+		},
+	}
+
+	if err := server.handleInitialClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleInitialClientPacketForSession() error = %v", err)
+	}
+	if got := store.saveCount; got != 1 {
+		t.Fatalf("save count = %d, want initial player inventory record", got)
+	}
+	saved := store.states["local_player"]
+	if saved.PlacementPolicy != playerinventory.PlacementPolicyRetain {
+		t.Fatalf("saved placement policy = %q, want retain", saved.PlacementPolicy)
+	}
+	if saved.SelectedSlot != 0 {
+		t.Fatalf("saved selected slot = %d, want 0", saved.SelectedSlot)
+	}
+	if len(saved.Slots) == 0 {
+		t.Fatal("saved slots empty")
+	}
+}
+
+func TestHandleClientPacketPositionIgnoresInvalidPlayerIDForPersistence(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	client := newClientSession(&recordingConn{})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_Position{
+			Position: &api.ClientPosition{X: 1, Y: 68, Z: 1, PlayerId: "../local"},
+		},
+	}
+
+	if err := server.handleInitialClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleInitialClientPacketForSession() error = %v", err)
+	}
+	if store.loadCount != 0 || store.saveCount != 0 {
+		t.Fatalf("store load/save = %d/%d, want 0/0", store.loadCount, store.saveCount)
+	}
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames = %d, want chunk only", got)
+	}
+	if decodedPacket(t, frames[0]).GetChunk() == nil {
+		t.Fatal("frame chunk = nil")
+	}
+}
+
+func TestHandleClientPacketInventoryActionPersistsSelectedSlot(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	client := newClientSession(&recordingConn{})
+	client.bindPlayerID("local_player")
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 1},
+		{BlockID: world.Wood, Count: 1},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_InventoryAction{
+			InventoryAction: &api.InventoryAction{
+				Action: api.InventoryAction_SELECT_SLOT,
+				Slot:   1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	saved := store.states["local_player"]
+	if saved.SelectedSlot != 1 {
+		t.Fatalf("persisted selected slot = %d, want 1", saved.SelectedSlot)
+	}
+	if got := store.saveCount; got != 1 {
+		t.Fatalf("save count = %d, want 1", got)
+	}
+}
+
+func TestHandleClientPacketPlacePersistsInventoryAfterCountedPlacement(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	client := newClientSession(&recordingConn{})
+	client.bindPlayerID("local_player")
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 1},
+		{BlockID: world.Wood, Count: 1},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       64,
+				Z:       1,
+				BlockId: uint32(world.Stone),
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	saved := store.states["local_player"]
+	if len(saved.Slots) != 2 {
+		t.Fatalf("persisted slots = %d, want 2", len(saved.Slots))
+	}
+	if got := saved.Slots[0].Count; got != 0 {
+		t.Fatalf("persisted stone count = %d, want 0", got)
+	}
+	if got := saved.SelectedSlot; got != 1 {
+		t.Fatalf("persisted selected slot = %d, want normalized slot 1", got)
+	}
+}
+
 func TestHandleClientPacketInventoryActionRejectsUnavailableSlot(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	client := newClientSession(&recordingConn{})
@@ -1470,4 +1654,39 @@ type deadlineRecordingConn struct {
 func (c *deadlineRecordingConn) SetWriteDeadline(deadline time.Time) error {
 	c.writeDeadlines = append(c.writeDeadlines, deadline)
 	return nil
+}
+
+type memoryPlayerInventoryStore struct {
+	states    map[string]playerinventory.State
+	loadCount int
+	saveCount int
+}
+
+func newMemoryPlayerInventoryStore() *memoryPlayerInventoryStore {
+	return &memoryPlayerInventoryStore{
+		states: make(map[string]playerinventory.State),
+	}
+}
+
+func (s *memoryPlayerInventoryStore) LoadPlayerInventory(playerID string) (playerinventory.State, bool, error) {
+	s.loadCount++
+	state, ok := s.states[playerID]
+	if !ok {
+		return playerinventory.State{}, false, nil
+	}
+	return cloneInventoryState(state), true, nil
+}
+
+func (s *memoryPlayerInventoryStore) SavePlayerInventory(playerID string, state playerinventory.State) error {
+	s.saveCount++
+	s.states[playerID] = cloneInventoryState(state)
+	return nil
+}
+
+func cloneInventoryState(state playerinventory.State) playerinventory.State {
+	return playerinventory.State{
+		Slots:           append([]playerinventory.Slot(nil), state.Slots...),
+		PlacementPolicy: state.PlacementPolicy,
+		SelectedSlot:    state.SelectedSlot,
+	}
 }

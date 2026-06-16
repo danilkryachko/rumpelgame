@@ -10,7 +10,7 @@ Continue the annual world streaming architecture plan in order and use MCP/OntoI
 
 Goal:
 
-Keep the existing mining/building loop stable, confirm that block edits still flow through persistence-capable server state, and guard the client/server creative inventory foundations without changing protocol or storage formats.
+Keep the existing mining/building loop stable, confirm that block edits still flow through persistence-capable server state, and guard the client/server creative inventory foundations plus local-player inventory persistence without changing chunk storage format.
 
 Context inspected:
 
@@ -34,7 +34,7 @@ Scope:
 
 Out of scope:
 
-- No item stack persistence, crafting, drops, tools, durability, survival rules, new block IDs beyond inventory action/snapshot compatibility, new storage records, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
+- No crafting, drops, tools, durability, survival rules, new block IDs beyond inventory action/snapshot/player-id compatibility, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
 
 Assumptions:
 
@@ -43,6 +43,7 @@ Assumptions:
 - Server `World.SetBlockGlobal` is the persistence-capable edit boundary because it calls `ChunkStore.SaveChunk` when a store is configured.
 - The current hotbar is creative-mode inventory, so counts are guard data and are not decremented by placement yet.
 - Server sessions use the same creative placement retention through `server/pkg/inventory`.
+- The Rust client sends `ClientPosition.player_id = "local_player"` so the loopback local-player inventory can persist across reconnects.
 - Full edit persistence verification is supplied by the completed Block 41 persisted visual evidence chain.
 - Inventory protocol compatibility is guarded separately in `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` and keeps this checkpoint on the existing `BlockAction` packet shape.
 
@@ -82,6 +83,7 @@ The client now has a local creative hotbar inventory model:
 - `selected_hotbar_state_after_request()` updates slot and block ID together only for usable slots
 - `hotbar_key_for_slot()` keeps key mapping bounded to slots `1..5`
 - `hotbar_selected(slot, block_id)` emits only when the requested usable slot changes, and `GameClient.on_hotbar_selected` sends `InventoryAction SELECT_SLOT`
+- `client_position_packet()` includes the stable local `player_id` on bootstrap and periodic position packets
 
 This keeps the existing hotbar behavior while making selected-slot intent visible to the server. Authoritative selected-slot state still comes back through `InventorySnapshot`.
 
@@ -97,6 +99,9 @@ The server now has a session-owned inventory foundation:
 - `BlockAction_PLACE` keeps the existing `world.IsPlaceable(block)` check and requires `client.inventory.CanPlaceBlock(block)` before the world edit.
 - Counted placement is applied only after `World.SetBlockGlobal` succeeds.
 - Successful counted placement sends a fresh inventory snapshot after the chunk update and normalizes the selected slot if the selected stack is depleted.
+- A valid `ClientPosition.player_id` binds the session to a persisted player inventory state through the configured RocksDB store.
+- Missing inventory records create the current creative hotbar record; existing records restore slots and selected slot.
+- Selected-slot changes and successful counted placements save the bound inventory state.
 - Creative placement keeps counts retained, so current creative block placement behavior is unchanged.
 - Missing inventory entries reject placement before `World.SetBlockGlobal` and before chunk update broadcast.
 
@@ -108,13 +113,13 @@ The gameplay foundation relies on the existing server boundary:
 - `World.SetBlockGlobal` persists the edited chunk only when `World` was created with a `ChunkStore`.
 - `World.SetBlockGlobal` rejects block edits outside `[0, ChunkHeight)` before creating/loading a chunk or returning an updated snapshot.
 - `server/cmd/server/main.go` creates the default server with `storage.OpenRocksChunkStore`, so normal server runs are persistence-capable.
+- `server/cmd/server/main.go` passes that same store to `network.NewServerWithPlayerInventoryStore`, so local-player inventory records use RocksDB without changing chunk keys or chunk payload bytes.
 - Block 40 consumes save -> process restart -> reload -> visual/collision/GPU update proof from Block 41 instead of duplicating that heavier runtime matrix.
 
 ## Deferred Work
 
 Still needed before calling gameplay production-ready:
 
-- Item stack persistence.
 - Tool/durability/mining-time rules.
 - Drops and pickup flow.
 - Stack transfer and crafting inventory actions.
@@ -127,7 +132,7 @@ Still needed before calling gameplay production-ready:
 - Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload.
 - Keep `Packet.inventory_action = 5` as the client-to-server selected-slot inventory action payload.
 - Keep `scripts/inventory_protocol_compatibility_gate.sh` clean after inventory schema work.
-- Do not add storage records for item stacks without a storage migration task.
+- Keep player inventory persistence on the documented RocksDB player-inventory record format.
 - Do not bypass `World.SetBlockGlobal` for persistent block edits.
 - Do not allow client-only block IDs through `BlockAction`.
 - Do not decrement creative hotbar or server creative inventory counts in this checkpoint.
@@ -142,13 +147,13 @@ sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_curren
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records mining/building flow, inventory foundation, persistence boundary, deferred work, and compatibility rules.
 - The player source contains the hotbar inventory model, selected slot state, selected-slot signal, selection helpers, and tests.
-- The client source contains selected-slot inventory action send coverage.
+- The client source contains selected-slot inventory action send coverage and local player-id position packet coverage.
 - The server inventory foundation summary is present and clean.
 - Server block edits still flow through `World.SetBlockGlobal`.
 - `World.SetBlockGlobal` still calls `ChunkStore.SaveChunk`.
@@ -159,4 +164,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID. Broader gameplay systems still remain outside this foundation checkpoint.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, and local-player inventory state persists through RocksDB. Broader gameplay systems still remain outside this foundation checkpoint.

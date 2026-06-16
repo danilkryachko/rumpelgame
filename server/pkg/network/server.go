@@ -36,6 +36,7 @@ const chunkOrderEnv = "RUMPELMC_SERVER_CHUNK_ORDER"
 const clientWriteTimeoutEnv = "RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS"
 const maxClientsEnv = "RUMPELMC_SERVER_MAX_CLIENTS"
 const initialClientPacketTimeout = 250 * time.Millisecond
+const maxPlayerIDLength = 64
 
 type networkErrorClass string
 
@@ -57,6 +58,11 @@ var (
 	errPacketEncode    = errors.New("packet encode")
 )
 
+type playerInventoryStore interface {
+	LoadPlayerInventory(playerID string) (playerinventory.State, bool, error)
+	SavePlayerInventory(playerID string, state playerinventory.State) error
+}
+
 type chunkOrderMode string
 
 const (
@@ -74,6 +80,7 @@ type Server struct {
 	chunkOrderMode  chunkOrderMode
 	writeTimeout    time.Duration
 	maxClients      int
+	inventoryStore  playerInventoryStore
 	clientsMu       sync.Mutex
 	clients         map[*clientSession]struct{}
 }
@@ -92,6 +99,12 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		maxClients:      configuredMaxClients(),
 		clients:         make(map[*clientSession]struct{}),
 	}
+}
+
+func NewServerWithPlayerInventoryStore(address string, gameWorld *world.World, inventoryStore playerInventoryStore) *Server {
+	server := NewServer(address, gameWorld)
+	server.inventoryStore = inventoryStore
+	return server
 }
 
 func (s *Server) Start() error {
@@ -236,6 +249,15 @@ func (s *Server) handleInitialClientPacketForSession(client *clientSession, clie
 			log.Printf("Ignored nil client position")
 			return nil
 		}
+		loadedInventory, err := s.bindPlayerInventoryFromPosition(client, p.Position)
+		if err != nil {
+			return err
+		}
+		if loadedInventory {
+			if err := s.sendInventorySnapshotToSession(client); err != nil {
+				return fmt.Errorf("send inventory snapshot: %w", err)
+			}
+		}
 		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
 		if err := s.sendChunksAroundWithRadiusForSession(client, center.X, center.Z, s.bootstrapRadius, world.ChunkOrder{}); err != nil {
 			return fmt.Errorf("send bootstrap chunks around %d,%d: %w", center.X, center.Z, err)
@@ -333,6 +355,15 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			log.Printf("Ignored nil client position")
 			return nil
 		}
+		loadedInventory, err := s.bindPlayerInventoryFromPosition(client, p.Position)
+		if err != nil {
+			return err
+		}
+		if loadedInventory {
+			if err := s.sendInventorySnapshotToSession(client); err != nil {
+				return fmt.Errorf("send inventory snapshot: %w", err)
+			}
+		}
 		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
 		order := client.chunkOrderForCenter(center, s.chunkOrderMode)
 		if err := s.sendChunksAroundForSession(client, center.X, center.Z, order); err != nil {
@@ -370,8 +401,12 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			return fmt.Errorf("update block: %w", err)
 		}
 		if applyInventoryPlacement {
-			client.inventory.PlaceBlock(block)
-			client.normalizeSelectedInventorySlot()
+			if !client.placeInventoryBlock(block) {
+				return fmt.Errorf("place inventory block %d: unavailable", block)
+			}
+			if err := s.saveClientInventory(client); err != nil {
+				return err
+			}
 		}
 
 		if err := s.broadcastChunkUpdate(client, snapshot); err != nil {
@@ -400,6 +435,9 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 				}
 				return nil
 			}
+			if err := s.saveClientInventory(client); err != nil {
+				return err
+			}
 			if err := s.sendInventorySnapshotToSession(client); err != nil {
 				return fmt.Errorf("send inventory snapshot: %w", err)
 			}
@@ -414,6 +452,73 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 	return nil
 }
 
+func (s *Server) bindPlayerInventoryFromPosition(client *clientSession, position *api.ClientPosition) (bool, error) {
+	if s.inventoryStore == nil || position == nil {
+		return false, nil
+	}
+
+	playerID, ok := normalizedPlayerID(position.GetPlayerId())
+	if !ok {
+		return false, nil
+	}
+	if !client.bindPlayerID(playerID) {
+		return false, nil
+	}
+
+	state, found, err := s.inventoryStore.LoadPlayerInventory(playerID)
+	if err != nil {
+		return false, fmt.Errorf("load player inventory %q: %w", playerID, err)
+	}
+	if found {
+		client.applyInventoryState(state)
+		return true, nil
+	}
+	if err := s.saveClientInventory(client); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+func (s *Server) saveClientInventory(client *clientSession) error {
+	if s.inventoryStore == nil {
+		return nil
+	}
+
+	playerID, state, ok := client.inventoryState()
+	if !ok {
+		return nil
+	}
+	if err := s.inventoryStore.SavePlayerInventory(playerID, state); err != nil {
+		return fmt.Errorf("save player inventory %q: %w", playerID, err)
+	}
+	return nil
+}
+
+func normalizedPlayerID(playerID string) (string, bool) {
+	playerID = strings.TrimSpace(playerID)
+	if playerID == "" || len(playerID) > maxPlayerIDLength {
+		return "", false
+	}
+	for _, r := range playerID {
+		if r >= 'a' && r <= 'z' {
+			continue
+		}
+		if r >= 'A' && r <= 'Z' {
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			continue
+		}
+		switch r {
+		case '.', '_', '-':
+			continue
+		default:
+			return "", false
+		}
+	}
+	return playerID, true
+}
+
 type clientSession struct {
 	conn                  net.Conn
 	stateMu               sync.Mutex
@@ -421,6 +526,7 @@ type clientSession struct {
 	streamState           clientChunkStreamState
 	inventory             playerinventory.Inventory
 	selectedInventorySlot uint32
+	playerID              string
 }
 
 func newClientSession(conn net.Conn) *clientSession {
@@ -476,10 +582,25 @@ func (c *clientSession) selectInventorySlot(slot uint32) bool {
 	return true
 }
 
+func (c *clientSession) placeInventoryBlock(block world.BlockID) bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if !c.inventory.PlaceBlock(block) {
+		return false
+	}
+	c.normalizeSelectedInventorySlotLocked()
+	return true
+}
+
 func (c *clientSession) normalizeSelectedInventorySlot() {
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 
+	c.normalizeSelectedInventorySlotLocked()
+}
+
+func (c *clientSession) normalizeSelectedInventorySlotLocked() {
 	if c.inventory.CanSelectSlot(c.selectedInventorySlot) {
 		return
 	}
@@ -488,6 +609,36 @@ func (c *clientSession) normalizeSelectedInventorySlot() {
 		return
 	}
 	c.selectedInventorySlot = 0
+}
+
+func (c *clientSession) bindPlayerID(playerID string) bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if c.playerID != "" {
+		return false
+	}
+	c.playerID = playerID
+	return true
+}
+
+func (c *clientSession) applyInventoryState(state playerinventory.State) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	c.inventory = playerinventory.NewFromState(state)
+	c.selectedInventorySlot = state.SelectedSlot
+	c.normalizeSelectedInventorySlotLocked()
+}
+
+func (c *clientSession) inventoryState() (string, playerinventory.State, bool) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if c.playerID == "" {
+		return "", playerinventory.State{}, false
+	}
+	return c.playerID, c.inventory.State(c.selectedInventorySlot), true
 }
 
 type clientChunkStreamState struct {

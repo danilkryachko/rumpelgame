@@ -1,12 +1,12 @@
 # Server Inventory Foundation
 
-This document records the first server-owned inventory checkpoint for the gameplay track.
+This document records the server-owned inventory checkpoint for the gameplay track.
 
 ## Technical Brief
 
 Goal:
 
-Move block placement validation from block-registry-only checks to a session-owned inventory boundary while preserving current creative gameplay behavior and the current protocol/storage formats.
+Move block placement validation from block-registry-only checks to a session-owned inventory boundary, then persist local-player inventory state through the approved RocksDB store while preserving current creative gameplay behavior and chunk storage compatibility.
 
 Scope:
 
@@ -14,12 +14,14 @@ Scope:
 - Give each `clientSession` a server-owned creative hotbar inventory.
 - Keep `BlockAction PLACE` on the existing packet shape and require the session inventory before applying the edit.
 - Keep selected hotbar slot state on the server session and validate selected-slot actions against the session inventory.
+- Load and save local-player inventory slots plus selected slot when a client sends a valid `ClientPosition.player_id`.
 - Guard creative and counted stack behavior with Go unit tests.
 - Guard the session placement and selected-slot boundaries with network handler tests.
+- Guard RocksDB player inventory key separation and record round-trip with storage tests.
 
 Out of scope:
 
-- No storage records, item-stack persistence, crafting rules, drops, pickup packets, client UI changes, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or database changes. Inventory action and snapshot compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
+- No crafting rules, drops, pickup packets, client UI changes, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or new database engines. Inventory action and snapshot compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
 
 ## Current Contract
 
@@ -31,6 +33,7 @@ Out of scope:
 - `CanPlaceBlock()` and `PlaceBlock()` reject air, unknown block IDs, empty slots, and non-placeable registry entries.
 - `CanSelectSlot()`, `PlaceableBlockAtSlot()`, and `FirstPlaceableSlot()` reject unavailable slots and expose slot selection without giving callers mutable inventory state.
 - `Slots()` returns a copy so callers cannot mutate inventory internals without going through the domain methods.
+- `State(selectedSlot)` and `NewFromState()` are the typed boundary used by persistence without exposing mutable inventory internals.
 
 ## Session Placement Boundary
 
@@ -42,6 +45,9 @@ Out of scope:
 - `BlockAction PLACE` still validates `world.IsPlaceable(block)` and now also requires `client.inventory.CanPlaceBlock(block)` before applying the edit.
 - `client.inventory.PlaceBlock(block)` is applied only after `World.SetBlockGlobal` succeeds, so rejected world edits do not consume counted stacks.
 - After successful counted placement, the server normalizes the selected slot if the selected stack becomes unavailable and sends a fresh snapshot after the chunk update.
+- If a connected client sends a valid `ClientPosition.player_id`, the session binds once to that player id, loads the persisted inventory state when present, and saves the current creative hotbar state when no record exists.
+- Accepted selected-slot changes and successful counted placements save the bound player inventory state through the configured store before sending the refreshed snapshot.
+- Invalid or missing `player_id` values keep session-local inventory behavior and do not touch player inventory storage.
 - `BlockAction DESTROY` still maps to `world.Air` and does not require an inventory slot.
 - The legacy state handler keeps behavior-preserving creative inventory validation for tests that bypass `clientSession`.
 - A rejected placement due to missing inventory writes no chunk update to the origin client or interested clients.
@@ -50,7 +56,7 @@ Out of scope:
 
 - Keep the inventory protocol compatibility contract in `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` clean before advancing schema work.
 - Do not hand-edit generated protocol files.
-- Do not persist item stacks or session inventory without a storage design and migration gate.
+- Persist player inventory only through the RocksDB player-inventory record format documented in `docs/STORAGE.md`.
 - Do not change RocksDB chunk keys, chunk payload bytes, or `Chunk.Serialize()`.
 - Do not bypass `World.SetBlockGlobal` after inventory validation passes.
 - Do not change block ID numeric values or block registry placeability semantics from this checkpoint.
@@ -65,17 +71,18 @@ sh scripts/server_inventory_foundation_gate.sh logs/server_inventory_foundation_
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected current result is `status=pass`, `server_inventory_status=session_guarded`, `creative_inventory=unit_guarded`, `counted_inventory=unit_guarded`, `block_action_inventory=session_guarded`, `active_protocol_change=0`, `active_storage_change=0`, and `go_tests=pass`.
+The expected current result is `status=pass`, `server_inventory_status=session_guarded`, `creative_inventory=unit_guarded`, `counted_inventory=unit_guarded`, `block_action_inventory=session_guarded`, `player_inventory_persistence=rocksdb_guarded`, `active_protocol_change=0`, `active_storage_change=0`, and `go_tests=pass`.
 
 The gate checks that:
 
 - This document records the current contract, session placement boundary, and compatibility rules.
 - `server/pkg/inventory` exposes the slot model, creative inventory, counted inventory, placement methods, selected-slot methods, and copy-out slots.
 - Inventory tests cover creative placeable blocks, retained creative counts, counted stack consumption, selected-slot validation, empty-slot rejection, air/unknown rejection, and copied slots.
-- Network tests cover session creative inventory, selected-slot action handling, rejected placement when the session inventory lacks the requested block, retained counted inventory after a failed world edit, and snapshot refresh after counted placement.
+- Network tests cover session creative inventory, selected-slot action handling, player inventory load/save binding from `ClientPosition.player_id`, rejected placement when the session inventory lacks the requested block, retained counted inventory after a failed world edit, and snapshot refresh after counted placement.
 - `server/pkg/network/server.go` keeps the existing block registry placeability check, adds the session inventory placement check, and validates `InventoryAction SELECT_SLOT` through session inventory.
-- Storage docs/source remain unchanged; protocol schema compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
+- Storage tests cover player inventory record round-trip, key separation from chunk records, corrupt record rejection, and empty id rejection.
+- Protocol schema compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
 
 ## Current Status
 
-This checkpoint is complete when the gate reports `server_inventory_status=session_guarded`. The server now owns the placement inventory boundary for connected sessions while current creative placement behavior, protocol, storage, chunk serialization, world generation, and renderer behavior remain unchanged.
+This checkpoint is complete when the gate reports `server_inventory_status=session_guarded` and `player_inventory_persistence=rocksdb_guarded`. The server now owns the placement inventory boundary for connected sessions and persists local-player inventory state while current creative placement behavior, chunk serialization, world generation, and renderer behavior remain unchanged.

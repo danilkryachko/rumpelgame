@@ -55,6 +55,21 @@ func TestPacketWireCompatibility(t *testing.T) {
 			},
 		},
 		{
+			name: "position player id field tag 4",
+			packet: &Packet{
+				Payload: &Packet_Position{
+					Position: &ClientPosition{
+						PlayerId: "local_player",
+					},
+				},
+			},
+			expected: []byte{
+				0x12, 0x0e,
+				0x22, 0x0c,
+				'l', 'o', 'c', 'a', 'l', '_', 'p', 'l', 'a', 'y', 'e', 'r',
+			},
+		},
+		{
 			name: "block action payload tag 3",
 			packet: &Packet{
 				Payload: &Packet_BlockAction{

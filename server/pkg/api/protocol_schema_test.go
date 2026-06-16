@@ -26,6 +26,15 @@ func TestChunkDataFieldNumbersAreStable(t *testing.T) {
 	assertFieldNumber(t, chunkData, "uncompressed_size", 5)
 }
 
+func TestClientPositionFieldNumbersAreStable(t *testing.T) {
+	position := (&ClientPosition{}).ProtoReflect().Descriptor()
+
+	assertFieldNumber(t, position, "x", 1)
+	assertFieldNumber(t, position, "y", 2)
+	assertFieldNumber(t, position, "z", 3)
+	assertFieldNumber(t, position, "player_id", 4)
+}
+
 func TestChunkEncodingWireValuesAreStable(t *testing.T) {
 	encoding := ChunkEncoding_CHUNK_ENCODING_RAW.Descriptor()
 

@@ -25,6 +25,7 @@
 - `World.ChunksAround` selects chunk coordinates, loads or generates chunks, and returns serialized snapshots for networking.
 - Server client sessions own the placement inventory boundary for `BlockAction_PLACE`.
 - `World.SetBlockGlobal` applies block edits and persists dirty chunks through the configured `ChunkStore`.
+- The Go server passes the same RocksDB store to the network layer for local-player inventory persistence under a separate player-inventory key prefix.
 - RocksDB chunk keys use the stable `c` prefix plus sortable signed big-endian chunk coordinates.
 - Persisted chunk payloads are the exact output of `world.Chunk.Serialize()`.
 - Current generation uses an explicit `GeneratorConfig` with `seed`, `dimension_id`, and generator `version`; server startup validates `RUMPELMC_WORLD_SEED`, `RUMPELMC_WORLD_DIMENSION_ID`, and `RUMPELMC_WORLD_GENERATOR_VERSION` before creating `World`. The default `flat_v1` path still produces the deterministic flat terrain byte contract. `height_v1` is opt-in and provides deterministic integer-hashed terrain surface height without changing protocol, storage, chunk dimensions, or default generation. `biome_v1`, `cave_v1`, and `resource_v1` are deterministic server-side metadata samplers/catalogs owned by the world package; `biome_height_v1` is an opt-in generator that uses the biome sampler for surface/subsurface block selection, `cave_height_v1` carves `cave_v1` openings below the preserved `height_v1` surface, and `biome_cave_height_v1` combines biome surface/subsurface selection with cave carving. Resource-to-block, structure, broader biome runtime, and default-world quality layers are documented but not active runtime behavior.
@@ -35,7 +36,7 @@
 - `ChunkData.blocks` carries either raw serialized chunk bytes or RLE runs over the same serialized bytes.
 - `ChunkData.encoding` and `ChunkData.uncompressed_size` are compatibility fields for encoded chunks.
 - Block IDs remain the only current wire/storage identity for voxel contents.
-- Inventory placement remains on the current `BlockAction` packet shape, server-to-client inventory slots and selected slot use `Packet.inventory_snapshot = 4`, and client selected-slot requests use `Packet.inventory_action = 5`; additional inventory packets must use new `Packet.payload` tags and pass the inventory protocol compatibility gate.
+- Inventory placement remains on the current `BlockAction` packet shape, server-to-client inventory slots and selected slot use `Packet.inventory_snapshot = 4`, client selected-slot requests use `Packet.inventory_action = 5`, and `ClientPosition.player_id = 4` carries the optional stable local-player identity used for inventory persistence; additional inventory packets must use new `Packet.payload` tags and pass the inventory protocol compatibility gate.
 - Server and client block material metadata exists as registry-derived behavior for the existing block IDs only, with a parity gate comparing the current server/client registry summaries. Block IDs remain the only wire/storage identity; transparent material behavior, liquid/emissive runtime traits, and later protocol deltas remain separate work unless new protobuf fields and compatibility tests are added explicitly.
 
 ## Client Rust GDExtension
@@ -43,7 +44,7 @@
 - The client lifecycle model tracks connecting, waiting_chunks, spawning, active, reconnecting, and shutdown.
 - The packet reader feeds the main-thread packet queue; packet queue metrics are observational and do not implement backpressure or dropping.
 - Chunk replacements run through dirty-update detection. Partial dirty GPU upload is default-on; `RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD=0` is the full-rebuild rollback path.
-- Local creative hotbar state, including the selected slot and selected block ID, is client-side input state. Server sessions own creative placement inventory, selected-slot validation for `InventoryAction_SELECT_SLOT`, and placement approval for `BlockAction_PLACE`; persistent block edits still flow through `World.SetBlockGlobal`.
+- Local creative hotbar state, including the selected slot and selected block ID, is client-side input state. Server sessions own creative placement inventory, selected-slot validation for `InventoryAction_SELECT_SLOT`, placement approval for `BlockAction_PLACE`, and local-player inventory load/save when `ClientPosition.player_id` is valid; persistent block edits still flow through `World.SetBlockGlobal`.
 - Reconnect execution, slow-client policy, block-edit broadcast fanout, and opt-in max-client admission with bounded live rejection evidence are guarded; adaptive overload/backpressure behavior remains deferred policy work.
 
 ## GPU Terrain Contract

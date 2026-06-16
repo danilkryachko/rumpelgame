@@ -37,7 +37,7 @@ func main() {
 		log.Fatalf("Invalid server address: %v", err)
 	}
 
-	server := network.NewServer(address, gameWorld)
+	server := network.NewServerWithPlayerInventoryStore(address, gameWorld, store)
 	if err := server.Start(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
