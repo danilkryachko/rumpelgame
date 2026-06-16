@@ -125,6 +125,11 @@ func (s *Server) handleConnection(conn net.Conn) {
 	log.Printf("Client connected: %s active_clients=%d max_clients=%d", conn.RemoteAddr(), activeClients, s.maxClients)
 	defer s.unregisterClient(client)
 
+	if err := s.sendInventorySnapshotToSession(client); err != nil {
+		log.Printf("Failed to send inventory snapshot packet_error_class=%s: %v", classifyNetworkError(err), err)
+		return
+	}
+
 	firstPacket, hasFirstPacket, err := s.receiveInitialClientPacket(conn)
 	if err != nil {
 		log.Printf("Client disconnected before initial chunk stream packet_error_class=%s: %v", classifyNetworkError(err), err)
@@ -713,12 +718,23 @@ func (s *Server) sendChunkToSession(client *clientSession, chunk world.ChunkSnap
 		return chunkSendStats{}, err
 	}
 
+	if err := s.sendPacketToSession(client, packet); err != nil {
+		return chunkSendStats{}, err
+	}
+	return stats, nil
+}
+
+func (s *Server) sendInventorySnapshotToSession(client *clientSession) error {
+	return s.sendPacketToSession(client, inventorySnapshotPacket(client.inventory))
+}
+
+func (s *Server) sendPacketToSession(client *clientSession, packet *api.Packet) error {
 	client.writeMu.Lock()
 	defer client.writeMu.Unlock()
 
 	if s.writeTimeout > 0 {
 		if err := client.conn.SetWriteDeadline(time.Now().Add(s.writeTimeout)); err != nil {
-			return chunkSendStats{}, err
+			return err
 		}
 	}
 	sendErr := s.sendPacket(client.conn, packet)
@@ -727,12 +743,12 @@ func (s *Server) sendChunkToSession(client *clientSession, chunk world.ChunkSnap
 		clearErr = client.conn.SetWriteDeadline(time.Time{})
 	}
 	if sendErr != nil {
-		return chunkSendStats{}, sendErr
+		return sendErr
 	}
 	if clearErr != nil {
-		return chunkSendStats{}, clearErr
+		return clearErr
 	}
-	return stats, nil
+	return nil
 }
 
 func (s *Server) chunkPacket(chunk world.ChunkSnapshot) (*api.Packet, chunkSendStats, error) {
@@ -766,6 +782,26 @@ func (s *Server) chunkPacket(chunk world.ChunkSnapshot) (*api.Packet, chunkSendS
 		wireBytes:    framedPacketSize(packet),
 	}
 	return packet, stats, nil
+}
+
+func inventorySnapshotPacket(inventory playerinventory.Inventory) *api.Packet {
+	return &api.Packet{
+		Payload: &api.Packet_InventorySnapshot{
+			InventorySnapshot: inventorySnapshot(inventory),
+		},
+	}
+}
+
+func inventorySnapshot(inventory playerinventory.Inventory) *api.InventorySnapshot {
+	slots := inventory.Slots()
+	apiSlots := make([]*api.InventorySlot, 0, len(slots))
+	for _, slot := range slots {
+		apiSlots = append(apiSlots, &api.InventorySlot{
+			BlockId: uint32(slot.BlockID),
+			Count:   slot.Count,
+		})
+	}
+	return &api.InventorySnapshot{Slots: apiSlots}
 }
 
 func (s *chunkStreamBatchStats) add(stats chunkSendStats) {

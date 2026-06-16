@@ -98,6 +98,24 @@ func TestPacketWireCompatibility(t *testing.T) {
 				0x28, 0x04,
 			},
 		},
+		{
+			name: "inventory snapshot payload tag 4",
+			packet: &Packet{
+				Payload: &Packet_InventorySnapshot{
+					InventorySnapshot: &InventorySnapshot{
+						Slots: []*InventorySlot{
+							{BlockId: 1, Count: 999},
+						},
+					},
+				},
+			},
+			expected: []byte{
+				0x22, 0x07,
+				0x0a, 0x05,
+				0x08, 0x01,
+				0x10, 0xe7, 0x07,
+			},
+		},
 	}
 
 	for _, tc := range tests {

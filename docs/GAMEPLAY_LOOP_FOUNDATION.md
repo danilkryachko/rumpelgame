@@ -111,7 +111,7 @@ The gameplay foundation relies on the existing server boundary:
 
 Still needed before calling gameplay production-ready:
 
-- Inventory packet/schema design and compatibility tests.
+- Inventory action packet/schema design and compatibility tests.
 - Item stack persistence.
 - Tool/durability/mining-time rules.
 - Drops and pickup flow.
@@ -121,7 +121,7 @@ Still needed before calling gameplay production-ready:
 
 ## Compatibility Rules
 
-- Do not add inventory fields to `api/schema/packets.proto` in this checkpoint.
+- Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload.
 - Keep `scripts/inventory_protocol_compatibility_gate.sh` clean before advancing any inventory schema work.
 - Do not add storage records for item stacks without a storage migration task.
 - Do not bypass `World.SetBlockGlobal` for persistent block edits.

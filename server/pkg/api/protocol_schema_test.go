@@ -12,6 +12,7 @@ func TestPacketPayloadFieldNumbersAreStable(t *testing.T) {
 	assertFieldNumber(t, packet, "chunk", 1)
 	assertFieldNumber(t, packet, "position", 2)
 	assertFieldNumber(t, packet, "block_action", 3)
+	assertFieldNumber(t, packet, "inventory_snapshot", 4)
 }
 
 func TestChunkDataFieldNumbersAreStable(t *testing.T) {
@@ -29,6 +30,15 @@ func TestChunkEncodingWireValuesAreStable(t *testing.T) {
 
 	assertEnumNumber(t, encoding, "CHUNK_ENCODING_RAW", 0)
 	assertEnumNumber(t, encoding, "CHUNK_ENCODING_RLE", 1)
+}
+
+func TestInventorySnapshotFieldNumbersAreStable(t *testing.T) {
+	slot := (&InventorySlot{}).ProtoReflect().Descriptor()
+	snapshot := (&InventorySnapshot{}).ProtoReflect().Descriptor()
+
+	assertFieldNumber(t, slot, "block_id", 1)
+	assertFieldNumber(t, slot, "count", 2)
+	assertFieldNumber(t, snapshot, "slots", 1)
 }
 
 func assertFieldNumber(t *testing.T, message protoreflect.MessageDescriptor, name protoreflect.Name, want protoreflect.FieldNumber) {

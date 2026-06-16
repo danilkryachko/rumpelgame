@@ -67,7 +67,7 @@ for token in \
   'Compatibility Rules' \
   'Server Inventory Foundation' \
   'Block 41' \
-  'Do not add inventory fields to `api/schema/packets.proto`'; do
+  'Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload'; do
   require_token "$DESIGN_DOC" "$token"
 done
 

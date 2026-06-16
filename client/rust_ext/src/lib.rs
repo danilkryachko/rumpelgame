@@ -81,6 +81,25 @@ fn client_lifecycle_allows_outbound(state: ClientLifecycleState) -> bool {
     state == ClientLifecycleState::Active
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AuthoritativeInventorySlot {
+    block_id: u32,
+    count: u32,
+}
+
+fn authoritative_inventory_slots_from_snapshot(
+    snapshot: &crate::api::InventorySnapshot,
+) -> Vec<AuthoritativeInventorySlot> {
+    snapshot
+        .slots
+        .iter()
+        .map(|slot| AuthoritativeInventorySlot {
+            block_id: slot.block_id,
+            count: slot.count,
+        })
+        .collect()
+}
+
 enum NetworkReaderEvent {
     Packet {
         session_id: u64,
@@ -159,6 +178,7 @@ pub struct GameClient {
     chunk_blocks: HashMap<(i32, i32), Vec<u8>>,
     chunk_non_empty_subchunks: HashMap<(i32, i32), u32>,
     chunk_last_seen_sec: HashMap<(i32, i32), f64>,
+    authoritative_inventory_slots: Vec<AuthoritativeInventorySlot>,
     mesh_queue: VecDeque<SubchunkKey>,
     queued_subchunks: HashMap<SubchunkKey, MeshQueueReason>,
     collision_refresh_queue: VecDeque<SubchunkKey>,
@@ -205,6 +225,7 @@ impl INode for GameClient {
             chunk_blocks: HashMap::new(),
             chunk_non_empty_subchunks: HashMap::new(),
             chunk_last_seen_sec: HashMap::new(),
+            authoritative_inventory_slots: Vec::new(),
             mesh_queue: VecDeque::new(),
             queued_subchunks: HashMap::new(),
             collision_refresh_queue: VecDeque::new(),
@@ -323,8 +344,14 @@ impl INode for GameClient {
             packet_reader_elapsed_ms,
         );
         for record in packets {
-            if let Some(crate::api::packet::Payload::Chunk(chunk)) = record.packet.payload {
-                self.update_chunk(chunk, record.timing);
+            match record.packet.payload {
+                Some(crate::api::packet::Payload::Chunk(chunk)) => {
+                    self.update_chunk(chunk, record.timing);
+                }
+                Some(crate::api::packet::Payload::InventorySnapshot(snapshot)) => {
+                    self.update_inventory_snapshot(snapshot);
+                }
+                _ => {}
             }
         }
         let collision_frame = self.process_collision_refresh_queue();
@@ -676,6 +703,18 @@ impl GameClient {
             self.record_client_lifecycle_event(ClientLifecycleEvent::StartupChunkReady);
             self.spawn_player();
         }
+    }
+
+    fn update_inventory_snapshot(&mut self, snapshot: crate::api::InventorySnapshot) {
+        self.authoritative_inventory_slots = authoritative_inventory_slots_from_snapshot(&snapshot);
+        self.last_block_action = format!(
+            "inventory slots {}",
+            self.authoritative_inventory_slots.len()
+        );
+        self.emit_debug_log(&format!(
+            "Inventory snapshot received slots={}",
+            self.authoritative_inventory_slots.len()
+        ));
     }
 
     fn process_mesh_queue(&mut self) -> MeshQueueFrame {
@@ -6668,6 +6707,38 @@ mod tests {
             },
             received_at: std::time::Instant::now(),
         }
+    }
+
+    #[test]
+    fn inventory_snapshot_slots_copy_wire_slots() {
+        let snapshot = crate::api::InventorySnapshot {
+            slots: vec![
+                crate::api::InventorySlot {
+                    block_id: blocks::STONE,
+                    count: 2,
+                },
+                crate::api::InventorySlot {
+                    block_id: blocks::WOOD,
+                    count: 7,
+                },
+            ],
+        };
+
+        let slots = authoritative_inventory_slots_from_snapshot(&snapshot);
+
+        assert_eq!(
+            slots,
+            vec![
+                AuthoritativeInventorySlot {
+                    block_id: blocks::STONE,
+                    count: 2,
+                },
+                AuthoritativeInventorySlot {
+                    block_id: blocks::WOOD,
+                    count: 7,
+                },
+            ]
+        );
     }
 
     #[test]

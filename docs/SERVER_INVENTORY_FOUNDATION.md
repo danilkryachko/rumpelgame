@@ -18,7 +18,7 @@ Scope:
 
 Out of scope:
 
-- No new protobuf fields, packet variants, generated protocol files, storage records, item-stack persistence, crafting rules, drops, pickup packets, client UI changes, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or database changes.
+- No client-to-server inventory action packet, storage records, item-stack persistence, crafting rules, drops, pickup packets, client UI changes, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or database changes. Server-to-client snapshot compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
 
 ## Current Contract
 
@@ -33,6 +33,7 @@ Out of scope:
 ## Session Placement Boundary
 
 - `newClientSession()` creates a server-owned creative hotbar inventory.
+- Connected sessions receive a server-to-client `InventorySnapshot` for the current inventory slots after admission.
 - `BlockAction PLACE` still validates `world.IsPlaceable(block)` and now also requires `client.inventory.CanPlaceBlock(block)` before applying the edit.
 - `client.inventory.PlaceBlock(block)` is applied only after `World.SetBlockGlobal` succeeds, so rejected world edits do not consume counted stacks.
 - `BlockAction DESTROY` still maps to `world.Air` and does not require an inventory slot.
@@ -41,7 +42,7 @@ Out of scope:
 
 ## Compatibility Rules
 
-- Do not add inventory data to `api/schema/packets.proto` in this checkpoint.
+- Do not add client-to-server inventory actions to `api/schema/packets.proto` in this checkpoint.
 - Keep the inventory protocol compatibility contract in `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` clean before advancing schema work.
 - Do not hand-edit generated protocol files.
 - Do not persist item stacks or session inventory without a storage design and migration gate.

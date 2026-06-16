@@ -293,6 +293,15 @@ func TestHandleConnectionLogsPacketErrorClassForMalformedInitialPacket(t *testin
 		close(doneCh)
 	}()
 
+	dataBuf := readFrame(t, clientConn)
+	snapshotPacket := &api.Packet{}
+	if err := proto.Unmarshal(dataBuf, snapshotPacket); err != nil {
+		t.Fatalf("unmarshal inventory snapshot: %v", err)
+	}
+	if snapshotPacket.GetInventorySnapshot() == nil {
+		t.Fatalf("first server frame inventory snapshot = nil, payload %T", snapshotPacket.GetPayload())
+	}
+
 	writeFrame(t, clientConn, []byte{0xff})
 	waitConnectionClosed(t, doneCh)
 

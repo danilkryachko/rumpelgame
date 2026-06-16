@@ -35,10 +35,20 @@ message BlockAction {
   uint32 block_id = 5; // Ignored for DESTROY
 }
 
+message InventorySlot {
+  uint32 block_id = 1;
+  uint32 count = 2;
+}
+
+message InventorySnapshot {
+  repeated InventorySlot slots = 1;
+}
+
 message Packet {
   oneof payload {
     ChunkData chunk = 1;
     ClientPosition position = 2;
     BlockAction block_action = 3;
+    InventorySnapshot inventory_snapshot = 4;
   }
 }

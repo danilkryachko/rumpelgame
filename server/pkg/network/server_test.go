@@ -325,6 +325,38 @@ func TestHandleConnectionRejectsWhenMaxClientsReached(t *testing.T) {
 	}
 }
 
+func TestHandleConnectionSendsInventorySnapshotBeforeInitialChunks(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	doneCh := make(chan struct{})
+	go func() {
+		server.handleConnection(serverConn)
+		close(doneCh)
+	}()
+
+	dataBuf := readFrame(t, clientConn)
+	decoded := &api.Packet{}
+	if err := proto.Unmarshal(dataBuf, decoded); err != nil {
+		t.Fatalf("unmarshal first server frame: %v", err)
+	}
+	if decoded.GetInventorySnapshot() == nil {
+		t.Fatalf("first server frame inventory snapshot = nil, payload %T", decoded.GetPayload())
+	}
+
+	if err := clientConn.Close(); err != nil {
+		t.Fatalf("close client connection: %v", err)
+	}
+	select {
+	case <-doneCh:
+	case <-time.After(time.Second):
+		t.Fatal("handleConnection did not return after client close")
+	}
+}
+
 func TestClientChunkStreamStateDirectionalOrderTracksChunkMovement(t *testing.T) {
 	streamState := clientChunkStreamState{}
 	if got := streamState.chunkOrderForCenter(world.ChunkCoord{X: 1, Z: 0}, chunkOrderDirectional); got != (world.ChunkOrder{}) {
@@ -774,6 +806,73 @@ func TestHandleClientPacketDoesNotConsumeInventoryWhenBlockUpdateFails(t *testin
 	}
 	if !origin.inventory.CanPlaceBlock(world.Stone) {
 		t.Fatal("failed block update consumed inventory count")
+	}
+}
+
+func TestInventorySnapshotPacketUsesSessionInventorySlots(t *testing.T) {
+	inv := playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 2},
+		{BlockID: world.Wood, Count: 7},
+	})
+
+	packet := inventorySnapshotPacket(inv)
+	snapshot := packet.GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("inventory snapshot packet payload = nil")
+	}
+	if got := len(snapshot.GetSlots()); got != 2 {
+		t.Fatalf("snapshot slots = %d, want 2", got)
+	}
+	if got := snapshot.GetSlots()[0].GetBlockId(); got != uint32(world.Stone) {
+		t.Fatalf("slot 0 block id = %d, want %d", got, world.Stone)
+	}
+	if got := snapshot.GetSlots()[0].GetCount(); got != 2 {
+		t.Fatalf("slot 0 count = %d, want 2", got)
+	}
+	if got := snapshot.GetSlots()[1].GetBlockId(); got != uint32(world.Wood) {
+		t.Fatalf("slot 1 block id = %d, want %d", got, world.Wood)
+	}
+	if got := snapshot.GetSlots()[1].GetCount(); got != 7 {
+		t.Fatalf("slot 1 count = %d, want 7", got)
+	}
+}
+
+func TestSendInventorySnapshotToSessionWritesInventorySnapshot(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	client := newClientSession(&recordingConn{})
+
+	if err := server.sendInventorySnapshotToSession(client); err != nil {
+		t.Fatalf("sendInventorySnapshotToSession() error = %v", err)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames = %d, want 1", got)
+	}
+	decoded := &api.Packet{}
+	if err := proto.Unmarshal(frames[0], decoded); err != nil {
+		t.Fatalf("unmarshal inventory snapshot frame: %v", err)
+	}
+	snapshot := decoded.GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("decoded inventory snapshot = nil")
+	}
+	placeableBlocks := 0
+	for _, block := range world.BlockDefinitions() {
+		if block.Placeable {
+			placeableBlocks++
+		}
+	}
+	if got := len(snapshot.GetSlots()); got != placeableBlocks {
+		t.Fatalf("snapshot slots = %d, want %d", got, placeableBlocks)
+	}
+	for _, slot := range snapshot.GetSlots() {
+		if !world.IsPlaceable(world.BlockID(slot.GetBlockId())) {
+			t.Fatalf("snapshot block id %d is not placeable", slot.GetBlockId())
+		}
+		if slot.GetCount() != playerinventory.CreativeStackCount {
+			t.Fatalf("snapshot count = %d, want %d", slot.GetCount(), playerinventory.CreativeStackCount)
+		}
 	}
 }
 

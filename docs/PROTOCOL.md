@@ -20,7 +20,7 @@
 - Preserve wire compatibility unless the task explicitly changes it.
 - Do not reuse or repurpose existing packet fields without documenting the compatibility impact.
 - Add or update encode/decode, round-trip, or integration tests when changing protocol behavior.
-- Add new `Packet.payload` variants with new field numbers; never reuse field numbers `1`, `2`, or `3`.
+- Add new `Packet.payload` variants with new field numbers; never reuse field numbers `1`, `2`, `3`, or `4`.
 - Add new fields to existing messages with new field numbers; do not change the type, meaning, or encoding of existing fields.
 
 ## Wire Format
@@ -38,6 +38,7 @@
 - `Packet.chunk = 1`: server-to-client `ChunkData`.
 - `Packet.position = 2`: client-to-server `ClientPosition`.
 - `Packet.block_action = 3`: client-to-server `BlockAction`.
+- `Packet.inventory_snapshot = 4`: server-to-client `InventorySnapshot`.
 - Packets with no active payload, nil `ClientPosition`/`BlockAction` bodies, or an unsupported payload shape are ignored by current handlers and must not emit chunk updates.
 
 ## Chunk Data
@@ -65,10 +66,12 @@
 
 ## Inventory Compatibility
 
-- Current inventory validation uses the existing `BlockAction` packet shape and does not add protobuf fields.
+- Current inventory validation uses the existing `BlockAction` packet shape.
 - `BlockAction.block_id = 5` remains the requested placement block ID for `PLACE`.
+- `Packet.inventory_snapshot = 4` sends server-authoritative inventory slots to the client after admission.
+- `InventorySlot.block_id = 1`, `InventorySlot.count = 2`, and `InventorySnapshot.slots = 1` keep their current meanings.
 - Server session inventory remains authoritative for placement approval.
-- New inventory packet payloads must use new `Packet.payload` tags greater than `3`.
+- New inventory packet payloads must use new `Packet.payload` tags greater than `4`.
 - New `BlockAction` fields must use field numbers greater than `5`.
 - Run `scripts/inventory_protocol_compatibility_gate.sh` before finishing inventory work that claims protocol compatibility.
 
