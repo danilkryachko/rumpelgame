@@ -118,6 +118,7 @@ else
 fi
 
 security_protocol_change="$(field_metric active_protocol_change "$SECURITY_SUMMARY")"
+security_deterministic_property_tests="$(field_metric deterministic_property_tests "$SECURITY_SUMMARY")"
 observability_error_scan="$(field_metric error_scan "$OBSERVABILITY_SUMMARY")"
 observability_summary_count="$(field_metric summary_count "$OBSERVABILITY_SUMMARY")"
 current_summary_count="$(find "$ROOT_DIR/logs" -maxdepth 3 -path '*current/*summary.txt' -type f | awk 'END { print NR + 0 }')"
@@ -194,6 +195,7 @@ awk \
   -v test_fast_command_status="$test_fast_command_status" \
   -v test_full_command_status="$test_full_command_status" \
   -v security_protocol_change="${security_protocol_change:-1}" \
+  -v security_deterministic_property_tests="${security_deterministic_property_tests:-missing}" \
   -v observability_error_scan="${observability_error_scan:-dirty}" \
   -v observability_summary_count="${observability_summary_count:-0}" \
   -v current_summary_count="$current_summary_count" \
@@ -250,6 +252,9 @@ awk \
     } else if (security_protocol_change + 0 != 0 || proto_diff_count + 0 != 0) {
       status = "fail"
       reason = "protocol_diff_present"
+    } else if (security_deterministic_property_tests != "guarded") {
+      status = "fail"
+      reason = "security_deterministic_property_tests_not_guarded"
     } else if (observability_error_scan != "clean" || current_summary_count + 0 < min_current_summaries + 0) {
       status = "fail"
       reason = "observability_not_clean"
@@ -267,7 +272,7 @@ awk \
       reason = "live_check_failed"
     }
 
-    printf("release_candidate_gate status=%s reason=%s rc_status=%s perf_matrix=%s visual_smoke=%s storage_protocol_compatibility=%s active_protocol_change=%d observability_error_scan=%s observability_summary_count=%d current_summary_count=%d arch_runtime_change=%s baseline_warning_status=%s shadow_active_native=%s transparent_active_fixture=%s lighting_ambient_status=%s live_checks=%s fast_check=%s full_check=%s diff_check=%s diff_guard=%s test_strategy_status=%s test_fast_command=%s test_full_command=%s security_status=%s observability_status=%s arch_status=%s baseline_status=%s shadow_status=%s transparent_status=%s lighting_status=%s test_strategy_summary=%s security_summary=%s observability_summary=%s arch_summary=%s baseline_summary=%s shadow_summary=%s transparent_summary=%s lighting_summary=%s\n", status, reason, rc_status, perf_matrix, visual_smoke, storage_protocol_compatibility, proto_diff_count, observability_error_scan, observability_summary_count, current_summary_count, arch_runtime_change, baseline_warning_status, shadow_active_native, transparent_active_fixture, lighting_ambient_status, live_checks, fast_check, full_check, diff_check, diff_guard, test_status, test_fast_command_status, test_full_command_status, security_status, observability_status, arch_status, baseline_status, shadow_status, transparent_status, lighting_status, test_strategy_summary, security_summary, observability_summary, arch_summary, baseline_summary, shadow_summary, transparent_summary, lighting_summary)
+    printf("release_candidate_gate status=%s reason=%s rc_status=%s perf_matrix=%s visual_smoke=%s storage_protocol_compatibility=%s active_protocol_change=%d security_deterministic_property_tests=%s observability_error_scan=%s observability_summary_count=%d current_summary_count=%d arch_runtime_change=%s baseline_warning_status=%s shadow_active_native=%s transparent_active_fixture=%s lighting_ambient_status=%s live_checks=%s fast_check=%s full_check=%s diff_check=%s diff_guard=%s test_strategy_status=%s test_fast_command=%s test_full_command=%s security_status=%s observability_status=%s arch_status=%s baseline_status=%s shadow_status=%s transparent_status=%s lighting_status=%s test_strategy_summary=%s security_summary=%s observability_summary=%s arch_summary=%s baseline_summary=%s shadow_summary=%s transparent_summary=%s lighting_summary=%s\n", status, reason, rc_status, perf_matrix, visual_smoke, storage_protocol_compatibility, proto_diff_count, security_deterministic_property_tests, observability_error_scan, observability_summary_count, current_summary_count, arch_runtime_change, baseline_warning_status, shadow_active_native, transparent_active_fixture, lighting_ambient_status, live_checks, fast_check, full_check, diff_check, diff_guard, test_status, test_fast_command_status, test_full_command_status, security_status, observability_status, arch_status, baseline_status, shadow_status, transparent_status, lighting_status, test_strategy_summary, security_summary, observability_summary, arch_summary, baseline_summary, shadow_summary, transparent_summary, lighting_summary)
     if (status != "pass") {
       exit 1
     }
