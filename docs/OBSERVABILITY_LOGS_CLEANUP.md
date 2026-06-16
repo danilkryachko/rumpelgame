@@ -102,6 +102,8 @@ Historical logs are not fail-gated by this block because several plan checkpoint
 
 The index is a compact current-lane catalog. It is not a replacement for the original summary files.
 
+The current packet-error monitoring contract summary is part of the current-lane catalog. After that contract is generated, the expected current summary count includes `logs/packet_error_monitoring_contract_current/packet-error-monitoring-contract-summary.txt`.
+
 When the cleanup gate is rerun after a failed attempt, its own previous `observability-logs-cleanup-summary.txt` must not poison the next run's input status check; the rerun should be able to recover once all other current summaries are clean.
 
 ## Deferred Work

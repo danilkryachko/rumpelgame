@@ -193,10 +193,28 @@ sh scripts/packet_error_alert_threshold_gate.sh logs/packet_error_alert_threshol
 Expected current summary:
 
 ```text
-packet_error_alert_threshold status=pass alert_status=threshold_guarded classified_events=42 unknown_classes=0 eof=38 timeout=4 protocol_errors=0 write_errors=0
+packet_error_alert_threshold status=pass alert_status=threshold_guarded classified_events=39 unknown_classes=0 eof=35 timeout=4 protocol_errors=0 write_errors=0
 ```
 
-This is not authentication, abuse detection, or production monitoring. It is a deterministic local alert boundary for the classified labels already emitted by the server.
+This threshold gate is consumed by `scripts/packet_error_monitoring_contract_gate.sh` as the local packet-error monitoring export boundary. It is not authentication, abuse detection, external alert delivery, or long-run production traffic monitoring.
+
+## Packet Error Monitoring Contract
+
+`scripts/packet_error_monitoring_contract_gate.sh` converts the current classified packet-error alert evidence into a release-checkable local monitoring contract. It runs or consumes the alert-threshold gate, requires networking robustness and observability evidence to be clean, and writes `packet-error-monitoring-metrics.txt` for future CI or external monitoring ingestion.
+
+Use:
+
+```sh
+sh scripts/packet_error_monitoring_contract_gate.sh logs/packet_error_monitoring_contract_current
+```
+
+Expected current summary:
+
+```text
+packet_error_monitoring_contract status=pass monitoring_contract=export_ready metrics_export=present alert_guard=threshold_guarded classified_events=39 unknown_classes=0 protocol_errors=0 write_errors=0
+```
+
+This is a local line-oriented export contract. It does not add a network endpoint, daemon, push job, SaaS integration, auth boundary, packet schema change, or server runtime behavior change.
 
 ## Live Admission Limit Smoke
 
@@ -249,7 +267,7 @@ Still needed before claiming a full networking robustness program:
 - Broader reconnect state reset rules, packet replay policy, and longer reconnect failure/idle soak.
 - Broader slow-reader evidence under broadcast fanout and longer runs.
 - Sustained max-client sizing and adaptive overload behavior under representative load.
-- Production monitoring integration beyond the local classified packet-error threshold gate.
+- External monitoring service/upload/retention integration beyond the local packet-error monitoring contract.
 - Backpressure policy for the existing client reader-thread channel.
 
 ## Compatibility Rules
@@ -311,4 +329,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a packet-boundary, zero-length frame decode, empty/unknown/nil-packet/nil-position/nil-block-action ignore policy, classified packet-error, parser-guarded classified-error aggregation, local classified-error alert threshold, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection and admission-matrix evidence, two-client live fanout, bounded slow-reader load matrix, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broadcast/backpressure policy, broad reconnect state reset, packet replay, and production monitoring integration remain future work.
+This block is complete as a packet-boundary, zero-length frame decode, empty/unknown/nil-packet/nil-position/nil-block-action ignore policy, classified packet-error, parser-guarded classified-error aggregation, local classified-error alert threshold, local packet-error monitoring export contract, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection and admission-matrix evidence, two-client live fanout, bounded slow-reader load matrix, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broadcast/backpressure policy, broad reconnect state reset, packet replay, and external monitoring service/upload integration remain future work.

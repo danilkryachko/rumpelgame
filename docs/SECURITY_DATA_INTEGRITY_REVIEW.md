@@ -103,6 +103,7 @@ Checks:
 - Classified server packet-error labels are guarded through the networking gate as `packet_error_classification`.
 - Classified server packet-error aggregation is guarded through the networking gate as `packet_error_aggregation`.
 - Classified server packet-error alert thresholds, including current slow-reader matrix timeout evidence, are guarded through the networking gate as `packet_error_alerts`.
+- The local packet-error monitoring export contract is guarded through `scripts/packet_error_monitoring_contract_gate.sh` and surfaced by the security gate as `packet_error_monitoring=export_ready`, with zero unknown, protocol-error, and write-error classes.
 - Empty or unsupported packet payloads are guarded through the networking gate and surfaced by the security gate as `unknown_packet_policy=ignored_guarded`.
 - Nil packet handler inputs are guarded through the networking gate and surfaced by the security gate as `nil_packet_policy=ignored_guarded`.
 - Nil `ClientPosition` payload bodies are guarded through the networking gate and surfaced by the security gate as `nil_position_policy=ignored_guarded`.
@@ -136,7 +137,7 @@ Still needed:
 - Sustained overload/admission sizing and backpressure policy beyond the opt-in max-client cap, bounded admission matrix, bounded write-timeout, and bounded slow-reader matrix guards.
 - Longer reconnect failure/idle soak and broad client loaded-state reset policy beyond the bounded reconnect/rebootstrap guards.
 - Corrupt edit recovery policy beyond current corrupt chunk load rejection and world-level load-error propagation.
-- Production monitoring integration for classified packet errors beyond the local threshold gate.
+- External monitoring service/upload/retention integration for classified packet errors beyond the local packet-error monitoring contract.
 - External fuzz campaigns for packet framing and RLE decode remain outside the current local gate unless exposure changes.
 
 ## Compatibility Rules
@@ -155,7 +156,7 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `unknown_packet_policy=ignored_guarded`, `nil_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `storage_integrity=guarded`, `storage_package_smoke=guarded`, `storage_config=path_guarded`, `storage_backend_policy=approved_only_guarded`, `storage_backend_ownership=guarded`, `storage_concurrency=guarded`, `storage_errors=actionable_guarded`, `storage_lifecycle=guarded`, `block_edit_validation=y_bounds_guarded`, `block_edit_save_failure_rollback=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `overload_status=admission_matrix_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `packet_error_monitoring=export_ready`, `unknown_packet_policy=ignored_guarded`, `nil_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `storage_integrity=guarded`, `storage_package_smoke=guarded`, `storage_config=path_guarded`, `storage_backend_policy=approved_only_guarded`, `storage_backend_ownership=guarded`, `storage_concurrency=guarded`, `storage_errors=actionable_guarded`, `storage_lifecycle=guarded`, `block_edit_validation=y_bounds_guarded`, `block_edit_save_failure_rollback=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `overload_status=admission_matrix_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -166,6 +167,7 @@ The gate checks that:
 - Runtime source scans reject unapproved database engine references before the gate reports `storage_backend_policy=approved_only_guarded`.
 - Server and client defaults still keep normal runtime traffic on loopback, non-loopback server overrides are rejected, and smoke scripts do not use wildcard `RUMPELMC_SERVER_ADDRESS=":<port>"` binds.
 - Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
+- The packet-error monitoring contract summary reports `monitoring_contract=export_ready`, `metrics_export=present`, and zero unknown/protocol/write error classes before security review can pass.
 - Focused deterministic packet/RLE property tests are present in Go and Rust test sources and surfaced in the summary as `deterministic_property_tests=guarded`.
 - Focused Go protocol/network/storage/world tests pass.
 - Storage tests prove empty RocksDB paths are rejected before the C API boundary, missing parent directories are created, and existing regular-file parent/database RocksDB paths fail to open.
@@ -183,4 +185,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, nil packet input handling, nil client-position handling, nil block-action handling, machine-readable deterministic packet/RLE property coverage, enforced loopback-only local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity including RocksDB empty-path and open-path failure coverage, approved-only database backend policy, concurrent distinct-key save/load coverage, actionable storage error context, lifecycle error guards, and PostgreSQL/RocksDB ownership boundaries, block edit Y-bound validation, block edit save-failure rollback, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, nil packet input handling, nil client-position handling, nil block-action handling, machine-readable deterministic packet/RLE property coverage, enforced loopback-only local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, local packet-error monitoring export, chunk decode, storage integrity including RocksDB empty-path and open-path failure coverage, approved-only database backend policy, concurrent distinct-key save/load coverage, actionable storage error context, lifecycle error guards, and PostgreSQL/RocksDB ownership boundaries, block edit Y-bound validation, block edit save-failure rollback, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, external monitoring service/upload integration, and external fuzz campaigns remain future work.
