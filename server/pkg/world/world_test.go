@@ -380,6 +380,27 @@ func TestSetBlockGlobalPersistsNegativeBoundaryCoordinates(t *testing.T) {
 	}
 }
 
+func TestChunkSnapshotPropagatesStoreLoadErrorWithoutRegenerating(t *testing.T) {
+	store := newSerializedChunkStore()
+	coord := ChunkCoord{X: 2, Z: -3}
+	store.data[coord] = []byte{0x01, 0x02, 0x03}
+
+	w := NewWorld(store)
+	if _, err := w.ChunkSnapshot(coord.X, coord.Z); err == nil {
+		t.Fatal("ChunkSnapshot() error = nil, want corrupt store load error")
+	}
+
+	delete(store.data, coord)
+	snapshot, err := w.ChunkSnapshot(coord.X, coord.Z)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot() after removing corrupt stored chunk error = %v", err)
+	}
+	if snapshot.X != coord.X || snapshot.Z != coord.Z {
+		t.Fatalf("snapshot coordinates = (%d, %d), want (%d, %d)", snapshot.X, snapshot.Z, coord.X, coord.Z)
+	}
+	assertSnapshotBlock(t, snapshot, 0, 0, 0, Stone)
+}
+
 func TestSetBlockGlobalRejectsOutOfRangeYWithoutSave(t *testing.T) {
 	store := newSerializedChunkStore()
 	w := NewWorld(store)

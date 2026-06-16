@@ -105,7 +105,7 @@ Checks:
 - Valid multi-client block edits at the same coordinate are guarded as sequential last-write-wins snapshots through the server scalability and networking gates, then surfaced by the security gate as `conflict_semantics=last_write_wins_guarded`.
 - Out-of-height block edits are guarded at the world boundary and network handler as `block_edit_validation=y_bounds_guarded`.
 - Client reconnect/rebootstrap is guarded by live disconnect/server-restart smoke and a bounded repeated reconnect soak, with reader-session stale-packet filtering covered by Rust unit tests.
-- Block edit persistence is guarded at the world/storage boundary, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
+- Block edit persistence is guarded at the world/storage boundary, including persisted load-error propagation, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
 - These runtime guards do not add authentication, packet replay, adaptive admission, or new wire semantics.
 
 ### Local-Only Threat Model
@@ -129,7 +129,7 @@ Still needed:
 - Authentication/encryption and a deliberate exposure policy before any non-local server bind is allowed.
 - Sustained overload/admission sizing and backpressure policy beyond the opt-in max-client cap, bounded admission matrix, bounded write-timeout, and bounded slow-reader matrix guards.
 - Longer reconnect failure/idle soak and broad client loaded-state reset policy beyond the bounded reconnect/rebootstrap guards.
-- Corrupt edit recovery policy beyond current corrupt chunk load rejection.
+- Corrupt edit recovery policy beyond current corrupt chunk load rejection and world-level load-error propagation.
 - Production monitoring integration for classified packet errors beyond the local threshold gate.
 - External fuzz campaigns for packet framing and RLE decode remain outside the current local gate unless exposure changes.
 
