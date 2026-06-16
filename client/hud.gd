@@ -17,6 +17,7 @@ var block_names = {
 	5: "Leaves"
 }
 var labels = []
+var hotbar_labels = []
 var fps_label: Label
 var dev_panel: PanelContainer
 var dev_info_label: Label
@@ -58,16 +59,19 @@ func _ready():
 		label.text = str(i) + ": " + block_names[i]
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", 13)
 
 		panel.add_child(label)
 		hbox.add_child(panel)
 		labels.append(panel)
+		hotbar_labels.append(label)
 
 	add_child(hbox)
 	update_ui()
 
 func _process(delta):
 	update_fps_counter()
+	update_ui()
 	dev_update_timer -= delta
 	if dev_update_timer <= 0.0:
 		dev_update_timer = DEV_UPDATE_INTERVAL
@@ -205,10 +209,24 @@ func make_dev_action_button(label: String, method: String) -> Button:
 	return button
 
 func update_ui():
+	var selected_slot = get_authoritative_inventory_selected_slot()
+	var selected_inventory_block = get_authoritative_inventory_selected_block()
+	if selected_inventory_block > 0:
+		selected_block = selected_inventory_block
+
 	for i in range(labels.size()):
 		var panel = labels[i]
-		if i + 1 == selected_block:
-			panel.modulate = Color(1, 1, 0) # Желтый цвет для выбранного
+		if i < hotbar_labels.size():
+			hotbar_labels[i].text = get_hotbar_slot_text(i)
+
+		var slot_selected = false
+		if selected_slot >= 0:
+			slot_selected = i == selected_slot
+		else:
+			slot_selected = i + 1 == selected_block
+
+		if slot_selected:
+			panel.modulate = Color(1, 1, 0)
 		else:
 			panel.modulate = Color(1, 1, 1)
 
@@ -275,6 +293,7 @@ func dev_tab_lines(fps: int, frame_ms: float, window_size: Vector2i, viewport_si
 				"Last block action: %s" % get_client_text("get_last_block_action_text", "n/a"),
 				"Last save: %s" % get_client_text("get_last_save_text", "n/a"),
 				"Selected: %d %s" % [selected_block, get_block_name(selected_block)],
+				"Inventory: %s" % get_authoritative_inventory_text(),
 				"Fly: %s" % get_player_fly_text(),
 				"Mouse: %s" % get_mouse_mode_text(),
 			]
@@ -295,6 +314,7 @@ func dev_tab_lines(fps: int, frame_ms: float, window_size: Vector2i, viewport_si
 				"Fly: %s" % get_player_fly_text(),
 				"Texture stand: %s" % get_texture_debug_stand_text(),
 				"Selected: %d %s" % [selected_block, get_block_name(selected_block)],
+				"Inventory: %s" % get_authoritative_inventory_text(),
 			]
 
 func add_log(message: String):
@@ -373,6 +393,31 @@ func get_client_text(method: String, fallback: String) -> String:
 	if client and client.has_method(method):
 		return str(client.call(method))
 	return fallback
+
+func get_authoritative_inventory_selected_slot() -> int:
+	var client = get_tree().root.find_child("GameClient", true, false)
+	if client and client.has_method("get_authoritative_inventory_selected_slot"):
+		return int(client.get_authoritative_inventory_selected_slot())
+	return -1
+
+func get_authoritative_inventory_selected_block() -> int:
+	var client = get_tree().root.find_child("GameClient", true, false)
+	if client and client.has_method("get_authoritative_inventory_selected_block"):
+		return int(client.get_authoritative_inventory_selected_block())
+	return 0
+
+func get_authoritative_inventory_text() -> String:
+	return get_client_text("get_authoritative_inventory_text", "selected=none slots=")
+
+func get_hotbar_slot_text(slot_index: int) -> String:
+	var client = get_tree().root.find_child("GameClient", true, false)
+	if client and client.has_method("get_authoritative_inventory_slot_text"):
+		var text = str(client.get_authoritative_inventory_slot_text(slot_index))
+		if not text.is_empty():
+			return text
+
+	var block_id = slot_index + 1
+	return "%d\n%s" % [slot_index + 1, get_block_name(block_id)]
 
 func get_lifecycle_state_text() -> String:
 	var overlay = get_debug_overlay_text()

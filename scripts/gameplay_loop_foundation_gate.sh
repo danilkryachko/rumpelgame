@@ -13,6 +13,7 @@ DESIGN_DOC="${RUMPELMC_GAMEPLAY_LOOP_DOC:-"$ROOT_DIR/docs/GAMEPLAY_LOOP_FOUNDATI
 PROTOCOL_DOC="${RUMPELMC_GAMEPLAY_LOOP_PROTOCOL_DOC:-"$ROOT_DIR/docs/PROTOCOL.md"}"
 PLAYER_SOURCE="${RUMPELMC_GAMEPLAY_LOOP_PLAYER_SOURCE:-"$ROOT_DIR/client/rust_ext/src/player.rs"}"
 CLIENT_SOURCE="${RUMPELMC_GAMEPLAY_LOOP_CLIENT_SOURCE:-"$ROOT_DIR/client/rust_ext/src/lib.rs"}"
+HUD_SOURCE="${RUMPELMC_GAMEPLAY_LOOP_HUD_SOURCE:-"$ROOT_DIR/client/hud.gd"}"
 SERVER_SOURCE="${RUMPELMC_GAMEPLAY_LOOP_SERVER_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
 WORLD_SOURCE="${RUMPELMC_GAMEPLAY_LOOP_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
 SERVER_MAIN="${RUMPELMC_GAMEPLAY_LOOP_SERVER_MAIN:-"$ROOT_DIR/server/cmd/server/main.go"}"
@@ -57,7 +58,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$PLAYER_SOURCE" "$CLIENT_SOURCE" "$SERVER_SOURCE" "$WORLD_SOURCE" "$SERVER_MAIN" "$CLIENT_STATE_SUMMARY" "$PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$PLAYER_SOURCE" "$CLIENT_SOURCE" "$HUD_SOURCE" "$SERVER_SOURCE" "$WORLD_SOURCE" "$SERVER_MAIN" "$CLIENT_STATE_SUMMARY" "$PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -105,6 +106,19 @@ require_token "$CLIENT_SOURCE" 'client_position_packet'
 require_token "$CLIENT_SOURCE" 'LOCAL_PLAYER_ID'
 require_token "$CLIENT_SOURCE" 'BlockAction'
 require_token "$CLIENT_SOURCE" 'InventoryAction'
+require_token "$CLIENT_SOURCE" 'fn authoritative_inventory_slot_text'
+require_token "$CLIENT_SOURCE" 'fn authoritative_inventory_text'
+require_token "$CLIENT_SOURCE" 'fn get_authoritative_inventory_selected_slot'
+require_token "$CLIENT_SOURCE" 'fn get_authoritative_inventory_selected_block'
+require_token "$CLIENT_SOURCE" 'fn get_authoritative_inventory_slot_text'
+require_token "$CLIENT_SOURCE" 'inventory_hotbar_slot_text_formats_authoritative_counts'
+require_token "$CLIENT_SOURCE" 'inventory_hotbar_text_reports_selected_and_counts'
+require_token "$CLIENT_SOURCE" 'inventory_selected_slot_requires_authoritative_slot'
+require_token "$HUD_SOURCE" 'hotbar_labels'
+require_token "$HUD_SOURCE" 'get_authoritative_inventory_selected_slot'
+require_token "$HUD_SOURCE" 'get_authoritative_inventory_selected_block'
+require_token "$HUD_SOURCE" 'get_authoritative_inventory_slot_text'
+require_token "$HUD_SOURCE" 'get_authoritative_inventory_text'
 require_token "$SERVER_SOURCE" 'case *api.Packet_BlockAction:'
 require_token "$SERVER_SOURCE" 'case *api.Packet_InventoryAction:'
 require_token "$SERVER_SOURCE" 'bindPlayerInventoryFromPosition'
@@ -205,6 +219,7 @@ awk \
     gameplay_loop_status = "foundation_guarded"
     inventory_foundation = "unit_guarded"
     hotbar_selection = "unit_guarded"
+    inventory_hud = "authoritative_guarded"
     server_edit_persistence = "store_save_boundary"
     block_edit_visual_ok = block_edit_persistence_status == "pass" &&
       block_edit_visual_path == "godot_persisted_reload_guarded" &&
@@ -257,7 +272,7 @@ awk \
       reason = "player_inventory_reconnect_not_clean"
     }
 
-    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s player_inventory_reconnect=%s player_inventory_reconnect_status=%s player_inventory_reconnect_restarts=%d server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s player_inventory_reconnect_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, player_inventory_reconnect, player_inventory_reconnect_status, player_inventory_restarts, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary, player_inventory_reconnect_summary)
+    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s inventory_hud=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s player_inventory_reconnect=%s player_inventory_reconnect_status=%s player_inventory_reconnect_restarts=%d server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s player_inventory_reconnect_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, inventory_hud, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, player_inventory_reconnect, player_inventory_reconnect_status, player_inventory_restarts, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary, player_inventory_reconnect_summary)
     if (status != "pass") {
       exit 1
     }

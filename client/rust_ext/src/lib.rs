@@ -101,6 +101,66 @@ fn authoritative_inventory_slots_from_snapshot(
         .collect()
 }
 
+fn authoritative_inventory_selected_slot_index(
+    slots: &[AuthoritativeInventorySlot],
+    selected_slot: u32,
+) -> Option<usize> {
+    let selected_slot = selected_slot as usize;
+    if selected_slot < slots.len() {
+        Some(selected_slot)
+    } else {
+        None
+    }
+}
+
+fn authoritative_inventory_selected_block(
+    slots: &[AuthoritativeInventorySlot],
+    selected_slot: u32,
+) -> Option<u32> {
+    authoritative_inventory_selected_slot_index(slots, selected_slot)
+        .map(|index| slots[index].block_id)
+}
+
+fn authoritative_inventory_slot_text(
+    slots: &[AuthoritativeInventorySlot],
+    slot_index: usize,
+) -> String {
+    let Some(slot) = slots.get(slot_index) else {
+        return String::new();
+    };
+
+    format!(
+        "{}\n{} {}",
+        slot_index + 1,
+        blocks::name(slot.block_id),
+        slot.count
+    )
+}
+
+fn authoritative_inventory_text(
+    slots: &[AuthoritativeInventorySlot],
+    selected_slot: u32,
+) -> String {
+    let selected = authoritative_inventory_selected_slot_index(slots, selected_slot)
+        .map(|slot| (slot + 1).to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let slot_text = slots
+        .iter()
+        .enumerate()
+        .map(|(index, slot)| {
+            format!(
+                "{}:{}:{}",
+                index + 1,
+                blocks::name(slot.block_id),
+                slot.count
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    format!("selected={} slots={}", selected, slot_text)
+}
+
 fn inventory_action_select_slot_packet(slot: u32) -> crate::api::Packet {
     crate::api::Packet {
         payload: Some(crate::api::packet::Payload::InventoryAction(
@@ -5806,6 +5866,52 @@ impl GameClient {
     }
 
     #[func]
+    fn get_authoritative_inventory_selected_slot(&self) -> i32 {
+        authoritative_inventory_selected_slot_index(
+            &self.authoritative_inventory_slots,
+            self.authoritative_inventory_selected_slot,
+        )
+        .map(|slot| slot as i32)
+        .unwrap_or(-1)
+    }
+
+    #[func]
+    fn get_authoritative_inventory_selected_block(&self) -> i32 {
+        authoritative_inventory_selected_block(
+            &self.authoritative_inventory_slots,
+            self.authoritative_inventory_selected_slot,
+        )
+        .map(|block_id| block_id as i32)
+        .unwrap_or(0)
+    }
+
+    #[func]
+    fn get_authoritative_inventory_slot_text(&self, slot_index: i32) -> GString {
+        if slot_index < 0 {
+            return GString::from("");
+        }
+
+        GString::from(
+            authoritative_inventory_slot_text(
+                &self.authoritative_inventory_slots,
+                slot_index as usize,
+            )
+            .as_str(),
+        )
+    }
+
+    #[func]
+    fn get_authoritative_inventory_text(&self) -> GString {
+        GString::from(
+            authoritative_inventory_text(
+                &self.authoritative_inventory_slots,
+                self.authoritative_inventory_selected_slot,
+            )
+            .as_str(),
+        )
+    }
+
+    #[func]
     fn get_debug_overlay_text(&self) -> GString {
         let state = client_lifecycle_state_label(self.client_state);
         let current_chunk = self
@@ -6779,6 +6885,62 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn inventory_hotbar_slot_text_formats_authoritative_counts() {
+        let slots = vec![
+            AuthoritativeInventorySlot {
+                block_id: blocks::STONE,
+                count: 2,
+            },
+            AuthoritativeInventorySlot {
+                block_id: blocks::WOOD,
+                count: 7,
+            },
+        ];
+
+        assert_eq!(authoritative_inventory_slot_text(&slots, 0), "1\nStone 2");
+        assert_eq!(authoritative_inventory_slot_text(&slots, 1), "2\nWood 7");
+        assert_eq!(authoritative_inventory_slot_text(&slots, 2), "");
+    }
+
+    #[test]
+    fn inventory_hotbar_text_reports_selected_and_counts() {
+        let slots = vec![
+            AuthoritativeInventorySlot {
+                block_id: blocks::DIRT,
+                count: 3,
+            },
+            AuthoritativeInventorySlot {
+                block_id: blocks::LEAVES,
+                count: 11,
+            },
+        ];
+
+        assert_eq!(
+            authoritative_inventory_text(&slots, 1),
+            "selected=2 slots=1:Dirt:3,2:Leaves:11"
+        );
+    }
+
+    #[test]
+    fn inventory_selected_slot_requires_authoritative_slot() {
+        let slots = vec![AuthoritativeInventorySlot {
+            block_id: blocks::GRASS,
+            count: 5,
+        }];
+
+        assert_eq!(
+            authoritative_inventory_selected_slot_index(&slots, 0),
+            Some(0)
+        );
+        assert_eq!(
+            authoritative_inventory_selected_block(&slots, 0),
+            Some(blocks::GRASS)
+        );
+        assert_eq!(authoritative_inventory_selected_slot_index(&slots, 1), None);
+        assert_eq!(authoritative_inventory_selected_block(&slots, 1), None);
     }
 
     #[test]

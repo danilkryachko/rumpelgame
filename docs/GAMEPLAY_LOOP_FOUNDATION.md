@@ -28,6 +28,7 @@ Scope:
 - Add a local hotbar inventory model with slot counts and placeability validation.
 - Add a server-owned session inventory placement boundary for the current creative block set.
 - Keep the current creative five-slot hotbar behavior over existing placeable block IDs.
+- Show server-authoritative hotbar slot names, counts, and selected slot in the Godot HUD from `InventorySnapshot`.
 - Guard inventory slot rules with Rust unit tests.
 - Guard server session inventory rules with Go unit tests and a network handler test.
 - Guard local-player inventory persistence with a live TCP server restart/reconnect smoke over an isolated RocksDB store.
@@ -45,12 +46,14 @@ Assumptions:
 - The current hotbar is creative-mode inventory, so counts are guard data and are not decremented by placement yet.
 - Server sessions use the same creative placement retention through `server/pkg/inventory`.
 - The Rust client sends `ClientPosition.player_id = "local_player"` so the loopback local-player inventory can persist across reconnects.
+- The Godot HUD reads authoritative inventory getters from `GameClient` and keeps local key selection only as the pre-snapshot display state.
 - Full edit persistence verification is supplied by the completed Block 41 persisted visual evidence chain.
 - Inventory protocol compatibility is guarded separately in `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` and keeps this checkpoint on the existing `BlockAction` packet shape.
 
 Done when:
 
 - The player hotbar has an explicit inventory slot model, selected slot state, and tests.
+- The HUD displays authoritative inventory slot labels/counts and selected-slot highlight from `InventorySnapshot`.
 - The server session inventory gate reports `server_inventory_status=session_guarded`.
 - A gameplay foundation gate checks the client inventory tests, the server edit/persistence path, the local-player inventory reconnect smoke, and the completed Block 41 persisted visual proof.
 
@@ -85,8 +88,9 @@ The client now has a local creative hotbar inventory model:
 - `hotbar_key_for_slot()` keeps key mapping bounded to slots `1..5`
 - `hotbar_selected(slot, block_id)` emits only when the requested usable slot changes, and `GameClient.on_hotbar_selected` sends `InventoryAction SELECT_SLOT`
 - `client_position_packet()` includes the stable local `player_id` on bootstrap and periodic position packets
+- `GameClient` copies authoritative inventory slots and selected slot from `InventorySnapshot`, exposes slot/count text through `get_authoritative_inventory_slot_text()`, and exposes selected slot/block getters for the HUD.
 
-This keeps the existing hotbar behavior while making selected-slot intent visible to the server. Authoritative selected-slot state still comes back through `InventorySnapshot`.
+This keeps the existing hotbar behavior while making selected-slot intent visible to the server. Authoritative selected-slot state comes back through `InventorySnapshot`, and the HUD uses that state for labels and highlight once it arrives.
 
 ## Server Inventory Foundation
 
@@ -150,13 +154,14 @@ sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_curren
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `player_inventory_reconnect=live_server_guarded`, `player_inventory_reconnect_status=pass`, `player_inventory_reconnect_restarts>=1`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `inventory_hud=authoritative_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `player_inventory_reconnect=live_server_guarded`, `player_inventory_reconnect_status=pass`, `player_inventory_reconnect_restarts>=1`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records mining/building flow, inventory foundation, persistence boundary, deferred work, and compatibility rules.
 - The player source contains the hotbar inventory model, selected slot state, selected-slot signal, selection helpers, and tests.
-- The client source contains selected-slot inventory action send coverage and local player-id position packet coverage.
+- The client source contains selected-slot inventory action send coverage, local player-id position packet coverage, authoritative inventory HUD getter coverage, and authoritative inventory formatting tests.
+- The HUD source reads authoritative inventory slot text, selected slot, selected block, and summary text from `GameClient`.
 - The server inventory foundation summary is present and clean.
 - The player inventory reconnect smoke summary is present and proves selected-slot persistence after a real server restart.
 - Server block edits still flow through `World.SetBlockGlobal`.
@@ -168,4 +173,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, and local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence. Broader gameplay systems still remain outside this foundation checkpoint.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.
