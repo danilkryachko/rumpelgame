@@ -27,10 +27,9 @@ This note records the current approved persistence foundation for chunk storage.
 Run the focused guard with:
 
 ```sh
-cd server
-go test ./pkg/storage
+sh scripts/storage_package_smoke.sh logs/storage_package_smoke_current
 ```
 
 Fresh check:
 
-- `go test ./pkg/storage` and `go test -race ./pkg/storage` passed on 2026-06-16 after adding RocksDB empty-path, closed-store, and nil-save lifecycle coverage.
+- `sh scripts/storage_package_smoke.sh logs/storage_package_smoke_current`, `go test ./pkg/storage`, and `go test -race ./pkg/storage` passed on 2026-06-16 after adding RocksDB empty-path, file-parent failure, closed-store, and nil-save lifecycle coverage.

@@ -25,6 +25,7 @@ Do not introduce, expand, or migrate to another database engine without explicit
 - RocksDB open/read/write/decode errors include path or chunk-coordinate context so failures are actionable from logs and test output.
 - RocksDB lifecycle behavior is guarded: double close is safe, operations after close return Go errors, and nil chunk saves are rejected before reaching the C API.
 - Security review gates scan runtime source areas for unapproved database engine references; PostgreSQL and RocksDB remain the only approved project databases.
+- `scripts/storage_package_smoke.sh` runs the storage/server-config smoke with dummy PostgreSQL environment variables and no external secrets.
 - PostgreSQL is approved for project storage, but its exact project role should be documented when implemented or changed.
 - Current RocksDB persistence foundation coverage is documented in `docs/STORAGE_PERSISTENCE_FOUNDATION.md`.
 
