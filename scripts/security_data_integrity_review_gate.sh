@@ -90,7 +90,10 @@ done
 
 for token in \
   'func configuredServerAddress' \
+  'func isLoopbackAddress' \
   'RUMPELMC_SERVER_ADDRESS' \
+  'net.SplitHostPort' \
+  'IsLoopback' \
   'return "127.0.0.1:25565"'; do
   require_token "$SERVER_CMD_SOURCE" "$token"
 done
@@ -134,6 +137,7 @@ done
 require_token "$SERVER_NETWORK_TEST" 'TestReceivePacketConsumesExactFrameBoundaries'
 require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsRepresentativeRunPatterns'
 require_token "$CLIENT_RUNTIME_SOURCE" 'decode_serialized_chunk_rle_accepts_representative_runs'
+require_token "$ROOT_DIR/server/cmd/server/main_test.go" 'TestConfiguredServerAddressRejectsNonLoopbackOverrides'
 
 networking_status="$(field_metric status "$NETWORKING_SUMMARY")"
 networking_protocol_change="$(field_metric active_protocol_change "$NETWORKING_SUMMARY")"
@@ -208,7 +212,7 @@ awk \
     chunk_decode = "guarded"
     deterministic_property_tests = "guarded"
     conflict_semantics = networking_conflict_semantics
-    local_server_exposure = "loopback_default_guarded"
+    local_server_exposure = "loopback_enforced"
     smoke_bind_exposure = "loopback_guarded"
     active_protocol_change = proto_diff_count + 0
 

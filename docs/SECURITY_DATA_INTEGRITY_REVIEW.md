@@ -40,8 +40,8 @@ Out of scope:
 
 Assumptions:
 
-- This project currently defaults to a local loopback development server and does not yet expose a production auth/trust boundary.
-- Any non-local bind is an explicit operator override through `RUMPELMC_SERVER_ADDRESS` and is not production-safe without a separate auth/encryption review.
+- This project currently enforces a local loopback development server and does not yet expose a production auth/trust boundary.
+- Non-local binds through `RUMPELMC_SERVER_ADDRESS` are rejected until a separate auth/encryption review explicitly changes that boundary.
 - Packet and storage correctness are the most relevant release-candidate integrity gates for the current architecture.
 - MCP findings are bounded static heuristics and must be interpreted against local tests and source.
 
@@ -102,9 +102,9 @@ Checks:
 
 ### Local-Only Threat Model
 
-- `server/cmd/server/main.go` defaults `configuredServerAddress()` to `127.0.0.1:25565`, so a normal server launch listens on loopback only.
+- `server/cmd/server/main.go` defaults `configuredServerAddress()` to `127.0.0.1:25565`, and validates `RUMPELMC_SERVER_ADDRESS` with loopback-only host parsing before server startup.
 - The Godot client default host is `127.0.0.1`, and the Rust client default address remains `127.0.0.1:25565`.
-- `RUMPELMC_SERVER_ADDRESS` remains the explicit override for smoke scripts and operator-controlled non-default binds; setting it to a non-loopback address does not add authentication, encryption, replay protection, or production monitoring.
+- `RUMPELMC_SERVER_ADDRESS` remains the explicit override for smoke scripts and operator-controlled loopback ports; setting it to a non-loopback host now fails before server startup because it would not add authentication, encryption, replay protection, or production monitoring.
 - Smoke scripts that bind isolated test ports now set `RUMPELMC_SERVER_ADDRESS` to their explicit loopback `SMOKE_ADDR`; they are local runtime evidence only and do not authorize exposing the server outside localhost.
 
 ## MCP Review Notes
@@ -118,7 +118,7 @@ Checks:
 
 Still needed:
 
-- Authentication/encryption before any non-local server exposure; the current loopback default only makes local development safe by default.
+- Authentication/encryption and a deliberate exposure policy before any non-local server bind is allowed.
 - Sustained overload/admission sizing and backpressure policy beyond the opt-in max-client cap, bounded admission matrix, bounded write-timeout, and bounded slow-reader matrix guards.
 - Longer reconnect failure/idle soak and broad client loaded-state reset policy beyond the bounded reconnect/rebootstrap guards.
 - Corrupt edit recovery policy beyond current corrupt chunk load rejection.
@@ -141,13 +141,13 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_default_guarded`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records reviewed boundaries, MCP notes, deferred work, and compatibility rules.
 - Server/Rust sources still contain packet-size, exact-read, decode, and block-edit validation hooks.
-- Server and client defaults still keep normal runtime traffic on loopback, and smoke scripts do not use wildcard `RUMPELMC_SERVER_ADDRESS=":<port>"` binds.
+- Server and client defaults still keep normal runtime traffic on loopback, non-loopback server overrides are rejected, and smoke scripts do not use wildcard `RUMPELMC_SERVER_ADDRESS=":<port>"` binds.
 - Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
 - Focused deterministic packet/RLE property tests are present in Go and Rust test sources and surfaced in the summary as `deterministic_property_tests=guarded`.
 - Focused Go protocol/network/storage/world tests pass.
@@ -158,4 +158,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, loopback-by-default local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, enforced loopback-only local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.

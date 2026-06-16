@@ -241,15 +241,15 @@ awk \
       status = "fail"
       reason = "resource_upload_health_not_clean"
       resource_upload_health = "fail"
-    } else if (!(security_status == "pass" && security_protocol_change + 0 == 0 && security_conflict_semantics == "last_write_wins_guarded" && security_local_server_exposure == "loopback_default_guarded" && security_smoke_bind_exposure == "loopback_guarded")) {
+    } else if (!(security_status == "pass" && security_protocol_change + 0 == 0 && security_conflict_semantics == "last_write_wins_guarded" && security_local_server_exposure == "loopback_enforced" && security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "storage_protocol_integrity_not_clean"
       storage_protocol_integrity = "fail"
-    } else if (!(observability_status == "pass" && observability_error_scan == "clean" && arch_status == "pass" && arch_runtime_change == "none" && handoff_status == "pass" && handoff_quality_inputs == "present" && rc_status == "pass" && rc_live_checks == "full" && rc_security_deterministic_property_tests == "guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_local_server_exposure == "loopback_default_guarded" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
+    } else if (!(observability_status == "pass" && observability_error_scan == "clean" && arch_status == "pass" && arch_runtime_change == "none" && handoff_status == "pass" && handoff_quality_inputs == "present" && rc_status == "pass" && rc_live_checks == "full" && rc_security_deterministic_property_tests == "guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_local_server_exposure == "loopback_enforced" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "docs_or_gates_not_clean"
       docs_reproducible_gates = "fail"
-    } else if (!(external_status == "pass" && external_profile_status == "pending_external_profiler" && external_capture_readiness == "live_rc_ready_for_external_capture" && external_rc_security_conflict_semantics == "last_write_wins_guarded" && external_rc_security_local_server_exposure == "loopback_default_guarded" && external_rc_security_smoke_bind_exposure == "loopback_guarded")) {
+    } else if (!(external_status == "pass" && external_profile_status == "pending_external_profiler" && external_capture_readiness == "live_rc_ready_for_external_capture" && external_rc_security_conflict_semantics == "last_write_wins_guarded" && external_rc_security_local_server_exposure == "loopback_enforced" && external_rc_security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "external_profiler_state_unexpected"
     } else if (!(native_shadow_status == "deferred" && native_shadow_allowed + 0 == 0 && shadow_retirement_status == "deferred" && shadow_retirement_allowed + 0 == 0)) {

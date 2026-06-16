@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"rumpelmc/server/pkg/network"
@@ -21,17 +23,37 @@ func main() {
 	gameWorld := world.NewWorld(store)
 	defer gameWorld.Close()
 
-	server := network.NewServer(configuredServerAddress(), gameWorld)
+	address, err := configuredServerAddress()
+	if err != nil {
+		log.Fatalf("Invalid server address: %v", err)
+	}
+
+	server := network.NewServer(address, gameWorld)
 	if err := server.Start(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
 
-func configuredServerAddress() string {
+func configuredServerAddress() (string, error) {
 	if address := os.Getenv("RUMPELMC_SERVER_ADDRESS"); address != "" {
-		return address
+		if !isLoopbackAddress(address) {
+			return "", fmt.Errorf("RUMPELMC_SERVER_ADDRESS must use a loopback host until auth/encryption exists: %q", address)
+		}
+		return address, nil
 	}
-	return "127.0.0.1:25565"
+	return "127.0.0.1:25565", nil
+}
+
+func isLoopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func defaultRocksDBPath() string {

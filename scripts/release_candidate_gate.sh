@@ -271,7 +271,7 @@ awk \
     } else if (security_conflict_semantics != "last_write_wins_guarded") {
       status = "fail"
       reason = "security_conflict_semantics_not_guarded"
-    } else if (security_local_server_exposure != "loopback_default_guarded") {
+    } else if (security_local_server_exposure != "loopback_enforced") {
       status = "fail"
       reason = "security_local_server_exposure_not_guarded"
     } else if (security_smoke_bind_exposure != "loopback_guarded") {
