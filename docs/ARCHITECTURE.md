@@ -34,7 +34,7 @@
 - `ChunkData.blocks` carries either raw serialized chunk bytes or RLE runs over the same serialized bytes.
 - `ChunkData.encoding` and `ChunkData.uncompressed_size` are compatibility fields for encoded chunks.
 - Block IDs remain the only current wire/storage identity for voxel contents.
-- Server block material metadata exists as registry-derived behavior for the existing block IDs only. Block IDs remain the only wire/storage identity; transparent material behavior, liquid/emissive runtime traits, and future protocol deltas remain separate work unless new protobuf fields and compatibility tests are added explicitly.
+- Server and client block material metadata exists as registry-derived behavior for the existing block IDs only. Block IDs remain the only wire/storage identity; transparent material behavior, liquid/emissive runtime traits, and future protocol deltas remain separate work unless new protobuf fields and compatibility tests are added explicitly.
 
 ## Client Rust GDExtension
 

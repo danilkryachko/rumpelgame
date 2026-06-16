@@ -244,7 +244,7 @@ Block 33, Block Material Metadata Design, is captured in `docs/BLOCK_MATERIAL_ME
 sh scripts/block_material_metadata_design_gate.sh logs/block_material_metadata_design_current
 ```
 
-The current expected result is `status=pass`, `production_metadata_status=server_registry_guarded`, `server_material_metadata=guarded`, `active_schema_change=0`, and `current_runtime_contract=opaque_only`. The server now has registry-derived material metadata for existing block IDs only; production transparent, liquid, emissive, client-render, atlas, and non-opaque runtime behavior remains separate migration work without changing chunk wire/storage payloads.
+The current expected result is `status=pass`, `production_metadata_status=server_registry_guarded`, `server_material_metadata=guarded`, `client_material_metadata=guarded`, `active_schema_change=0`, and `current_runtime_contract=opaque_only`. The client and server now have registry-derived material metadata for existing block IDs only; production transparent, liquid, emissive, atlas, and non-opaque runtime behavior remains separate migration work without changing chunk wire/storage payloads.
 
 ## Fixture Scene Implementation Plan
 

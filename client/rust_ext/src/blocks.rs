@@ -30,6 +30,129 @@ pub struct BlockTextures {
     pub bottom: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RenderClass {
+    Air,
+    Opaque,
+    Cutout,
+    Transparent,
+    Liquid,
+}
+
+impl RenderClass {
+    pub const ALL: [Self; 5] = [
+        Self::Air,
+        Self::Opaque,
+        Self::Cutout,
+        Self::Transparent,
+        Self::Liquid,
+    ];
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollisionClass {
+    None,
+    Solid,
+    Fluid,
+    Custom,
+}
+
+impl CollisionClass {
+    pub const ALL: [Self; 4] = [Self::None, Self::Solid, Self::Fluid, Self::Custom];
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OcclusionClass {
+    None,
+    Opaque,
+    SameMaterialOnly,
+    MaterialPolicy,
+}
+
+impl OcclusionClass {
+    pub const ALL: [Self; 4] = [
+        Self::None,
+        Self::Opaque,
+        Self::SameMaterialOnly,
+        Self::MaterialPolicy,
+    ];
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShadowPolicy {
+    None,
+    Opaque,
+    Transparent,
+    MaterialPolicy,
+}
+
+impl ShadowPolicy {
+    pub const ALL: [Self; 4] = [
+        Self::None,
+        Self::Opaque,
+        Self::Transparent,
+        Self::MaterialPolicy,
+    ];
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DepthPolicy {
+    None,
+    OpaqueWrite,
+    DepthTestNoWrite,
+    MaterialPolicy,
+}
+
+impl DepthPolicy {
+    pub const ALL: [Self; 4] = [
+        Self::None,
+        Self::OpaqueWrite,
+        Self::DepthTestNoWrite,
+        Self::MaterialPolicy,
+    ];
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StoragePolicy {
+    Networked,
+    ClientFixtureOnly,
+    GeneratedOnly,
+}
+
+impl StoragePolicy {
+    pub const ALL: [Self; 3] = [
+        Self::Networked,
+        Self::ClientFixtureOnly,
+        Self::GeneratedOnly,
+    ];
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiquidPolicy {
+    None,
+    StillLiquid,
+    FlowingLiquid,
+}
+
+impl LiquidPolicy {
+    pub const ALL: [Self; 3] = [Self::None, Self::StillLiquid, Self::FlowingLiquid];
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SortPolicy {
+    None,
+    ChunkSubchunkBackToFront,
+    FuturePrecise,
+}
+
+impl SortPolicy {
+    pub const ALL: [Self; 3] = [
+        Self::None,
+        Self::ChunkSubchunkBackToFront,
+        Self::FuturePrecise,
+    ];
+}
+
 #[derive(Clone, Copy)]
 pub struct BlockDefinition {
     pub id: BlockId,
@@ -37,6 +160,15 @@ pub struct BlockDefinition {
     pub solid: bool,
     pub opaque: bool,
     pub placeable: bool,
+    pub render_class: RenderClass,
+    pub collision_class: CollisionClass,
+    pub occlusion_class: OcclusionClass,
+    pub shadow_policy: ShadowPolicy,
+    pub depth_policy: DepthPolicy,
+    pub storage_policy: StoragePolicy,
+    pub liquid_policy: LiquidPolicy,
+    pub sort_policy: SortPolicy,
+    pub light_emission: u8,
     pub textures: BlockTextures,
 }
 
@@ -55,6 +187,15 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         solid: false,
         opaque: false,
         placeable: false,
+        render_class: RenderClass::Air,
+        collision_class: CollisionClass::None,
+        occlusion_class: OcclusionClass::None,
+        shadow_policy: ShadowPolicy::None,
+        depth_policy: DepthPolicy::None,
+        storage_policy: StoragePolicy::Networked,
+        liquid_policy: LiquidPolicy::None,
+        sort_policy: SortPolicy::None,
+        light_emission: 0,
         textures: same_texture(FALLBACK_TEXTURE_TILE),
     },
     BlockDefinition {
@@ -63,6 +204,15 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         solid: true,
         opaque: true,
         placeable: true,
+        render_class: RenderClass::Opaque,
+        collision_class: CollisionClass::Solid,
+        occlusion_class: OcclusionClass::Opaque,
+        shadow_policy: ShadowPolicy::Opaque,
+        depth_policy: DepthPolicy::OpaqueWrite,
+        storage_policy: StoragePolicy::Networked,
+        liquid_policy: LiquidPolicy::None,
+        sort_policy: SortPolicy::None,
+        light_emission: 0,
         textures: same_texture(TILE_STONE),
     },
     BlockDefinition {
@@ -71,6 +221,15 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         solid: true,
         opaque: true,
         placeable: true,
+        render_class: RenderClass::Opaque,
+        collision_class: CollisionClass::Solid,
+        occlusion_class: OcclusionClass::Opaque,
+        shadow_policy: ShadowPolicy::Opaque,
+        depth_policy: DepthPolicy::OpaqueWrite,
+        storage_policy: StoragePolicy::Networked,
+        liquid_policy: LiquidPolicy::None,
+        sort_policy: SortPolicy::None,
+        light_emission: 0,
         textures: same_texture(TILE_SOIL),
     },
     BlockDefinition {
@@ -79,6 +238,15 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         solid: true,
         opaque: true,
         placeable: true,
+        render_class: RenderClass::Opaque,
+        collision_class: CollisionClass::Solid,
+        occlusion_class: OcclusionClass::Opaque,
+        shadow_policy: ShadowPolicy::Opaque,
+        depth_policy: DepthPolicy::OpaqueWrite,
+        storage_policy: StoragePolicy::Networked,
+        liquid_policy: LiquidPolicy::None,
+        sort_policy: SortPolicy::None,
+        light_emission: 0,
         textures: BlockTextures {
             top: TILE_GRASS_TOP,
             side: TILE_GRASS_SIDE,
@@ -91,6 +259,15 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         solid: true,
         opaque: true,
         placeable: true,
+        render_class: RenderClass::Opaque,
+        collision_class: CollisionClass::Solid,
+        occlusion_class: OcclusionClass::Opaque,
+        shadow_policy: ShadowPolicy::Opaque,
+        depth_policy: DepthPolicy::OpaqueWrite,
+        storage_policy: StoragePolicy::Networked,
+        liquid_policy: LiquidPolicy::None,
+        sort_policy: SortPolicy::None,
+        light_emission: 0,
         textures: BlockTextures {
             top: TILE_WOOD_TOP,
             side: TILE_WOOD_SIDE,
@@ -103,11 +280,46 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         solid: true,
         opaque: true,
         placeable: true,
+        render_class: RenderClass::Opaque,
+        collision_class: CollisionClass::Solid,
+        occlusion_class: OcclusionClass::Opaque,
+        shadow_policy: ShadowPolicy::Opaque,
+        depth_policy: DepthPolicy::OpaqueWrite,
+        storage_policy: StoragePolicy::Networked,
+        liquid_policy: LiquidPolicy::None,
+        sort_policy: SortPolicy::None,
+        light_emission: 0,
         textures: same_texture(TILE_LEAVES),
     },
 ];
 
+fn read_material_policy_contract() {
+    let _ = (
+        RenderClass::ALL.len(),
+        CollisionClass::ALL.len(),
+        OcclusionClass::ALL.len(),
+        ShadowPolicy::ALL.len(),
+        DepthPolicy::ALL.len(),
+        StoragePolicy::ALL.len(),
+        LiquidPolicy::ALL.len(),
+        SortPolicy::ALL.len(),
+    );
+    for block in BLOCK_DEFINITIONS {
+        let _ = (
+            block.collision_class,
+            block.occlusion_class,
+            block.shadow_policy,
+            block.depth_policy,
+            block.storage_policy,
+            block.liquid_policy,
+            block.sort_policy,
+            block.light_emission,
+        );
+    }
+}
+
 pub(crate) fn definitions() -> &'static [BlockDefinition] {
+    read_material_policy_contract();
     &BLOCK_DEFINITIONS
 }
 
@@ -127,8 +339,14 @@ pub fn is_solid(id: BlockId) -> bool {
     definition(id).is_some_and(|block| block.solid)
 }
 
+pub fn is_opaque(id: BlockId) -> bool {
+    definition(id).is_some_and(|block| block.opaque)
+}
+
 pub fn is_opaque_solid(id: BlockId) -> bool {
-    is_solid(id) && definition(id).is_some_and(|block| block.opaque)
+    is_solid(id)
+        && is_opaque(id)
+        && definition(id).is_some_and(|block| block.render_class == RenderClass::Opaque)
 }
 
 pub fn tile_for_face(id: BlockId, face_idx: u32, face_top: u32, face_bottom: u32) -> u32 {
@@ -171,7 +389,7 @@ pub(crate) fn compute_mesher_glsl_block_semantics() -> String {
     for block in definitions()
         .iter()
         .copied()
-        .filter(|block| block.solid && block.opaque)
+        .filter(|block| is_opaque_solid(block.id))
     {
         if block.textures.top == block.textures.side && block.textures.side == block.textures.bottom
         {
@@ -199,7 +417,7 @@ pub(crate) fn compute_mesher_glsl_block_semantics() -> String {
     let solid_checks = definitions()
         .iter()
         .copied()
-        .filter(|block| block.solid && block.opaque)
+        .filter(|block| is_opaque_solid(block.id))
         .map(|block| format!("block_id == {}u", block.id))
         .collect::<Vec<_>>()
         .join("\n        || ");
@@ -212,4 +430,76 @@ pub(crate) fn compute_mesher_glsl_block_semantics() -> String {
     }
     source.push_str("}\n");
     source
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_material_definitions_are_stable_and_ordered() {
+        let want_ids = [AIR, STONE, DIRT, GRASS, WOOD, LEAVES];
+        assert_eq!(definitions().len(), want_ids.len());
+        for (index, block) in definitions().iter().copied().enumerate() {
+            assert_eq!(block.id, want_ids[index]);
+            assert_eq!(block.id as usize, index);
+        }
+    }
+
+    #[test]
+    fn block_material_current_networked_blocks_preserve_opaque_contract() {
+        let air = definition(AIR).expect("air definition");
+        assert_eq!(air.render_class, RenderClass::Air);
+        assert_eq!(air.collision_class, CollisionClass::None);
+        assert_eq!(air.occlusion_class, OcclusionClass::None);
+        assert_eq!(air.shadow_policy, ShadowPolicy::None);
+        assert_eq!(air.depth_policy, DepthPolicy::None);
+        assert_eq!(air.storage_policy, StoragePolicy::Networked);
+        assert_eq!(air.liquid_policy, LiquidPolicy::None);
+        assert_eq!(air.sort_policy, SortPolicy::None);
+        assert_eq!(air.light_emission, 0);
+        assert!(!air.solid);
+        assert!(!air.opaque);
+        assert!(!air.placeable);
+
+        for block_id in PLACEABLE_BLOCKS {
+            let block = definition(block_id).expect("placeable block definition");
+            assert_eq!(block.render_class, RenderClass::Opaque);
+            assert_eq!(block.collision_class, CollisionClass::Solid);
+            assert_eq!(block.occlusion_class, OcclusionClass::Opaque);
+            assert_eq!(block.shadow_policy, ShadowPolicy::Opaque);
+            assert_eq!(block.depth_policy, DepthPolicy::OpaqueWrite);
+            assert_eq!(block.storage_policy, StoragePolicy::Networked);
+            assert_eq!(block.liquid_policy, LiquidPolicy::None);
+            assert_eq!(block.sort_policy, SortPolicy::None);
+            assert_eq!(block.light_emission, 0);
+            assert!(is_solid(block_id));
+            assert!(is_opaque(block_id));
+            assert!(is_opaque_solid(block_id));
+            assert!(is_placeable(block_id));
+        }
+    }
+
+    #[test]
+    fn block_material_unknown_blocks_are_conservative() {
+        let unknown = u32::MAX;
+        assert!(definition(unknown).is_none());
+        assert!(!is_solid(unknown));
+        assert!(!is_opaque(unknown));
+        assert!(!is_opaque_solid(unknown));
+        assert!(!is_placeable(unknown));
+        assert_eq!(tile_for_face(unknown, 0, 0, 1), FALLBACK_TEXTURE_TILE);
+    }
+
+    #[test]
+    fn block_material_policy_variant_sets_are_explicit() {
+        assert_eq!(RenderClass::ALL.len(), 5);
+        assert_eq!(CollisionClass::ALL.len(), 4);
+        assert_eq!(OcclusionClass::ALL.len(), 4);
+        assert_eq!(ShadowPolicy::ALL.len(), 4);
+        assert_eq!(DepthPolicy::ALL.len(), 4);
+        assert_eq!(StoragePolicy::ALL.len(), 3);
+        assert_eq!(LiquidPolicy::ALL.len(), 3);
+        assert_eq!(SortPolicy::ALL.len(), 3);
+    }
 }

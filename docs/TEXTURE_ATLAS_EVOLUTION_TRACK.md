@@ -133,7 +133,7 @@ The gate checks that:
 - The shader still extracts an 11-bit tile index from `PackedFace.pos_face_tile`.
 - The fragment shader still forces opaque alpha.
 - The sampler remains nearest/clamp-to-edge.
-- Block material metadata remains at `active_schema_change=0` with the existing-ID server registry foundation guarded.
+- Block material metadata remains at `active_schema_change=0` with the existing-ID server and client registry foundations guarded.
 
 ## Current Status
 

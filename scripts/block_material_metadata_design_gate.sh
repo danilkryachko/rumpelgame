@@ -87,7 +87,13 @@ require_token "$PROTOCOL_DOC" "Add new fields to existing messages with new fiel
 require_token "$CLIENT_BLOCKS" "pub struct BlockDefinition"
 require_token "$CLIENT_BLOCKS" "pub opaque: bool"
 require_token "$CLIENT_BLOCKS" "pub solid: bool"
-require_token "$CLIENT_BLOCKS" ".filter(|block| block.solid && block.opaque)"
+require_token "$CLIENT_BLOCKS" "pub enum RenderClass"
+require_token "$CLIENT_BLOCKS" "pub enum CollisionClass"
+require_token "$CLIENT_BLOCKS" "pub enum StoragePolicy"
+require_token "$CLIENT_BLOCKS" "pub render_class: RenderClass"
+require_token "$CLIENT_BLOCKS" "pub collision_class: CollisionClass"
+require_token "$CLIENT_BLOCKS" "pub storage_policy: StoragePolicy"
+require_token "$CLIENT_BLOCKS" ".filter(|block| is_opaque_solid(block.id))"
 require_token "$CLIENT_BLOCKS" "pub fn is_opaque_solid"
 require_token "$GPU_TERRAIN" ".filter(|block| blocks::is_opaque_solid(block.id))"
 require_token "$GPU_TERRAIN" "frag_color = vec4(texel.rgb * lighting_in, 1.0);"
@@ -129,11 +135,12 @@ awk \
     reason = "ok"
     production_metadata_status = "server_registry_guarded"
     server_material_metadata = "guarded"
+    client_material_metadata = "guarded"
     active_schema_change = 0
     current_runtime_contract = "opaque_only"
     migration_gate = "required"
     wire_identity = "block_id_u16"
-    client_flags = "solid_opaque_placeable_textures"
+    client_flags = "solid_opaque_placeable_material_policies_textures"
     server_flags = "solid_opaque_placeable_material_policies_textures"
 
     transparent_ok = transparent_status == "pass" &&
@@ -153,7 +160,7 @@ awk \
       reason = "transparent_acceptance_not_at_fallback_gate"
     }
 
-    printf("block_material_metadata_design status=%s reason=%s production_metadata_status=%s server_material_metadata=%s active_schema_change=%d current_runtime_contract=%s migration_gate=%s wire_identity=%s client_flags=%s server_flags=%s client_block_count=%d server_block_count=%d transparent_fixture_status=%s transparent_active_acceptance=%s transparent_blocks=%d transparent_faces=%d transparent_draws=%d transparent_subchunks=%d gpu_upload_fail=%d render_classes=air,opaque,cutout,transparent,liquid collision_classes=none,solid,fluid,custom emissive_policy=light_emission_inert_until_lighting_gate design_doc=%s transparent_acceptance=%s\n", status, reason, production_metadata_status, server_material_metadata, active_schema_change, current_runtime_contract, migration_gate, wire_identity, client_flags, server_flags, client_block_count, server_block_count, transparent_status, transparent_active_acceptance, transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks, transparent_upload_fail, design_doc, transparent_acceptance)
+    printf("block_material_metadata_design status=%s reason=%s production_metadata_status=%s server_material_metadata=%s client_material_metadata=%s active_schema_change=%d current_runtime_contract=%s migration_gate=%s wire_identity=%s client_flags=%s server_flags=%s client_block_count=%d server_block_count=%d transparent_fixture_status=%s transparent_active_acceptance=%s transparent_blocks=%d transparent_faces=%d transparent_draws=%d transparent_subchunks=%d gpu_upload_fail=%d render_classes=air,opaque,cutout,transparent,liquid collision_classes=none,solid,fluid,custom emissive_policy=light_emission_inert_until_lighting_gate design_doc=%s transparent_acceptance=%s\n", status, reason, production_metadata_status, server_material_metadata, client_material_metadata, active_schema_change, current_runtime_contract, migration_gate, wire_identity, client_flags, server_flags, client_block_count, server_block_count, transparent_status, transparent_active_acceptance, transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks, transparent_upload_fail, design_doc, transparent_acceptance)
     if (status != "pass") {
       exit 1
     }
