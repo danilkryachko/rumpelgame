@@ -95,6 +95,7 @@ Checks:
 - Classified server packet-error aggregation is guarded through the networking gate as `packet_error_aggregation`.
 - Classified server packet-error alert thresholds, including current slow-reader matrix timeout evidence, are guarded through the networking gate as `packet_error_alerts`.
 - Focused deterministic packet/RLE property coverage is surfaced by the security gate as `deterministic_property_tests=guarded`.
+- Valid multi-client block edits at the same coordinate are guarded as sequential last-write-wins snapshots through the server scalability and networking gates, then surfaced by the security gate as `conflict_semantics=last_write_wins_guarded`.
 - Client reconnect/rebootstrap is guarded by live disconnect/server-restart smoke and a bounded repeated reconnect soak, with reader-session stale-packet filtering covered by Rust unit tests.
 - Block edit persistence is guarded at the world/storage boundary, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
 - These runtime guards do not add authentication, packet replay, adaptive admission, or new wire semantics.
@@ -121,7 +122,6 @@ Still needed:
 - Sustained overload/admission sizing and backpressure policy beyond the opt-in max-client cap, bounded admission matrix, bounded write-timeout, and bounded slow-reader matrix guards.
 - Longer reconnect failure/idle soak and broad client loaded-state reset policy beyond the bounded reconnect/rebootstrap guards.
 - Corrupt edit recovery policy beyond current corrupt chunk load rejection.
-- Multi-client conflict semantics beyond current interested-client fanout and failed-broadcast cleanup.
 - Production monitoring integration for classified packet errors beyond the local threshold gate.
 - External fuzz campaigns for packet framing and RLE decode remain outside the current local gate unless exposure changes.
 
@@ -141,7 +141,7 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `local_server_exposure=loopback_default_guarded`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_default_guarded`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -153,8 +153,9 @@ The gate checks that:
 - Focused Go protocol/network/storage/world tests pass.
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean.
+- Networking summary reports `conflict_semantics=last_write_wins_guarded`.
 - Protocol schema/generated files are unchanged.
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, loopback-by-default local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and external fuzz campaigns remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, loopback-by-default local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.

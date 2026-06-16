@@ -30,6 +30,7 @@ Scope:
 - Add a parser-guarded offline summary for `packet_error_class` counts across server log artifacts.
 - Consume the server scalability opt-in max-client admission cap, bounded live admission-limit smoke, and bounded admission-limit matrix as the current overload/admission checkpoint.
 - Consume the server scalability live two-client fanout smoke as networking runtime evidence when available.
+- Consume the server scalability conflict-semantics guard as the current block-edit concurrency policy checkpoint.
 - Add a bounded live slow-reader smoke and load matrix that prove a non-reading TCP client hits the session write timeout while fast clients still receive bootstrap chunk data.
 - Consume a bounded client reconnect smoke that proves a live TCP disconnect, server restart, client reconnect, and rebootstrap back to `client_state=active`.
 - Define reconnect and overload gaps before broader runtime policy changes.
@@ -70,6 +71,7 @@ Checks:
 - Live session chunk writes set and clear a bounded write deadline using `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS`; `0` disables it as a rollback/control.
 - Failed non-origin block-update broadcasts close and unregister the failed client.
 - The server scalability live smoke validates two real TCP clients receiving bootstrap chunk data and the same block-edit update through the existing frame/protobuf path.
+- The server scalability gate reports `conflict_semantics=last_write_wins_guarded` for valid sequential block edits at the same coordinate, proving interested clients receive the latest authoritative snapshot.
 - The server scalability gate unit-guards the opt-in `RUMPELMC_SERVER_MAX_CLIENTS` admission cap and consumes bounded live admission-limit smoke plus matrix evidence without changing packet framing.
 - The slow-reader smoke validates a real non-reading TCP client timing out during a large RAW bootstrap stream while fast clients still receive bootstrap chunks.
 - The client reconnect smoke validates a real Godot client detecting a server-side TCP disconnect, retrying after server restart, and exposing `client_state=active`, `reconnect_events`, `reconnect_successes`, and `network_reader_errors` in the perf marker.
@@ -118,6 +120,7 @@ This policy prevents old reader errors or same-frame disconnect packets from mut
 - client write-timeout configuration parsing
 - session write deadline set/clear behavior
 - interested-client block-update fanout
+- last-write-wins conflict semantics for valid block edits at the same coordinate
 - failed interested-client broadcast disconnect cleanup
 
 `scripts/server_multi_client_smoke.sh` complements those unit guards with a bounded live two-client fanout smoke. It is not a slow-reader, reconnect, or overload harness.
@@ -257,7 +260,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=load_matrix_guarded` when a current slow-reader matrix summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `slow_reader_matrix_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_matrix_guarded` when current admission-limit matrix evidence exists.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `conflict_semantics=last_write_wins_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=load_matrix_guarded` when a current slow-reader matrix summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `slow_reader_matrix_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_matrix_guarded` when current admission-limit matrix evidence exists.
 
 To run the slow-reader smoke inside the gate:
 

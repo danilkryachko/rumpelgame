@@ -28,7 +28,13 @@ case "$CANDIDATE_PATH" in
   /*) ;;
   *) CANDIDATE_PATH="$ROOT_DIR/$CANDIDATE_PATH" ;;
 esac
-PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 2>/dev/null || true)}"
+if [ -z "${PYTHON_BIN:-}" ]; then
+  if [ -x /usr/bin/python3 ]; then
+    PYTHON_BIN="/usr/bin/python3"
+  else
+    PYTHON_BIN="$(command -v python3 2>/dev/null || true)"
+  fi
+fi
 
 fail() {
   echo "gpu_terrain_shadow_xctrace_overhead_summary: $*" >&2

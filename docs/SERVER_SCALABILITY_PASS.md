@@ -25,6 +25,7 @@ Scope:
 - Add a narrow unit guard for per-client sent-chunk state isolation.
 - Add a session registry for live connections.
 - Broadcast block-edit chunk snapshots to interested clients that have already received that chunk.
+- Guard the current sequential conflict semantics for valid block edits at the same coordinate as last-write-wins snapshots from the authoritative `World.SetBlockGlobal` path.
 - Add a bounded write timeout and disconnect cleanup for failed non-origin broadcast clients.
 - Add an opt-in max-client admission cap with a default unlimited rollback/control.
 - Add a bounded live two-client smoke that validates real TCP chunk bootstrap, block-edit fanout, and server RSS/CPU sampling.
@@ -50,6 +51,7 @@ Done when:
 
 - Per-client sent-chunk state isolation has a focused unit test.
 - Block-edit fanout to interested clients has a focused unit test.
+- Conflicting block edits at the same coordinate have a focused unit test proving that both interested clients receive the latest authoritative snapshot and that the world snapshot stores the last valid edit.
 - Failed interested-client broadcast closes and unregisters that client.
 - Session writes set and clear a write deadline.
 - The scalability gate runs the focused network tests and can run or consume the live two-client and broader multi-client smoke summaries with server resource samples.
@@ -67,6 +69,7 @@ Checks:
 - `handleConnection` owns a registered `clientSession` with its own `clientChunkStreamState` and `sentChunks` map.
 - `defer conn.Close()` remains the normal connection cleanup; failed non-origin broadcast clients are also closed and unregistered immediately.
 - `sendChunksAroundWithRadiusOrdered` asks the shared `World` for chunks and mutates only the caller-provided sent map.
+- Valid `BlockAction_PLACE` edits are applied sequentially through `World.SetBlockGlobal`; when two clients edit the same block coordinate, the current server contract is last-write-wins and every interested client receives the latest authoritative chunk snapshot.
 - The current protocol has no multi-client session identity, global scheduler packet, or server broadcast packet.
 - Chunk stream metrics are per batch and log-only.
 - Session writes are serialized per connection and bounded by `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS`; `0` disables the timeout as a rollback/control.
@@ -78,13 +81,15 @@ Checks:
 
 `TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients` proves that a block edit sends the updated chunk to the origin client and to already-interested clients, while clients without that chunk receive no update.
 
+`TestHandleClientPacketConflictingBlockActionsUseLastWriteSnapshot` proves that two valid place actions against the same block coordinate use sequential last-write-wins semantics: both interested clients receive the second edit in their latest frame, and the authoritative world snapshot stores the second block.
+
 `TestBroadcastDisconnectsFailedInterestedClient` proves that a failed interested-client broadcast closes and unregisters the failed client without failing the origin edit.
 
 `TestSendChunkToSessionSetsAndClearsWriteDeadline` proves that session chunk writes set and clear the configured write deadline.
 
 `TestConfiguredMaxClientsParsesSupportedValues`, `TestTryRegisterClientHonorsMaxClients`, and `TestHandleConnectionRejectsWhenMaxClientsReached` prove the opt-in admission cap, default unlimited mode, invalid-env fallback, atomic registry rejection, and rejected-connection logging.
 
-These tests lock core fairness, fanout, failed-write cleanup, and admission-cap invariants without changing protocol shape.
+These tests lock core fairness, fanout, conflict semantics, failed-write cleanup, and admission-cap invariants without changing protocol shape.
 
 ## Live Multi-Client Smoke
 
@@ -228,7 +233,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result after collecting the broader live, repeated, admission-limit, and admission-matrix artifacts is `status=pass`, `scalability_status=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=matrix_live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `repeat_smoke_status=pass`, `repeat_smoke_repeats=3`, `repeat_smoke_clients=6`, `repeat_smoke_initial_chunks=18`, `repeat_smoke_fanout_updates=18`, `repeat_smoke_detail_clients=18`, `repeat_smoke_resource_samples=9`, `admission_limit_smoke_status=pass`, `admission_matrix_status=pass`, `admission_matrix_limits_checked=3`, `admission_matrix_total_rejected=3`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live, repeated, admission-limit, and admission-matrix artifacts is `status=pass`, `scalability_status=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `conflict_semantics=last_write_wins_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=matrix_live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `repeat_smoke_status=pass`, `repeat_smoke_repeats=3`, `repeat_smoke_clients=6`, `repeat_smoke_initial_chunks=18`, `repeat_smoke_fanout_updates=18`, `repeat_smoke_detail_clients=18`, `repeat_smoke_resource_samples=9`, `admission_limit_smoke_status=pass`, `admission_matrix_status=pass`, `admission_matrix_limits_checked=3`, `admission_matrix_total_rejected=3`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
 
 To run the live smoke inside the gate:
 

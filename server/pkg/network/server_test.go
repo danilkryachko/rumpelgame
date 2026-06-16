@@ -569,6 +569,86 @@ func TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients(t *testing.T
 	}
 }
 
+func TestHandleClientPacketConflictingBlockActionsUseLastWriteSnapshot(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	first := newClientSession(&recordingConn{})
+	second := newClientSession(&recordingConn{})
+	coord := world.ChunkCoord{X: 0, Z: 0}
+	first.streamState.sentChunks[coord] = true
+	second.streamState.sentChunks[coord] = true
+
+	server.registerClient(first)
+	server.registerClient(second)
+	defer server.unregisterClient(first)
+	defer server.unregisterClient(second)
+
+	sendPlace := func(client *clientSession, block world.BlockID) {
+		t.Helper()
+		packet := &api.Packet{
+			Payload: &api.Packet_BlockAction{
+				BlockAction: &api.BlockAction{
+					Action:  api.BlockAction_PLACE,
+					X:       1,
+					Y:       64,
+					Z:       1,
+					BlockId: uint32(block),
+				},
+			},
+		}
+		if err := server.handleClientPacketForSession(client, packet); err != nil {
+			t.Fatalf("handleClientPacketForSession(block=%d) error = %v", block, err)
+		}
+	}
+	blockInFrame := func(label string, frame []byte) world.BlockID {
+		t.Helper()
+		decoded := &api.Packet{}
+		if err := proto.Unmarshal(frame, decoded); err != nil {
+			t.Fatalf("unmarshal %s frame: %v", label, err)
+		}
+		chunkData := decoded.GetChunk()
+		if chunkData == nil {
+			t.Fatalf("%s frame chunk = nil", label)
+		}
+		chunk, err := world.DeserializeChunk(chunkData.GetX(), chunkData.GetZ(), chunkData.GetBlocks())
+		if err != nil {
+			t.Fatalf("DeserializeChunk(%s frame) error = %v", label, err)
+		}
+		return chunk.GetBlock(1, 64, 1)
+	}
+
+	sendPlace(first, world.Wood)
+	sendPlace(second, world.Stone)
+
+	firstFrames := recordedFrames(t, first.conn.(*recordingConn))
+	secondFrames := recordedFrames(t, second.conn.(*recordingConn))
+	if got := len(firstFrames); got != 2 {
+		t.Fatalf("first frames = %d, want 2", got)
+	}
+	if got := len(secondFrames); got != 2 {
+		t.Fatalf("second frames = %d, want 2", got)
+	}
+	if got := blockInFrame("first latest", firstFrames[len(firstFrames)-1]); got != world.Stone {
+		t.Fatalf("first latest block = %v, want Stone", got)
+	}
+	if got := blockInFrame("second latest", secondFrames[len(secondFrames)-1]); got != world.Stone {
+		t.Fatalf("second latest block = %v, want Stone", got)
+	}
+
+	snapshot, err := server.world.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot() error = %v", err)
+	}
+	chunk, err := world.DeserializeChunk(snapshot.X, snapshot.Z, snapshot.Blocks)
+	if err != nil {
+		t.Fatalf("DeserializeChunk(authoritative snapshot) error = %v", err)
+	}
+	if got := chunk.GetBlock(1, 64, 1); got != world.Stone {
+		t.Fatalf("authoritative block = %v, want Stone", got)
+	}
+}
+
 func TestBroadcastDisconnectsFailedInterestedClient(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
