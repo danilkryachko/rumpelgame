@@ -190,7 +190,6 @@ func TestOriginChunkSnapshotUsesFlatGenerationContract(t *testing.T) {
 
 func TestFlatChunkSnapshotStableByteHash(t *testing.T) {
 	w := NewWorld(nil)
-	const wantFlatSHA256 = "41bc68c75bd63c8845bba319c5db67e4ef0ab627b0241cd74e406d5c1878bd94"
 
 	for _, coord := range []ChunkCoord{
 		{X: 0, Z: 0},
@@ -206,8 +205,8 @@ func TestFlatChunkSnapshotStableByteHash(t *testing.T) {
 				t.Fatalf("ChunkSnapshot(%d,%d) block bytes = %d, want %d", coord.X, coord.Z, len(snapshot.Blocks), SerializedChunkSize)
 			}
 			sum := sha256.Sum256(snapshot.Blocks)
-			if got := fmt.Sprintf("%x", sum); got != wantFlatSHA256 {
-				t.Fatalf("ChunkSnapshot(%d,%d) SHA-256 = %s, want %s", coord.X, coord.Z, got, wantFlatSHA256)
+			if got := fmt.Sprintf("%x", sum); got != stableFlatChunkSHA256 {
+				t.Fatalf("ChunkSnapshot(%d,%d) SHA-256 = %s, want %s", coord.X, coord.Z, got, stableFlatChunkSHA256)
 			}
 		})
 	}

@@ -26,7 +26,7 @@
 - `World.SetBlockGlobal` applies block edits and persists dirty chunks through the configured `ChunkStore`.
 - RocksDB chunk keys use the stable `c` prefix plus sortable signed big-endian chunk coordinates.
 - Persisted chunk payloads are the exact output of `world.Chunk.Serialize()`.
-- Current generation is still deterministic flat terrain. Future biome/quality work is documented but not active runtime behavior.
+- Current generation uses an explicit `GeneratorConfig` with `seed`, `dimension_id`, and `version=flat_v1`; `flat_v1` still produces the deterministic flat terrain byte contract. Biome/quality layers are documented but not active runtime behavior.
 
 ## Protocol Contract
 

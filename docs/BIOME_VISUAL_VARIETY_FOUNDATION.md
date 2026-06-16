@@ -54,6 +54,7 @@ Checks:
   - `Air` above.
 - `Chunk.Serialize()` writes little-endian `uint16` block IDs in the stable index order `x + y * ChunkWidth * ChunkDepth + z * ChunkWidth`.
 - `World.ChunkSnapshot()` produces stable serialized bytes across independent `World` instances for identical coordinates.
+- `WorldGenerator` now exposes explicit `seed`, `dimension_id`, and `version=flat_v1` inputs for generated chunks while preserving the existing flat chunk byte vector.
 - RocksDB persistence stores serialized chunk bytes; it does not store biome metadata.
 - Protocol `ChunkData.blocks` sends serialized block IDs, raw or RLE over the same serialized bytes.
 
@@ -65,7 +66,7 @@ Required deterministic inputs:
 
 ```text
 world_seed: stable explicit seed, not wall-clock time
-dimension_id: stable world/dimension identity when added
+dimension_id: stable world/dimension identity
 chunk_x/chunk_z: chunk coordinates
 block_x/block_z: optional world block coordinates for finer sampling
 biome_algorithm_version: explicit version for migrations

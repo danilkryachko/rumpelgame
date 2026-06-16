@@ -14,9 +14,10 @@ type ChunkStore interface {
 }
 
 type World struct {
-	mu     sync.Mutex
-	chunks map[ChunkCoord]*Chunk
-	store  ChunkStore
+	mu        sync.Mutex
+	chunks    map[ChunkCoord]*Chunk
+	store     ChunkStore
+	generator WorldGenerator
 }
 
 type ChunkOrder struct {
@@ -25,10 +26,27 @@ type ChunkOrder struct {
 }
 
 func NewWorld(store ChunkStore) *World {
+	return NewWorldWithGenerator(store, DefaultWorldGenerator())
+}
+
+func NewWorldWithGenerator(store ChunkStore, generator WorldGenerator) *World {
 	return &World{
-		chunks: make(map[ChunkCoord]*Chunk),
-		store:  store,
+		chunks:    make(map[ChunkCoord]*Chunk),
+		store:     store,
+		generator: generator,
 	}
+}
+
+func NewWorldWithGeneratorConfig(store ChunkStore, config GeneratorConfig) (*World, error) {
+	generator, err := NewWorldGenerator(config)
+	if err != nil {
+		return nil, err
+	}
+	return NewWorldWithGenerator(store, generator), nil
+}
+
+func (w *World) GeneratorConfig() GeneratorConfig {
+	return w.generator.Config()
 }
 
 func (w *World) Close() {
@@ -170,8 +188,10 @@ func (w *World) getOrCreateLocked(x, z int32) (*Chunk, error) {
 		}
 	}
 
-	chunk := NewChunk(x, z)
-	chunk.GenerateFlat()
+	chunk, err := w.generator.GenerateChunk(x, z)
+	if err != nil {
+		return nil, err
+	}
 	w.chunks[coord] = chunk
 	return chunk, nil
 }
