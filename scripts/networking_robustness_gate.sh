@@ -91,9 +91,14 @@ require_token "$SERVER_SOURCE" 'func writeFull(writer io.Writer, data []byte) er
 require_token "$SERVER_SOURCE" 'io.ErrShortWrite'
 require_token "$SERVER_SOURCE" 'SetWriteDeadline'
 require_token "$SERVER_SOURCE" 'disconnectClient'
+require_token "$SERVER_SOURCE" 'func classifyNetworkError'
+require_token "$SERVER_SOURCE" 'packet_error_class='
 require_token "$SERVER_TEST" 'TestReceivePacketReturnsOnShortFrame'
+require_token "$SERVER_TEST" 'TestReceivePacketReturnsOnShortPayload'
 require_token "$SERVER_TEST" 'TestReceivePacketRejectsOversizedLength'
 require_token "$SERVER_TEST" 'TestReceivePacketRejectsMalformedPayload'
+require_token "$SERVER_TEST" 'TestNetworkErrorClassification'
+require_token "$SERVER_TEST" 'TestWriteFullClassifiesZeroByteWriteAsShortWrite'
 require_token "$SERVER_SESSION_TEST" 'TestConfiguredClientWriteTimeoutParsesSupportedValues'
 require_token "$SERVER_SESSION_TEST" 'TestSendChunkToSessionSetsAndClearsWriteDeadline'
 require_token "$SERVER_SESSION_TEST" 'TestBroadcastDisconnectsFailedInterestedClient'
@@ -263,6 +268,7 @@ awk \
       reconnect_soak_protocol_change + 0 == 0
     reconnect_status = reconnect_soak_ok ? "repeated_live_rebootstrap_guarded" : (reconnect_ok ? "live_rebootstrap_guarded" : "deferred")
     stale_packet_policy = client_boundary_tests == "pass" ? "session_guarded" : "source_guarded"
+    packet_error_classification = server_boundary_tests == "pass" ? "unit_guarded" : "source_guarded"
     slow_client_status = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1 ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred")
     multi_client_live_status = server_scalability_live_load
     overload_status = "deferred"
@@ -296,7 +302,7 @@ awk \
       reason = "client_boundary_tests_failed"
     }
 
-    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s stale_packet_policy=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, stale_packet_policy, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
+    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s stale_packet_policy=%s packet_error_classification=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d multi_client_live_status=%s overload_status=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, stale_packet_policy, packet_error_classification, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, multi_client_live_status, overload_status, server_scalability_status, server_scalability_protocol_change, design_doc, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
     if (status != "pass") {
       exit 1
     }

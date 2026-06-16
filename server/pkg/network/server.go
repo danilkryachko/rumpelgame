@@ -2,6 +2,7 @@ package network
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -31,6 +32,26 @@ const chunkEncodingEnv = "RUMPELMC_SERVER_CHUNK_ENCODING"
 const chunkOrderEnv = "RUMPELMC_SERVER_CHUNK_ORDER"
 const clientWriteTimeoutEnv = "RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS"
 const initialClientPacketTimeout = 250 * time.Millisecond
+
+type networkErrorClass string
+
+const (
+	networkErrorNone              networkErrorClass = "none"
+	networkErrorEOF               networkErrorClass = "eof"
+	networkErrorShortFrame        networkErrorClass = "short_frame"
+	networkErrorOversizedFrame    networkErrorClass = "oversized_frame"
+	networkErrorMalformedProtobuf networkErrorClass = "malformed_protobuf"
+	networkErrorTimeout           networkErrorClass = "timeout"
+	networkErrorShortWrite        networkErrorClass = "short_write"
+	networkErrorEncode            networkErrorClass = "encode_error"
+	networkErrorOther             networkErrorClass = "other"
+)
+
+var (
+	errPacketTooLarge  = errors.New("packet too large")
+	errMalformedPacket = errors.New("malformed protobuf")
+	errPacketEncode    = errors.New("packet encode")
+)
 
 type chunkOrderMode string
 
@@ -97,17 +118,17 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	firstPacket, hasFirstPacket, err := s.receiveInitialClientPacket(conn)
 	if err != nil {
-		log.Printf("Client disconnected before initial chunk stream: %v", err)
+		log.Printf("Client disconnected before initial chunk stream packet_error_class=%s: %v", classifyNetworkError(err), err)
 		return
 	}
 	if hasFirstPacket {
 		if err := s.handleInitialClientPacketForSession(client, firstPacket); err != nil {
-			log.Printf("Failed to handle initial client packet: %v", err)
+			log.Printf("Failed to handle initial client packet packet_error_class=%s: %v", classifyNetworkError(err), err)
 			return
 		}
 	} else {
 		if err := s.sendChunksAroundWithRadiusForSession(client, 0, 0, s.bootstrapRadius, world.ChunkOrder{}); err != nil {
-			log.Printf("Failed to send initial chunks: %v", err)
+			log.Printf("Failed to send initial chunks packet_error_class=%s: %v", classifyNetworkError(err), err)
 			return
 		}
 	}
@@ -117,12 +138,12 @@ func (s *Server) handleConnection(conn net.Conn) {
 	for {
 		clientPacket, err := s.receivePacket(conn)
 		if err != nil {
-			log.Printf("Client disconnected: %v", err)
+			log.Printf("Client disconnected packet_error_class=%s: %v", classifyNetworkError(err), err)
 			return
 		}
 
 		if err := s.handleClientPacketForSession(client, clientPacket); err != nil {
-			log.Printf("Failed to handle client packet: %v", err)
+			log.Printf("Failed to handle client packet packet_error_class=%s: %v", classifyNetworkError(err), err)
 			return
 		}
 	}
@@ -452,7 +473,7 @@ func (s *Server) broadcastChunkUpdate(origin *clientSession, chunk world.ChunkSn
 			if target == origin {
 				return err
 			}
-			log.Printf("Failed to broadcast updated chunk %d,%d to %s: %v", chunk.X, chunk.Z, target.conn.RemoteAddr(), err)
+			log.Printf("Failed to broadcast updated chunk %d,%d to %s packet_error_class=%s: %v", chunk.X, chunk.Z, target.conn.RemoteAddr(), classifyNetworkError(err), err)
 			s.disconnectClient(target)
 		}
 	}
@@ -695,22 +716,22 @@ func (s *Server) receiveInitialClientPacket(conn net.Conn) (*api.Packet, bool, e
 func (s *Server) receivePacket(conn net.Conn) (*api.Packet, error) {
 	lenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read packet length: %w", err)
 	}
 
 	length := binary.LittleEndian.Uint32(lenBuf)
 	if length > maxPacketSize {
-		return nil, fmt.Errorf("packet too large: %d bytes", length)
+		return nil, fmt.Errorf("%w: %d bytes", errPacketTooLarge, length)
 	}
 
 	dataBuf := make([]byte, length)
 	if _, err := io.ReadFull(conn, dataBuf); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read packet payload: %w", err)
 	}
 
 	packet := &api.Packet{}
 	if err := proto.Unmarshal(dataBuf, packet); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errMalformedPacket, err)
 	}
 
 	return packet, nil
@@ -719,7 +740,7 @@ func (s *Server) receivePacket(conn net.Conn) (*api.Packet, error) {
 func (s *Server) sendPacket(conn net.Conn, packet *api.Packet) error {
 	data, err := proto.Marshal(packet)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errPacketEncode, err)
 	}
 
 	lenBuf := make([]byte, 4)
@@ -732,6 +753,36 @@ func (s *Server) sendPacket(conn net.Conn, packet *api.Packet) error {
 		return err
 	}
 	return nil
+}
+
+func classifyNetworkError(err error) networkErrorClass {
+	if err == nil {
+		return networkErrorNone
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return networkErrorTimeout
+	}
+	if errors.Is(err, errPacketTooLarge) {
+		return networkErrorOversizedFrame
+	}
+	if errors.Is(err, errMalformedPacket) {
+		return networkErrorMalformedProtobuf
+	}
+	if errors.Is(err, errPacketEncode) {
+		return networkErrorEncode
+	}
+	if errors.Is(err, io.ErrShortWrite) {
+		return networkErrorShortWrite
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return networkErrorShortFrame
+	}
+	if errors.Is(err, io.EOF) {
+		return networkErrorEOF
+	}
+	return networkErrorOther
 }
 
 func writeFull(writer io.Writer, data []byte) error {

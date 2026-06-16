@@ -61,6 +61,7 @@ Checks:
 - Server and Rust client both use exact reads for the length prefix and payload.
 - Malformed protobuf payloads return errors instead of partial packets.
 - Server receive/decode errors close the client connection through the existing connection loop.
+- Server receive, decode, timeout, encode, and short-write errors are logged with stable `packet_error_class` labels guarded by Go network tests and the networking robustness gate.
 
 ### Chunk Serialization
 
@@ -85,6 +86,7 @@ Checks:
 ### Runtime Session Evidence
 
 - Server write deadlines, failed interested-client broadcast cleanup, bounded slow-reader timeout evidence, and bounded six-client fanout/load evidence are guarded by the networking and server scalability gates.
+- Classified server packet-error labels are guarded through the networking gate as `packet_error_classification`.
 - Client reconnect/rebootstrap is guarded by live disconnect/server-restart smoke and a bounded repeated reconnect soak, with reader-session stale-packet filtering covered by Rust unit tests.
 - Block edit persistence is guarded at the world/storage boundary, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
 - These runtime guards do not add authentication, packet replay, admission control, or new wire semantics.
@@ -105,7 +107,7 @@ Still needed:
 - Longer reconnect failure/idle soak and broad client loaded-state reset policy beyond the bounded reconnect/rebootstrap guards.
 - Corrupt edit recovery policy beyond current corrupt chunk load rejection.
 - Multi-client conflict semantics beyond current interested-client fanout and failed-broadcast cleanup.
-- Packet error telemetry that classifies EOF, oversized frame, malformed protobuf, timeout, and short write causes.
+- Operational aggregation and alert thresholds for the existing classified packet error labels.
 - Fuzz/property tests for packet framing and RLE decode if external exposure increases.
 
 ## Compatibility Rules
@@ -124,12 +126,13 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records reviewed boundaries, MCP notes, deferred work, and compatibility rules.
 - Server/Rust sources still contain packet-size, exact-read, decode, and block-edit validation hooks.
+- Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
 - Focused Go protocol/network/storage/world tests pass.
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean.
@@ -137,4 +140,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, chunk decode, storage integrity, block edit validation, bounded slow-reader behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, overload/admission policy, broad reconnect reset policy, conflict semantics, and fuzz/property coverage remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, classified packet errors, chunk decode, storage integrity, block edit validation, bounded slow-reader behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, overload/admission policy, broad reconnect reset policy, classified-error aggregation, conflict semantics, and fuzz/property coverage remain future work.

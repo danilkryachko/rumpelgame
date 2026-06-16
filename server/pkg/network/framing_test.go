@@ -2,9 +2,10 @@ package network
 
 import (
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 	"net"
-	"strings"
 	"testing"
 	"time"
 
@@ -66,6 +67,35 @@ func TestReceivePacketReturnsOnShortFrame(t *testing.T) {
 	if result.err == nil {
 		t.Fatal("receivePacket() error = nil, want short frame error")
 	}
+	if got := classifyNetworkError(result.err); got != networkErrorShortFrame {
+		t.Fatalf("classifyNetworkError() = %s, want %s", got, networkErrorShortFrame)
+	}
+}
+
+func TestReceivePacketReturnsOnShortPayload(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+
+	resultCh := receivePacketAsync(serverConn)
+	lenBuf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(lenBuf, 4)
+	if _, err := clientConn.Write(lenBuf); err != nil {
+		t.Fatalf("write frame length: %v", err)
+	}
+	if _, err := clientConn.Write([]byte{0x01, 0x02}); err != nil {
+		t.Fatalf("write short payload: %v", err)
+	}
+	if err := clientConn.Close(); err != nil {
+		t.Fatalf("close client connection: %v", err)
+	}
+
+	result := waitReceivePacket(t, resultCh)
+	if result.err == nil {
+		t.Fatal("receivePacket() error = nil, want short payload error")
+	}
+	if got := classifyNetworkError(result.err); got != networkErrorShortFrame {
+		t.Fatalf("classifyNetworkError() = %s, want %s", got, networkErrorShortFrame)
+	}
 }
 
 func TestReceivePacketRejectsOversizedLength(t *testing.T) {
@@ -81,8 +111,11 @@ func TestReceivePacketRejectsOversizedLength(t *testing.T) {
 	}
 
 	result := waitReceivePacket(t, resultCh)
-	if result.err == nil || !strings.Contains(result.err.Error(), "packet too large") {
+	if result.err == nil || !errors.Is(result.err, errPacketTooLarge) {
 		t.Fatalf("receivePacket() error = %v, want packet too large", result.err)
+	}
+	if got := classifyNetworkError(result.err); got != networkErrorOversizedFrame {
+		t.Fatalf("classifyNetworkError() = %s, want %s", got, networkErrorOversizedFrame)
 	}
 }
 
@@ -96,6 +129,9 @@ func TestReceivePacketRejectsMalformedPayload(t *testing.T) {
 	result := waitReceivePacket(t, resultCh)
 	if result.err == nil {
 		t.Fatal("receivePacket() error = nil, want malformed protobuf error")
+	}
+	if got := classifyNetworkError(result.err); got != networkErrorMalformedProtobuf {
+		t.Fatalf("classifyNetworkError() = %s, want %s", got, networkErrorMalformedProtobuf)
 	}
 }
 
@@ -114,6 +150,9 @@ func TestReceiveInitialClientPacketIgnoresClosedProbe(t *testing.T) {
 	}
 	if result.packet != nil {
 		t.Fatalf("receiveInitialClientPacket() packet = %v, want nil", result.packet)
+	}
+	if got := classifyNetworkError(result.err); got != networkErrorOther {
+		t.Fatalf("classifyNetworkError() = %s, want %s", got, networkErrorOther)
 	}
 }
 
@@ -141,6 +180,62 @@ func TestReceiveInitialClientPacketReadsHandshakePosition(t *testing.T) {
 	if result.packet == nil || !proto.Equal(result.packet, packet) {
 		t.Fatalf("receiveInitialClientPacket() packet = %v, want %v", result.packet, packet)
 	}
+}
+
+func TestNetworkErrorClassification(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want networkErrorClass
+	}{
+		{name: "nil", err: nil, want: networkErrorNone},
+		{name: "oversized", err: fmt.Errorf("wrapped: %w", errPacketTooLarge), want: networkErrorOversizedFrame},
+		{name: "malformed", err: fmt.Errorf("wrapped: %w", errMalformedPacket), want: networkErrorMalformedProtobuf},
+		{name: "encode", err: fmt.Errorf("wrapped: %w", errPacketEncode), want: networkErrorEncode},
+		{name: "timeout", err: timeoutError{}, want: networkErrorTimeout},
+		{name: "short write", err: fmt.Errorf("wrapped: %w", io.ErrShortWrite), want: networkErrorShortWrite},
+		{name: "short frame", err: fmt.Errorf("wrapped: %w", io.ErrUnexpectedEOF), want: networkErrorShortFrame},
+		{name: "eof", err: fmt.Errorf("wrapped: %w", io.EOF), want: networkErrorEOF},
+		{name: "other", err: errors.New("plain error"), want: networkErrorOther},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyNetworkError(tt.err); got != tt.want {
+				t.Fatalf("classifyNetworkError() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteFullClassifiesZeroByteWriteAsShortWrite(t *testing.T) {
+	err := writeFull(zeroWriter{}, []byte{0x01})
+	if !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("writeFull() error = %v, want io.ErrShortWrite", err)
+	}
+	if got := classifyNetworkError(err); got != networkErrorShortWrite {
+		t.Fatalf("classifyNetworkError() = %s, want %s", got, networkErrorShortWrite)
+	}
+}
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string {
+	return "timeout"
+}
+
+func (timeoutError) Timeout() bool {
+	return true
+}
+
+func (timeoutError) Temporary() bool {
+	return false
+}
+
+type zeroWriter struct{}
+
+func (zeroWriter) Write([]byte) (int, error) {
+	return 0, nil
 }
 
 type receivePacketResult struct {
