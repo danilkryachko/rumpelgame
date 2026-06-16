@@ -179,6 +179,56 @@ func TestSetBlockGlobalPersistsEditedChunkForReload(t *testing.T) {
 	assertSnapshotBlock(t, destroyedSnapshot, localX, int(blockY), localZ, Air)
 }
 
+func TestSetBlockGlobalPersistsNegativeBoundaryCoordinates(t *testing.T) {
+	store := newSerializedChunkStore()
+	w := NewWorld(store)
+
+	tests := []struct {
+		name  string
+		x     int32
+		z     int32
+		block BlockID
+	}{
+		{name: "negative previous edge", x: -1, z: -1, block: Wood},
+		{name: "negative exact chunk", x: -int32(ChunkWidth), z: -int32(ChunkDepth), block: Stone},
+		{name: "negative next edge mixed z", x: -int32(ChunkWidth) - 1, z: int32(ChunkDepth), block: Dirt},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chunkX, localX := GlobalToChunkLocal(tt.x, ChunkWidth)
+			chunkZ, localZ := GlobalToChunkLocal(tt.z, ChunkDepth)
+
+			snapshot, err := w.SetBlockGlobal(tt.x, 64, tt.z, tt.block)
+			if err != nil {
+				t.Fatalf("SetBlockGlobal() error = %v", err)
+			}
+			if snapshot.X != chunkX || snapshot.Z != chunkZ {
+				t.Fatalf("snapshot chunk = (%d, %d), want (%d, %d)", snapshot.X, snapshot.Z, chunkX, chunkZ)
+			}
+			assertSnapshotBlock(t, snapshot, localX, 64, localZ, tt.block)
+		})
+	}
+
+	if store.saves != len(tests) {
+		t.Fatalf("store saves = %d, want %d", store.saves, len(tests))
+	}
+
+	reloadedWorld := NewWorld(store)
+	for _, tt := range tests {
+		t.Run(tt.name+"/reload", func(t *testing.T) {
+			chunkX, localX := GlobalToChunkLocal(tt.x, ChunkWidth)
+			chunkZ, localZ := GlobalToChunkLocal(tt.z, ChunkDepth)
+
+			snapshot, err := reloadedWorld.ChunkSnapshot(chunkX, chunkZ)
+			if err != nil {
+				t.Fatalf("ChunkSnapshot() error = %v", err)
+			}
+			assertSnapshotBlock(t, snapshot, localX, 64, localZ, tt.block)
+		})
+	}
+}
+
 func TestSetBlockGlobalRejectsOutOfRangeYWithoutSave(t *testing.T) {
 	store := newSerializedChunkStore()
 	w := NewWorld(store)
