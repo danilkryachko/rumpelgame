@@ -2,8 +2,10 @@ package storage
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"rumpelmc/server/pkg/world"
@@ -187,6 +189,89 @@ func TestRocksChunkStoreOverwriteKeepsNeighborChunk(t *testing.T) {
 	}
 	if got := loadedNeighbor.GetBlock(2, 2, 2); got != world.Leaves {
 		t.Fatalf("neighbor block = %d, want %d", got, world.Leaves)
+	}
+}
+
+func TestRocksChunkStoreConcurrentSaveLoadDistinctChunks(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	type expectedChunk struct {
+		x, z              int32
+		localX, y, localZ int
+		block             world.BlockID
+	}
+	blocks := []world.BlockID{world.Stone, world.Dirt, world.Grass, world.Wood, world.Leaves}
+	expected := make([]expectedChunk, 12)
+	for i := range expected {
+		expected[i] = expectedChunk{
+			x:      int32(i - len(expected)/2),
+			z:      int32(i*3 - 11),
+			localX: i % world.ChunkWidth,
+			y:      (i * 7) % world.ChunkHeight,
+			localZ: (i * 5) % world.ChunkDepth,
+			block:  blocks[i%len(blocks)],
+		}
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, len(expected))
+	var wg sync.WaitGroup
+	for _, want := range expected {
+		want := want
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+
+			chunk := world.NewChunk(want.x, want.z)
+			chunk.SetBlock(want.localX, want.y, want.localZ, want.block)
+			if err := store.SaveChunk(chunk); err != nil {
+				errs <- fmt.Errorf("SaveChunk(%d,%d): %w", want.x, want.z, err)
+				return
+			}
+
+			loaded, ok, err := store.LoadChunk(want.x, want.z)
+			if err != nil {
+				errs <- fmt.Errorf("LoadChunk(%d,%d): %w", want.x, want.z, err)
+				return
+			}
+			if !ok {
+				errs <- fmt.Errorf("LoadChunk(%d,%d) ok = false", want.x, want.z)
+				return
+			}
+			if got := loaded.GetBlock(want.localX, want.y, want.localZ); got != want.block {
+				errs <- fmt.Errorf("concurrent block at chunk %d,%d = %d, want %d", want.x, want.z, got, want.block)
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	if t.Failed() {
+		return
+	}
+
+	for _, want := range expected {
+		loaded, ok, err := store.LoadChunk(want.x, want.z)
+		if err != nil {
+			t.Fatalf("final LoadChunk(%d,%d) error = %v", want.x, want.z, err)
+		}
+		if !ok {
+			t.Fatalf("final LoadChunk(%d,%d) ok = false", want.x, want.z)
+		}
+		if got := loaded.GetBlock(want.localX, want.y, want.localZ); got != want.block {
+			t.Fatalf("final block at chunk %d,%d = %d, want %d", want.x, want.z, got, want.block)
+		}
 	}
 }
 

@@ -77,9 +77,10 @@ Checks:
 ### Storage Integrity
 
 - RocksDB keys keep the stable chunk-coordinate key format.
-- RocksDB tests cover missing chunks, save/reopen round-trip, overwrite isolation, corrupt payload rejection, missing-parent path creation, regular-file path rejection, key format, and signed coordinate ordering.
+- RocksDB tests cover missing chunks, save/reopen round-trip, overwrite isolation, concurrent distinct-key save/load, corrupt payload rejection, missing-parent path creation, regular-file path rejection, key format, and signed coordinate ordering.
 - Server config tests prove `RUMPELMC_SERVER_ROCKSDB_PATH` is the current chunk-store override and PostgreSQL environment variables do not select a runtime chunk backend.
 - The review gate reports `storage_backend_ownership=guarded` after validating the RocksDB/PostgreSQL ownership documentation and server config tests.
+- The review gate reports `storage_concurrency=guarded` after validating the concurrent RocksDB save/load test.
 - `World.SetBlockGlobal` saves edited chunks through the configured `ChunkStore`.
 - The block edit reload guard proves place/destroy edits survive fresh `World(store)` instances.
 
@@ -146,7 +147,7 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `unknown_packet_policy=ignored_guarded`, `storage_integrity=guarded`, `block_edit_validation=y_bounds_guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `unknown_packet_policy=ignored_guarded`, `storage_integrity=guarded`, `storage_backend_ownership=guarded`, `storage_concurrency=guarded`, `block_edit_validation=y_bounds_guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -158,6 +159,7 @@ The gate checks that:
 - Focused deterministic packet/RLE property tests are present in Go and Rust test sources and surfaced in the summary as `deterministic_property_tests=guarded`.
 - Focused Go protocol/network/storage/world tests pass.
 - Storage tests prove missing parent directories are created and existing regular-file RocksDB paths fail to open.
+- Storage tests prove concurrent save/load operations on distinct RocksDB chunk keys preserve each chunk payload.
 - Server config tests prove PostgreSQL environment variables do not bypass `RUMPELMC_SERVER_ROCKSDB_PATH`.
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean.
@@ -168,4 +170,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, enforced loopback-only local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity including RocksDB open-path failure coverage and PostgreSQL/RocksDB ownership boundaries, block edit Y-bound validation, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, enforced loopback-only local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity including RocksDB open-path failure coverage, concurrent distinct-key save/load coverage, and PostgreSQL/RocksDB ownership boundaries, block edit Y-bound validation, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.

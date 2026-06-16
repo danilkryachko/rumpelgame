@@ -16,6 +16,7 @@ This note records the current approved persistence foundation for chunk storage.
 - Saving a chunk overwrites only that chunk key and must not alter neighboring chunk keys.
 - Opening a RocksDB store creates a missing parent directory for the configured path.
 - Opening a RocksDB store on an existing regular file fails and does not return a usable store.
+- Concurrent save/load operations on distinct chunk keys through one open RocksDB store preserve each chunk payload.
 
 ## Guard
 
@@ -28,4 +29,4 @@ go test ./pkg/storage
 
 Fresh check:
 
-- `go test ./pkg/storage` passed on 2026-06-16 after adding missing-parent path and file-path rejection coverage for the RocksDB chunk store.
+- `go test ./pkg/storage` and `go test -race ./pkg/storage` passed on 2026-06-16 after adding concurrent distinct-key save/load coverage for the RocksDB chunk store.
