@@ -25,12 +25,12 @@ type RocksChunkStore struct {
 
 func OpenRocksChunkStore(path string) (*RocksChunkStore, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create RocksDB parent directory %q: %w", filepath.Dir(path), err)
 	}
 
 	opts := C.rocksdb_options_create()
 	if opts == nil {
-		return nil, fmt.Errorf("failed to create RocksDB options")
+		return nil, fmt.Errorf("create RocksDB options for %q: failed", path)
 	}
 	defer C.rocksdb_options_destroy(opts)
 	C.rocksdb_options_set_create_if_missing(opts, 1)
@@ -41,10 +41,10 @@ func OpenRocksChunkStore(path string) (*RocksChunkStore, error) {
 	var cErr *C.char
 	db := C.rocksdb_open(opts, cPath, &cErr)
 	if cErr != nil {
-		return nil, takeRocksError(cErr)
+		return nil, fmt.Errorf("open RocksDB chunk store %q: %w", path, takeRocksError(cErr))
 	}
 	if db == nil {
-		return nil, fmt.Errorf("rocksdb_open returned nil")
+		return nil, fmt.Errorf("open RocksDB chunk store %q: rocksdb_open returned nil", path)
 	}
 
 	store := &RocksChunkStore{
@@ -54,7 +54,7 @@ func OpenRocksChunkStore(path string) (*RocksChunkStore, error) {
 	}
 	if store.ro == nil || store.wo == nil {
 		store.Close()
-		return nil, fmt.Errorf("failed to create RocksDB read/write options")
+		return nil, fmt.Errorf("create RocksDB read/write options for %q: failed", path)
 	}
 	return store, nil
 }
@@ -73,7 +73,7 @@ func (s *RocksChunkStore) LoadChunk(x, z int32) (*world.Chunk, bool, error) {
 		&cErr,
 	)
 	if cErr != nil {
-		return nil, false, takeRocksError(cErr)
+		return nil, false, fmt.Errorf("load RocksDB chunk %d,%d: %w", x, z, takeRocksError(cErr))
 	}
 	if value == nil {
 		return nil, false, nil
@@ -83,7 +83,7 @@ func (s *RocksChunkStore) LoadChunk(x, z int32) (*world.Chunk, bool, error) {
 	data := C.GoBytes(unsafe.Pointer(value), C.int(valueLen))
 	chunk, err := world.DeserializeChunk(x, z, data)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("decode RocksDB chunk %d,%d: %w", x, z, err)
 	}
 	return chunk, true, nil
 }
@@ -91,7 +91,10 @@ func (s *RocksChunkStore) LoadChunk(x, z int32) (*world.Chunk, bool, error) {
 func (s *RocksChunkStore) SaveChunk(chunk *world.Chunk) error {
 	key := chunkKey(chunk.X, chunk.Z)
 	data := chunk.Serialize()
-	return s.putChunkData(key, data)
+	if err := s.putChunkData(key, data); err != nil {
+		return fmt.Errorf("save RocksDB chunk %d,%d: %w", chunk.X, chunk.Z, err)
+	}
+	return nil
 }
 
 func (s *RocksChunkStore) putChunkData(key, data []byte) error {

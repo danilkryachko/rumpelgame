@@ -16,6 +16,7 @@ SERVER_NETWORK_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_SOURCE:-"$ROOT_
 SERVER_WORLD_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
 SERVER_NETWORK_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_TEST:-"$ROOT_DIR/server/pkg/network/framing_test.go"}"
 SERVER_NETWORK_BEHAVIOR_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_BEHAVIOR_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
+SERVER_STORAGE_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_STORAGE_SOURCE:-"$ROOT_DIR/server/pkg/storage/rocksdb.go"}"
 SERVER_STORAGE_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_STORAGE_TEST:-"$ROOT_DIR/server/pkg/storage/rocksdb_test.go"}"
 SERVER_WORLD_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_TEST:-"$ROOT_DIR/server/pkg/world/chunk_encoding_test.go"}"
 SERVER_WORLD_BEHAVIOR_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_BEHAVIOR_TEST:-"$ROOT_DIR/server/pkg/world/world_test.go"}"
@@ -70,6 +71,7 @@ for path in \
   "$SERVER_WORLD_SOURCE" \
   "$SERVER_NETWORK_TEST" \
   "$SERVER_NETWORK_BEHAVIOR_TEST" \
+  "$SERVER_STORAGE_SOURCE" \
   "$SERVER_STORAGE_TEST" \
   "$SERVER_WORLD_TEST" \
   "$SERVER_WORLD_BEHAVIOR_TEST" \
@@ -161,11 +163,22 @@ for token in \
   require_token "$SERVER_WORLD_SOURCE" "$token"
 done
 
+for token in \
+  'create RocksDB parent directory' \
+  'open RocksDB chunk store' \
+  'load RocksDB chunk' \
+  'decode RocksDB chunk' \
+  'save RocksDB chunk'; do
+  require_token "$SERVER_STORAGE_SOURCE" "$token"
+done
+
 require_token "$SERVER_NETWORK_TEST" 'TestReceivePacketConsumesExactFrameBoundaries'
 require_token "$SERVER_NETWORK_BEHAVIOR_TEST" 'TestHandleClientPacketRejectsOutOfRangeBlockAction'
 require_token "$SERVER_STORAGE_TEST" 'TestOpenRocksChunkStoreCreatesMissingParentDirectory'
 require_token "$SERVER_STORAGE_TEST" 'TestOpenRocksChunkStoreRejectsFilePath'
 require_token "$SERVER_STORAGE_TEST" 'TestRocksChunkStoreConcurrentSaveLoadDistinctChunks'
+require_token "$SERVER_STORAGE_TEST" 'want open context'
+require_token "$SERVER_STORAGE_TEST" 'want chunk decode context'
 require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsRepresentativeRunPatterns'
 require_token "$SERVER_WORLD_BEHAVIOR_TEST" 'TestSetBlockGlobalRejectsOutOfRangeYWithoutSave'
 require_token "$CLIENT_RUNTIME_SOURCE" 'decode_serialized_chunk_rle_accepts_representative_runs'
@@ -247,6 +260,7 @@ awk \
     storage_integrity = "guarded"
     storage_backend_ownership = "guarded"
     storage_concurrency = "guarded"
+    storage_errors = "actionable_guarded"
     block_edit_validation = "y_bounds_guarded"
     chunk_decode = "guarded"
     deterministic_property_tests = "guarded"
@@ -280,7 +294,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s storage_integrity=%s storage_backend_ownership=%s storage_concurrency=%s block_edit_validation=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, storage_integrity, storage_backend_ownership, storage_concurrency, block_edit_validation, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s storage_integrity=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s block_edit_validation=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, storage_integrity, storage_backend_ownership, storage_concurrency, storage_errors, block_edit_validation, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
     if (status != "pass") {
       exit 1
     }

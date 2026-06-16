@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -131,6 +132,12 @@ func TestOpenRocksChunkStoreRejectsFilePath(t *testing.T) {
 	if store != nil {
 		store.Close()
 		t.Fatalf("OpenRocksChunkStore() store = %v, want nil on failure", store)
+	}
+	if !strings.Contains(err.Error(), "open RocksDB chunk store") {
+		t.Fatalf("OpenRocksChunkStore() error = %q, want open context", err)
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Fatalf("OpenRocksChunkStore() error = %q, want path %q", err, path)
 	}
 }
 
@@ -287,6 +294,9 @@ func TestRocksChunkStoreRejectsCorruptChunkPayload(t *testing.T) {
 	loaded, ok, err := store.LoadChunk(4, -5)
 	if err == nil {
 		t.Fatal("LoadChunk() error = nil, want corrupt payload error")
+	}
+	if !strings.Contains(err.Error(), "decode RocksDB chunk 4,-5") {
+		t.Fatalf("LoadChunk() error = %q, want chunk decode context", err)
 	}
 	if ok {
 		t.Fatal("LoadChunk() ok = true, want false for corrupt payload")
