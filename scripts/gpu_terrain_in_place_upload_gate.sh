@@ -53,6 +53,15 @@ perf_triplet_value() {
     | sed -n '1p'
 }
 
+perf_count_triplet_value() {
+  key="$1"
+  marker_path="$2"
+  index="$3"
+  sed -n "s/.*$key=\([0-9][0-9]*\)\/\([0-9][0-9]*\.[0-9][0-9]*\)\/\([0-9][0-9]*\).*/\1 \2 \3/p" "$marker_path" \
+    | awk -v index="$index" '{print $index}' \
+    | sed -n '1p'
+}
+
 listener_pid() {
   if command -v lsof >/dev/null 2>&1; then
     lsof -tiTCP:25565 -sTCP:LISTEN 2>/dev/null | sed -n '1p'
@@ -116,6 +125,21 @@ require_metric_eq() {
   fi
 }
 
+require_count_triplet_ge() {
+  marker_path="$1"
+  key="$2"
+  index="$3"
+  min_value="$4"
+  value="$(perf_count_triplet_value "$key" "$marker_path" "$index")"
+  test -n "$value" || fail "missing $key in $marker_path"
+  case "$value" in
+    *.*) value="${value%%.*}" ;;
+  esac
+  if [ "$value" -lt "$min_value" ]; then
+    fail "$key index $index value $value is below $min_value in $marker_path"
+  fi
+}
+
 default_float() {
   value="$1"
   if [ -n "$value" ]; then
@@ -141,6 +165,10 @@ write_summary() {
   gpu_upload_update_ms_max="$(default_float "$(perf_triplet_value gpu_upload_update_ms "$marker_path" 3)")"
   gpu_draw_patch_ms_max="$(default_float "$(perf_triplet_value gpu_draw_patch_ms "$marker_path" 3)")"
   terrain_queue_max_ms="$(default_float "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)")"
+  terrain_queue_new_slot_uploads_max="$(default_float "$(perf_count_triplet_value terrain_queue_gpu_upload_new_slots "$marker_path" 3)")"
+  terrain_queue_replace_slot_uploads_max="$(default_float "$(perf_count_triplet_value terrain_queue_gpu_upload_replace_slots "$marker_path" 3)")"
+  terrain_queue_new_slot_upload_kb_max="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_new_slot_kb "$marker_path" 3)")"
+  terrain_queue_replace_slot_upload_kb_max="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_replace_slot_kb "$marker_path" 3)")"
   process_wall_p95_ms="$(default_float "$(float_metric process_wall_p95_ms "$marker_path")")"
   gpu_compositor_submit_max_ms="$(default_float "$(perf_triplet_value gpu_compositor_submit_ms "$marker_path" 3)")"
   dirty_partial_saved_subchunks="$(metric dirty_partial_saved_subchunks "$marker_path")"
@@ -149,12 +177,14 @@ write_summary() {
   current_chunk_collision="$(metric current_chunk_collision "$marker_path")"
 
   {
-    printf 'gpu_in_place_upload status=pass action=%s x=%s y=%s z=%s block_id=%s expected_edges=%s expected_bounds=%s isolated_db=%s gpu_in_place_upload_enabled=%s gpu_in_place_uploads=%s gpu_in_place_upload_misses=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_upload_ms_max=%s gpu_upload_stage_ms_max=%s gpu_upload_update_ms_max=%s gpu_draw_patch_ms_max=%s terrain_queue_max_ms=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s dirty_partial_saved_subchunks=%s dirty_last_rebuild_subchunks=%s current_chunk_loaded=%s current_chunk_collision=%s marker=%s block_summary=%s run_log=%s\n' \
+    printf 'gpu_in_place_upload status=pass action=%s x=%s y=%s z=%s block_id=%s expected_edges=%s expected_bounds=%s isolated_db=%s gpu_in_place_upload_enabled=%s gpu_in_place_uploads=%s gpu_in_place_upload_misses=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_upload_ms_max=%s gpu_upload_stage_ms_max=%s gpu_upload_update_ms_max=%s gpu_draw_patch_ms_max=%s terrain_queue_max_ms=%s terrain_queue_new_slot_uploads_max=%s terrain_queue_replace_slot_uploads_max=%s terrain_queue_new_slot_upload_kb_max=%s terrain_queue_replace_slot_upload_kb_max=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s dirty_partial_saved_subchunks=%s dirty_last_rebuild_subchunks=%s current_chunk_loaded=%s current_chunk_collision=%s marker=%s block_summary=%s run_log=%s\n' \
       "$ACTION" "$EDIT_X" "$EDIT_Y" "$EDIT_Z" "$EDIT_BLOCK_ID" "$EXPECTED_EDGES" "$EXPECTED_BOUNDS" "$DB_PATH" \
       "$gpu_in_place_upload_enabled" "$gpu_in_place_uploads" "$gpu_in_place_upload_misses" "$gpu_uploads" \
       "$gpu_upload_fail" "$gpu_upload_fail_capacity" "$gpu_upload_fail_fragmented" \
       "$gpu_upload_ms_max" "$gpu_upload_stage_ms_max" "$gpu_upload_update_ms_max" "$gpu_draw_patch_ms_max" \
-      "$terrain_queue_max_ms" "$process_wall_p95_ms" "$gpu_compositor_submit_max_ms" \
+      "$terrain_queue_max_ms" "$terrain_queue_new_slot_uploads_max" "$terrain_queue_replace_slot_uploads_max" \
+      "$terrain_queue_new_slot_upload_kb_max" "$terrain_queue_replace_slot_upload_kb_max" \
+      "$process_wall_p95_ms" "$gpu_compositor_submit_max_ms" \
       "$dirty_partial_saved_subchunks" "$dirty_last_rebuild_subchunks" "$current_chunk_loaded" "$current_chunk_collision" \
       "$marker_path" "$block_summary" "$RUN_LOG"
   } > "$SUMMARY_PATH"
@@ -227,6 +257,10 @@ require_metric_eq "$marker_path" current_chunk_loaded 1
 require_metric_ge "$marker_path" current_chunk_collision 1
 test -n "$(perf_triplet_value gpu_upload_ms "$marker_path" 3)" || fail "missing gpu_upload_ms in $marker_path"
 test -n "$(perf_triplet_value gpu_upload_update_ms "$marker_path" 3)" || fail "missing gpu_upload_update_ms in $marker_path"
+test -n "$(perf_triplet_value terrain_queue_gpu_upload_new_slot_kb "$marker_path" 3)" || fail "missing terrain_queue_gpu_upload_new_slot_kb in $marker_path"
+test -n "$(perf_triplet_value terrain_queue_gpu_upload_replace_slot_kb "$marker_path" 3)" || fail "missing terrain_queue_gpu_upload_replace_slot_kb in $marker_path"
+require_count_triplet_ge "$marker_path" terrain_queue_gpu_upload_new_slots 3 1
+require_count_triplet_ge "$marker_path" terrain_queue_gpu_upload_replace_slots 3 1
 
 write_summary
 wait_for_port_clear

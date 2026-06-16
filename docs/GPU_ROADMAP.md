@@ -71,7 +71,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 43. Log upload count per frame.
 44. Log upload queue depth.
 45. Log upload latency.
-46. Separate initial chunk upload from block-update upload.
+46. Done 2026-06-16: split terrain queue GPU upload telemetry into new-slot and replacement-slot upload counts/bytes, and validated both lanes in movement plus in-place block-edit gates.
 47. Add upload budget per frame.
 48. Add upload budget tests.
 49. Add mass chunk-load stress.

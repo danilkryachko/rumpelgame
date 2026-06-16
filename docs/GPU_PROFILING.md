@@ -16,6 +16,8 @@ This document defines how GPU terrain performance should be measured. The goal i
 - `process_wall_p95_ms`: useful for client `_process` CPU pressure.
 - `gpu_compositor_submit_ms`: useful for CPU-side compositor submission overhead.
 - `gpu_compositor_submit_max_parts`: useful to separate setup, target, constants, and draw submission cost.
+- `terrain_queue_gpu_upload_new_slots` / `terrain_queue_gpu_upload_new_slot_kb`: useful to separate initial GPU-resident world load pressure from later dirty/update replacement work.
+- `terrain_queue_gpu_upload_replace_slots` / `terrain_queue_gpu_upload_replace_slot_kb`: useful to isolate GPU slot replacement pressure from ordinary new-slot streaming.
 - `gpu_draws`, `gpu_effective_draws`, `gpu_faces`, `gpu_subchunks`: useful for workload size.
 - `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and `compact_shadow_normals_saved`: useful local signals for shadow proxy load and compact proxy savings.
 - `smoke_err`, `terrain_samples`, color buckets, and marker generation: useful for visual correctness gates.
@@ -105,7 +107,7 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 
 The wrapper writes `gpu-upload-pressure-summary.txt`; see `docs/GPU_UPLOAD_PRESSURE.md`.
 
-Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures:
+Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
