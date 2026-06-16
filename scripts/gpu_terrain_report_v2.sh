@@ -162,6 +162,18 @@ scoped_transparent_cutout_uploads="$(field_or_na_first "$SCOPED_SUMMARY" transpa
 scoped_transparent_cutout_upload_bytes="$(field_or_na_first "$SCOPED_SUMMARY" transparent_cutout_upload_bytes max_transparent_cutout_upload_bytes)"
 scoped_transparent_cutout_upload_faces="$(field_or_na_first "$SCOPED_SUMMARY" transparent_cutout_upload_faces max_transparent_cutout_upload_faces)"
 scoped_transparent_cutout_upload_face_bytes="$(field_or_na_first "$SCOPED_SUMMARY" transparent_cutout_upload_face_bytes max_transparent_cutout_upload_face_bytes)"
+scoped_transparent_sort_policy="$(field_or_na transparent_sort_policy "$SCOPED_SUMMARY")"
+scoped_transparent_sort_active="$(field_or_na_first "$SCOPED_SUMMARY" transparent_sort_active max_transparent_sort_active)"
+scoped_transparent_sort_keys="$(field_or_na_first "$SCOPED_SUMMARY" transparent_sort_keys max_transparent_sort_keys)"
+scoped_transparent_sort_ms="$(field_or_na_first "$SCOPED_SUMMARY" transparent_sort_ms max_transparent_sort_ms)"
+scoped_transparent_build_cost_source="$(field_or_na transparent_build_cost_source "$SCOPED_SUMMARY")"
+scoped_transparent_build_faces="$(field_or_na_first "$SCOPED_SUMMARY" transparent_build_faces max_transparent_build_faces)"
+scoped_transparent_build_subchunks="$(field_or_na_first "$SCOPED_SUMMARY" transparent_build_subchunks max_transparent_build_subchunks)"
+scoped_transparent_build_envelope_ms="$(field_or_na_first "$SCOPED_SUMMARY" transparent_build_envelope_ms max_transparent_build_envelope_ms)"
+scoped_transparent_build_uploads="$(field_or_na_first "$SCOPED_SUMMARY" transparent_build_uploads max_transparent_build_uploads)"
+scoped_transparent_build_upload_bytes="$(field_or_na_first "$SCOPED_SUMMARY" transparent_build_upload_bytes max_transparent_build_upload_bytes)"
+scoped_transparent_build_upload_faces="$(field_or_na_first "$SCOPED_SUMMARY" transparent_build_upload_faces max_transparent_build_upload_faces)"
+scoped_transparent_build_upload_face_bytes="$(field_or_na_first "$SCOPED_SUMMARY" transparent_build_upload_face_bytes max_transparent_build_upload_face_bytes)"
 
 historical_gpu_draws="$(report_metric_or_na 'max `gpu_draws`')"
 historical_effective_draws="$(report_metric_or_na 'max `gpu_effective_draws`')"
@@ -178,6 +190,18 @@ historical_transparent_cutout_uploads="$(report_metric_or_na 'max `transparent_c
 historical_transparent_cutout_upload_bytes="$(report_metric_or_na 'max `transparent_cutout_upload_bytes`')"
 historical_transparent_cutout_upload_faces="$(report_metric_or_na 'max `transparent_cutout_upload_faces`')"
 historical_transparent_cutout_upload_face_bytes="$(report_metric_or_na 'max `transparent_cutout_upload_face_bytes`')"
+historical_transparent_sort_policy="$(report_metric_or_na 'latest `transparent_sort_policy`')"
+historical_transparent_sort_active="$(report_metric_or_na 'max `transparent_sort_active`')"
+historical_transparent_sort_keys="$(report_metric_or_na 'max `transparent_sort_keys`')"
+historical_transparent_sort_ms="$(report_metric_or_na 'max `transparent_sort_ms`')"
+historical_transparent_build_cost_source="$(report_metric_or_na 'latest `transparent_build_cost_source`')"
+historical_transparent_build_faces="$(report_metric_or_na 'max `transparent_build_faces`')"
+historical_transparent_build_subchunks="$(report_metric_or_na 'max `transparent_build_subchunks`')"
+historical_transparent_build_envelope_ms="$(report_metric_or_na 'max `transparent_build_envelope_ms`')"
+historical_transparent_build_uploads="$(report_metric_or_na 'max `transparent_build_uploads`')"
+historical_transparent_build_upload_bytes="$(report_metric_or_na 'max `transparent_build_upload_bytes`')"
+historical_transparent_build_upload_faces="$(report_metric_or_na 'max `transparent_build_upload_faces`')"
+historical_transparent_build_upload_face_bytes="$(report_metric_or_na 'max `transparent_build_upload_face_bytes`')"
 warning_frame_p95_ms="$(report_metric_or_na 'max `frame_p95_ms`')"
 warning_fps_p05="$(report_metric_or_na 'max `fps_p05`')"
 warning_gpu_us="$(report_metric_or_na 'max `gpu_compositor_gpu_max_us`')"
@@ -196,7 +220,7 @@ elif [ "$scoped_status" != "pass" ] && [ "$scoped_status" != "deferred" ]; then
 fi
 
 {
-  printf 'gpu_terrain_report_v2 status=%s reason=%s scoped_status=%s resource_status=%s memory_status=%s legacy_error_scan=%s scoped_summary=%s resource_summary=%s memory_summary=%s legacy_report=%s historical_gpu_draws=%s historical_gpu_effective_draws=%s historical_gpu_faces=%s historical_draw_cmd_occupancy_pct=%s historical_gpu_upload_fail=%s historical_gpu_fragmentation_pct=%s historical_transparent_blocks=%s historical_transparent_faces=%s historical_transparent_draws=%s historical_transparent_subchunks=%s historical_transparent_cutout_uploads=%s historical_transparent_cutout_upload_bytes=%s historical_transparent_cutout_upload_faces=%s historical_transparent_cutout_upload_face_bytes=%s warning_frame_p95_ms=%s warning_fps_p05=%s warning_gpu_compositor_gpu_max_us=%s\n' \
+  printf 'gpu_terrain_report_v2 status=%s reason=%s scoped_status=%s resource_status=%s memory_status=%s legacy_error_scan=%s scoped_summary=%s resource_summary=%s memory_summary=%s legacy_report=%s historical_gpu_draws=%s historical_gpu_effective_draws=%s historical_gpu_faces=%s historical_draw_cmd_occupancy_pct=%s historical_gpu_upload_fail=%s historical_gpu_fragmentation_pct=%s historical_transparent_blocks=%s historical_transparent_faces=%s historical_transparent_draws=%s historical_transparent_subchunks=%s historical_transparent_cutout_uploads=%s historical_transparent_cutout_upload_bytes=%s historical_transparent_cutout_upload_faces=%s historical_transparent_cutout_upload_face_bytes=%s historical_transparent_sort_policy=%s historical_transparent_sort_active=%s historical_transparent_sort_keys=%s historical_transparent_sort_ms=%s historical_transparent_build_cost_source=%s historical_transparent_build_faces=%s historical_transparent_build_subchunks=%s historical_transparent_build_envelope_ms=%s historical_transparent_build_uploads=%s historical_transparent_build_upload_bytes=%s historical_transparent_build_upload_faces=%s historical_transparent_build_upload_face_bytes=%s warning_frame_p95_ms=%s warning_fps_p05=%s warning_gpu_compositor_gpu_max_us=%s\n' \
     "$status" \
     "$reason" \
     "$scoped_status" \
@@ -221,6 +245,18 @@ fi
     "$historical_transparent_cutout_upload_bytes" \
     "$historical_transparent_cutout_upload_faces" \
     "$historical_transparent_cutout_upload_face_bytes" \
+    "$historical_transparent_sort_policy" \
+    "$historical_transparent_sort_active" \
+    "$historical_transparent_sort_keys" \
+    "$historical_transparent_sort_ms" \
+    "$historical_transparent_build_cost_source" \
+    "$historical_transparent_build_faces" \
+    "$historical_transparent_build_subchunks" \
+    "$historical_transparent_build_envelope_ms" \
+    "$historical_transparent_build_uploads" \
+    "$historical_transparent_build_upload_bytes" \
+    "$historical_transparent_build_upload_faces" \
+    "$historical_transparent_build_upload_face_bytes" \
     "$warning_frame_p95_ms" \
     "$warning_fps_p05" \
     "$warning_gpu_us"
@@ -246,6 +282,18 @@ fi
   printf -- '- transparent_cutout_upload_bytes: `%s`\n' "$scoped_transparent_cutout_upload_bytes"
   printf -- '- transparent_cutout_upload_faces: `%s`\n' "$scoped_transparent_cutout_upload_faces"
   printf -- '- transparent_cutout_upload_face_bytes: `%s`\n' "$scoped_transparent_cutout_upload_face_bytes"
+  printf -- '- transparent_sort_policy: `%s`\n' "$scoped_transparent_sort_policy"
+  printf -- '- transparent_sort_active: `%s`\n' "$scoped_transparent_sort_active"
+  printf -- '- transparent_sort_keys: `%s`\n' "$scoped_transparent_sort_keys"
+  printf -- '- transparent_sort_ms: `%s`\n' "$scoped_transparent_sort_ms"
+  printf -- '- transparent_build_cost_source: `%s`\n' "$scoped_transparent_build_cost_source"
+  printf -- '- transparent_build_faces: `%s`\n' "$scoped_transparent_build_faces"
+  printf -- '- transparent_build_subchunks: `%s`\n' "$scoped_transparent_build_subchunks"
+  printf -- '- transparent_build_envelope_ms: `%s`\n' "$scoped_transparent_build_envelope_ms"
+  printf -- '- transparent_build_uploads: `%s`\n' "$scoped_transparent_build_uploads"
+  printf -- '- transparent_build_upload_bytes: `%s`\n' "$scoped_transparent_build_upload_bytes"
+  printf -- '- transparent_build_upload_faces: `%s`\n' "$scoped_transparent_build_upload_faces"
+  printf -- '- transparent_build_upload_face_bytes: `%s`\n' "$scoped_transparent_build_upload_face_bytes"
   printf -- '- gpu_upload_fail: `%s`\n' "$scoped_gpu_upload_fail"
   printf -- '- gpu_upload_fail_capacity: `%s`\n' "$scoped_gpu_upload_fail_capacity"
   printf -- '- gpu_upload_fail_fragmented: `%s`\n' "$scoped_gpu_upload_fail_fragmented"
@@ -273,6 +321,18 @@ fi
   printf -- '- max_transparent_cutout_upload_bytes: `%s`\n' "$historical_transparent_cutout_upload_bytes"
   printf -- '- max_transparent_cutout_upload_faces: `%s`\n' "$historical_transparent_cutout_upload_faces"
   printf -- '- max_transparent_cutout_upload_face_bytes: `%s`\n' "$historical_transparent_cutout_upload_face_bytes"
+  printf -- '- latest_transparent_sort_policy: `%s`\n' "$historical_transparent_sort_policy"
+  printf -- '- max_transparent_sort_active: `%s`\n' "$historical_transparent_sort_active"
+  printf -- '- max_transparent_sort_keys: `%s`\n' "$historical_transparent_sort_keys"
+  printf -- '- max_transparent_sort_ms: `%s`\n' "$historical_transparent_sort_ms"
+  printf -- '- latest_transparent_build_cost_source: `%s`\n' "$historical_transparent_build_cost_source"
+  printf -- '- max_transparent_build_faces: `%s`\n' "$historical_transparent_build_faces"
+  printf -- '- max_transparent_build_subchunks: `%s`\n' "$historical_transparent_build_subchunks"
+  printf -- '- max_transparent_build_envelope_ms: `%s`\n' "$historical_transparent_build_envelope_ms"
+  printf -- '- max_transparent_build_uploads: `%s`\n' "$historical_transparent_build_uploads"
+  printf -- '- max_transparent_build_upload_bytes: `%s`\n' "$historical_transparent_build_upload_bytes"
+  printf -- '- max_transparent_build_upload_faces: `%s`\n' "$historical_transparent_build_upload_faces"
+  printf -- '- max_transparent_build_upload_face_bytes: `%s`\n' "$historical_transparent_build_upload_face_bytes"
 
   printf '\n## Warning-Only Local Signals\n\n'
   printf 'These remain warning-only on local macOS/Metal unless external profiler evidence validates them.\n\n'

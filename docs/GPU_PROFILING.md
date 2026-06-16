@@ -25,6 +25,8 @@ This document defines how GPU terrain performance should be measured. The goal i
 - `gpu_draw_grouped_enabled`, `gpu_draw_records_logical`, `gpu_draw_records_grouped`, and `gpu_draw_grouped_saved_records`: useful to compare the default one-record-per-subchunk indirect draw path against the opt-in grouped-record path. When grouping is enabled, use `gpu_draw_records_logical` for workload size and `gpu_draw_records_grouped` / `gpu_draws` for actual indirect records submitted.
 - `transparent_requested`, `transparent_active`, `transparent_fallback`, `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`: useful to distinguish the legacy full-transparent fallback from the active default-off cutout prototype. These fields are local workload evidence only; they do not replace depth/sorting/collision parity or external profiler evidence.
 - `transparent_cutout_uploads`, `transparent_cutout_upload_bytes`, `transparent_cutout_upload_faces`, and `transparent_cutout_upload_face_bytes`: useful to distinguish visible cutout workload from actual GPU upload work. `transparent_cutout_upload_bytes` is the full uploaded packed-face payload for subchunks that contain cutout faces; `transparent_cutout_upload_face_bytes` is the logical cutout-face subset.
+- `transparent_sort_policy`, `transparent_sort_active`, `transparent_sort_keys`, and `transparent_sort_ms`: useful to prove that the current default-off cutout prototype remains alpha-test/no-sort inside the opaque-depth terrain path. For the accepted cutout prototype these must stay `opaque_depth_alpha_test_no_sort`, `0`, `0`, and `0.000`.
+- `transparent_build_cost_source`, `transparent_build_faces`, `transparent_build_subchunks`, `transparent_build_envelope_ms`, and `transparent_build_upload*`: useful to carry the CPU-side cutout build/upload cost envelope through runtime markers, fixture/pressure gates, and reports. The current source must be `cutout_in_opaque_mesh_phase`; these fields are not a separate transparent buffer/pass timing and do not replace external profiler evidence.
 - `gpu_draws`, `gpu_effective_draws`, `gpu_faces`, `gpu_subchunks`: useful for workload size.
 - `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and `compact_shadow_normals_saved`: useful local signals for shadow proxy load and compact proxy savings.
 - `smoke_err`, `terrain_samples`, color buckets, and marker generation: useful for visual correctness gates.
@@ -212,6 +214,14 @@ sh scripts/gpu_terrain_cutout_fixture_acceptance_gate.sh logs/gpu_transparent_cu
 ```
 
 The smoke writes `transparent-cutout-fixture-scene-smoke-summary.txt`; the gate writes `transparent-cutout-fixture-acceptance-summary.txt` and a `transparent_cutout_seam_culling_status=pass` summary line. The smoke and gate also require nonzero cutout upload counts/bytes/faces and enforce `transparent_cutout_upload_bytes >= transparent_cutout_upload_face_bytes`. This is local macOS/Metal cutout depth/collision, upload, and same-material adjacent-pair evidence only; it does not validate blended transparency, sorting, default-on behavior, external profiler cost, or Windows behavior.
+
+Use the transparent cutout sort/build cost gate after changing transparent/cutout workload markers, terrain queue build/upload timing, fixture acceptance, pressure load-scaling, or report surfacing. It consumes the accepted cutout fixture and pressure summaries and fails unless both report the same no-sort cutout policy, zero sort work, a nonzero build/upload envelope, and no default-on approval:
+
+```sh
+sh scripts/transparent_cutout_sort_build_cost_gate.sh logs/transparent_cutout_sort_build_cost_current
+```
+
+The gate writes `transparent-cutout-sort-build-cost-summary.txt`. It is local CPU-side cutout cost evidence only; do not cite it as blended transparency sorting, a separate transparent buffer, Windows validation, or external GPU profiler proof.
 
 Use the upload failure recovery unit guards after touching mesh-build planning, proxy refresh reuse, GPU slot state, or CPU fallback removal:
 

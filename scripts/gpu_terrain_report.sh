@@ -602,6 +602,18 @@ error_scan() {
   printf -- '- max `transparent_cutout_upload_bytes`: `%s`\n' "$(metric_max transparent_cutout_upload_bytes)"
   printf -- '- max `transparent_cutout_upload_faces`: `%s`\n' "$(metric_max transparent_cutout_upload_faces)"
   printf -- '- max `transparent_cutout_upload_face_bytes`: `%s`\n' "$(metric_max transparent_cutout_upload_face_bytes)"
+  printf -- '- latest `transparent_sort_policy`: `%s`\n' "$(metric_latest_text transparent_sort_policy)"
+  printf -- '- max `transparent_sort_active`: `%s`\n' "$(metric_max transparent_sort_active)"
+  printf -- '- max `transparent_sort_keys`: `%s`\n' "$(metric_max transparent_sort_keys)"
+  printf -- '- max `transparent_sort_ms`: `%s`\n' "$(metric_max transparent_sort_ms)"
+  printf -- '- latest `transparent_build_cost_source`: `%s`\n' "$(metric_latest_text transparent_build_cost_source)"
+  printf -- '- max `transparent_build_faces`: `%s`\n' "$(metric_max transparent_build_faces)"
+  printf -- '- max `transparent_build_subchunks`: `%s`\n' "$(metric_max transparent_build_subchunks)"
+  printf -- '- max `transparent_build_envelope_ms`: `%s`\n' "$(metric_max transparent_build_envelope_ms)"
+  printf -- '- max `transparent_build_uploads`: `%s`\n' "$(metric_max transparent_build_uploads)"
+  printf -- '- max `transparent_build_upload_bytes`: `%s`\n' "$(metric_max transparent_build_upload_bytes)"
+  printf -- '- max `transparent_build_upload_faces`: `%s`\n' "$(metric_max transparent_build_upload_faces)"
+  printf -- '- max `transparent_build_upload_face_bytes`: `%s`\n' "$(metric_max transparent_build_upload_face_bytes)"
   printf -- '- max `cutout_fixture_adjacent_pair_blocks`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_blocks)"
   printf -- '- max `cutout_fixture_adjacent_pair_block_id`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_block_id)"
   printf -- '- max `cutout_fixture_adjacent_pair_same_material`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_same_material)"
@@ -795,6 +807,16 @@ error_scan() {
   metric_max_source transparent_cutout_upload_bytes | sed 's/^/- /'
   metric_max_source transparent_cutout_upload_faces | sed 's/^/- /'
   metric_max_source transparent_cutout_upload_face_bytes | sed 's/^/- /'
+  metric_max_source transparent_sort_active | sed 's/^/- /'
+  metric_max_source transparent_sort_keys | sed 's/^/- /'
+  metric_max_source transparent_sort_ms | sed 's/^/- /'
+  metric_max_source transparent_build_faces | sed 's/^/- /'
+  metric_max_source transparent_build_subchunks | sed 's/^/- /'
+  metric_max_source transparent_build_envelope_ms | sed 's/^/- /'
+  metric_max_source transparent_build_uploads | sed 's/^/- /'
+  metric_max_source transparent_build_upload_bytes | sed 's/^/- /'
+  metric_max_source transparent_build_upload_faces | sed 's/^/- /'
+  metric_max_source transparent_build_upload_face_bytes | sed 's/^/- /'
   metric_max_source cutout_fixture_adjacent_pair_blocks | sed 's/^/- /'
   metric_max_source cutout_fixture_adjacent_pair_block_id | sed 's/^/- /'
   metric_max_source cutout_fixture_adjacent_pair_same_material | sed 's/^/- /'
@@ -829,6 +851,7 @@ error_scan() {
   print_optional_file "Selected Cutout Pressure Load Scaling Summary" "$(latest_file gpu-terrain-cutout-pressure-load-scaling-summary.txt)"
   print_optional_file "Selected Cutout Fixture Scene Smoke Summary" "$(latest_file transparent-cutout-fixture-scene-smoke-summary.txt)"
   print_optional_file "Selected Cutout Fixture Acceptance Summary" "$(latest_file transparent-cutout-fixture-acceptance-summary.txt)"
+  print_optional_file "Selected Transparent Cutout Sort Build Cost Summary" "$(latest_file transparent-cutout-sort-build-cost-summary.txt)"
   print_optional_artifact "Selected Transparent Fixture Plan" "$(latest_file transparent-fixture-plan.txt)"
   print_optional_artifact "Selected Transparent Fixture Harness" "$(latest_file transparent-fixture-harness.txt)"
   print_optional_artifact "Selected Transparent Fixture Check" "$(latest_file transparent-fixture-check.txt)"

@@ -33,6 +33,18 @@ metric() {
   sed -n "s/.*$key=\([0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
 }
 
+float_metric() {
+  key="$1"
+  marker_path="$2"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
+text_metric() {
+  key="$1"
+  marker_path="$2"
+  sed -n "s/.*$key=\([^ ]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
 require_metric_ge() {
   marker_path="$1"
   key="$2"
@@ -41,6 +53,17 @@ require_metric_ge() {
   test -n "$value" || fail "missing $key in $marker_path"
   if [ "$value" -lt "$min_value" ]; then
     fail "$key=$value is below $min_value in $marker_path"
+  fi
+}
+
+require_text_metric_eq() {
+  marker_path="$1"
+  key="$2"
+  expected="$3"
+  value="$(text_metric "$key" "$marker_path")"
+  test -n "$value" || fail "missing $key in $marker_path"
+  if [ "$value" != "$expected" ]; then
+    fail "$key=$value, expected $expected in $marker_path"
   fi
 }
 
@@ -156,6 +179,20 @@ require_metric_ge "$marker_path" "transparent_cutout_upload_bytes" 1
 require_metric_ge "$marker_path" "transparent_cutout_upload_faces" 17
 transparent_cutout_face_bytes_min=$((17 * 16))
 require_metric_ge "$marker_path" "transparent_cutout_upload_face_bytes" "$transparent_cutout_face_bytes_min"
+require_text_metric_eq "$marker_path" "transparent_sort_policy" "opaque_depth_alpha_test_no_sort"
+require_metric_eq "$marker_path" "transparent_sort_active" 0
+require_metric_eq "$marker_path" "transparent_sort_keys" 0
+transparent_sort_ms="$(float_metric transparent_sort_ms "$marker_path")"
+test "$transparent_sort_ms" = "0.000" || fail "transparent_sort_ms=$transparent_sort_ms, expected 0.000 in $marker_path"
+require_text_metric_eq "$marker_path" "transparent_build_cost_source" "cutout_in_opaque_mesh_phase"
+require_metric_eq "$marker_path" "transparent_build_faces" 17
+require_metric_eq "$marker_path" "transparent_build_subchunks" 2
+transparent_build_envelope_ms="$(float_metric transparent_build_envelope_ms "$marker_path")"
+test -n "$transparent_build_envelope_ms" || fail "missing transparent_build_envelope_ms in $marker_path"
+require_metric_ge "$marker_path" "transparent_build_uploads" 1
+require_metric_ge "$marker_path" "transparent_build_upload_bytes" 1
+require_metric_ge "$marker_path" "transparent_build_upload_faces" 17
+require_metric_ge "$marker_path" "transparent_build_upload_face_bytes" "$transparent_cutout_face_bytes_min"
 
 {
   printf 'GPU transparent cutout fixture scene smoke summary\n'
@@ -163,7 +200,7 @@ require_metric_ge "$marker_path" "transparent_cutout_upload_face_bytes" "$transp
   printf 'pose=cutout_fixture\n'
   printf 'screenshot=%s\n' "$screenshot_path"
   printf 'marker=%s\n' "$marker_path"
-  printf 'summary transparent_cutout_fixture_scene_smoke_status=pass cutout_fixture=roles cutout_fixture_roles=5 cutout_fixture_blocks=5 cutout_fixture_leaf_blocks=4 cutout_fixture_opaque_blocks=1 cutout_fixture_dirty_observed=1 cutout_fixture_collision_samples=5 cutout_fixture_collision_hits=5 cutout_fixture_collision_misses=0 cutout_fixture_occlusion_probe_hit=1 cutout_fixture_queue_drained=1 cutout_fixture_adjacent_pair_blocks=2 cutout_fixture_adjacent_pair_block_id=5 cutout_fixture_adjacent_pair_same_material=1 cutout_fixture_adjacent_pair_neighbor=1 cutout_fixture_adjacent_pair_collision_hits=2 transparent_requested=1 transparent_active=1 transparent_fallback=0 transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s transparent_cutout_uploads=%s transparent_cutout_upload_bytes=%s transparent_cutout_upload_faces=%s transparent_cutout_upload_face_bytes=%s gpu_upload_fail=0 same_material_seam_policy=cutout_pair_visible_faces default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1\n' \
+  printf 'summary transparent_cutout_fixture_scene_smoke_status=pass cutout_fixture=roles cutout_fixture_roles=5 cutout_fixture_blocks=5 cutout_fixture_leaf_blocks=4 cutout_fixture_opaque_blocks=1 cutout_fixture_dirty_observed=1 cutout_fixture_collision_samples=5 cutout_fixture_collision_hits=5 cutout_fixture_collision_misses=0 cutout_fixture_occlusion_probe_hit=1 cutout_fixture_queue_drained=1 cutout_fixture_adjacent_pair_blocks=2 cutout_fixture_adjacent_pair_block_id=5 cutout_fixture_adjacent_pair_same_material=1 cutout_fixture_adjacent_pair_neighbor=1 cutout_fixture_adjacent_pair_collision_hits=2 transparent_requested=1 transparent_active=1 transparent_fallback=0 transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s transparent_cutout_uploads=%s transparent_cutout_upload_bytes=%s transparent_cutout_upload_faces=%s transparent_cutout_upload_face_bytes=%s transparent_sort_policy=%s transparent_sort_active=%s transparent_sort_keys=%s transparent_sort_ms=%s transparent_build_cost_source=%s transparent_build_faces=%s transparent_build_subchunks=%s transparent_build_envelope_ms=%s transparent_build_uploads=%s transparent_build_upload_bytes=%s transparent_build_upload_faces=%s transparent_build_upload_face_bytes=%s gpu_upload_fail=0 same_material_seam_policy=cutout_pair_visible_faces default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1\n' \
     "$(metric transparent_blocks "$marker_path")" \
     "$(metric transparent_faces "$marker_path")" \
     "$(metric transparent_draws "$marker_path")" \
@@ -171,7 +208,19 @@ require_metric_ge "$marker_path" "transparent_cutout_upload_face_bytes" "$transp
     "$(metric transparent_cutout_uploads "$marker_path")" \
     "$(metric transparent_cutout_upload_bytes "$marker_path")" \
     "$(metric transparent_cutout_upload_faces "$marker_path")" \
-    "$(metric transparent_cutout_upload_face_bytes "$marker_path")"
+    "$(metric transparent_cutout_upload_face_bytes "$marker_path")" \
+    "$(text_metric transparent_sort_policy "$marker_path")" \
+    "$(metric transparent_sort_active "$marker_path")" \
+    "$(metric transparent_sort_keys "$marker_path")" \
+    "$(float_metric transparent_sort_ms "$marker_path")" \
+    "$(text_metric transparent_build_cost_source "$marker_path")" \
+    "$(metric transparent_build_faces "$marker_path")" \
+    "$(metric transparent_build_subchunks "$marker_path")" \
+    "$(float_metric transparent_build_envelope_ms "$marker_path")" \
+    "$(metric transparent_build_uploads "$marker_path")" \
+    "$(metric transparent_build_upload_bytes "$marker_path")" \
+    "$(metric transparent_build_upload_faces "$marker_path")" \
+    "$(metric transparent_build_upload_face_bytes "$marker_path")"
 } > "$SUMMARY_PATH"
 
 cat "$SUMMARY_PATH"

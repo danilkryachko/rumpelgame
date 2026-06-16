@@ -137,6 +137,18 @@ transparent_cutout_uploads="$(required_token transparent_cutout_uploads "$scene_
 transparent_cutout_upload_bytes="$(required_token transparent_cutout_upload_bytes "$scene_line" "cutout fixture scene")"
 transparent_cutout_upload_faces="$(required_token transparent_cutout_upload_faces "$scene_line" "cutout fixture scene")"
 transparent_cutout_upload_face_bytes="$(required_token transparent_cutout_upload_face_bytes "$scene_line" "cutout fixture scene")"
+transparent_sort_policy="$(required_token transparent_sort_policy "$scene_line" "cutout fixture scene")"
+transparent_sort_active="$(required_token transparent_sort_active "$scene_line" "cutout fixture scene")"
+transparent_sort_keys="$(required_token transparent_sort_keys "$scene_line" "cutout fixture scene")"
+transparent_sort_ms="$(required_token transparent_sort_ms "$scene_line" "cutout fixture scene")"
+transparent_build_cost_source="$(required_token transparent_build_cost_source "$scene_line" "cutout fixture scene")"
+transparent_build_faces="$(required_token transparent_build_faces "$scene_line" "cutout fixture scene")"
+transparent_build_subchunks="$(required_token transparent_build_subchunks "$scene_line" "cutout fixture scene")"
+transparent_build_envelope_ms="$(required_token transparent_build_envelope_ms "$scene_line" "cutout fixture scene")"
+transparent_build_uploads="$(required_token transparent_build_uploads "$scene_line" "cutout fixture scene")"
+transparent_build_upload_bytes="$(required_token transparent_build_upload_bytes "$scene_line" "cutout fixture scene")"
+transparent_build_upload_faces="$(required_token transparent_build_upload_faces "$scene_line" "cutout fixture scene")"
+transparent_build_upload_face_bytes="$(required_token transparent_build_upload_face_bytes "$scene_line" "cutout fixture scene")"
 gpu_upload_fail="$(required_token gpu_upload_fail "$scene_line" "cutout fixture scene")"
 
 require_metric_eq scene_status "$scene_status" pass
@@ -169,10 +181,31 @@ require_metric_ge transparent_cutout_upload_face_bytes "$transparent_cutout_uplo
 if [ "$transparent_cutout_upload_bytes" -lt "$transparent_cutout_upload_face_bytes" ]; then
   fail "transparent_cutout_upload_bytes=$transparent_cutout_upload_bytes is below transparent_cutout_upload_face_bytes=$transparent_cutout_upload_face_bytes"
 fi
+require_metric_eq transparent_sort_policy "$transparent_sort_policy" opaque_depth_alpha_test_no_sort
+require_metric_eq transparent_sort_active "$transparent_sort_active" 0
+require_metric_eq transparent_sort_keys "$transparent_sort_keys" 0
+require_metric_eq transparent_sort_ms "$transparent_sort_ms" 0.000
+require_metric_eq transparent_build_cost_source "$transparent_build_cost_source" cutout_in_opaque_mesh_phase
+require_metric_eq transparent_build_faces "$transparent_build_faces" 17
+require_metric_eq transparent_build_subchunks "$transparent_build_subchunks" 2
+case "$transparent_build_envelope_ms" in
+  ''|*[!0-9.]*)
+    fail "transparent_build_envelope_ms=$transparent_build_envelope_ms is not a decimal"
+    ;;
+esac
+require_metric_ge transparent_build_uploads "$transparent_build_uploads" 1
+require_metric_ge transparent_build_upload_bytes "$transparent_build_upload_bytes" 1
+require_metric_ge transparent_build_upload_faces "$transparent_build_upload_faces" 17
+require_metric_ge transparent_build_upload_face_bytes "$transparent_build_upload_face_bytes" 272
+if [ "$transparent_build_upload_bytes" -lt "$transparent_build_upload_face_bytes" ]; then
+  fail "transparent_build_upload_bytes=$transparent_build_upload_bytes is below transparent_build_upload_face_bytes=$transparent_build_upload_face_bytes"
+fi
 require_metric_eq gpu_upload_fail "$gpu_upload_fail" 0
 
 require_source_token "$RUST_SOURCE" "const GPU_TERRAIN_TRANSPARENT_IMPLEMENTED: bool = false;"
 require_source_token "$RUST_SOURCE" "const GPU_TERRAIN_CUTOUT_PROTOTYPE_IMPLEMENTED: bool = true;"
+require_source_token "$RUST_SOURCE" "opaque_depth_alpha_test_no_sort"
+require_source_token "$RUST_SOURCE" "cutout_in_opaque_mesh_phase"
 require_source_token "$GPU_TERRAIN_SOURCE" "fn cutout_prototype_keeps_same_material_adjacent_seam_faces_visible()"
 require_source_token "$GPU_TERRAIN_SOURCE" "assert_eq!(cutout_batch.face_count(), 8);"
 require_source_token "$GPU_TERRAIN_SOURCE" "assert_eq!(cutout_batch.cutout_face_count(), 8);"
@@ -197,7 +230,7 @@ trap 'rm -f "$tmp_summary"' EXIT HUP INT TERM
   printf 'default_runtime_change_allowed=0\n'
   printf 'requires_external_profiler_before_default=1\n'
   printf 'requires_mac_windows_validation=1\n'
-  printf 'summary transparent_cutout_fixture_acceptance_status=pass scene_smoke_status=pass runtime_contract=default_off_cutout_only cutout_fixture=%s cutout_fixture_roles=%s cutout_fixture_blocks=%s cutout_fixture_leaf_blocks=%s cutout_fixture_opaque_blocks=%s cutout_fixture_collision_hits=%s cutout_fixture_occlusion_probe_hit=%s cutout_fixture_adjacent_pair_blocks=%s cutout_fixture_adjacent_pair_block_id=%s cutout_fixture_adjacent_pair_same_material=%s cutout_fixture_adjacent_pair_neighbor=%s cutout_fixture_adjacent_pair_collision_hits=%s same_material_seam_policy=cutout_pair_visible_faces transparent_requested=%s transparent_active=%s transparent_fallback=%s transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s transparent_cutout_uploads=%s transparent_cutout_upload_bytes=%s transparent_cutout_upload_faces=%s transparent_cutout_upload_face_bytes=%s gpu_upload_fail=%s default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1 report=%s scene_summary=%s\n' \
+  printf 'summary transparent_cutout_fixture_acceptance_status=pass scene_smoke_status=pass runtime_contract=default_off_cutout_only cutout_fixture=%s cutout_fixture_roles=%s cutout_fixture_blocks=%s cutout_fixture_leaf_blocks=%s cutout_fixture_opaque_blocks=%s cutout_fixture_collision_hits=%s cutout_fixture_occlusion_probe_hit=%s cutout_fixture_adjacent_pair_blocks=%s cutout_fixture_adjacent_pair_block_id=%s cutout_fixture_adjacent_pair_same_material=%s cutout_fixture_adjacent_pair_neighbor=%s cutout_fixture_adjacent_pair_collision_hits=%s same_material_seam_policy=cutout_pair_visible_faces transparent_requested=%s transparent_active=%s transparent_fallback=%s transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s transparent_cutout_uploads=%s transparent_cutout_upload_bytes=%s transparent_cutout_upload_faces=%s transparent_cutout_upload_face_bytes=%s transparent_sort_policy=%s transparent_sort_active=%s transparent_sort_keys=%s transparent_sort_ms=%s transparent_build_cost_source=%s transparent_build_faces=%s transparent_build_subchunks=%s transparent_build_envelope_ms=%s transparent_build_uploads=%s transparent_build_upload_bytes=%s transparent_build_upload_faces=%s transparent_build_upload_face_bytes=%s gpu_upload_fail=%s default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1 report=%s scene_summary=%s\n' \
     "$cutout_fixture" \
     "$cutout_fixture_roles" \
     "$cutout_fixture_blocks" \
@@ -221,10 +254,22 @@ trap 'rm -f "$tmp_summary"' EXIT HUP INT TERM
     "$transparent_cutout_upload_bytes" \
     "$transparent_cutout_upload_faces" \
     "$transparent_cutout_upload_face_bytes" \
+    "$transparent_sort_policy" \
+    "$transparent_sort_active" \
+    "$transparent_sort_keys" \
+    "$transparent_sort_ms" \
+    "$transparent_build_cost_source" \
+    "$transparent_build_faces" \
+    "$transparent_build_subchunks" \
+    "$transparent_build_envelope_ms" \
+    "$transparent_build_uploads" \
+    "$transparent_build_upload_bytes" \
+    "$transparent_build_upload_faces" \
+    "$transparent_build_upload_face_bytes" \
     "$gpu_upload_fail" \
     "$(relative_path "$REPORT_PATH")" \
     "$(relative_path "$SCENE_SUMMARY")"
-  printf 'summary transparent_cutout_seam_culling_status=pass runtime_contract=default_off_cutout_only adjacent_pair_blocks=%s adjacent_pair_block_id=%s adjacent_pair_same_material=%s adjacent_pair_neighbor=%s adjacent_pair_collision_hits=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s transparent_cutout_uploads=%s transparent_cutout_upload_bytes=%s transparent_cutout_upload_faces=%s transparent_cutout_upload_face_bytes=%s same_material_seam_policy=cutout_pair_visible_faces default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1\n' \
+  printf 'summary transparent_cutout_seam_culling_status=pass runtime_contract=default_off_cutout_only adjacent_pair_blocks=%s adjacent_pair_block_id=%s adjacent_pair_same_material=%s adjacent_pair_neighbor=%s adjacent_pair_collision_hits=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s transparent_cutout_uploads=%s transparent_cutout_upload_bytes=%s transparent_cutout_upload_faces=%s transparent_cutout_upload_face_bytes=%s transparent_sort_policy=%s transparent_sort_active=%s transparent_sort_keys=%s transparent_sort_ms=%s transparent_build_cost_source=%s transparent_build_faces=%s transparent_build_subchunks=%s transparent_build_envelope_ms=%s transparent_build_uploads=%s transparent_build_upload_bytes=%s transparent_build_upload_faces=%s transparent_build_upload_face_bytes=%s same_material_seam_policy=cutout_pair_visible_faces default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1\n' \
     "$cutout_fixture_adjacent_pair_blocks" \
     "$cutout_fixture_adjacent_pair_block_id" \
     "$cutout_fixture_adjacent_pair_same_material" \
@@ -236,7 +281,19 @@ trap 'rm -f "$tmp_summary"' EXIT HUP INT TERM
     "$transparent_cutout_uploads" \
     "$transparent_cutout_upload_bytes" \
     "$transparent_cutout_upload_faces" \
-    "$transparent_cutout_upload_face_bytes"
+    "$transparent_cutout_upload_face_bytes" \
+    "$transparent_sort_policy" \
+    "$transparent_sort_active" \
+    "$transparent_sort_keys" \
+    "$transparent_sort_ms" \
+    "$transparent_build_cost_source" \
+    "$transparent_build_faces" \
+    "$transparent_build_subchunks" \
+    "$transparent_build_envelope_ms" \
+    "$transparent_build_uploads" \
+    "$transparent_build_upload_bytes" \
+    "$transparent_build_upload_faces" \
+    "$transparent_build_upload_face_bytes"
 } > "$tmp_summary"
 mv "$tmp_summary" "$OUT_PATH"
 

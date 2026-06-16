@@ -84,6 +84,18 @@ transparent_cutout_uploads="$(field_metric max_transparent_cutout_uploads "$SOUR
 transparent_cutout_upload_bytes="$(field_metric max_transparent_cutout_upload_bytes "$SOURCE_SUMMARY")"
 transparent_cutout_upload_faces="$(field_metric max_transparent_cutout_upload_faces "$SOURCE_SUMMARY")"
 transparent_cutout_upload_face_bytes="$(field_metric max_transparent_cutout_upload_face_bytes "$SOURCE_SUMMARY")"
+transparent_sort_policy="$(field_metric transparent_sort_policy "$SOURCE_SUMMARY")"
+transparent_sort_active="$(field_metric max_transparent_sort_active "$SOURCE_SUMMARY")"
+transparent_sort_keys="$(field_metric max_transparent_sort_keys "$SOURCE_SUMMARY")"
+transparent_sort_ms="$(field_metric max_transparent_sort_ms "$SOURCE_SUMMARY")"
+transparent_build_cost_source="$(field_metric transparent_build_cost_source "$SOURCE_SUMMARY")"
+transparent_build_faces="$(field_metric max_transparent_build_faces "$SOURCE_SUMMARY")"
+transparent_build_subchunks="$(field_metric max_transparent_build_subchunks "$SOURCE_SUMMARY")"
+transparent_build_envelope_ms="$(field_metric max_transparent_build_envelope_ms "$SOURCE_SUMMARY")"
+transparent_build_uploads="$(field_metric max_transparent_build_uploads "$SOURCE_SUMMARY")"
+transparent_build_upload_bytes="$(field_metric max_transparent_build_upload_bytes "$SOURCE_SUMMARY")"
+transparent_build_upload_faces="$(field_metric max_transparent_build_upload_faces "$SOURCE_SUMMARY")"
+transparent_build_upload_face_bytes="$(field_metric max_transparent_build_upload_face_bytes "$SOURCE_SUMMARY")"
 
 awk \
   -v status="${status:-fail}" \
@@ -120,6 +132,18 @@ awk \
   -v transparent_cutout_upload_bytes="${transparent_cutout_upload_bytes:-0}" \
   -v transparent_cutout_upload_faces="${transparent_cutout_upload_faces:-0}" \
   -v transparent_cutout_upload_face_bytes="${transparent_cutout_upload_face_bytes:-0}" \
+  -v transparent_sort_policy="${transparent_sort_policy:-none}" \
+  -v transparent_sort_active="${transparent_sort_active:-0}" \
+  -v transparent_sort_keys="${transparent_sort_keys:-0}" \
+  -v transparent_sort_ms="${transparent_sort_ms:-0}" \
+  -v transparent_build_cost_source="${transparent_build_cost_source:-inactive}" \
+  -v transparent_build_faces="${transparent_build_faces:-0}" \
+  -v transparent_build_subchunks="${transparent_build_subchunks:-0}" \
+  -v transparent_build_envelope_ms="${transparent_build_envelope_ms:-0}" \
+  -v transparent_build_uploads="${transparent_build_uploads:-0}" \
+  -v transparent_build_upload_bytes="${transparent_build_upload_bytes:-0}" \
+  -v transparent_build_upload_faces="${transparent_build_upload_faces:-0}" \
+  -v transparent_build_upload_face_bytes="${transparent_build_upload_face_bytes:-0}" \
   -v min_subchunks="$MIN_GPU_SUBCHUNKS" \
   -v min_draws="$MIN_GPU_DRAWS" \
   -v min_faces="$MIN_GPU_FACES" \
@@ -135,7 +159,7 @@ awk \
     if (status != "pass" || max_subchunks < min_subchunks || max_draws < min_draws || max_faces < min_faces || occupancy < min_occupancy || gpu_upload_fail > 0 || gpu_upload_fail_capacity > 0 || gpu_upload_fail_fragmented > 0) {
       gate_status = "fail"
     }
-    printf("gpu_terrain_load_scaling status=%s source_status=%s source_case_set=%s terrain_pressure_fixture=%s terrain_pressure_fixture_block_id=%d min_gpu_subchunks=%d min_gpu_draws=%d min_gpu_faces=%d min_draw_cmd_occupancy_pct=%.1f max_gpu_subchunks=%d max_gpu_draws=%d max_gpu_faces=%d max_gpu_draw_cmd_bytes=%d max_gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_occupancy_pct=%.3f gpu_draw_cmd_headroom_bytes=%d max_terrain_queue_ms=%.3f max_process_wall_p95_ms=%.3f max_gpu_compositor_submit_ms=%.3f max_gpu_uploads=%d gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d gpu_upload_stage_pool_enabled=%d gpu_upload_stage_pool_entries=%d gpu_upload_stage_pool_bytes=%d gpu_upload_stage_pba_creates=%d gpu_upload_stage_pba_reuses=%d terrain_pressure_fixture_blocks=%d terrain_pressure_fixture_dirty_observed=%d transparent_requested=%d transparent_active=%d transparent_fallback=%d transparent_blocks=%d transparent_faces=%d transparent_draws=%d transparent_subchunks=%d transparent_cutout_uploads=%d transparent_cutout_upload_bytes=%d transparent_cutout_upload_faces=%d transparent_cutout_upload_face_bytes=%d source_summary=%s\n", gate_status, status, source_case_set, terrain_pressure_fixture, terrain_pressure_fixture_block_id, min_subchunks, min_draws, min_faces, min_occupancy, max_subchunks, max_draws, max_faces, draw_cmd_bytes, draw_cmd_capacity_bytes, occupancy, headroom, terrain_queue_max, process_wall_p95, gpu_submit_max, gpu_uploads, gpu_upload_fail, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, gpu_upload_stage_pool_enabled, gpu_upload_stage_pool_entries, gpu_upload_stage_pool_bytes, gpu_upload_stage_pba_creates, gpu_upload_stage_pba_reuses, terrain_pressure_fixture_blocks, terrain_pressure_fixture_dirty_observed, transparent_requested, transparent_active, transparent_fallback, transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks, transparent_cutout_uploads, transparent_cutout_upload_bytes, transparent_cutout_upload_faces, transparent_cutout_upload_face_bytes, source_summary)
+    printf("gpu_terrain_load_scaling status=%s source_status=%s source_case_set=%s terrain_pressure_fixture=%s terrain_pressure_fixture_block_id=%d min_gpu_subchunks=%d min_gpu_draws=%d min_gpu_faces=%d min_draw_cmd_occupancy_pct=%.1f max_gpu_subchunks=%d max_gpu_draws=%d max_gpu_faces=%d max_gpu_draw_cmd_bytes=%d max_gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_occupancy_pct=%.3f gpu_draw_cmd_headroom_bytes=%d max_terrain_queue_ms=%.3f max_process_wall_p95_ms=%.3f max_gpu_compositor_submit_ms=%.3f max_gpu_uploads=%d gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d gpu_upload_stage_pool_enabled=%d gpu_upload_stage_pool_entries=%d gpu_upload_stage_pool_bytes=%d gpu_upload_stage_pba_creates=%d gpu_upload_stage_pba_reuses=%d terrain_pressure_fixture_blocks=%d terrain_pressure_fixture_dirty_observed=%d transparent_requested=%d transparent_active=%d transparent_fallback=%d transparent_blocks=%d transparent_faces=%d transparent_draws=%d transparent_subchunks=%d transparent_cutout_uploads=%d transparent_cutout_upload_bytes=%d transparent_cutout_upload_faces=%d transparent_cutout_upload_face_bytes=%d transparent_sort_policy=%s transparent_sort_active=%d transparent_sort_keys=%d transparent_sort_ms=%.3f transparent_build_cost_source=%s transparent_build_faces=%d transparent_build_subchunks=%d transparent_build_envelope_ms=%.3f transparent_build_uploads=%d transparent_build_upload_bytes=%d transparent_build_upload_faces=%d transparent_build_upload_face_bytes=%d source_summary=%s\n", gate_status, status, source_case_set, terrain_pressure_fixture, terrain_pressure_fixture_block_id, min_subchunks, min_draws, min_faces, min_occupancy, max_subchunks, max_draws, max_faces, draw_cmd_bytes, draw_cmd_capacity_bytes, occupancy, headroom, terrain_queue_max, process_wall_p95, gpu_submit_max, gpu_uploads, gpu_upload_fail, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, gpu_upload_stage_pool_enabled, gpu_upload_stage_pool_entries, gpu_upload_stage_pool_bytes, gpu_upload_stage_pba_creates, gpu_upload_stage_pba_reuses, terrain_pressure_fixture_blocks, terrain_pressure_fixture_dirty_observed, transparent_requested, transparent_active, transparent_fallback, transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks, transparent_cutout_uploads, transparent_cutout_upload_bytes, transparent_cutout_upload_faces, transparent_cutout_upload_face_bytes, transparent_sort_policy, transparent_sort_active, transparent_sort_keys, transparent_sort_ms, transparent_build_cost_source, transparent_build_faces, transparent_build_subchunks, transparent_build_envelope_ms, transparent_build_uploads, transparent_build_upload_bytes, transparent_build_upload_faces, transparent_build_upload_face_bytes, source_summary)
     if (gate_status != "pass") {
       exit 1
     }

@@ -37,7 +37,6 @@ const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE_ENV = "RUMPELMC_VISUAL_SMO
 const VISUAL_SMOKE_CUTOUT_FIXTURE_ENV = "RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE"
 const VISUAL_SMOKE_CUTOUT_FIXTURE_WAIT_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE_WAIT_SEC"
 const VISUAL_SMOKE_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC"
-const VISUAL_SMOKE_CUTOUT_FIXTURE_MAX_QUEUE_ENV = "RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE_MAX_QUEUE"
 const VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC"
 const VISUAL_SMOKE_FORCE_UNCAPPED_ENV = "RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED"
 const VISUAL_SMOKE_MAX_FPS_ENV = "RUMPELMC_VISUAL_SMOKE_MAX_FPS"
@@ -64,9 +63,10 @@ const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC = 30.0
 const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE = 16
 const VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_WAIT_SEC = 5.0
 const VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC = 8.0
-const VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_MAX_QUEUE = 4
 const VISUAL_SMOKE_CUTOUT_FIXTURE_LEAF_BLOCK_ID = 5
 const VISUAL_SMOKE_CUTOUT_FIXTURE_OPAQUE_BLOCK_ID = 1
+const VISUAL_SMOKE_CUTOUT_FIXTURE_EXPECTED_TRANSPARENT_FACES = 17
+const VISUAL_SMOKE_CUTOUT_FIXTURE_EXPECTED_TRANSPARENT_SUBCHUNKS = 2
 const VISUAL_SMOKE_SKY_COLOR = Color(0.34, 0.43, 0.54)
 const VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD = 0.08
 const VISUAL_SMOKE_MIN_TERRAIN_SAMPLES = 12
@@ -1000,7 +1000,6 @@ func run_visual_smoke_cutout_fixture():
 
 	var wait_sec = max(env_float(VISUAL_SMOKE_CUTOUT_FIXTURE_WAIT_SEC_ENV, VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_WAIT_SEC), 0.1)
 	var queue_settle_sec = max(env_float(VISUAL_SMOKE_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC), 0.0)
-	var max_queue = max(env_int(VISUAL_SMOKE_CUTOUT_FIXTURE_MAX_QUEUE_ENV, VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_MAX_QUEUE), 0)
 	var roles = visual_smoke_cutout_fixture_roles_definition()
 	var before_dirty = visual_smoke_perf_int("dirty_blocks", 0)
 	for role in roles:
@@ -1017,9 +1016,10 @@ func run_visual_smoke_cutout_fixture():
 	var exact_dirty_seen = await wait_for_visual_smoke_dirty_update_delta(before_dirty, roles.size(), wait_sec)
 	var dirty_seen = exact_dirty_seen or visual_smoke_perf_int("dirty_blocks", before_dirty) > before_dirty
 	visual_smoke_cutout_fixture_dirty_observed = 1 if dirty_seen else 0
-	var terrain_queue_drained = await wait_for_visual_smoke_perf_int_at_most("queue", max_queue, queue_settle_sec)
+	var cutout_faces_ready = await wait_for_visual_smoke_perf_int_at_least("transparent_faces", VISUAL_SMOKE_CUTOUT_FIXTURE_EXPECTED_TRANSPARENT_FACES, queue_settle_sec)
+	var cutout_subchunks_ready = await wait_for_visual_smoke_perf_int_at_least("transparent_subchunks", VISUAL_SMOKE_CUTOUT_FIXTURE_EXPECTED_TRANSPARENT_SUBCHUNKS, queue_settle_sec)
 	var collision_queue_drained = await wait_for_visual_smoke_perf_int_at_most("collision_q", 0, queue_settle_sec)
-	visual_smoke_cutout_fixture_queue_drained = 1 if terrain_queue_drained and collision_queue_drained else 0
+	visual_smoke_cutout_fixture_queue_drained = 1 if cutout_faces_ready and cutout_subchunks_ready and collision_queue_drained else 0
 	await get_tree().process_frame
 	await get_tree().physics_frame
 	for role in roles:
@@ -1147,6 +1147,14 @@ func wait_for_visual_smoke_perf_int_at_most(key: String, max_value: int, wait_se
 		if visual_smoke_perf_int(key, max_value + 1) <= max_value:
 			return true
 	return visual_smoke_perf_int(key, max_value + 1) <= max_value
+
+func wait_for_visual_smoke_perf_int_at_least(key: String, min_value: int, wait_sec: float) -> bool:
+	var deadline_msec = Time.get_ticks_msec() + int(wait_sec * 1000.0)
+	while Time.get_ticks_msec() < deadline_msec:
+		await get_tree().process_frame
+		if visual_smoke_perf_int(key, min_value - 1) >= min_value:
+			return true
+	return visual_smoke_perf_int(key, min_value - 1) >= min_value
 
 func visual_smoke_current_chunk_coords(default_x: int, default_z: int) -> Vector2i:
 	var text = visual_smoke_client_text("get_current_chunk_text", "")
