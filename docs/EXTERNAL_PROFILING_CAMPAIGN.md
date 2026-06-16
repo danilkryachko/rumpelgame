@@ -26,7 +26,7 @@ Scope:
 - Add `scripts/external_profiling_campaign_gate.sh`.
 - Add this campaign document.
 - Add the optional sanitized macOS `xctrace --attach` helper command to the operator handoff.
-- Validate the current pending capture pack and release-candidate evidence, including `security_deterministic_property_tests=guarded`.
+- Validate the current pending capture pack and release-candidate evidence, including `security_deterministic_property_tests=guarded` and `security_local_server_exposure=loopback_default_guarded`.
 - Generate a campaign plan artifact for external profiler operators.
 - Generate a results-intake artifact that records the trusted row format, validator command, and trust boundary.
 
@@ -143,9 +143,9 @@ Current local status is expected to be `pending_external_profiler` because no va
 
 Fresh 2026-06-16 current artifact:
 
-- `logs/external_profiling_campaign_current/external-profiling-campaign-summary.txt` reported `status=pass`, `reason=external_profiler_pending`, `campaign_status=prepared`, `capture_readiness=ready_for_external_capture`, `external_profile_status=pending_external_profiler`, `capture_pack_status=pending_external_profiler`, `capture_pack_rows=4`, `results_file_status=missing`, `results_template_status=todo`, `results_check_status=missing`, `captured_rows=0`, `missing_rows=4`, `rc_live_checks=skipped`, and `rc_security_deterministic_property_tests=guarded`.
+- `logs/external_profiling_campaign_current/external-profiling-campaign-summary.txt` reported `status=pass`, `reason=external_profiler_pending`, `campaign_status=prepared`, `capture_readiness=ready_for_external_capture`, `external_profile_status=pending_external_profiler`, `capture_pack_status=pending_external_profiler`, `capture_pack_rows=4`, `results_file_status=missing`, `results_template_status=todo`, `results_check_status=missing`, `captured_rows=0`, `missing_rows=4`, `rc_live_checks=skipped`, `rc_security_deterministic_property_tests=guarded`, and `rc_security_local_server_exposure=loopback_default_guarded`.
 - `logs/external_profiling_campaign_current/external-profiling-campaign-summary.txt` now also reports `xctrace_review_capture_status=present`, `xctrace_review_packet_status=pass`, `xctrace_review_packet_check_status=pass`, `xctrace_overhead_status=pass`, `xctrace_overhead_check_status=pass`, `xctrace_overhead_estimate_p50_ms=1.965`, `xctrace_overhead_candidate_status=single_missing_encoder_navigation_only`, `xctrace_overhead_candidate_label=Blit_Command_7`, and `xctrace_overhead_candidate_p50_ms=0.007` for the current local capture/control directories.
-- `logs/external_profiling_campaign_current/external-profiling-results-intake.txt` reported `status=prepared`, `capture_readiness=ready_for_external_capture`, `security_deterministic_property_tests=guarded` in its RC input row, the strict captured row format, the macOS `xctrace --attach` helper command, the macOS review packet command, the full validator command, `template_rows_are_not_evidence=1`, `xctrace_exports_are_not_result_rows=1`, `xctrace_review_packet_is_not_result_row=1`, and `manual_gpu_shadow_pass_ms_required=1`.
+- `logs/external_profiling_campaign_current/external-profiling-results-intake.txt` reported `status=prepared`, `capture_readiness=ready_for_external_capture`, `security_deterministic_property_tests=guarded` and `security_local_server_exposure=loopback_default_guarded` in its RC input row, the strict captured row format, the macOS `xctrace --attach` helper command, the macOS review packet command, the full validator command, `template_rows_are_not_evidence=1`, `xctrace_exports_are_not_result_rows=1`, `xctrace_review_packet_is_not_result_row=1`, and `manual_gpu_shadow_pass_ms_required=1`.
 - 2026-06-15 local Xcode/Metal attempts found that `xctrace --launch` against the shell workload failed with `Operation not permitted`, while an all-processes Metal trace grew to an unusable 13 GB before being killed and deleted. Targeted attach to a normally launched Godot process did work, so the sanitized attach helper now wraps that path.
 - The current full targeted attach run at `logs/gpu_shadow_xctrace_attach_current` reported `shadow_xctrace_attach_capture status=pass`, `trace_status=captured`, `trace_env_sanitized=1`, `profiler_artifact=logs/gpu_shadow_xctrace_attach_current/shadow-xctrace-attach.trace`, `xml_export_count=10`, `xml_optional_export_count=8`, `xml_optional_export_status=written`, `xml_optional_export_failures=none`, `profiler_marker_xml_status=missing`, `profiler_marker_xml_matches=0`, `gpu_profiler_breadcrumb=1381256515`, `gpu_profiler_shader=rumpel_gpu_terrain_render_shader`, `gpu_profiler_pipeline=rumpel_gpu_terrain_compositor_pipeline`, and `gpu_shadow_pass_ms_status=missing`; the trace directory is about 226 MB and the trace bundle about 137 MB.
 - The current review packet at `logs/gpu_shadow_xctrace_attach_current/shadow-xctrace-review-packet.txt` reported `status=pass`, `known_xml_file_count=10`, `xml_file_count=11` including an extra `xctrace-toc.xml`, `profiler_marker_xml_status=missing`, `all_profiler_marker_xml_status=missing`, `gpu_shadow_pass_ms_status=missing`, `candidate_row_status=missing`, `manual_review_next_step=open_trace_in_xcode_instruments`, and `review_packet_is_not_profiler_result=1`.
@@ -159,7 +159,7 @@ The campaign gate is still useful because it verifies:
 
 - The profiler capture pack exists and has planned rows.
 - Shadow quality parity still treats profiler evidence as pending.
-- Release-candidate evidence is clean and reports `security_deterministic_property_tests=guarded` before external capture.
+- Release-candidate evidence is clean and reports `security_deterministic_property_tests=guarded` plus `security_local_server_exposure=loopback_default_guarded` before external capture.
 - Future captured rows have a deterministic validator.
 
 ## Deferred Work
