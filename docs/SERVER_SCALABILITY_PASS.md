@@ -27,8 +27,8 @@ Scope:
 - Broadcast block-edit chunk snapshots to interested clients that have already received that chunk.
 - Add a bounded write timeout and disconnect cleanup for failed non-origin broadcast clients.
 - Add an opt-in max-client admission cap with a default unlimited rollback/control.
-- Add a bounded live two-client smoke that validates real TCP chunk bootstrap and block-edit fanout.
-- Add a bounded broader live smoke that validates bootstrap and block-edit fanout across more than two clients.
+- Add a bounded live two-client smoke that validates real TCP chunk bootstrap, block-edit fanout, and server RSS/CPU sampling.
+- Add a bounded broader live smoke that validates bootstrap, block-edit fanout, and server RSS/CPU sampling across more than two clients.
 - Add a bounded live admission-limit smoke that validates one accepted holder and one rejected excess TCP client.
 - Add a server connection lifecycle summary that counts connected, rejected, disconnected, close-failure, and accept-failure events from live smoke logs.
 - Define the next scalability evidence needed before broader runtime policy changes.
@@ -50,7 +50,7 @@ Done when:
 - Block-edit fanout to interested clients has a focused unit test.
 - Failed interested-client broadcast closes and unregisters that client.
 - Session writes set and clear a write deadline.
-- The scalability gate runs the focused network tests and can run or consume the live two-client and broader multi-client smoke summaries.
+- The scalability gate runs the focused network tests and can run or consume the live two-client and broader multi-client smoke summaries with server resource samples.
 - The scalability gate can run or consume a live max-client admission-limit smoke summary.
 - The scalability gate can generate and consume a connection lifecycle summary from available smoke server logs.
 
@@ -87,7 +87,7 @@ These tests lock core fairness, fanout, failed-write cleanup, and admission-cap 
 
 `scripts/server_multi_client_smoke.sh` builds and starts the Go server on an isolated local smoke port and temporary RocksDB path, then runs `server/cmd/multi_client_smoke` against it. The smoke uses the real 4-byte little-endian frame prefix and protobuf `Packet` schema.
 
-The live client opens TCP sessions, sends initial positions for each, waits for each client to receive chunk `0,0`, sends a `BlockAction_PLACE` for wood at `1,64,1`, and verifies that every interested client receives the updated chunk with that block present. The default remains two clients. Set `RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS=<n>` for broader load evidence. The client accepts both raw and RLE chunk encodings and decodes RLE through the server world package.
+The live client opens TCP sessions, sends initial positions for each, waits for each client to receive chunk `0,0`, sends a `BlockAction_PLACE` for wood at `1,64,1`, and verifies that every interested client receives the updated chunk with that block present. The wrapper samples server RSS and CPU percentage while the client smoke runs and writes `server-resource-samples.tsv`. The default remains two clients. Set `RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS=<n>` for broader load evidence. The client accepts both raw and RLE chunk encodings and decodes RLE through the server world package.
 
 Use:
 
@@ -98,10 +98,10 @@ sh scripts/server_multi_client_smoke.sh logs/server_multi_client_smoke_current
 Expected summary:
 
 ```text
-server_multi_client_smoke status=pass clients=2 origin_initial=1 watcher_initial=1 origin_update=1 watcher_update=1 ... protocol_change=0
+server_multi_client_smoke status=pass clients=2 origin_initial=1 watcher_initial=1 origin_update=1 watcher_update=1 ... server_resource_samples=6 server_rss_kb_max=27440 server_cpu_pct_max=0.2 protocol_change=0
 ```
 
-This is a live fanout/bootstrap smoke, not a throughput, memory, slow-reader, or overload benchmark.
+This is a live fanout/bootstrap/resource-sampling smoke, not a throughput benchmark, production profiler capture, slow-reader harness, or overload benchmark.
 
 ## Broader Live Multi-Client Load Smoke
 
@@ -114,10 +114,21 @@ RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS=6 sh scripts/server_multi_client_smok
 Expected summary:
 
 ```text
-server_multi_client_smoke status=pass clients=6 initial_chunks=6 fanout_updates=6 ... protocol_change=0
+server_multi_client_smoke status=pass clients=6 initial_chunks=6 fanout_updates=6 ... server_resource_samples=3 server_rss_kb_max=31616 server_cpu_pct_max=2.0 protocol_change=0
 ```
 
-This proves a single live server can bootstrap and fan out one block edit to more than two interested clients. It does not claim throughput capacity, memory headroom, admission behavior, slow-reader fairness, or overload policy.
+This proves a single live server can bootstrap and fan out one block edit to more than two interested clients while exposing bounded RSS/CPU samples. It does not claim throughput capacity, production memory headroom, admission behavior, slow-reader fairness, or overload policy.
+
+## Resource Profile Evidence
+
+`scripts/server_multi_client_smoke.sh` writes process resource samples for the live Go server to `server-resource-samples.tsv` and appends `server_resource_samples`, `server_rss_kb_max`, `server_rss_kb_avg`, `server_cpu_pct_max`, and `server_cpu_pct_avg` to the smoke summary.
+
+Current bounded evidence:
+
+- Two-client fanout smoke: `server_resource_samples=6`, `server_rss_kb_max=27440`, and `server_cpu_pct_max=0.2`.
+- Six-client fanout/load smoke: `server_resource_samples=3`, `server_rss_kb_max=31616`, and `server_cpu_pct_max=2.0`.
+
+The scalability gate reports `resource_profile_status=broader_live_guarded` when the broader live smoke summary has at least one server resource sample and a nonzero RSS maximum.
 
 ## Live Admission Limit Smoke
 
@@ -155,8 +166,8 @@ This is log-summary evidence for connection cleanup visibility. It is not a reco
 
 Still needed before claiming full live multi-client scalability:
 
-- CPU/memory profiling under multiple active clients.
-- Longer multi-client load evidence that records per-client chunks sent, elapsed time, disconnect behavior, and server errors.
+- Longer CPU/memory profiling under multiple active clients beyond the bounded RSS/CPU smoke sampling.
+- Longer multi-client load evidence that records per-client chunks sent, elapsed time, disconnect behavior, server errors, and resource trends.
 - Broader slow-client handling evidence under more clients and broadcast load; the networking robustness block now owns the bounded two-client slow-reader smoke.
 - Longer disconnect cleanup counters or production metric summaries beyond the bounded smoke-log lifecycle parser.
 - Load-tested max-client sizing for representative hardware and gameplay workloads beyond the bounded one-holder/one-rejected smoke.
@@ -178,7 +189,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result after collecting the broader live and admission-limit artifacts is `status=pass`, `scalability_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live and admission-limit artifacts is `status=pass`, `scalability_status=broader_live_guarded`, `resource_profile_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
 
 To run the live smoke inside the gate:
 
@@ -210,6 +221,7 @@ The gate checks that:
 - `server.go` still has per-session `clientChunkStreamState`, connection close cleanup, block-edit fanout, and write deadlines.
 - `server.go` still has the opt-in max-client admission cap and rejected-connection log marker.
 - The live smoke script exists and records `server_multi_client_smoke status=pass`.
+- The live smoke script records server resource sample fields in its summary.
 - The admission-limit smoke script exists and records `server_admission_limit_smoke status=pass`.
 - The broader live smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1`.
 - The admission-limit smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE=1`.
@@ -220,4 +232,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout smokes, a bounded live opt-in max-client admission smoke, and a bounded connection lifecycle log summary. CPU/memory profiling, broad slow-reader/load harnesses, load-tested admission sizing, adaptive overload policy, and production disconnect metrics remain future work.
+This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout/resource smokes, a bounded live opt-in max-client admission smoke, and a bounded connection lifecycle log summary. Longer CPU/memory profiling, broad slow-reader/load harnesses, load-tested admission sizing, adaptive overload policy, and production disconnect metrics remain future work.

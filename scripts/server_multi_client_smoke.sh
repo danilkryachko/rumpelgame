@@ -15,11 +15,14 @@ SMOKE_ADDR="127.0.0.1:$SMOKE_PORT"
 SMOKE_DB="$OUT_DIR/rocksdb"
 SERVER_LOG="$OUT_DIR/server.log"
 CLIENT_LOG="$OUT_DIR/client.log"
+RESOURCE_SAMPLES="$OUT_DIR/server-resource-samples.tsv"
 SUMMARY_PATH="$OUT_DIR/server-multi-client-smoke-summary.txt"
 BUILD_SERVER="${RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_BUILD_SERVER:-1}"
 CLIENTS="${RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_CLIENTS:-2}"
 CLIENT_TIMEOUT="${RUMPELMC_SERVER_MULTI_CLIENT_SMOKE_TIMEOUT:-5s}"
 SERVER_PID=""
+RESOURCE_SAMPLER_PID=""
+RESOURCE_SAMPLE_INTERVAL="${RUMPELMC_SERVER_MULTI_CLIENT_RESOURCE_SAMPLE_INTERVAL_SEC:-0.1}"
 
 mkdir -p "$OUT_DIR"
 
@@ -68,11 +71,59 @@ wait_for_port_clear() {
 }
 
 cleanup_server() {
+  if [ -n "$RESOURCE_SAMPLER_PID" ] && kill -0 "$RESOURCE_SAMPLER_PID" 2>/dev/null; then
+    kill "$RESOURCE_SAMPLER_PID" 2>/dev/null || true
+    wait "$RESOURCE_SAMPLER_PID" 2>/dev/null || true
+  fi
   if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
     wait_for_port_clear
   fi
+}
+
+sample_server_resource() {
+  if [ -z "$SERVER_PID" ] || ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    return 0
+  fi
+  ps -o rss= -o pcpu= -p "$SERVER_PID" 2>/dev/null | awk -v epoch="$(date +%s)" -v pid="$SERVER_PID" '
+    NF >= 2 {
+      gsub(/,/, ".", $2)
+      printf("%s\t%s\t%d\t%.1f\n", epoch, pid, $1 + 0, $2 + 0.0)
+    }
+  ' >> "$RESOURCE_SAMPLES" || true
+}
+
+sample_server_resource_loop() {
+  while [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; do
+    sample_server_resource
+    sleep "$RESOURCE_SAMPLE_INTERVAL"
+  done
+}
+
+resource_summary_fields() {
+  awk '
+    NR > 1 {
+      samples++
+      rss = $3 + 0
+      cpu = $4 + 0.0
+      rss_sum += rss
+      cpu_sum += cpu
+      if (rss > max_rss) {
+        max_rss = rss
+      }
+      if (cpu > max_cpu) {
+        max_cpu = cpu
+      }
+    }
+    END {
+      if (samples == 0) {
+        printf("server_resource_samples=0 server_rss_kb_max=0 server_rss_kb_avg=0 server_cpu_pct_max=0.0 server_cpu_pct_avg=0.0")
+      } else {
+        printf("server_resource_samples=%d server_rss_kb_max=%d server_rss_kb_avg=%.1f server_cpu_pct_max=%.1f server_cpu_pct_avg=%.1f", samples, max_rss, rss_sum / samples, max_cpu, cpu_sum / samples)
+      }
+    }
+  ' "$RESOURCE_SAMPLES"
 }
 
 listener="$(listener_pid || true)"
@@ -95,8 +146,9 @@ case "$BUILD_SERVER" in
     ;;
 esac
 
-rm -f "$SERVER_LOG" "$CLIENT_LOG" "$SUMMARY_PATH"
+rm -f "$SERVER_LOG" "$CLIENT_LOG" "$RESOURCE_SAMPLES" "$SUMMARY_PATH"
 rm -rf "$SMOKE_DB"
+printf 'epoch_s\tpid\trss_kb\tcpu_pct\n' > "$RESOURCE_SAMPLES"
 
 (
   cd "$SERVER_DIR"
@@ -112,6 +164,9 @@ rm -rf "$SMOKE_DB"
 SERVER_PID="$!"
 
 wait_for_server
+sample_server_resource
+sample_server_resource_loop &
+RESOURCE_SAMPLER_PID="$!"
 
 set +e
 (
@@ -120,6 +175,11 @@ set +e
 ) > "$CLIENT_LOG" 2>&1
 rc=$?
 set -e
+if [ -n "$RESOURCE_SAMPLER_PID" ] && kill -0 "$RESOURCE_SAMPLER_PID" 2>/dev/null; then
+  kill "$RESOURCE_SAMPLER_PID" 2>/dev/null || true
+  wait "$RESOURCE_SAMPLER_PID" 2>/dev/null || true
+fi
+sample_server_resource
 
 if [ "$rc" -ne 0 ]; then
   cat "$CLIENT_LOG" >&2 || true
@@ -133,5 +193,6 @@ if [ -z "$summary" ]; then
   fail "missing passing smoke summary"
 fi
 
-printf '%s server_log=%s client_log=%s\n' "$summary" "$SERVER_LOG" "$CLIENT_LOG" > "$SUMMARY_PATH"
+resource_fields="$(resource_summary_fields)"
+printf '%s %s resource_samples=%s server_log=%s client_log=%s\n' "$summary" "$resource_fields" "$RESOURCE_SAMPLES" "$SERVER_LOG" "$CLIENT_LOG" > "$SUMMARY_PATH"
 cat "$SUMMARY_PATH"

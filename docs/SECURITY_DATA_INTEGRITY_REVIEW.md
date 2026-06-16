@@ -85,7 +85,7 @@ Checks:
 
 ### Runtime Session Evidence
 
-- Server write deadlines, failed interested-client broadcast cleanup, bounded connection lifecycle log summaries, bounded slow-reader timeout evidence, and bounded six-client fanout/load evidence are guarded by the networking and server scalability gates.
+- Server write deadlines, failed interested-client broadcast cleanup, bounded connection lifecycle log summaries, bounded slow-reader timeout evidence, and bounded six-client fanout/load/resource evidence are guarded by the networking and server scalability gates.
 - Opt-in max-client admission rejection is unit-guarded and bounded-live-guarded by the server scalability gate without adding wire semantics.
 - Classified server packet-error labels are guarded through the networking gate as `packet_error_classification`.
 - Classified server packet-error aggregation is guarded through the networking gate as `packet_error_aggregation`.
