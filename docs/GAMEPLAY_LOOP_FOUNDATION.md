@@ -44,6 +44,7 @@ Assumptions:
 - The current hotbar is creative-mode inventory, so counts are guard data and are not decremented by placement yet.
 - Server sessions use the same creative placement retention through `server/pkg/inventory`.
 - Full edit persistence verification is supplied by the completed Block 41 persisted visual evidence chain.
+- Inventory protocol compatibility is guarded separately in `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` and keeps this checkpoint on the existing `BlockAction` packet shape.
 
 Done when:
 
@@ -121,6 +122,7 @@ Still needed before calling gameplay production-ready:
 ## Compatibility Rules
 
 - Do not add inventory fields to `api/schema/packets.proto` in this checkpoint.
+- Keep `scripts/inventory_protocol_compatibility_gate.sh` clean before advancing any inventory schema work.
 - Do not add storage records for item stacks without a storage migration task.
 - Do not bypass `World.SetBlockGlobal` for persistent block edits.
 - Do not allow client-only block IDs through `BlockAction`.
@@ -133,6 +135,7 @@ Use:
 
 ```sh
 sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_current
+sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
 The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.

@@ -9,6 +9,7 @@
 - Rust generated protocol code is produced at Cargo build time from `api/schema/packets.proto`.
 - Streaming protocol evolution planning lives in `docs/STREAMING_PROTOCOL_EVOLUTION_PLAN.md`.
 - Chunk payload and schema compatibility guards live in `docs/CHUNK_SERIALIZATION_COMPATIBILITY.md`.
+- Inventory protocol compatibility planning lives in `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
 - Packet boundary robustness guards live in `docs/NETWORKING_ROBUSTNESS_PROGRAM.md`.
 
 ## Rules
@@ -61,6 +62,15 @@
 - Action coordinates are block coordinates in the active server chunk implementation.
 - Current server handling validates `PLACE` through the server block registry and the session inventory before applying `World.SetBlockGlobal`.
 - A `Packet_BlockAction` wrapper with no `BlockAction` body is treated as an ignored unsupported packet shape and must not emit chunk updates.
+
+## Inventory Compatibility
+
+- Current inventory validation uses the existing `BlockAction` packet shape and does not add protobuf fields.
+- `BlockAction.block_id = 5` remains the requested placement block ID for `PLACE`.
+- Server session inventory remains authoritative for placement approval.
+- New inventory packet payloads must use new `Packet.payload` tags greater than `3`.
+- New `BlockAction` fields must use field numbers greater than `5`.
+- Run `scripts/inventory_protocol_compatibility_gate.sh` before finishing inventory work that claims protocol compatibility.
 
 ## Sensitive Behavior
 

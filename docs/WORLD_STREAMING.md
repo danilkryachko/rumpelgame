@@ -30,6 +30,8 @@ See `docs/GAMEPLAY_LOOP_FOUNDATION.md` for the 2026-06-15 mining/building and lo
 
 See `docs/SERVER_INVENTORY_FOUNDATION.md` for the 2026-06-16 server-owned session inventory placement checkpoint.
 
+See `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` for the 2026-06-16 inventory protocol compatibility checkpoint over the current `BlockAction` packet shape.
+
 See `docs/BLOCK_EDIT_PERSISTENCE_TRACK.md` for the 2026-06-15 block edit save/reload persistence proof.
 
 See `docs/DIRTY_UPDATE_SCALABILITY.md` for the 2026-06-15 dirty update scalability checkpoint and mass dirty unit guard.
@@ -234,6 +236,14 @@ The current mining/building loop remains `Player` raycast signal -> `GameClient`
 Fresh check:
 
 - `logs/gameplay_loop_foundation_current/gameplay-loop-foundation-summary.txt` reported `status=pass`, `inventory_tests=pass`, `server_tests=pass`, `hotbar_selection=unit_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_edit_persistence=store_save_boundary`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_visual_path=godot_persisted_reload_guarded`, and `active_protocol_change=0`.
+
+## Inventory Protocol Compatibility
+
+Inventory protocol compatibility is guarded without adding protobuf fields. The current wire contract stays on `Packet.block_action = 3` and `BlockAction.block_id = 5`, while server session inventory remains the authoritative placement approval boundary. The reserved inventory payload tags are recorded for the next schema task, and the compatibility gate requires clean protocol drift, server inventory, and gameplay foundation evidence.
+
+Fresh check:
+
+- `logs/inventory_protocol_compatibility_current/inventory-protocol-compatibility-summary.txt` reported `status=pass`, `inventory_protocol_status=compatibility_guarded`, `active_schema_change=0`, `current_wire_contract=block_action_session_inventory`, `future_packet_tags=packet_gt_3`, `future_block_action_fields=block_action_gt_5`, `protocol_generated_drift=guarded`, `server_inventory_status=session_guarded`, and `gameplay_inventory_status=session_guarded`.
 
 ## Block Edit Persistence
 

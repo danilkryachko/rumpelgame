@@ -42,6 +42,7 @@ Out of scope:
 ## Compatibility Rules
 
 - Do not add inventory data to `api/schema/packets.proto` in this checkpoint.
+- Keep the inventory protocol compatibility contract in `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` clean before advancing schema work.
 - Do not hand-edit generated protocol files.
 - Do not persist item stacks or session inventory without a storage design and migration gate.
 - Do not change RocksDB chunk keys, chunk payload bytes, or `Chunk.Serialize()`.
@@ -55,6 +56,7 @@ Use:
 
 ```sh
 sh scripts/server_inventory_foundation_gate.sh logs/server_inventory_foundation_current
+sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
 The expected current result is `status=pass`, `server_inventory_status=session_guarded`, `creative_inventory=unit_guarded`, `counted_inventory=unit_guarded`, `block_action_inventory=session_guarded`, `active_protocol_change=0`, `active_storage_change=0`, and `go_tests=pass`.
