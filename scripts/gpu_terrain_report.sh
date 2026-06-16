@@ -594,6 +594,11 @@ error_scan() {
   printf -- '- max `transparent_faces`: `%s`\n' "$(metric_max transparent_faces)"
   printf -- '- max `transparent_draws`: `%s`\n' "$(metric_max transparent_draws)"
   printf -- '- max `transparent_subchunks`: `%s`\n' "$(metric_max transparent_subchunks)"
+  printf -- '- max `cutout_fixture_adjacent_pair_blocks`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_blocks)"
+  printf -- '- max `cutout_fixture_adjacent_pair_block_id`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_block_id)"
+  printf -- '- max `cutout_fixture_adjacent_pair_same_material`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_same_material)"
+  printf -- '- max `cutout_fixture_adjacent_pair_neighbor`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_neighbor)"
+  printf -- '- max `cutout_fixture_adjacent_pair_collision_hits`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_collision_hits)"
   printf -- '- max `transparent_fixture_overlay_requested`: `%s`\n' "$(metric_max transparent_fixture_overlay_requested)"
   printf -- '- max `transparent_fixture_overlay_active`: `%s`\n' "$(metric_max transparent_fixture_overlay_active)"
   printf -- '- max `transparent_fixture_overlay_fallback`: `%s`\n' "$(metric_max transparent_fixture_overlay_fallback)"
@@ -778,6 +783,11 @@ error_scan() {
   metric_max_source transparent_faces | sed 's/^/- /'
   metric_max_source transparent_draws | sed 's/^/- /'
   metric_max_source transparent_subchunks | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_blocks | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_block_id | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_same_material | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_neighbor | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_collision_hits | sed 's/^/- /'
   metric_max_source compact_shadow_proxy | sed 's/^/- /'
   metric_max_source compact_shadow_normals_saved | sed 's/^/- /'
   metric_max_source compact_collision_proxy | sed 's/^/- /'

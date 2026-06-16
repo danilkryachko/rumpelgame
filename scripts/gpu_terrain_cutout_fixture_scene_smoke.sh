@@ -138,14 +138,19 @@ require_metric_eq "$marker_path" "cutout_fixture_collision_hits" 5
 require_metric_eq "$marker_path" "cutout_fixture_collision_misses" 0
 require_metric_eq "$marker_path" "cutout_fixture_occlusion_probe_hit" 1
 require_metric_eq "$marker_path" "cutout_fixture_queue_drained" 1
+require_metric_eq "$marker_path" "cutout_fixture_adjacent_pair_blocks" 2
+require_metric_eq "$marker_path" "cutout_fixture_adjacent_pair_block_id" 5
+require_metric_eq "$marker_path" "cutout_fixture_adjacent_pair_same_material" 1
+require_metric_eq "$marker_path" "cutout_fixture_adjacent_pair_neighbor" 1
+require_metric_eq "$marker_path" "cutout_fixture_adjacent_pair_collision_hits" 2
 
 require_metric_eq "$marker_path" "transparent_requested" 1
 require_metric_eq "$marker_path" "transparent_active" 1
 require_metric_eq "$marker_path" "transparent_fallback" 0
-require_metric_ge "$marker_path" "transparent_blocks" 4
-require_metric_ge "$marker_path" "transparent_faces" 1
-require_metric_ge "$marker_path" "transparent_draws" 1
-require_metric_ge "$marker_path" "transparent_subchunks" 1
+require_metric_eq "$marker_path" "transparent_blocks" 4
+require_metric_eq "$marker_path" "transparent_faces" 17
+require_metric_eq "$marker_path" "transparent_draws" 2
+require_metric_eq "$marker_path" "transparent_subchunks" 2
 
 {
   printf 'GPU transparent cutout fixture scene smoke summary\n'
@@ -153,7 +158,7 @@ require_metric_ge "$marker_path" "transparent_subchunks" 1
   printf 'pose=cutout_fixture\n'
   printf 'screenshot=%s\n' "$screenshot_path"
   printf 'marker=%s\n' "$marker_path"
-  printf 'summary transparent_cutout_fixture_scene_smoke_status=pass cutout_fixture=roles cutout_fixture_roles=5 cutout_fixture_blocks=5 cutout_fixture_leaf_blocks=4 cutout_fixture_opaque_blocks=1 cutout_fixture_dirty_observed=1 cutout_fixture_collision_samples=5 cutout_fixture_collision_hits=5 cutout_fixture_collision_misses=0 cutout_fixture_occlusion_probe_hit=1 cutout_fixture_queue_drained=1 transparent_requested=1 transparent_active=1 transparent_fallback=0 transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s gpu_upload_fail=0 default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1\n' \
+  printf 'summary transparent_cutout_fixture_scene_smoke_status=pass cutout_fixture=roles cutout_fixture_roles=5 cutout_fixture_blocks=5 cutout_fixture_leaf_blocks=4 cutout_fixture_opaque_blocks=1 cutout_fixture_dirty_observed=1 cutout_fixture_collision_samples=5 cutout_fixture_collision_hits=5 cutout_fixture_collision_misses=0 cutout_fixture_occlusion_probe_hit=1 cutout_fixture_queue_drained=1 cutout_fixture_adjacent_pair_blocks=2 cutout_fixture_adjacent_pair_block_id=5 cutout_fixture_adjacent_pair_same_material=1 cutout_fixture_adjacent_pair_neighbor=1 cutout_fixture_adjacent_pair_collision_hits=2 transparent_requested=1 transparent_active=1 transparent_fallback=0 transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s gpu_upload_fail=0 same_material_seam_policy=cutout_pair_visible_faces default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1\n' \
     "$(metric transparent_blocks "$marker_path")" \
     "$(metric transparent_faces "$marker_path")" \
     "$(metric transparent_draws "$marker_path")" \

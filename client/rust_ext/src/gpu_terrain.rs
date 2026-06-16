@@ -4425,6 +4425,29 @@ mod tests {
     }
 
     #[test]
+    fn cutout_prototype_keeps_same_material_adjacent_seam_faces_visible() {
+        let mut blocks_data = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        write_block(&mut blocks_data, 1, 1, 1, blocks::LEAVES as u16);
+        write_block(&mut blocks_data, 2, 1, 1, blocks::LEAVES as u16);
+
+        let default_batch = build_packed_faces_with_cutout(&blocks_data, false);
+        let cutout_batch = build_packed_faces_with_cutout(&blocks_data, true);
+        let left_leaf_right_seam = |face: &PackedFace| {
+            face.block_id() == blocks::LEAVES && face.face() == FACE_RIGHT && face.x() == 0
+        };
+        let right_leaf_left_seam = |face: &PackedFace| {
+            face.block_id() == blocks::LEAVES && face.face() == FACE_LEFT && face.x() == 1
+        };
+
+        assert_eq!(default_batch.face_count(), 6);
+        assert_eq!(default_batch.cutout_face_count(), 0);
+        assert_eq!(cutout_batch.face_count(), 8);
+        assert_eq!(cutout_batch.cutout_face_count(), 8);
+        assert!(cutout_batch.faces().iter().any(left_leaf_right_seam));
+        assert!(cutout_batch.faces().iter().any(right_leaf_left_seam));
+    }
+
+    #[test]
     fn subchunk_bytes_preserve_extent_low_bits() {
         let batch = PackedFaceBatch {
             faces: vec![PackedFace::with_extent(

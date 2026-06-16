@@ -29,6 +29,7 @@ case "$REPORT_PATH" in
 esac
 
 RUST_SOURCE="${RUMPELMC_CUTOUT_FIXTURE_RUST_SOURCE:-"$ROOT_DIR/client/rust_ext/src/lib.rs"}"
+GPU_TERRAIN_SOURCE="${RUMPELMC_CUTOUT_FIXTURE_GPU_TERRAIN_SOURCE:-"$ROOT_DIR/client/rust_ext/src/gpu_terrain.rs"}"
 SHADER_SOURCE="${RUMPELMC_CUTOUT_FIXTURE_SHADER_SOURCE:-"$ROOT_DIR/client/shaders/gpu_terrain_render.glsl"}"
 DESIGN_DOC="${RUMPELMC_CUTOUT_FIXTURE_DESIGN_DOC:-"$ROOT_DIR/docs/GPU_TRANSPARENT_PATH.md"}"
 
@@ -120,6 +121,11 @@ cutout_fixture_collision_hits="$(required_token cutout_fixture_collision_hits "$
 cutout_fixture_collision_misses="$(required_token cutout_fixture_collision_misses "$scene_line" "cutout fixture scene")"
 cutout_fixture_occlusion_probe_hit="$(required_token cutout_fixture_occlusion_probe_hit "$scene_line" "cutout fixture scene")"
 cutout_fixture_queue_drained="$(required_token cutout_fixture_queue_drained "$scene_line" "cutout fixture scene")"
+cutout_fixture_adjacent_pair_blocks="$(required_token cutout_fixture_adjacent_pair_blocks "$scene_line" "cutout fixture scene")"
+cutout_fixture_adjacent_pair_block_id="$(required_token cutout_fixture_adjacent_pair_block_id "$scene_line" "cutout fixture scene")"
+cutout_fixture_adjacent_pair_same_material="$(required_token cutout_fixture_adjacent_pair_same_material "$scene_line" "cutout fixture scene")"
+cutout_fixture_adjacent_pair_neighbor="$(required_token cutout_fixture_adjacent_pair_neighbor "$scene_line" "cutout fixture scene")"
+cutout_fixture_adjacent_pair_collision_hits="$(required_token cutout_fixture_adjacent_pair_collision_hits "$scene_line" "cutout fixture scene")"
 transparent_requested="$(required_token transparent_requested "$scene_line" "cutout fixture scene")"
 transparent_active="$(required_token transparent_active "$scene_line" "cutout fixture scene")"
 transparent_fallback="$(required_token transparent_fallback "$scene_line" "cutout fixture scene")"
@@ -140,17 +146,25 @@ require_metric_eq cutout_fixture_collision_hits "$cutout_fixture_collision_hits"
 require_metric_eq cutout_fixture_collision_misses "$cutout_fixture_collision_misses" 0
 require_metric_eq cutout_fixture_occlusion_probe_hit "$cutout_fixture_occlusion_probe_hit" 1
 require_metric_eq cutout_fixture_queue_drained "$cutout_fixture_queue_drained" 1
+require_metric_eq cutout_fixture_adjacent_pair_blocks "$cutout_fixture_adjacent_pair_blocks" 2
+require_metric_eq cutout_fixture_adjacent_pair_block_id "$cutout_fixture_adjacent_pair_block_id" 5
+require_metric_eq cutout_fixture_adjacent_pair_same_material "$cutout_fixture_adjacent_pair_same_material" 1
+require_metric_eq cutout_fixture_adjacent_pair_neighbor "$cutout_fixture_adjacent_pair_neighbor" 1
+require_metric_eq cutout_fixture_adjacent_pair_collision_hits "$cutout_fixture_adjacent_pair_collision_hits" 2
 require_metric_eq transparent_requested "$transparent_requested" 1
 require_metric_eq transparent_active "$transparent_active" 1
 require_metric_eq transparent_fallback "$transparent_fallback" 0
-require_metric_ge transparent_blocks "$transparent_blocks" 4
-require_metric_ge transparent_faces "$transparent_faces" 1
-require_metric_ge transparent_draws "$transparent_draws" 1
-require_metric_ge transparent_subchunks "$transparent_subchunks" 1
+require_metric_eq transparent_blocks "$transparent_blocks" 4
+require_metric_eq transparent_faces "$transparent_faces" 17
+require_metric_eq transparent_draws "$transparent_draws" 2
+require_metric_eq transparent_subchunks "$transparent_subchunks" 2
 require_metric_eq gpu_upload_fail "$gpu_upload_fail" 0
 
 require_source_token "$RUST_SOURCE" "const GPU_TERRAIN_TRANSPARENT_IMPLEMENTED: bool = false;"
 require_source_token "$RUST_SOURCE" "const GPU_TERRAIN_CUTOUT_PROTOTYPE_IMPLEMENTED: bool = true;"
+require_source_token "$GPU_TERRAIN_SOURCE" "fn cutout_prototype_keeps_same_material_adjacent_seam_faces_visible()"
+require_source_token "$GPU_TERRAIN_SOURCE" "assert_eq!(cutout_batch.face_count(), 8);"
+require_source_token "$GPU_TERRAIN_SOURCE" "assert_eq!(cutout_batch.cutout_face_count(), 8);"
 require_source_token "$SHADER_SOURCE" "PACKED_FACE_CUTOUT_ALPHA_TEST"
 require_source_token "$SHADER_SOURCE" "CUTOUT_ALPHA_THRESHOLD"
 require_source_token "$SHADER_SOURCE" "discard;"
@@ -167,10 +181,11 @@ trap 'rm -f "$tmp_summary"' EXIT HUP INT TERM
   printf 'blended_transparency_status=deferred\n'
   printf 'split_buffers_status=deferred\n'
   printf 'transparent_sorting_status=deferred\n'
+  printf 'same_material_seam_policy=cutout_pair_visible_faces\n'
   printf 'default_runtime_change_allowed=0\n'
   printf 'requires_external_profiler_before_default=1\n'
   printf 'requires_mac_windows_validation=1\n'
-  printf 'summary transparent_cutout_fixture_acceptance_status=pass scene_smoke_status=pass runtime_contract=default_off_cutout_only cutout_fixture=%s cutout_fixture_roles=%s cutout_fixture_blocks=%s cutout_fixture_leaf_blocks=%s cutout_fixture_opaque_blocks=%s cutout_fixture_collision_hits=%s cutout_fixture_occlusion_probe_hit=%s transparent_requested=%s transparent_active=%s transparent_fallback=%s transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s gpu_upload_fail=%s default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1 report=%s scene_summary=%s\n' \
+  printf 'summary transparent_cutout_fixture_acceptance_status=pass scene_smoke_status=pass runtime_contract=default_off_cutout_only cutout_fixture=%s cutout_fixture_roles=%s cutout_fixture_blocks=%s cutout_fixture_leaf_blocks=%s cutout_fixture_opaque_blocks=%s cutout_fixture_collision_hits=%s cutout_fixture_occlusion_probe_hit=%s cutout_fixture_adjacent_pair_blocks=%s cutout_fixture_adjacent_pair_block_id=%s cutout_fixture_adjacent_pair_same_material=%s cutout_fixture_adjacent_pair_neighbor=%s cutout_fixture_adjacent_pair_collision_hits=%s same_material_seam_policy=cutout_pair_visible_faces transparent_requested=%s transparent_active=%s transparent_fallback=%s transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s gpu_upload_fail=%s default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1 report=%s scene_summary=%s\n' \
     "$cutout_fixture" \
     "$cutout_fixture_roles" \
     "$cutout_fixture_blocks" \
@@ -178,6 +193,11 @@ trap 'rm -f "$tmp_summary"' EXIT HUP INT TERM
     "$cutout_fixture_opaque_blocks" \
     "$cutout_fixture_collision_hits" \
     "$cutout_fixture_occlusion_probe_hit" \
+    "$cutout_fixture_adjacent_pair_blocks" \
+    "$cutout_fixture_adjacent_pair_block_id" \
+    "$cutout_fixture_adjacent_pair_same_material" \
+    "$cutout_fixture_adjacent_pair_neighbor" \
+    "$cutout_fixture_adjacent_pair_collision_hits" \
     "$transparent_requested" \
     "$transparent_active" \
     "$transparent_fallback" \
@@ -188,6 +208,15 @@ trap 'rm -f "$tmp_summary"' EXIT HUP INT TERM
     "$gpu_upload_fail" \
     "$(relative_path "$REPORT_PATH")" \
     "$(relative_path "$SCENE_SUMMARY")"
+  printf 'summary transparent_cutout_seam_culling_status=pass runtime_contract=default_off_cutout_only adjacent_pair_blocks=%s adjacent_pair_block_id=%s adjacent_pair_same_material=%s adjacent_pair_neighbor=%s adjacent_pair_collision_hits=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s same_material_seam_policy=cutout_pair_visible_faces default_runtime_change_allowed=0 requires_external_profiler_before_default=1 requires_mac_windows_validation=1\n' \
+    "$cutout_fixture_adjacent_pair_blocks" \
+    "$cutout_fixture_adjacent_pair_block_id" \
+    "$cutout_fixture_adjacent_pair_same_material" \
+    "$cutout_fixture_adjacent_pair_neighbor" \
+    "$cutout_fixture_adjacent_pair_collision_hits" \
+    "$transparent_faces" \
+    "$transparent_draws" \
+    "$transparent_subchunks"
 } > "$tmp_summary"
 mv "$tmp_summary" "$OUT_PATH"
 
@@ -196,6 +225,7 @@ required_line "$REPORT_PATH" "## Selected Cutout Fixture Scene Smoke Summary" >/
 required_line "$REPORT_PATH" "## Selected Cutout Fixture Acceptance Summary" >/dev/null
 required_line "$REPORT_PATH" "transparent_cutout_fixture_scene_smoke_status=pass" >/dev/null
 required_line "$REPORT_PATH" "transparent_cutout_fixture_acceptance_status=pass" >/dev/null
+required_line "$REPORT_PATH" "transparent_cutout_seam_culling_status=pass" >/dev/null
 
 cat "$OUT_PATH"
 echo "GPU terrain cutout fixture acceptance artifacts: $RUN_DIR"

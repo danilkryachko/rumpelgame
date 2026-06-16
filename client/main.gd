@@ -106,6 +106,11 @@ var visual_smoke_cutout_fixture_collision_samples: int = 0
 var visual_smoke_cutout_fixture_collision_hits: int = 0
 var visual_smoke_cutout_fixture_occlusion_probe_hit: int = 0
 var visual_smoke_cutout_fixture_queue_drained: int = 0
+var visual_smoke_cutout_fixture_adjacent_pair_blocks: int = 0
+var visual_smoke_cutout_fixture_adjacent_pair_block_id: int = 0
+var visual_smoke_cutout_fixture_adjacent_pair_same_material: int = 0
+var visual_smoke_cutout_fixture_adjacent_pair_neighbor: int = 0
+var visual_smoke_cutout_fixture_adjacent_pair_collision_hits: int = 0
 var visual_smoke_lighting_variant: String = VISUAL_SMOKE_DEFAULT_LIGHTING_VARIANT
 
 func _ready():
@@ -368,7 +373,7 @@ func capture_visual_smoke(screenshot_path: String):
 	var frame_metrics = visual_smoke_frame_metrics()
 	var process_metrics = visual_smoke_process_wall_metrics()
 	var runtime_metrics = visual_smoke_runtime_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" lighting_variant=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d terrain_pressure_fixture=\"%s\" terrain_pressure_fixture_blocks=%d terrain_pressure_fixture_dirty_observed=%d cutout_fixture=\"%s\" cutout_fixture_roles=%d cutout_fixture_blocks=%d cutout_fixture_leaf_blocks=%d cutout_fixture_opaque_blocks=%d cutout_fixture_dirty_observed=%d cutout_fixture_collision_samples=%d cutout_fixture_collision_hits=%d cutout_fixture_collision_misses=%d cutout_fixture_occlusion_probe_hit=%d cutout_fixture_queue_drained=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f ground_samples=%d ground_hits=%d ground_misses=%d ground_max_distance=%.3f ground_min_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" lighting_variant=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d terrain_pressure_fixture=\"%s\" terrain_pressure_fixture_blocks=%d terrain_pressure_fixture_dirty_observed=%d cutout_fixture=\"%s\" cutout_fixture_roles=%d cutout_fixture_blocks=%d cutout_fixture_leaf_blocks=%d cutout_fixture_opaque_blocks=%d cutout_fixture_dirty_observed=%d cutout_fixture_collision_samples=%d cutout_fixture_collision_hits=%d cutout_fixture_collision_misses=%d cutout_fixture_occlusion_probe_hit=%d cutout_fixture_queue_drained=%d cutout_fixture_adjacent_pair_blocks=%d cutout_fixture_adjacent_pair_block_id=%d cutout_fixture_adjacent_pair_same_material=%d cutout_fixture_adjacent_pair_neighbor=%d cutout_fixture_adjacent_pair_collision_hits=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f ground_samples=%d ground_hits=%d ground_misses=%d ground_max_distance=%.3f ground_min_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		visual_smoke_lighting_variant,
@@ -391,6 +396,11 @@ func capture_visual_smoke(screenshot_path: String):
 		visual_smoke_cutout_fixture_collision_samples - visual_smoke_cutout_fixture_collision_hits,
 		visual_smoke_cutout_fixture_occlusion_probe_hit,
 		visual_smoke_cutout_fixture_queue_drained,
+		visual_smoke_cutout_fixture_adjacent_pair_blocks,
+		visual_smoke_cutout_fixture_adjacent_pair_block_id,
+		visual_smoke_cutout_fixture_adjacent_pair_same_material,
+		visual_smoke_cutout_fixture_adjacent_pair_neighbor,
+		visual_smoke_cutout_fixture_adjacent_pair_collision_hits,
 		image.get_width(),
 		image.get_height(),
 		metrics["avg_luma"],
@@ -970,6 +980,11 @@ func run_visual_smoke_cutout_fixture():
 	visual_smoke_cutout_fixture_collision_hits = 0
 	visual_smoke_cutout_fixture_occlusion_probe_hit = 0
 	visual_smoke_cutout_fixture_queue_drained = 0
+	visual_smoke_cutout_fixture_adjacent_pair_blocks = 0
+	visual_smoke_cutout_fixture_adjacent_pair_block_id = 0
+	visual_smoke_cutout_fixture_adjacent_pair_same_material = 0
+	visual_smoke_cutout_fixture_adjacent_pair_neighbor = 0
+	visual_smoke_cutout_fixture_adjacent_pair_collision_hits = 0
 	if visual_smoke_cutout_fixture_name.is_empty() or visual_smoke_cutout_fixture_name == "none":
 		visual_smoke_cutout_fixture_name = "none"
 		return
@@ -1009,10 +1024,14 @@ func run_visual_smoke_cutout_fixture():
 	await get_tree().physics_frame
 	for role in roles:
 		visual_smoke_cutout_fixture_collision_samples += 1
-		if visual_smoke_cutout_fixture_block_collision_hit(role):
+		var collision_hit = visual_smoke_cutout_fixture_block_collision_hit(role)
+		if collision_hit:
 			visual_smoke_cutout_fixture_collision_hits += 1
+		if visual_smoke_cutout_fixture_is_adjacent_pair_role(role) and collision_hit:
+			visual_smoke_cutout_fixture_adjacent_pair_collision_hits += 1
 	visual_smoke_cutout_fixture_occlusion_probe_hit = 1 if visual_smoke_cutout_fixture_occlusion_probe_hits(roles) else 0
-	log_event("Visual smoke cutout fixture complete name=%s roles=%d blocks=%d leaf_blocks=%d opaque_blocks=%d dirty_observed=%d collision_hits=%d occlusion_probe_hit=%d queue_drained=%d queue=%d collision_q=%d" % [
+	visual_smoke_cutout_fixture_record_adjacent_pair_policy(roles)
+	log_event("Visual smoke cutout fixture complete name=%s roles=%d blocks=%d leaf_blocks=%d opaque_blocks=%d dirty_observed=%d collision_hits=%d occlusion_probe_hit=%d queue_drained=%d adjacent_pair_blocks=%d adjacent_pair_block_id=%d adjacent_pair_same_material=%d adjacent_pair_neighbor=%d adjacent_pair_collision_hits=%d queue=%d collision_q=%d" % [
 		visual_smoke_cutout_fixture_name,
 		visual_smoke_cutout_fixture_roles,
 		visual_smoke_cutout_fixture_blocks,
@@ -1022,6 +1041,11 @@ func run_visual_smoke_cutout_fixture():
 		visual_smoke_cutout_fixture_collision_hits,
 		visual_smoke_cutout_fixture_occlusion_probe_hit,
 		visual_smoke_cutout_fixture_queue_drained,
+		visual_smoke_cutout_fixture_adjacent_pair_blocks,
+		visual_smoke_cutout_fixture_adjacent_pair_block_id,
+		visual_smoke_cutout_fixture_adjacent_pair_same_material,
+		visual_smoke_cutout_fixture_adjacent_pair_neighbor,
+		visual_smoke_cutout_fixture_adjacent_pair_collision_hits,
 		visual_smoke_perf_int("queue", 0),
 		visual_smoke_perf_int("collision_q", 0)
 	])
@@ -1037,6 +1061,33 @@ func visual_smoke_cutout_fixture_roles_definition() -> Array:
 
 func visual_smoke_cutout_fixture_role_center(role: Dictionary) -> Vector3:
 	return Vector3(float(int(role["x"])) + 0.5, float(int(role["y"])) + 0.5, float(int(role["z"])) + 0.5)
+
+func visual_smoke_cutout_fixture_is_adjacent_pair_role(role: Dictionary) -> bool:
+	var role_name = String(role["name"])
+	return role_name == "adjacent_cutout_a" or role_name == "adjacent_cutout_b"
+
+func visual_smoke_cutout_fixture_record_adjacent_pair_policy(roles: Array):
+	var role_a = {}
+	var role_b = {}
+	for role in roles:
+		var role_name = String(role["name"])
+		if role_name == "adjacent_cutout_a":
+			role_a = role
+		if role_name == "adjacent_cutout_b":
+			role_b = role
+	if role_a.is_empty() or role_b.is_empty():
+		return
+	var center_a = visual_smoke_cutout_fixture_role_center(role_a)
+	var center_b = visual_smoke_cutout_fixture_role_center(role_b)
+	var delta = center_a - center_b
+	var manhattan = abs(delta.x) + abs(delta.y) + abs(delta.z)
+	if abs(manhattan - 1.0) > 0.01:
+		return
+	visual_smoke_cutout_fixture_adjacent_pair_blocks = 2
+	visual_smoke_cutout_fixture_adjacent_pair_neighbor = 1
+	if int(role_a["block_id"]) == int(role_b["block_id"]) and int(role_a["block_id"]) == VISUAL_SMOKE_CUTOUT_FIXTURE_LEAF_BLOCK_ID:
+		visual_smoke_cutout_fixture_adjacent_pair_block_id = int(role_a["block_id"])
+		visual_smoke_cutout_fixture_adjacent_pair_same_material = 1
 
 func visual_smoke_cutout_fixture_block_collision_hit(role: Dictionary) -> bool:
 	var player = get_tree().root.find_child("Player", true, false) as Node3D

@@ -197,7 +197,7 @@ sh scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh logs/gpu_terrain_cut
 
 The gate writes `gpu-terrain-cutout-pressure-load-scaling-summary.txt`. It is local macOS/Metal cutout-only pressure evidence; do not treat it as blended transparency, sorting/depth parity, Windows validation, external profiler evidence, or default-on approval.
 
-Use the cutout fixture scene smoke after changing visual smoke fixture placement, cutout block role handling, cutout depth/collision evidence, or transparent workload report surfacing. It runs a fixed release-profile scene with isolated RocksDB, the default-off cutout prototype, four leaf/cutout roles, one opaque occluder, collision rays, an opaque occlusion probe, and aggregate acceptance:
+Use the cutout fixture scene smoke after changing visual smoke fixture placement, cutout block role handling, cutout depth/collision evidence, same-material cutout seam policy, or transparent workload report surfacing. It runs a fixed release-profile scene with isolated RocksDB, the default-off cutout prototype, four leaf/cutout roles including one adjacent same-material pair, one opaque occluder, collision rays, an opaque occlusion probe, exact cutout workload checks, and aggregate acceptance:
 
 ```sh
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
@@ -209,7 +209,7 @@ sh scripts/gpu_terrain_cutout_fixture_scene_smoke.sh logs/gpu_transparent_cutout
 sh scripts/gpu_terrain_cutout_fixture_acceptance_gate.sh logs/gpu_transparent_cutout_fixture_scene_smoke_current
 ```
 
-The smoke writes `transparent-cutout-fixture-scene-smoke-summary.txt`; the gate writes `transparent-cutout-fixture-acceptance-summary.txt`. This is local macOS/Metal cutout depth/collision evidence only; it does not validate blended transparency, sorting, default-on behavior, external profiler cost, or Windows behavior.
+The smoke writes `transparent-cutout-fixture-scene-smoke-summary.txt`; the gate writes `transparent-cutout-fixture-acceptance-summary.txt` and a `transparent_cutout_seam_culling_status=pass` summary line. This is local macOS/Metal cutout depth/collision and same-material adjacent-pair evidence only; it does not validate blended transparency, sorting, default-on behavior, external profiler cost, or Windows behavior.
 
 Use the upload failure recovery unit guards after touching mesh-build planning, proxy refresh reuse, GPU slot state, or CPU fallback removal:
 
