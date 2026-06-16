@@ -343,6 +343,48 @@ func TestSetBlockGlobalPersistsEditedChunkForReload(t *testing.T) {
 	assertSnapshotBlock(t, destroyedSnapshot, localX, int(blockY), localZ, Air)
 }
 
+func TestHeightV1EditedChunkPersistsThroughStoreReload(t *testing.T) {
+	store := newSerializedChunkStore()
+	config := GeneratorConfig{
+		Seed:        8675309,
+		DimensionID: "overworld",
+		Version:     GeneratorVersionHeightV1,
+	}
+	generator, err := NewWorldGenerator(config)
+	if err != nil {
+		t.Fatalf("NewWorldGenerator() error = %v", err)
+	}
+
+	chunkX, chunkZ := int32(-3), int32(5)
+	localX, localZ := 7, 11
+	blockX := chunkX*int32(ChunkWidth) + int32(localX)
+	blockZ := chunkZ*int32(ChunkDepth) + int32(localZ)
+	blockY := int32(generator.heightV1SurfaceY(int64(blockX), int64(blockZ)) + 5)
+
+	editWorld, err := NewWorldWithGeneratorConfig(store, config)
+	if err != nil {
+		t.Fatalf("NewWorldWithGeneratorConfig(edit) error = %v", err)
+	}
+	editedSnapshot, err := editWorld.SetBlockGlobal(blockX, blockY, blockZ, Wood)
+	if err != nil {
+		t.Fatalf("SetBlockGlobal(height_v1 place) error = %v", err)
+	}
+	assertSnapshotBlock(t, editedSnapshot, localX, int(blockY), localZ, Wood)
+	if store.saves != 1 {
+		t.Fatalf("store saves after height_v1 place = %d, want 1", store.saves)
+	}
+
+	reloadWorld, err := NewWorldWithGeneratorConfig(store, DefaultGeneratorConfig())
+	if err != nil {
+		t.Fatalf("NewWorldWithGeneratorConfig(reload) error = %v", err)
+	}
+	reloadedSnapshot, err := reloadWorld.ChunkSnapshot(chunkX, chunkZ)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot(height_v1 reload) error = %v", err)
+	}
+	assertSnapshotBlock(t, reloadedSnapshot, localX, int(blockY), localZ, Wood)
+}
+
 func TestSetBlockGlobalPersistsNegativeBoundaryCoordinates(t *testing.T) {
 	store := newSerializedChunkStore()
 	w := NewWorld(store)

@@ -24,7 +24,7 @@ Scope:
 
 - Keep `flat_v1` as the default generation contract.
 - Add `height_v1` as an explicit `GeneratorVersion`.
-- Guard `height_v1` determinism, stable bytes, seed/dimension sensitivity, and surface strata.
+- Guard `height_v1` determinism, stable bytes, seed/dimension sensitivity, surface strata, RLE round-trip behavior, and stored edit reload behavior.
 - Keep the broader cave, resource, structure, biome runtime, protocol, storage, renderer, and material work outside this block.
 
 Out of scope:
@@ -74,6 +74,8 @@ The completed seed/version and opt-in height foundation is intentionally narrow:
 - `TestConfiguredFlatV1GeneratorPreservesStableChunkBytes` proves configured `flat_v1` worlds keep the stable flat SHA-256 byte vector.
 - `TestConfiguredHeightV1GeneratorIsDeterministicForSeedDimensionAndCoordinates` proves stable `height_v1` bytes and terrain columns across independent worlds.
 - `TestConfiguredHeightV1GeneratorChangesWithSeedAndDimension` proves the opt-in generator responds to seed and dimension inputs.
+- `TestEncodeSerializedChunkRLERoundTripsHeightV1Chunk` proves `height_v1` chunks round-trip through the current RLE codec without changing raw serialized bytes.
+- `TestHeightV1EditedChunkPersistsThroughStoreReload` proves edited `height_v1` chunks reload from persisted bytes through the existing `ChunkStore` boundary.
 
 ## Target Generation Pipeline
 
@@ -164,7 +166,7 @@ Use:
 sh scripts/world_generation_quality_gate.sh logs/world_generation_quality_current
 ```
 
-The expected current result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `worldgen_height_v1=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=opt_in_height_v1_guarded`, `coordinate_mapping=guarded`, `origin_chunk=guarded`, `flat_byte_hash=guarded`, and `world_tests=pass`.
+The expected current result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `worldgen_height_v1=guarded`, `height_v1_serialization=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=opt_in_height_v1_guarded`, `coordinate_mapping=guarded`, `origin_chunk=guarded`, `flat_byte_hash=guarded`, and `world_tests=pass`.
 
 The gate checks that:
 
@@ -175,6 +177,7 @@ The gate checks that:
 - Unknown generator versions are rejected.
 - Configured `flat_v1` generator output preserves the stable flat chunk byte hash.
 - Configured `height_v1` generator output preserves the stable height chunk byte hash, varies surface height inside the representative chunk, and changes with seed or dimension inputs.
+- `height_v1` chunks round-trip through RLE and edited `height_v1` chunks reload from stored serialized bytes.
 - Current `GenerateFlat()` and serialization source remain unchanged.
 - The origin chunk snapshot is stable and matches the current flat strata contract.
 - Representative flat chunk snapshot bytes match the current SHA-256 fixture.
@@ -183,4 +186,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a seed/version and opt-in height-generator checkpoint. Default runtime generation remains `flat_v1`; `height_v1` is guarded for explicit use through generator configuration. Cave, resource, structure, biome runtime, and default-world changes remain inactive until separate versioned implementations supply deterministic tests and downstream evidence. Current origin chunk flat strata, configured `flat_v1` byte hash, configured `height_v1` byte hash, and global block-to-chunk coordinate mapping are guarded across positive, negative, and high positive chunk boundaries.
+This block is complete as a seed/version and opt-in height-generator checkpoint. Default runtime generation remains `flat_v1`; `height_v1` is guarded for explicit use through generator configuration and through the existing RLE/storage chunk pipeline. Cave, resource, structure, biome runtime, and default-world changes remain inactive until separate versioned implementations supply deterministic tests and downstream evidence. Current origin chunk flat strata, configured `flat_v1` byte hash, configured `height_v1` byte hash, `height_v1` RLE round-trip, edited `height_v1` reload, and global block-to-chunk coordinate mapping are guarded across positive, negative, and high positive chunk boundaries.

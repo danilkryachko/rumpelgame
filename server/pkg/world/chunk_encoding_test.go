@@ -28,6 +28,47 @@ func TestEncodeSerializedChunkRLERoundTripsFlatChunk(t *testing.T) {
 	}
 }
 
+func TestEncodeSerializedChunkRLERoundTripsHeightV1Chunk(t *testing.T) {
+	generator, err := NewWorldGenerator(GeneratorConfig{
+		Seed:        8675309,
+		DimensionID: "overworld",
+		Version:     GeneratorVersionHeightV1,
+	})
+	if err != nil {
+		t.Fatalf("NewWorldGenerator() error = %v", err)
+	}
+	chunk, err := generator.GenerateChunk(-3, 5)
+	if err != nil {
+		t.Fatalf("GenerateChunk(height_v1) error = %v", err)
+	}
+	raw := chunk.Serialize()
+
+	encoded, err := EncodeSerializedChunkRLE(raw)
+	if err != nil {
+		t.Fatalf("EncodeSerializedChunkRLE(height_v1) error = %v", err)
+	}
+	if len(encoded) <= 64 {
+		t.Fatalf("encoded height_v1 chunk length = %d, want richer run evidence than flat chunk", len(encoded))
+	}
+	if len(encoded) >= len(raw) {
+		t.Fatalf("encoded height_v1 chunk length = %d, want less than raw %d", len(encoded), len(raw))
+	}
+
+	decoded, err := DecodeSerializedChunkRLE(encoded)
+	if err != nil {
+		t.Fatalf("DecodeSerializedChunkRLE(height_v1) error = %v", err)
+	}
+	if !bytes.Equal(decoded, raw) {
+		t.Fatal("decoded height_v1 chunk differs from raw chunk")
+	}
+
+	roundTrip, err := DeserializeChunk(chunk.X, chunk.Z, decoded)
+	if err != nil {
+		t.Fatalf("DeserializeChunk(height_v1 round trip) error = %v", err)
+	}
+	assertHeightV1SurfaceVaries(t, generator, roundTrip)
+}
+
 func TestEncodeSerializedChunkRLEPreservesEditedChunk(t *testing.T) {
 	chunk := NewChunk(-3, 5)
 	chunk.GenerateFlat()

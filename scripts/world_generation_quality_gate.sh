@@ -17,6 +17,7 @@ GENERATOR_SOURCE="${RUMPELMC_WORLDGEN_QUALITY_GENERATOR_SOURCE:-"$ROOT_DIR/serve
 WORLD_SOURCE="${RUMPELMC_WORLDGEN_QUALITY_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
 WORLD_TEST="${RUMPELMC_WORLDGEN_QUALITY_WORLD_TEST:-"$ROOT_DIR/server/pkg/world/world_test.go"}"
 GENERATOR_TEST="${RUMPELMC_WORLDGEN_QUALITY_GENERATOR_TEST:-"$ROOT_DIR/server/pkg/world/generator_test.go"}"
+CHUNK_ENCODING_TEST="${RUMPELMC_WORLDGEN_QUALITY_CHUNK_ENCODING_TEST:-"$ROOT_DIR/server/pkg/world/chunk_encoding_test.go"}"
 SERVER_CMD_SOURCE="${RUMPELMC_WORLDGEN_QUALITY_SERVER_CMD_SOURCE:-"$ROOT_DIR/server/cmd/server/main.go"}"
 SERVER_CMD_TEST="${RUMPELMC_WORLDGEN_QUALITY_SERVER_CMD_TEST:-"$ROOT_DIR/server/cmd/server/main_test.go"}"
 RUN_GO_TESTS="${RUMPELMC_WORLDGEN_QUALITY_RUN_GO_TESTS:-1}"
@@ -54,7 +55,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$BIOME_SUMMARY" "$CHUNK_SOURCE" "$GENERATOR_SOURCE" "$WORLD_SOURCE" "$WORLD_TEST" "$GENERATOR_TEST" "$SERVER_CMD_SOURCE" "$SERVER_CMD_TEST"; do
+for path in "$DESIGN_DOC" "$WORLDGEN_DOC" "$BIOME_SUMMARY" "$CHUNK_SOURCE" "$GENERATOR_SOURCE" "$WORLD_SOURCE" "$WORLD_TEST" "$GENERATOR_TEST" "$CHUNK_ENCODING_TEST" "$SERVER_CMD_SOURCE" "$SERVER_CMD_TEST"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -90,6 +91,7 @@ require_token "$WORLD_SOURCE" "NewWorldWithGeneratorConfig"
 require_token "$WORLD_SOURCE" "w.generator.GenerateChunk"
 require_token "$WORLD_TEST" "TestOriginChunkSnapshotUsesFlatGenerationContract"
 require_token "$WORLD_TEST" "TestFlatChunkSnapshotStableByteHash"
+require_token "$WORLD_TEST" "TestHeightV1EditedChunkPersistsThroughStoreReload"
 require_token "$WORLD_TEST" "TestGlobalToChunkLocalHandlesNegativeBoundaries"
 require_token "$WORLD_TEST" "TestGlobalToChunkLocalHandlesLargePositiveBoundaries"
 require_token "$WORLD_TEST" "TestChunkCoordForPositionUsesFloorAtNegativeBoundaries"
@@ -101,6 +103,7 @@ require_token "$GENERATOR_TEST" "TestConfiguredHeightV1GeneratorChangesWithSeedA
 require_token "$GENERATOR_TEST" "stableHeightV1ChunkSHA256"
 require_token "$GENERATOR_TEST" "assertHeightV1SurfaceVaries"
 require_token "$GENERATOR_TEST" "TestNewWorldWithGeneratorConfigRejectsUnknownVersion"
+require_token "$CHUNK_ENCODING_TEST" "TestEncodeSerializedChunkRLERoundTripsHeightV1Chunk"
 require_token "$SERVER_CMD_SOURCE" "configuredWorldGeneratorConfig"
 require_token "$SERVER_CMD_SOURCE" "RUMPELMC_WORLD_SEED"
 require_token "$SERVER_CMD_SOURCE" "RUMPELMC_WORLD_DIMENSION_ID"
@@ -140,6 +143,7 @@ awk \
     quality_pass_status = "designed"
     worldgen_seed_version = "guarded"
     worldgen_height_v1 = "guarded"
+    height_v1_serialization = "guarded"
     active_generator_change = 0
     active_chunk_byte_change = 0
     runtime_quality_pass = "opt_in_height_v1_guarded"
@@ -161,7 +165,7 @@ awk \
       reason = "world_tests_failed"
     }
 
-    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s worldgen_seed_version=%s worldgen_height_v1=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s origin_chunk=%s flat_byte_hash=%s world_tests=%s biome_status=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d design_doc=%s biome_summary=%s\n", status, reason, quality_pass_status, worldgen_seed_version, worldgen_height_v1, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, origin_chunk, flat_byte_hash, world_tests, biome_status, biome_runtime, biome_worldgen_change, biome_serialization_change, design_doc, biome_summary)
+    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s worldgen_seed_version=%s worldgen_height_v1=%s height_v1_serialization=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s origin_chunk=%s flat_byte_hash=%s world_tests=%s biome_status=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d design_doc=%s biome_summary=%s\n", status, reason, quality_pass_status, worldgen_seed_version, worldgen_height_v1, height_v1_serialization, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, origin_chunk, flat_byte_hash, world_tests, biome_status, biome_runtime, biome_worldgen_change, biome_serialization_change, design_doc, biome_summary)
     if (status != "pass") {
       exit 1
     }
