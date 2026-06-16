@@ -20,6 +20,7 @@ import (
 
 var (
 	errRocksChunkStoreClosed = errors.New("RocksDB chunk store is closed")
+	errEmptyRocksStorePath   = errors.New("RocksDB chunk store path cannot be empty")
 	errNilRocksChunk         = errors.New("RocksDB chunk store cannot save nil chunk")
 )
 
@@ -30,6 +31,10 @@ type RocksChunkStore struct {
 }
 
 func OpenRocksChunkStore(path string) (*RocksChunkStore, error) {
+	if path == "" {
+		return nil, fmt.Errorf("open RocksDB chunk store %q: %w", path, errEmptyRocksStorePath)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create RocksDB parent directory %q: %w", filepath.Dir(path), err)
 	}

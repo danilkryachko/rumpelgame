@@ -142,6 +142,26 @@ func TestOpenRocksChunkStoreRejectsFilePath(t *testing.T) {
 	}
 }
 
+func TestOpenRocksChunkStoreRejectsEmptyPathBeforeCAPI(t *testing.T) {
+	store, err := OpenRocksChunkStore("")
+	if err == nil {
+		if store != nil {
+			store.Close()
+		}
+		t.Fatal("OpenRocksChunkStore() error = nil, want failure for empty path")
+	}
+	if store != nil {
+		store.Close()
+		t.Fatalf("OpenRocksChunkStore() store = %v, want nil on failure", store)
+	}
+	if !errors.Is(err, errEmptyRocksStorePath) {
+		t.Fatalf("OpenRocksChunkStore() error = %v, want empty path error", err)
+	}
+	if !strings.Contains(err.Error(), "open RocksDB chunk store") {
+		t.Fatalf("OpenRocksChunkStore() error = %q, want open context", err)
+	}
+}
+
 func TestRocksChunkStoreOverwriteKeepsNeighborChunk(t *testing.T) {
 	path := t.TempDir()
 

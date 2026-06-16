@@ -20,7 +20,7 @@ Do not introduce, expand, or migrate to another database engine without explicit
 - RocksDB-backed chunk storage lives under `server/pkg/storage`.
 - RocksDB chunk keys use a `c` byte prefix followed by sortable big-endian signed `int32` `x` and `z` coordinates. Preserve this key format unless a migration is explicitly planned.
 - Persisted chunk payloads use the exact byte output of `world.Chunk.Serialize()` and must match the current serialized chunk size when loaded.
-- RocksDB open-path behavior is guarded: missing parent directories are created, and existing regular-file database paths are rejected.
+- RocksDB path/config behavior is guarded: empty RocksDB chunk store paths are rejected before the C API, missing parent directories are created, and existing regular-file database paths are rejected.
 - RocksDB concurrent access is guarded for distinct chunk keys: concurrent save/load operations on one open store must preserve each chunk payload.
 - RocksDB open/read/write/decode errors include path or chunk-coordinate context so failures are actionable from logs and test output.
 - RocksDB lifecycle behavior is guarded: double close is safe, operations after close return Go errors, and nil chunk saves are rejected before reaching the C API.

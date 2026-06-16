@@ -14,6 +14,7 @@ This note records the current approved persistence foundation for chunk storage.
 - Missing chunks return `(nil, false, nil)`.
 - Corrupt persisted chunk bytes return an error and do not produce a loaded chunk.
 - Saving a chunk overwrites only that chunk key and must not alter neighboring chunk keys.
+- Opening a RocksDB store with an empty path fails before the C API boundary and does not return a usable store.
 - Opening a RocksDB store creates a missing parent directory for the configured path.
 - Opening a RocksDB store on an existing regular file fails and does not return a usable store.
 - Concurrent save/load operations on distinct chunk keys through one open RocksDB store preserve each chunk payload.
@@ -31,4 +32,4 @@ go test ./pkg/storage
 
 Fresh check:
 
-- `go test ./pkg/storage` and `go test -race ./pkg/storage` passed on 2026-06-16 after adding RocksDB closed-store and nil-save lifecycle coverage.
+- `go test ./pkg/storage` and `go test -race ./pkg/storage` passed on 2026-06-16 after adding RocksDB empty-path, closed-store, and nil-save lifecycle coverage.
