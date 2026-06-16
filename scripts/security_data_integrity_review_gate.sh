@@ -28,8 +28,10 @@ NETWORKING_SUMMARY="${RUMPELMC_SECURITY_REVIEW_NETWORKING_SUMMARY:-"$ROOT_DIR/lo
 PERSISTENCE_SUMMARY="${RUMPELMC_SECURITY_REVIEW_PERSISTENCE_SUMMARY:-"$ROOT_DIR/logs/block_edit_persistence_current/block-edit-persistence-summary.txt"}"
 ARCH_SUMMARY="${RUMPELMC_SECURITY_REVIEW_ARCH_SUMMARY:-"$ROOT_DIR/logs/architecture_documentation_refresh_current/architecture-documentation-refresh-summary.txt"}"
 OBSERVABILITY_SUMMARY="${RUMPELMC_SECURITY_REVIEW_OBSERVABILITY_SUMMARY:-"$ROOT_DIR/logs/observability_logs_cleanup_current/observability-logs-cleanup-summary.txt"}"
+STORAGE_SMOKE_SUMMARY="${RUMPELMC_SECURITY_REVIEW_STORAGE_SMOKE_SUMMARY:-"$ROOT_DIR/logs/storage_package_smoke_current/storage-package-smoke-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_SECURITY_REVIEW_RUN_GO_TESTS:-1}"
 RUN_RUST_TESTS="${RUMPELMC_SECURITY_REVIEW_RUN_RUST_TESTS:-1}"
+RUN_STORAGE_SMOKE="${RUMPELMC_SECURITY_REVIEW_RUN_STORAGE_SMOKE:-1}"
 UNAPPROVED_DB_SCAN="$OUT_DIR/unapproved-database-reference-scan.txt"
 
 mkdir -p "$OUT_DIR"
@@ -85,6 +87,19 @@ scan_unapproved_database_references() {
   fi
 }
 
+case "$RUN_STORAGE_SMOKE" in
+  0|1) ;;
+  *) fail "RUMPELMC_SECURITY_REVIEW_RUN_STORAGE_SMOKE must be 0 or 1" ;;
+esac
+
+if [ "$RUN_STORAGE_SMOKE" = "1" ]; then
+  STORAGE_SMOKE_OUT_DIR="$(dirname -- "$STORAGE_SMOKE_SUMMARY")"
+  sh "$ROOT_DIR/scripts/storage_package_smoke.sh" "$STORAGE_SMOKE_OUT_DIR" > "$OUT_DIR/storage-package-smoke-check.txt" 2>&1 || {
+    cat "$OUT_DIR/storage-package-smoke-check.txt" >&2 || true
+    fail "storage package smoke failed"
+  }
+fi
+
 for path in \
   "$DESIGN_DOC" \
   "$STORAGE_DOC" \
@@ -104,7 +119,8 @@ for path in \
   "$NETWORKING_SUMMARY" \
   "$PERSISTENCE_SUMMARY" \
   "$ARCH_SUMMARY" \
-  "$OBSERVABILITY_SUMMARY"; do
+  "$OBSERVABILITY_SUMMARY" \
+  "$STORAGE_SMOKE_SUMMARY"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -239,6 +255,11 @@ arch_status="$(field_metric status "$ARCH_SUMMARY")"
 arch_runtime_change="$(field_metric runtime_change "$ARCH_SUMMARY")"
 observability_status="$(field_metric status "$OBSERVABILITY_SUMMARY")"
 observability_error_scan="$(field_metric error_scan "$OBSERVABILITY_SUMMARY")"
+storage_smoke_status="$(field_metric status "$STORAGE_SMOKE_SUMMARY")"
+storage_smoke_guard="$(field_metric smoke_status "$STORAGE_SMOKE_SUMMARY")"
+storage_smoke_external_secret_required="$(field_metric external_secret_required "$STORAGE_SMOKE_SUMMARY")"
+storage_smoke_database_env_policy="$(field_metric database_env_policy "$STORAGE_SMOKE_SUMMARY")"
+storage_smoke_approved_databases="$(field_metric approved_databases "$STORAGE_SMOKE_SUMMARY")"
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 go_integrity_tests="skipped"
@@ -288,6 +309,11 @@ awk \
   -v arch_runtime_change="${arch_runtime_change:-unknown}" \
   -v observability_status="${observability_status:-missing}" \
   -v observability_error_scan="${observability_error_scan:-dirty}" \
+  -v storage_smoke_status="${storage_smoke_status:-missing}" \
+  -v storage_smoke_guard="${storage_smoke_guard:-missing}" \
+  -v storage_smoke_external_secret_required="${storage_smoke_external_secret_required:-1}" \
+  -v storage_smoke_database_env_policy="${storage_smoke_database_env_policy:-missing}" \
+  -v storage_smoke_approved_databases="${storage_smoke_approved_databases:-missing}" \
   -v proto_diff_count="$proto_diff_count" \
   -v go_integrity_tests="$go_integrity_tests" \
   -v rust_packet_tests="$rust_packet_tests" \
@@ -295,13 +321,15 @@ awk \
   -v networking_summary="$NETWORKING_SUMMARY" \
   -v persistence_summary="$PERSISTENCE_SUMMARY" \
   -v arch_summary="$ARCH_SUMMARY" \
-  -v observability_summary="$OBSERVABILITY_SUMMARY" '
+  -v observability_summary="$OBSERVABILITY_SUMMARY" \
+  -v storage_smoke_summary="$STORAGE_SMOKE_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
     security_status = "reviewed"
     packet_boundary = "guarded"
     storage_integrity = "guarded"
+    storage_package_smoke = "guarded"
     storage_config = "path_guarded"
     storage_backend_policy = "approved_only_guarded"
     storage_backend_ownership = "guarded"
@@ -333,7 +361,12 @@ awk \
       persistence_status == "pass" && persistence_protocol_change + 0 == 0 &&
       persistence_save_failure_rollback == "guarded" &&
       arch_status == "pass" && arch_runtime_change == "none" &&
-      observability_status == "pass" && observability_error_scan == "clean"
+      observability_status == "pass" && observability_error_scan == "clean" &&
+      storage_smoke_status == "pass" &&
+      storage_smoke_guard == "guarded" &&
+      storage_smoke_external_secret_required + 0 == 0 &&
+      storage_smoke_database_env_policy == "postgres_env_ignored" &&
+      storage_smoke_approved_databases == "postgresql_rocksdb"
     tests_ok = (go_integrity_tests == "pass" || go_integrity_tests == "skipped") &&
       (rust_packet_tests == "pass" || rust_packet_tests == "skipped") &&
       (rust_chunk_decode_tests == "pass" || rust_chunk_decode_tests == "skipped")
@@ -349,7 +382,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_config=%s storage_backend_policy=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_config, storage_backend_policy, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_package_smoke=%s storage_config=%s storage_backend_policy=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s storage_smoke_status=%s storage_smoke_external_secret_required=%d storage_smoke_database_env_policy=%s storage_smoke_approved_databases=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s storage_smoke_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_package_smoke, storage_config, storage_backend_policy, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, storage_smoke_status, storage_smoke_external_secret_required, storage_smoke_database_env_policy, storage_smoke_approved_databases, networking_summary, persistence_summary, arch_summary, observability_summary, storage_smoke_summary)
     if (status != "pass") {
       exit 1
     }

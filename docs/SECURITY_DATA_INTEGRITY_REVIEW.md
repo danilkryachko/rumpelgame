@@ -79,6 +79,7 @@ Checks:
 - RocksDB keys keep the stable chunk-coordinate key format.
 - RocksDB tests cover missing chunks, save/reopen round-trip, overwrite isolation, concurrent distinct-key save/load, corrupt payload rejection, empty-path rejection before the C API boundary, missing-parent path creation, regular-file parent path rejection, regular-file database path rejection, key format, and signed coordinate ordering.
 - Server config tests prove `RUMPELMC_SERVER_ROCKSDB_PATH` is the current chunk-store override and PostgreSQL environment variables do not select a runtime chunk backend.
+- The review gate reports `storage_package_smoke=guarded` after running `scripts/storage_package_smoke.sh` and validating that the storage smoke needs no external secret, ignores PostgreSQL environment variables for runtime chunk backend selection, and keeps approved databases at PostgreSQL/RocksDB.
 - The review gate reports `storage_config=path_guarded` after validating empty path rejection, the RocksDB path/config documentation, and the current server config tests.
 - The review gate reports `storage_backend_policy=approved_only_guarded` after scanning runtime source areas for unapproved database engine references.
 - The review gate reports `storage_backend_ownership=guarded` after validating the RocksDB/PostgreSQL ownership documentation and server config tests.
@@ -154,13 +155,14 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `unknown_packet_policy=ignored_guarded`, `nil_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `storage_integrity=guarded`, `storage_config=path_guarded`, `storage_backend_policy=approved_only_guarded`, `storage_backend_ownership=guarded`, `storage_concurrency=guarded`, `storage_errors=actionable_guarded`, `storage_lifecycle=guarded`, `block_edit_validation=y_bounds_guarded`, `block_edit_save_failure_rollback=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `unknown_packet_policy=ignored_guarded`, `nil_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `storage_integrity=guarded`, `storage_package_smoke=guarded`, `storage_config=path_guarded`, `storage_backend_policy=approved_only_guarded`, `storage_backend_ownership=guarded`, `storage_concurrency=guarded`, `storage_errors=actionable_guarded`, `storage_lifecycle=guarded`, `block_edit_validation=y_bounds_guarded`, `block_edit_save_failure_rollback=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records reviewed boundaries, MCP notes, deferred work, and compatibility rules.
 - Server/Rust sources still contain packet-size, exact-read, decode, and block-edit validation hooks.
 - Storage docs record RocksDB as the current chunk persistence owner and PostgreSQL as approved but not implemented for runtime chunks.
+- Storage package smoke reports `storage_package_smoke=guarded`, `storage_smoke_external_secret_required=0`, `storage_smoke_database_env_policy=postgres_env_ignored`, and `storage_smoke_approved_databases=postgresql_rocksdb` before security review can pass.
 - Runtime source scans reject unapproved database engine references before the gate reports `storage_backend_policy=approved_only_guarded`.
 - Server and client defaults still keep normal runtime traffic on loopback, non-loopback server overrides are rejected, and smoke scripts do not use wildcard `RUMPELMC_SERVER_ADDRESS=":<port>"` binds.
 - Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
