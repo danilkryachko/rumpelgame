@@ -159,6 +159,25 @@ rc_security_conflict_semantics="$(field_metric security_conflict_semantics "$RC_
 rc_security_worldgen_biome_atlas_tile_identity="$(field_metric security_worldgen_biome_atlas_tile_identity "$RC_SUMMARY")"
 rc_security_worldgen_biome_atlas_block_texture_usage="$(field_metric security_worldgen_biome_atlas_block_texture_usage "$RC_SUMMARY")"
 rc_security_overload_status="$(field_metric security_overload_status "$RC_SUMMARY")"
+rc_security_runtime_reconnect="$(field_metric security_runtime_reconnect "$RC_SUMMARY")"
+rc_security_reconnect_smoke_status="$(field_metric security_reconnect_smoke_status "$RC_SUMMARY")"
+rc_security_reconnect_smoke_client_state="$(field_metric security_reconnect_smoke_client_state "$RC_SUMMARY")"
+rc_security_reconnect_smoke_reader_errors="$(field_metric security_reconnect_smoke_reader_errors "$RC_SUMMARY")"
+rc_security_reconnect_smoke_successes="$(field_metric security_reconnect_smoke_successes "$RC_SUMMARY")"
+rc_security_reconnect_soak_status="$(field_metric security_reconnect_soak_status "$RC_SUMMARY")"
+rc_security_reconnect_soak_cycles="$(field_metric security_reconnect_soak_cycles "$RC_SUMMARY")"
+rc_security_reconnect_soak_reader_errors="$(field_metric security_reconnect_soak_reader_errors "$RC_SUMMARY")"
+rc_security_reconnect_soak_successes="$(field_metric security_reconnect_soak_successes "$RC_SUMMARY")"
+rc_security_slow_client_status="$(field_metric security_slow_client_status "$RC_SUMMARY")"
+rc_security_slow_reader_smoke_status="$(field_metric security_slow_reader_smoke_status "$RC_SUMMARY")"
+rc_security_slow_reader_timeout_observed="$(field_metric security_slow_reader_timeout_observed "$RC_SUMMARY")"
+rc_security_slow_reader_timeout_class="$(field_metric security_slow_reader_timeout_class "$RC_SUMMARY")"
+rc_security_slow_reader_matrix_status="$(field_metric security_slow_reader_matrix_status "$RC_SUMMARY")"
+rc_security_slow_reader_matrix_counts_checked="$(field_metric security_slow_reader_matrix_counts_checked "$RC_SUMMARY")"
+rc_security_slow_reader_matrix_max_fast_clients="$(field_metric security_slow_reader_matrix_max_fast_clients "$RC_SUMMARY")"
+rc_security_slow_reader_matrix_total_fast_clients="$(field_metric security_slow_reader_matrix_total_fast_clients "$RC_SUMMARY")"
+rc_security_slow_reader_matrix_total_fast_bootstrap_chunks="$(field_metric security_slow_reader_matrix_total_fast_bootstrap_chunks "$RC_SUMMARY")"
+rc_security_slow_reader_matrix_total_slow_timeouts="$(field_metric security_slow_reader_matrix_total_slow_timeouts "$RC_SUMMARY")"
 rc_security_local_server_exposure="$(field_metric security_local_server_exposure "$RC_SUMMARY")"
 rc_security_smoke_bind_exposure="$(field_metric security_smoke_bind_exposure "$RC_SUMMARY")"
 capture_pack_status="$(field_metric capture_pack_status "$CAPTURE_PACK")"
@@ -289,6 +308,27 @@ fi
     "$rc_security_local_server_exposure" \
     "$rc_security_smoke_bind_exposure" \
     "$(relative_path "$RC_SUMMARY")"
+  printf 'rc_runtime_input security_runtime_reconnect=%s security_reconnect_smoke_status=%s security_reconnect_smoke_client_state=%s security_reconnect_smoke_reader_errors=%s security_reconnect_smoke_successes=%s security_reconnect_soak_status=%s security_reconnect_soak_cycles=%s security_reconnect_soak_reader_errors=%s security_reconnect_soak_successes=%s security_slow_client_status=%s security_slow_reader_smoke_status=%s security_slow_reader_timeout_observed=%s security_slow_reader_timeout_class=%s security_slow_reader_matrix_status=%s security_slow_reader_matrix_counts_checked=%s security_slow_reader_matrix_max_fast_clients=%s security_slow_reader_matrix_total_fast_clients=%s security_slow_reader_matrix_total_fast_bootstrap_chunks=%s security_slow_reader_matrix_total_slow_timeouts=%s summary=%s\n' \
+    "$rc_security_runtime_reconnect" \
+    "$rc_security_reconnect_smoke_status" \
+    "$rc_security_reconnect_smoke_client_state" \
+    "$rc_security_reconnect_smoke_reader_errors" \
+    "$rc_security_reconnect_smoke_successes" \
+    "$rc_security_reconnect_soak_status" \
+    "$rc_security_reconnect_soak_cycles" \
+    "$rc_security_reconnect_soak_reader_errors" \
+    "$rc_security_reconnect_soak_successes" \
+    "$rc_security_slow_client_status" \
+    "$rc_security_slow_reader_smoke_status" \
+    "$rc_security_slow_reader_timeout_observed" \
+    "$rc_security_slow_reader_timeout_class" \
+    "$rc_security_slow_reader_matrix_status" \
+    "$rc_security_slow_reader_matrix_counts_checked" \
+    "$rc_security_slow_reader_matrix_max_fast_clients" \
+    "$rc_security_slow_reader_matrix_total_fast_clients" \
+    "$rc_security_slow_reader_matrix_total_fast_bootstrap_chunks" \
+    "$rc_security_slow_reader_matrix_total_slow_timeouts" \
+    "$(relative_path "$RC_SUMMARY")"
   printf 'plan=%s\n' "$(relative_path "$PLAN_INPUT")"
   printf 'capture_pack=%s\n' "$(relative_path "$CAPTURE_PACK")"
   printf 'results_template=%s\n' "$(relative_path "$RESULTS_TEMPLATE")"
@@ -357,6 +397,25 @@ awk \
   -v rc_security_worldgen_biome_atlas_tile_identity="${rc_security_worldgen_biome_atlas_tile_identity:-missing}" \
   -v rc_security_worldgen_biome_atlas_block_texture_usage="${rc_security_worldgen_biome_atlas_block_texture_usage:-missing}" \
   -v rc_security_overload_status="${rc_security_overload_status:-missing}" \
+  -v rc_security_runtime_reconnect="${rc_security_runtime_reconnect:-missing}" \
+  -v rc_security_reconnect_smoke_status="${rc_security_reconnect_smoke_status:-missing}" \
+  -v rc_security_reconnect_smoke_client_state="${rc_security_reconnect_smoke_client_state:-missing}" \
+  -v rc_security_reconnect_smoke_reader_errors="${rc_security_reconnect_smoke_reader_errors:-0}" \
+  -v rc_security_reconnect_smoke_successes="${rc_security_reconnect_smoke_successes:-0}" \
+  -v rc_security_reconnect_soak_status="${rc_security_reconnect_soak_status:-missing}" \
+  -v rc_security_reconnect_soak_cycles="${rc_security_reconnect_soak_cycles:-0}" \
+  -v rc_security_reconnect_soak_reader_errors="${rc_security_reconnect_soak_reader_errors:-0}" \
+  -v rc_security_reconnect_soak_successes="${rc_security_reconnect_soak_successes:-0}" \
+  -v rc_security_slow_client_status="${rc_security_slow_client_status:-missing}" \
+  -v rc_security_slow_reader_smoke_status="${rc_security_slow_reader_smoke_status:-missing}" \
+  -v rc_security_slow_reader_timeout_observed="${rc_security_slow_reader_timeout_observed:-0}" \
+  -v rc_security_slow_reader_timeout_class="${rc_security_slow_reader_timeout_class:-missing}" \
+  -v rc_security_slow_reader_matrix_status="${rc_security_slow_reader_matrix_status:-missing}" \
+  -v rc_security_slow_reader_matrix_counts_checked="${rc_security_slow_reader_matrix_counts_checked:-0}" \
+  -v rc_security_slow_reader_matrix_max_fast_clients="${rc_security_slow_reader_matrix_max_fast_clients:-0}" \
+  -v rc_security_slow_reader_matrix_total_fast_clients="${rc_security_slow_reader_matrix_total_fast_clients:-0}" \
+  -v rc_security_slow_reader_matrix_total_fast_bootstrap_chunks="${rc_security_slow_reader_matrix_total_fast_bootstrap_chunks:-0}" \
+  -v rc_security_slow_reader_matrix_total_slow_timeouts="${rc_security_slow_reader_matrix_total_slow_timeouts:-0}" \
   -v rc_security_local_server_exposure="${rc_security_local_server_exposure:-missing}" \
   -v rc_security_smoke_bind_exposure="${rc_security_smoke_bind_exposure:-missing}" \
   -v capture_pack_status="${capture_pack_status:-missing}" \
@@ -396,11 +455,29 @@ awk \
     macos_metal_status = external_profile_status
     windows_gpu_status = "pending_external_machine"
     linux_vulkan_status = "deferred_optional"
+    rc_reconnect_ok = rc_security_runtime_reconnect == "repeated_live_rebootstrap_guarded" &&
+      rc_security_reconnect_smoke_status == "pass" &&
+      rc_security_reconnect_smoke_client_state == "active" &&
+      rc_security_reconnect_smoke_reader_errors + 0 >= 1 &&
+      rc_security_reconnect_smoke_successes + 0 >= 1 &&
+      rc_security_reconnect_soak_status == "pass" &&
+      rc_security_reconnect_soak_cycles + 0 >= 2 &&
+      rc_security_reconnect_soak_reader_errors + 0 >= rc_security_reconnect_soak_cycles + 0 &&
+      rc_security_reconnect_soak_successes + 0 >= rc_security_reconnect_soak_cycles + 0
+    rc_slow_reader_ok = rc_security_slow_client_status == "load_matrix_guarded" &&
+      rc_security_slow_reader_smoke_status == "pass" &&
+      rc_security_slow_reader_timeout_observed + 0 == 1 &&
+      rc_security_slow_reader_timeout_class == "timeout" &&
+      rc_security_slow_reader_matrix_status == "pass" &&
+      rc_security_slow_reader_matrix_counts_checked + 0 >= 2 &&
+      rc_security_slow_reader_matrix_max_fast_clients + 0 >= 2 &&
+      rc_security_slow_reader_matrix_total_fast_clients + 0 == rc_security_slow_reader_matrix_total_fast_bootstrap_chunks + 0 &&
+      rc_security_slow_reader_matrix_total_slow_timeouts + 0 == rc_security_slow_reader_matrix_counts_checked + 0
 
     if (!(shadow_status == "pass" && shadow_profiler_status == "pending_external_profiler" && shadow_profiler_rows + 0 >= 4)) {
       status = "fail"
       reason = "shadow_profiler_plan_not_pending"
-    } else if (!(rc_status == "pass" && rc_visual_smoke == "summary_ready" && rc_perf_matrix == "summary_ready" && rc_live_checks == "full" && rc_test_gpu_report_freshness == "guarded" && rc_security_deterministic_property_tests == "guarded" && rc_security_observability_gpu_report_freshness == "guarded" && rc_security_packet_error_monitoring == "export_ready" && rc_security_server_session_monitoring == "export_ready" && rc_security_storage_package_smoke == "guarded" && rc_security_storage_config == "path_guarded" && rc_security_storage_backend_policy == "approved_only_guarded" && rc_security_block_edit_validation == "y_bounds_guarded" && rc_security_block_edit_save_failure_rollback == "guarded" && rc_security_unknown_packet_policy == "ignored_guarded" && rc_security_nil_packet_policy == "ignored_guarded" && rc_security_nil_position_policy == "ignored_guarded" && rc_security_nil_block_action_policy == "ignored_guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_worldgen_biome_atlas_tile_identity == "guarded" && rc_security_worldgen_biome_atlas_block_texture_usage == "guarded" && rc_security_overload_status == "admission_matrix_guarded" && rc_security_local_server_exposure == "loopback_enforced" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
+    } else if (!(rc_status == "pass" && rc_visual_smoke == "summary_ready" && rc_perf_matrix == "summary_ready" && rc_live_checks == "full" && rc_test_gpu_report_freshness == "guarded" && rc_security_deterministic_property_tests == "guarded" && rc_security_observability_gpu_report_freshness == "guarded" && rc_security_packet_error_monitoring == "export_ready" && rc_security_server_session_monitoring == "export_ready" && rc_security_storage_package_smoke == "guarded" && rc_security_storage_config == "path_guarded" && rc_security_storage_backend_policy == "approved_only_guarded" && rc_security_block_edit_validation == "y_bounds_guarded" && rc_security_block_edit_save_failure_rollback == "guarded" && rc_security_unknown_packet_policy == "ignored_guarded" && rc_security_nil_packet_policy == "ignored_guarded" && rc_security_nil_position_policy == "ignored_guarded" && rc_security_nil_block_action_policy == "ignored_guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_worldgen_biome_atlas_tile_identity == "guarded" && rc_security_worldgen_biome_atlas_block_texture_usage == "guarded" && rc_security_overload_status == "admission_matrix_guarded" && rc_reconnect_ok && rc_slow_reader_ok && rc_security_local_server_exposure == "loopback_enforced" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "release_candidate_evidence_not_clean"
     } else if (!(capture_pack_status == "pending_external_profiler" && capture_pack_rows + 0 >= 4)) {
@@ -422,7 +499,7 @@ awk \
       macos_metal_status = "captured"
     }
 
-    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s capture_readiness=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d capture_pack_results_file_status=%s results_file_status=%s results_template_status=%s results_check_status=%s xctrace_review_capture_status=%s xctrace_review_packet_status=%s xctrace_review_packet_check_status=%s xctrace_overhead_status=%s xctrace_overhead_check_status=%s xctrace_overhead_estimate_p50_ms=%s xctrace_overhead_candidate_status=%s xctrace_overhead_candidate_label=%s xctrace_overhead_candidate_p50_ms=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s rc_live_checks=%s rc_test_gpu_report_freshness=%s rc_security_deterministic_property_tests=%s rc_security_observability_gpu_report_freshness=%s rc_security_packet_error_monitoring=%s rc_security_server_session_monitoring=%s rc_security_storage_package_smoke=%s rc_security_storage_config=%s rc_security_storage_backend_policy=%s rc_security_block_edit_validation=%s rc_security_block_edit_save_failure_rollback=%s rc_security_unknown_packet_policy=%s rc_security_nil_packet_policy=%s rc_security_nil_position_policy=%s rc_security_nil_block_action_policy=%s rc_security_conflict_semantics=%s rc_security_worldgen_biome_atlas_tile_identity=%s rc_security_worldgen_biome_atlas_block_texture_usage=%s rc_security_overload_status=%s rc_security_local_server_exposure=%s rc_security_smoke_bind_exposure=%s plan=%s intake=%s capture_pack=%s results_template=%s results=%s results_summary=%s xctrace_review_packet=%s xctrace_overhead_summary=%s xctrace_overhead_candidates=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, capture_readiness, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, capture_pack_results_file_status, results_file_status, results_template_status, results_check_status, xctrace_review_capture_status, xctrace_review_packet_status, xctrace_review_packet_check_status, xctrace_overhead_status, xctrace_overhead_check_status, xctrace_overhead_estimate_p50_ms, xctrace_overhead_candidate_status, xctrace_overhead_candidate_label, xctrace_overhead_candidate_p50_ms, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, rc_live_checks, rc_test_gpu_report_freshness, rc_security_deterministic_property_tests, rc_security_observability_gpu_report_freshness, rc_security_packet_error_monitoring, rc_security_server_session_monitoring, rc_security_storage_package_smoke, rc_security_storage_config, rc_security_storage_backend_policy, rc_security_block_edit_validation, rc_security_block_edit_save_failure_rollback, rc_security_unknown_packet_policy, rc_security_nil_packet_policy, rc_security_nil_position_policy, rc_security_nil_block_action_policy, rc_security_conflict_semantics, rc_security_worldgen_biome_atlas_tile_identity, rc_security_worldgen_biome_atlas_block_texture_usage, rc_security_overload_status, rc_security_local_server_exposure, rc_security_smoke_bind_exposure, plan_path, intake_path, capture_pack, results_template, results_path, results_summary, xctrace_review_packet, xctrace_overhead_summary, xctrace_overhead_candidates, shadow_summary, rc_summary)
+    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s capture_readiness=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d capture_pack_results_file_status=%s results_file_status=%s results_template_status=%s results_check_status=%s xctrace_review_capture_status=%s xctrace_review_packet_status=%s xctrace_review_packet_check_status=%s xctrace_overhead_status=%s xctrace_overhead_check_status=%s xctrace_overhead_estimate_p50_ms=%s xctrace_overhead_candidate_status=%s xctrace_overhead_candidate_label=%s xctrace_overhead_candidate_p50_ms=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s rc_live_checks=%s rc_test_gpu_report_freshness=%s rc_security_deterministic_property_tests=%s rc_security_observability_gpu_report_freshness=%s rc_security_packet_error_monitoring=%s rc_security_server_session_monitoring=%s rc_security_storage_package_smoke=%s rc_security_storage_config=%s rc_security_storage_backend_policy=%s rc_security_block_edit_validation=%s rc_security_block_edit_save_failure_rollback=%s rc_security_unknown_packet_policy=%s rc_security_nil_packet_policy=%s rc_security_nil_position_policy=%s rc_security_nil_block_action_policy=%s rc_security_conflict_semantics=%s rc_security_worldgen_biome_atlas_tile_identity=%s rc_security_worldgen_biome_atlas_block_texture_usage=%s rc_security_overload_status=%s rc_security_runtime_reconnect=%s rc_security_reconnect_smoke_status=%s rc_security_reconnect_smoke_client_state=%s rc_security_reconnect_smoke_reader_errors=%d rc_security_reconnect_smoke_successes=%d rc_security_reconnect_soak_status=%s rc_security_reconnect_soak_cycles=%d rc_security_reconnect_soak_reader_errors=%d rc_security_reconnect_soak_successes=%d rc_security_slow_client_status=%s rc_security_slow_reader_smoke_status=%s rc_security_slow_reader_timeout_observed=%d rc_security_slow_reader_timeout_class=%s rc_security_slow_reader_matrix_status=%s rc_security_slow_reader_matrix_counts_checked=%d rc_security_slow_reader_matrix_max_fast_clients=%d rc_security_slow_reader_matrix_total_fast_clients=%d rc_security_slow_reader_matrix_total_fast_bootstrap_chunks=%d rc_security_slow_reader_matrix_total_slow_timeouts=%d rc_security_local_server_exposure=%s rc_security_smoke_bind_exposure=%s plan=%s intake=%s capture_pack=%s results_template=%s results=%s results_summary=%s xctrace_review_packet=%s xctrace_overhead_summary=%s xctrace_overhead_candidates=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, capture_readiness, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, capture_pack_results_file_status, results_file_status, results_template_status, results_check_status, xctrace_review_capture_status, xctrace_review_packet_status, xctrace_review_packet_check_status, xctrace_overhead_status, xctrace_overhead_check_status, xctrace_overhead_estimate_p50_ms, xctrace_overhead_candidate_status, xctrace_overhead_candidate_label, xctrace_overhead_candidate_p50_ms, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, rc_live_checks, rc_test_gpu_report_freshness, rc_security_deterministic_property_tests, rc_security_observability_gpu_report_freshness, rc_security_packet_error_monitoring, rc_security_server_session_monitoring, rc_security_storage_package_smoke, rc_security_storage_config, rc_security_storage_backend_policy, rc_security_block_edit_validation, rc_security_block_edit_save_failure_rollback, rc_security_unknown_packet_policy, rc_security_nil_packet_policy, rc_security_nil_position_policy, rc_security_nil_block_action_policy, rc_security_conflict_semantics, rc_security_worldgen_biome_atlas_tile_identity, rc_security_worldgen_biome_atlas_block_texture_usage, rc_security_overload_status, rc_security_runtime_reconnect, rc_security_reconnect_smoke_status, rc_security_reconnect_smoke_client_state, rc_security_reconnect_smoke_reader_errors, rc_security_reconnect_smoke_successes, rc_security_reconnect_soak_status, rc_security_reconnect_soak_cycles, rc_security_reconnect_soak_reader_errors, rc_security_reconnect_soak_successes, rc_security_slow_client_status, rc_security_slow_reader_smoke_status, rc_security_slow_reader_timeout_observed, rc_security_slow_reader_timeout_class, rc_security_slow_reader_matrix_status, rc_security_slow_reader_matrix_counts_checked, rc_security_slow_reader_matrix_max_fast_clients, rc_security_slow_reader_matrix_total_fast_clients, rc_security_slow_reader_matrix_total_fast_bootstrap_chunks, rc_security_slow_reader_matrix_total_slow_timeouts, rc_security_local_server_exposure, rc_security_smoke_bind_exposure, plan_path, intake_path, capture_pack, results_template, results_path, results_summary, xctrace_review_packet, xctrace_overhead_summary, xctrace_overhead_candidates, shadow_summary, rc_summary)
     if (status != "pass") {
       exit 1
     }
