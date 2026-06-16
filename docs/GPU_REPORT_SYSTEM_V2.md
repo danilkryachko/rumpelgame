@@ -20,6 +20,14 @@ The wrapper writes:
 - `gpu-terrain-report-v2.txt`
 - `gpu-terrain-report-v2-legacy.txt`
 
+Use the freshness gate when the long-running ignored aggregate report must be current for handoff or observability indexing:
+
+```sh
+sh scripts/gpu_terrain_report_freshness_gate.sh logs/gpu_terrain_report_freshness_current
+```
+
+The freshness gate refreshes `logs/gpu-terrain-report.txt` by default, then verifies the report commit matches `HEAD`, the aggregate error scan is clean, aggregate upload failures are zero, and key aggregate workload metrics are present.
+
 ## Evidence Classes
 
 - Fresh scoped metrics: one selected summary file, defaulting to `gpu-upload-pressure-summary.txt` in the input log dir when present.
@@ -54,3 +62,4 @@ Fresh local evidence:
 - Do not cite historical aggregate maxima as scoped run evidence.
 - Do not use warning-only local FPS/GPU timestamp fields as pass/fail gates unless external profiler evidence validates them.
 - Fail gates should stay small and explicit. Add a new gate summary first, then teach V2 to consume it.
+- Keep `gpu_terrain_report_freshness_gate.sh` focused on freshness and aggregate safety. Do not use it as scoped performance evidence.

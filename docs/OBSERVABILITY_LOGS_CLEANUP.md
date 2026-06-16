@@ -108,6 +108,15 @@ The current server session monitoring contract summary is also part of the curre
 
 When the cleanup gate is rerun after a failed attempt, its own previous `observability-logs-cleanup-summary.txt` must not poison the next run's input status check; the rerun should be able to recover once all other current summaries are clean.
 
+## GPU Report Freshness
+
+`scripts/observability_logs_cleanup_gate.sh` runs `scripts/gpu_terrain_report_freshness_gate.sh` by default before indexing current summaries. The freshness gate refreshes the ignored aggregate `logs/gpu-terrain-report.txt`, then writes:
+
+- `logs/gpu_terrain_report_freshness_current/gpu-terrain-report-freshness-summary.txt`
+- `logs/gpu_terrain_report_freshness_current/gpu-terrain-report-freshness-check.txt`
+
+The freshness summary must report `status=pass`, `freshness_status=current`, `report_error_scan=clean`, and zero aggregate upload failures. This keeps the default handoff GPU report from silently drifting behind `HEAD` after documentation-only commits while preserving the historical aggregate-report caveat.
+
 ## Deferred Work
 
 Still needed:
@@ -134,7 +143,7 @@ Use:
 sh scripts/observability_logs_cleanup_gate.sh logs/observability_logs_cleanup_current
 ```
 
-The expected current result is `status=pass`, `observability_status=indexed`, `run_id_status=wired`, `summary_lane=current`, and `error_scan=clean`.
+The expected current result is `status=pass`, `observability_status=indexed`, `run_id_status=wired`, `summary_lane=current`, `error_scan=clean`, and `gpu_report_freshness=guarded`.
 
 The gate checks that:
 
@@ -142,6 +151,7 @@ The gate checks that:
 - HUD perf logging has `RUMPELMC_RUN_ID`, `run_id=`, `overlay=`, and full `perf=`.
 - Current summary artifacts have `*-summary.txt` naming and `status=pass` or `status=deferred`.
 - Current summary artifacts have a clean focused error scan.
+- The aggregate GPU terrain report freshness summary is current, clean, and zero-upload-failure guarded.
 - The prior tooling debug overlay summary is clean.
 
 ## Current Status
