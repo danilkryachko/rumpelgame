@@ -183,7 +183,7 @@ Fresh check:
 
 ## Worldgen Determinism
 
-The current worldgen hardening slice is test-only. It locks down flat generation strata, repeat generation for positive and negative chunk coordinates, stable little-endian block serialization order, and `World.ChunkSnapshot()` determinism across independent `World` instances.
+The current worldgen hardening slice is test-only. It locks down flat generation strata, repeat generation for positive and negative chunk coordinates, global block-to-chunk coordinate mapping across negative boundaries, stable little-endian block serialization order, and `World.ChunkSnapshot()` determinism across independent `World` instances.
 
 Fresh check:
 
@@ -717,7 +717,7 @@ Set `RUMPELMC_SERVER_CHUNK_ENCODING=raw` for the rollback path.
 - For block material metadata design, use `scripts/block_material_metadata_design_gate.sh`; see `docs/BLOCK_MATERIAL_METADATA_DESIGN.md`. Current expected status is `pass` with `active_schema_change=0` and the runtime contract still opaque-only.
 - For texture atlas evolution planning, use `scripts/texture_atlas_evolution_gate.sh`; see `docs/TEXTURE_ATLAS_EVOLUTION_TRACK.md`. Current expected status is `pass` with no atlas asset or shader layout change.
 - For biome and visual-variety foundation, use `scripts/biome_visual_variety_foundation_gate.sh`; see `docs/BIOME_VISUAL_VARIETY_FOUNDATION.md`. Current expected status is `pass` with runtime biome visuals deferred and no worldgen/serialization change.
-- For world generation quality planning, use `scripts/world_generation_quality_gate.sh`; see `docs/WORLD_GENERATION_QUALITY_PASS.md`. Current expected status is `pass` with runtime terrain/cave/resource/structure changes deferred.
+- For world generation quality planning, use `scripts/world_generation_quality_gate.sh`; see `docs/WORLD_GENERATION_QUALITY_PASS.md`. Current expected status is `pass` with `coordinate_mapping=guarded` and runtime terrain/cave/resource/structure changes deferred.
 - For server scalability checks, use `scripts/server_scalability_pass_gate.sh`; see `docs/SERVER_SCALABILITY_PASS.md`. Current expected status is `pass` with multi-client sent-state, interested-client fanout, and `conflict_semantics=last_write_wins_guarded` guarded, plus bounded live/repeated multi-client evidence.
 - For networking robustness checks, use `scripts/networking_robustness_gate.sh`; see `docs/NETWORKING_ROBUSTNESS_PROGRAM.md`. Current expected status is `pass` with Go/Rust packet boundary tests, reconnect, slow-client, stale-session, packet-error classification, parser aggregation, live alert thresholds, `conflict_semantics=last_write_wins_guarded`, and opt-in admission guarded while adaptive overload/backpressure work remains deferred.
 - For client state-machine checks, use `scripts/client_state_machine_hardening_gate.sh`; see `docs/CLIENT_STATE_MACHINE_HARDENING.md`. Current expected status is `pass` with lifecycle transitions unit-guarded and runtime reconnect/state telemetry deferred.

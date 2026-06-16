@@ -94,6 +94,55 @@ func TestChunkSnapshotIsDeterministicAcrossWorldInstances(t *testing.T) {
 	}
 }
 
+func TestGlobalToChunkLocalHandlesNegativeBoundaries(t *testing.T) {
+	tests := []struct {
+		name      string
+		block     int32
+		wantChunk int32
+		wantLocal int
+	}{
+		{name: "origin", block: 0, wantChunk: 0, wantLocal: 0},
+		{name: "positive edge", block: int32(ChunkWidth - 1), wantChunk: 0, wantLocal: ChunkWidth - 1},
+		{name: "positive next chunk", block: int32(ChunkWidth), wantChunk: 1, wantLocal: 0},
+		{name: "negative previous edge", block: -1, wantChunk: -1, wantLocal: ChunkWidth - 1},
+		{name: "negative exact chunk", block: -int32(ChunkWidth), wantChunk: -1, wantLocal: 0},
+		{name: "negative next chunk edge", block: -int32(ChunkWidth) - 1, wantChunk: -2, wantLocal: ChunkWidth - 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotChunk, gotLocal := GlobalToChunkLocal(tt.block, ChunkWidth)
+			if gotChunk != tt.wantChunk || gotLocal != tt.wantLocal {
+				t.Fatalf("GlobalToChunkLocal(%d) = (%d, %d), want (%d, %d)", tt.block, gotChunk, gotLocal, tt.wantChunk, tt.wantLocal)
+			}
+		})
+	}
+}
+
+func TestChunkCoordForPositionUsesFloorAtNegativeBoundaries(t *testing.T) {
+	tests := []struct {
+		name string
+		x    float32
+		z    float32
+		want ChunkCoord
+	}{
+		{name: "origin", x: 0, z: 0, want: ChunkCoord{X: 0, Z: 0}},
+		{name: "positive edge", x: float32(ChunkWidth) - 0.25, z: float32(ChunkDepth) - 0.25, want: ChunkCoord{X: 0, Z: 0}},
+		{name: "positive next chunk", x: float32(ChunkWidth), z: float32(ChunkDepth), want: ChunkCoord{X: 1, Z: 1}},
+		{name: "negative fractional edge", x: -0.25, z: -0.25, want: ChunkCoord{X: -1, Z: -1}},
+		{name: "negative exact chunk", x: -float32(ChunkWidth), z: -float32(ChunkDepth), want: ChunkCoord{X: -1, Z: -1}},
+		{name: "negative next chunk", x: -float32(ChunkWidth) - 0.25, z: -float32(ChunkDepth) - 0.25, want: ChunkCoord{X: -2, Z: -2}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ChunkCoordForPosition(tt.x, tt.z); got != tt.want {
+				t.Fatalf("ChunkCoordForPosition(%f, %f) = %+v, want %+v", tt.x, tt.z, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSetBlockGlobalPersistsEditedChunkForReload(t *testing.T) {
 	store := newSerializedChunkStore()
 	blockX, blockY, blockZ := int32(35), int32(64), int32(-2)
