@@ -30,6 +30,7 @@ ARCH_SUMMARY="${RUMPELMC_SECURITY_REVIEW_ARCH_SUMMARY:-"$ROOT_DIR/logs/architect
 OBSERVABILITY_SUMMARY="${RUMPELMC_SECURITY_REVIEW_OBSERVABILITY_SUMMARY:-"$ROOT_DIR/logs/observability_logs_cleanup_current/observability-logs-cleanup-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_SECURITY_REVIEW_RUN_GO_TESTS:-1}"
 RUN_RUST_TESTS="${RUMPELMC_SECURITY_REVIEW_RUN_RUST_TESTS:-1}"
+UNAPPROVED_DB_SCAN="$OUT_DIR/unapproved-database-reference-scan.txt"
 
 mkdir -p "$OUT_DIR"
 
@@ -64,6 +65,26 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
+scan_unapproved_database_references() {
+  pattern='(^|[^[:alnum:]_])(sqlite|mysql|mariadb|mongodb|dynamodb|redis|badger|bolt|leveldb|duckdb|cockroach|surreal|tidb)([^[:alnum:]_]|$)'
+  : > "$UNAPPROVED_DB_SCAN"
+
+  (cd "$ROOT_DIR" && git ls-files --cached --others --exclude-standard -- server client api) |
+    while IFS= read -r relpath; do
+      path="$ROOT_DIR/$relpath"
+      test -f "$path" || continue
+      case "$relpath" in
+        *.bmp|*.db|*.ico|*.import|*.jpeg|*.jpg|*.png|*.rocksdb|*.trace|*.uid|*.webp|*.zip) continue ;;
+      esac
+      grep -EInH "$pattern" "$path" || true
+    done > "$UNAPPROVED_DB_SCAN"
+
+  if [ -s "$UNAPPROVED_DB_SCAN" ]; then
+    cat "$UNAPPROVED_DB_SCAN" >&2 || true
+    fail "unapproved database engine reference in runtime source"
+  fi
+}
+
 for path in \
   "$DESIGN_DOC" \
   "$STORAGE_DOC" \
@@ -86,6 +107,8 @@ for path in \
   "$OBSERVABILITY_SUMMARY"; do
   test -s "$path" || fail "missing required input $path"
 done
+
+scan_unapproved_database_references
 
 for token in \
   'Reviewed Boundaries' \
@@ -279,6 +302,7 @@ awk \
     packet_boundary = "guarded"
     storage_integrity = "guarded"
     storage_config = "path_guarded"
+    storage_backend_policy = "approved_only_guarded"
     storage_backend_ownership = "guarded"
     storage_concurrency = "guarded"
     storage_errors = "actionable_guarded"
@@ -324,7 +348,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_config=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_config, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_config=%s storage_backend_policy=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_config, storage_backend_policy, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
     if (status != "pass") {
       exit 1
     }
