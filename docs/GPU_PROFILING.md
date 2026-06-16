@@ -148,6 +148,19 @@ sh scripts/gpu_terrain_chunk_boundary_stress.sh logs/gpu_terrain_chunk_boundary_
 
 The gate writes `chunk-boundary-stress-summary.txt`; see `docs/GPU_TERRAIN_CHUNK_BOUNDARY_STRESS.md`.
 
+Use the rapid camera-turn stress gate after changing culling, camera-facing draw submission, visibility/proxy refresh behavior, or movement smoke camera poses. It keeps the player in a single chunk while rapidly rotating the camera through the `chunk_fast_turn` pose sequence:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_TIMEOUT_SEC=240 \
+GODOT_QUIT_AFTER_FRAMES=30000 \
+SMOKE_DELAY_SEC=8.0 \
+sh scripts/gpu_terrain_rapid_camera_turn_stress.sh logs/gpu_terrain_rapid_camera_turn_stress_current
+```
+
+The gate writes `rapid-camera-turn-stress-summary.txt`; see `docs/GPU_TERRAIN_RAPID_CAMERA_TURN_STRESS.md`.
+
 Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh

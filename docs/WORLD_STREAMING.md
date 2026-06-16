@@ -261,6 +261,14 @@ Fresh local evidence:
 
 - `logs/gpu_terrain_chunk_boundary_stress_current/chunk-boundary-stress-summary.txt` passed with movement cases `4`, workload cases `1`, max bounded residency `998` GPU subchunks/draws and `1445` faces, max terrain queue `2.258ms`, process wall p95 `0.049ms`, compositor submit `0.124ms`, packet queue max drain `54`, unload total `0`, unload neighbor refreshes `0`, upload failures `0`, ground misses `0`, and all final render/collision readiness checks passing.
 
+## Rapid Camera-Turn Stress
+
+`scripts/gpu_terrain_rapid_camera_turn_stress.sh` is the focused rapid-turn gate. It keeps the player inside chunk `2,2`, runs eight camera target changes via `chunk_fast_turn`, and emits `rapid-camera-turn-stress-summary.txt`.
+
+Fresh local evidence:
+
+- `logs/gpu_terrain_rapid_camera_turn_stress_current/rapid-camera-turn-stress-summary.txt` passed with `motion_steps=8`, `motion_chunks=1`, current chunk `2,2`, max queue/process/submit `1.535/0.049/0.100ms`, GPU effective draws `634`, packet queue max drain `51`, unload total/neighbor refreshes `0/0`, upload failures `0`, ground misses `0`, terrain samples `416`, and final render/collision readiness.
+
 ## GPU Terrain Load Scaling
 
 The load-scaling gate requires a high resident set before treating GPU terrain scaling as covered: at least `2000` subchunks, `2000` draws, `3000` faces, and at least `25%` draw-command buffer occupancy with zero upload failures.
