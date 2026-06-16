@@ -29,6 +29,7 @@ Scope:
 - Add a server-owned session inventory placement boundary for the current creative block set.
 - Keep the current creative five-slot hotbar behavior over existing placeable block IDs.
 - Show server-authoritative hotbar slot names, counts, and selected slot in the Godot HUD from `InventorySnapshot`.
+- Guard server-owned counted break-drop insertion for destroyed placeable blocks.
 - Guard inventory slot rules with Rust unit tests.
 - Guard server session inventory rules with Go unit tests and a network handler test.
 - Guard local-player inventory persistence with a live TCP server restart/reconnect smoke over an isolated RocksDB store.
@@ -36,13 +37,13 @@ Scope:
 
 Out of scope:
 
-- No crafting, drops, tools, durability, survival rules, new block IDs beyond inventory action/snapshot/player-id compatibility, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
+- No crafting, item entity pickup packets, tools, durability, survival rules, new block IDs beyond inventory action/snapshot/player-id compatibility, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
 
 Assumptions:
 
 - Mining and building remain client input actions that emit `block_broken` and `block_placed` signals.
 - Server `BlockAction` remains the only networked edit command.
-- Server `World.SetBlockGlobal` is the persistence-capable edit boundary because it calls `ChunkStore.SaveChunk` when a store is configured.
+- Server `World.SetBlockGlobal` and `World.ReplaceBlockGlobal` are the persistence-capable edit boundaries because they call `ChunkStore.SaveChunk` when a store is configured.
 - The current hotbar is creative-mode inventory, so counts are guard data and are not decremented by placement yet.
 - Server sessions use the same creative placement retention through `server/pkg/inventory`.
 - The Rust client sends `ClientPosition.player_id = "local_player"` so the loopback local-player inventory can persist across reconnects.
@@ -105,19 +106,23 @@ The server now has a session-owned inventory foundation:
 - `BlockAction_PLACE` keeps the existing `world.IsPlaceable(block)` check and requires `client.inventory.CanPlaceBlock(block)` before the world edit.
 - Counted placement is applied only after `World.SetBlockGlobal` succeeds.
 - Successful counted placement sends a fresh inventory snapshot after the chunk update and normalizes the selected slot if the selected stack is depleted.
+- Connected-session `BlockAction_DESTROY` uses `World.ReplaceBlockGlobal`, maps the block to `Air`, and adds one placeable previous block back into matching counted inventory slots after the world edit succeeds.
+- Counted destroy-drop insertion saves bound player inventory and is guarded by a live server restart smoke; creative retained inventories keep counts unchanged.
 - A valid `ClientPosition.player_id` binds the session to a persisted player inventory state through the configured RocksDB store.
 - Missing inventory records create the current creative hotbar record; existing records restore slots and selected slot.
 - Selected-slot changes and successful counted placements save the bound inventory state.
 - Creative placement keeps counts retained, so current creative block placement behavior is unchanged.
 - Counted runtime placement is guarded by a live server smoke that decrements a placed stack and reloads the decremented count after restart.
+- Counted break-drop insertion is guarded by a live server smoke that destroys a generated Stone block, increments the selected stack, and reloads the added count after restart.
 - Missing inventory entries reject placement before `World.SetBlockGlobal` and before chunk update broadcast.
 
 ## Persistence Boundary
 
 The gameplay foundation relies on the existing server boundary:
 
-- `BlockAction_PLACE` and `BlockAction_DESTROY` both flow through `World.SetBlockGlobal`.
+- `BlockAction_PLACE` flows through `World.SetBlockGlobal`; connected-session `BlockAction_DESTROY` flows through `World.ReplaceBlockGlobal`, which preserves the same edit/save boundary while returning the previous block for counted drop insertion.
 - `World.SetBlockGlobal` persists the edited chunk only when `World` was created with a `ChunkStore`.
+- `World.ReplaceBlockGlobal` is the atomic previous-block-returning variant used by session destroy handling; `World.SetBlockGlobal` wraps it for existing callers.
 - `World.SetBlockGlobal` rejects block edits outside `[0, ChunkHeight)` before creating/loading a chunk or returning an updated snapshot.
 - `server/cmd/server/main.go` creates the default server with `storage.OpenRocksChunkStore`, so normal server runs are persistence-capable.
 - `server/cmd/server/main.go` passes that same store to `network.NewServerWithPlayerInventoryStore`, so local-player inventory records use RocksDB without changing chunk keys or chunk payload bytes.
@@ -129,7 +134,7 @@ The gameplay foundation relies on the existing server boundary:
 Still needed before calling gameplay production-ready:
 
 - Tool/durability/mining-time rules.
-- Drops and pickup flow.
+- Item entity pickup flow.
 - Stack transfer and crafting inventory actions.
 - Edit broadcast/fanout to other clients.
 - Broader dirty chunk save/reload coverage beyond the Block 41 persisted visual smoke.
@@ -141,7 +146,7 @@ Still needed before calling gameplay production-ready:
 - Keep `Packet.inventory_action = 5` as the client-to-server selected-slot inventory action payload.
 - Keep `scripts/inventory_protocol_compatibility_gate.sh` clean after inventory schema work.
 - Keep player inventory persistence on the documented RocksDB player-inventory record format.
-- Do not bypass `World.SetBlockGlobal` for persistent block edits.
+- Do not bypass `World.SetBlockGlobal` or `World.ReplaceBlockGlobal` for persistent block edits.
 - Do not allow client-only block IDs through `BlockAction`.
 - Do not decrement creative hotbar or server creative inventory counts in this checkpoint.
 - Do not change world generation or chunk serialization for gameplay foundation work.
@@ -165,8 +170,9 @@ The gate checks that:
 - The client source contains selected-slot inventory action send coverage, local player-id position packet coverage, authoritative inventory HUD getter coverage, and authoritative inventory formatting tests.
 - The HUD source reads authoritative inventory slot text, selected slot, selected block, and summary text from `GameClient`.
 - The server inventory foundation summary is present and clean.
+- The server inventory foundation summary includes counted break-drop live evidence.
 - The player inventory reconnect smoke summary is present and proves selected-slot persistence after a real server restart.
-- Server block edits still flow through `World.SetBlockGlobal`.
+- Server block edits still flow through `World.SetBlockGlobal` or `World.ReplaceBlockGlobal`.
 - `World.SetBlockGlobal` still calls `ChunkStore.SaveChunk`.
 - The Block 41 block-edit persistence summary is present and its persisted visual/collision/GPU matrix is clean.
 - Previous client state-machine hardening is clean.
@@ -175,4 +181,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, counted break-drop insertion is guarded through a real server restart, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.

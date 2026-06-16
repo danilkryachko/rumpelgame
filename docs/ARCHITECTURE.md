@@ -23,7 +23,7 @@
 
 - `world.World` is the authoritative in-memory world owner.
 - `World.ChunksAround` selects chunk coordinates, loads or generates chunks, and returns serialized snapshots for networking.
-- Server client sessions own the placement inventory boundary for `BlockAction_PLACE`.
+- Server client sessions own the placement inventory boundary for `BlockAction_PLACE` and counted break-drop insertion for `BlockAction_DESTROY`.
 - `World.SetBlockGlobal` applies block edits and persists dirty chunks through the configured `ChunkStore`.
 - The Go server passes the same RocksDB store to the network layer for local-player inventory persistence under a separate player-inventory key prefix.
 - RocksDB chunk keys use the stable `c` prefix plus sortable signed big-endian chunk coordinates.
@@ -44,7 +44,7 @@
 - The client lifecycle model tracks connecting, waiting_chunks, spawning, active, reconnecting, and shutdown.
 - The packet reader feeds the main-thread packet queue; packet queue metrics are observational and do not implement backpressure or dropping.
 - Chunk replacements run through dirty-update detection. Partial dirty GPU upload is default-on; `RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD=0` is the full-rebuild rollback path.
-- Local creative hotbar input state includes the requested selected slot and selected block ID. Server sessions own creative placement inventory, selected-slot validation for `InventoryAction_SELECT_SLOT`, placement approval for `BlockAction_PLACE`, and local-player inventory load/save when `ClientPosition.player_id` is valid; the Rust client copies authoritative inventory slots and selected slot from `InventorySnapshot`, and the Godot HUD displays those authoritative labels/counts. Persistent block edits still flow through `World.SetBlockGlobal`.
+- Local creative hotbar input state includes the requested selected slot and selected block ID. Server sessions own creative placement inventory, selected-slot validation for `InventoryAction_SELECT_SLOT`, placement approval for `BlockAction_PLACE`, counted break-drop insertion for `BlockAction_DESTROY`, and local-player inventory load/save when `ClientPosition.player_id` is valid; the Rust client copies authoritative inventory slots and selected slot from `InventorySnapshot`, and the Godot HUD displays those authoritative labels/counts. Persistent block edits flow through `World.SetBlockGlobal` or `World.ReplaceBlockGlobal`.
 - Reconnect execution, slow-client policy, block-edit broadcast fanout, and opt-in max-client admission with bounded live rejection evidence are guarded; adaptive overload/backpressure behavior remains deferred policy work.
 
 ## GPU Terrain Contract

@@ -111,6 +111,23 @@ func (i *Inventory) PlaceBlock(blockID world.BlockID) bool {
 	return true
 }
 
+// AddBlock adds one placeable block to counted inventories and reports state changes.
+func (i *Inventory) AddBlock(blockID world.BlockID) bool {
+	slotIndex, ok := i.addableSlotIndex(blockID)
+	if !ok {
+		return false
+	}
+	if i.placementPolicy != PlacementPolicyConsume {
+		return false
+	}
+	if i.slots[slotIndex].Count == ^uint32(0) {
+		return false
+	}
+
+	i.slots[slotIndex].Count++
+	return true
+}
+
 func (i *Inventory) Slots() []Slot {
 	copiedSlots := make([]Slot, len(i.slots))
 	copy(copiedSlots, i.slots)
@@ -132,6 +149,19 @@ func (i *Inventory) placeableSlotIndex(blockID world.BlockID) (int, bool) {
 
 	for index, slot := range i.slots {
 		if slot.BlockID == blockID && inventorySlotCanPlace(slot) {
+			return index, true
+		}
+	}
+	return -1, false
+}
+
+func (i *Inventory) addableSlotIndex(blockID world.BlockID) (int, bool) {
+	if !world.IsPlaceable(blockID) {
+		return -1, false
+	}
+
+	for index, slot := range i.slots {
+		if slot.BlockID == blockID && world.IsPlaceable(slot.BlockID) {
 			return index, true
 		}
 	}

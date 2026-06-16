@@ -144,8 +144,13 @@ func chunkDirectionScore(coord ChunkCoord, centerX, centerZ int32, order ChunkOr
 }
 
 func (w *World) SetBlockGlobal(x, y, z int32, block BlockID) (ChunkSnapshot, error) {
+	snapshot, _, err := w.ReplaceBlockGlobal(x, y, z, block)
+	return snapshot, err
+}
+
+func (w *World) ReplaceBlockGlobal(x, y, z int32, block BlockID) (ChunkSnapshot, BlockID, error) {
 	if y < 0 || y >= int32(ChunkHeight) {
-		return ChunkSnapshot{}, fmt.Errorf("block y coordinate %d out of range [0,%d)", y, ChunkHeight)
+		return ChunkSnapshot{}, Air, fmt.Errorf("block y coordinate %d out of range [0,%d)", y, ChunkHeight)
 	}
 
 	chunkX, localX := GlobalToChunkLocal(x, ChunkWidth)
@@ -156,7 +161,7 @@ func (w *World) SetBlockGlobal(x, y, z int32, block BlockID) (ChunkSnapshot, err
 
 	chunk, err := w.getOrCreateLocked(chunkX, chunkZ)
 	if err != nil {
-		return ChunkSnapshot{}, err
+		return ChunkSnapshot{}, Air, err
 	}
 	previousBlock := chunk.GetBlock(localX, int(y), localZ)
 	chunk.SetBlock(localX, int(y), localZ, block)
@@ -164,11 +169,11 @@ func (w *World) SetBlockGlobal(x, y, z int32, block BlockID) (ChunkSnapshot, err
 	if w.store != nil {
 		if err := w.store.SaveChunk(chunk); err != nil {
 			chunk.SetBlock(localX, int(y), localZ, previousBlock)
-			return ChunkSnapshot{}, err
+			return ChunkSnapshot{}, Air, err
 		}
 	}
 
-	return snapshotChunk(chunk), nil
+	return snapshotChunk(chunk), previousBlock, nil
 }
 
 func (w *World) getOrCreateLocked(x, z int32) (*Chunk, error) {

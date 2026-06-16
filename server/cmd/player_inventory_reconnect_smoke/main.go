@@ -18,9 +18,10 @@ const maxPacketSize = 16 * 1024 * 1024
 type smokeAction string
 
 const (
-	actionSelect      smokeAction = "select"
-	actionExpect      smokeAction = "expect"
-	actionPlaceExpect smokeAction = "place-expect"
+	actionSelect        smokeAction = "select"
+	actionExpect        smokeAction = "expect"
+	actionPlaceExpect   smokeAction = "place-expect"
+	actionDestroyExpect smokeAction = "destroy-expect"
 )
 
 type smokeClient struct {
@@ -37,7 +38,7 @@ type inventoryObservation struct {
 func main() {
 	addr := flag.String("addr", "127.0.0.1:25565", "server TCP address")
 	timeout := flag.Duration("timeout", 3*time.Second, "per-read/write timeout")
-	action := flag.String("action", string(actionExpect), "smoke action: select, expect, or place-expect")
+	action := flag.String("action", string(actionExpect), "smoke action: select, expect, place-expect, or destroy-expect")
 	playerID := flag.String("player-id", "local_player", "player id to send in ClientPosition")
 	slot := flag.Uint("slot", 1, "selected inventory slot to persist or expect")
 	blockID := flag.Uint("block-id", 1, "block id to place for place-expect")
@@ -69,6 +70,10 @@ func run(addr string, timeout time.Duration, action smokeAction, playerID string
 	case actionExpect:
 	case actionPlaceExpect:
 		if err := client.sendBlockPlace(blockID, timeout); err != nil {
+			return err
+		}
+	case actionDestroyExpect:
+		if err := client.sendBlockDestroy(timeout); err != nil {
 			return err
 		}
 	default:
@@ -132,6 +137,19 @@ func (c *smokeClient) sendBlockPlace(blockID uint32, timeout time.Duration) erro
 				Y:       64,
 				Z:       1,
 				BlockId: blockID,
+			},
+		},
+	}, timeout)
+}
+
+func (c *smokeClient) sendBlockDestroy(timeout time.Duration) error {
+	return c.writePacket(&api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action: api.BlockAction_DESTROY,
+				X:      1,
+				Y:      60,
+				Z:      1,
 			},
 		},
 	}, timeout)

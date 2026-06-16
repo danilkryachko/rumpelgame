@@ -104,6 +104,61 @@ func TestCountedInventoryConsumesStacksAndRejectsEmptySlots(t *testing.T) {
 	}
 }
 
+func TestCountedInventoryAddBlockRestoresDepletedSlot(t *testing.T) {
+	inv := NewCounted([]Slot{
+		{BlockID: world.Stone, Count: 0},
+		{BlockID: world.Wood, Count: 1},
+	})
+
+	if inv.CanPlaceBlock(world.Stone) {
+		t.Fatal("CanPlaceBlock(Stone) before AddBlock = true, want false")
+	}
+	if !inv.AddBlock(world.Stone) {
+		t.Fatal("AddBlock(Stone) = false, want true")
+	}
+	if !inv.CanPlaceBlock(world.Stone) {
+		t.Fatal("CanPlaceBlock(Stone) after AddBlock = false, want true")
+	}
+
+	slots := inv.Slots()
+	if got := slots[0].Count; got != 1 {
+		t.Fatalf("Stone count after AddBlock = %d, want 1", got)
+	}
+}
+
+func TestInventoryAddBlockRejectsNonPlaceableAndMissingSlots(t *testing.T) {
+	inv := NewCounted([]Slot{{BlockID: world.Stone, Count: 1}})
+
+	if inv.AddBlock(world.Air) {
+		t.Fatal("AddBlock(Air) = true, want false")
+	}
+	if inv.AddBlock(world.BlockID(999)) {
+		t.Fatal("AddBlock(unknown) = true, want false")
+	}
+	if inv.AddBlock(world.Wood) {
+		t.Fatal("AddBlock(Wood missing slot) = true, want false")
+	}
+
+	slots := inv.Slots()
+	if got := slots[0].Count; got != 1 {
+		t.Fatalf("Stone count after rejected AddBlock calls = %d, want 1", got)
+	}
+}
+
+func TestCreativeHotbarAddBlockRetainsCounts(t *testing.T) {
+	inv := NewCreativeHotbar()
+
+	if inv.AddBlock(world.Wood) {
+		t.Fatal("AddBlock(Wood) on creative hotbar = true, want false state change")
+	}
+
+	for _, slot := range inv.Slots() {
+		if slot.BlockID == world.Wood && slot.Count != CreativeStackCount {
+			t.Fatalf("Wood count after AddBlock = %d, want %d", slot.Count, CreativeStackCount)
+		}
+	}
+}
+
 func TestInventorySlotsReturnsCopy(t *testing.T) {
 	inv := NewCounted([]Slot{{BlockID: world.Stone, Count: 1}})
 	slots := inv.Slots()

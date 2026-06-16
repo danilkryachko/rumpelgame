@@ -1291,6 +1291,153 @@ func TestHandleClientPacketPlaceSendsInventorySnapshotAfterCountedPlacement(t *t
 	}
 }
 
+func TestHandleClientPacketDestroyAddsBlockToCountedInventoryAndSendsSnapshot(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	client := newClientSession(&recordingConn{})
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+		{BlockID: world.Wood, Count: 1},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action: api.BlockAction_DESTROY,
+				X:      1,
+				Y:      60,
+				Z:      1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 2 {
+		t.Fatalf("frames = %d, want 2", got)
+	}
+	if decodedPacket(t, frames[0]).GetChunk() == nil {
+		t.Fatal("first frame chunk = nil")
+	}
+	snapshot := decodedPacket(t, frames[1]).GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("second frame inventory snapshot = nil")
+	}
+	if got := snapshot.GetSlots()[0].GetCount(); got != 1 {
+		t.Fatalf("stone count after destroy drop = %d, want 1", got)
+	}
+	if got := snapshot.GetSelectedSlot(); got != 0 {
+		t.Fatalf("selected slot after destroy drop = %d, want 0", got)
+	}
+}
+
+func TestHandleClientPacketDestroyPersistsCollectedCountedDrop(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	client := newClientSession(&recordingConn{})
+	client.bindPlayerID("local_player")
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+		{BlockID: world.Wood, Count: 1},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action: api.BlockAction_DESTROY,
+				X:      1,
+				Y:      60,
+				Z:      1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+
+	saved := store.states["local_player"]
+	if len(saved.Slots) != 2 {
+		t.Fatalf("persisted slots = %d, want 2", len(saved.Slots))
+	}
+	if got := saved.Slots[0].Count; got != 1 {
+		t.Fatalf("persisted stone count after destroy drop = %d, want 1", got)
+	}
+	if got := store.saveCount; got != 1 {
+		t.Fatalf("save count = %d, want 1", got)
+	}
+}
+
+func TestHandleClientPacketDestroyDoesNotCollectAir(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	client := newClientSession(&recordingConn{})
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action: api.BlockAction_DESTROY,
+				X:      1,
+				Y:      64,
+				Z:      1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames = %d, want chunk only", got)
+	}
+	if decodedPacket(t, frames[0]).GetChunk() == nil {
+		t.Fatal("frame chunk = nil")
+	}
+	if client.inventory.CanPlaceBlock(world.Stone) {
+		t.Fatal("destroying Air added Stone to inventory")
+	}
+}
+
+func TestHandleClientPacketDestroyDoesNotCollectWhenBlockUpdateFails(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	client := newClientSession(&recordingConn{})
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action: api.BlockAction_DESTROY,
+				X:      1,
+				Y:      int32(world.ChunkHeight),
+				Z:      1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err == nil {
+		t.Fatal("handleClientPacketForSession() error = nil, want block update error")
+	}
+	if client.inventory.CanPlaceBlock(world.Stone) {
+		t.Fatal("failed destroy update added Stone to inventory")
+	}
+	if got := len(recordedFrames(t, client.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("frames = %d, want 0", got)
+	}
+}
+
 func TestHandleClientPacketRejectsOutOfRangeBlockAction(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW

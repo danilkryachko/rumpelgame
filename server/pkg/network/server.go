@@ -406,10 +406,11 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			return nil
 		}
 
-		snapshot, err := s.world.SetBlockGlobal(action.X, action.Y, action.Z, block)
+		snapshot, previousBlock, err := s.world.ReplaceBlockGlobal(action.X, action.Y, action.Z, block)
 		if err != nil {
 			return fmt.Errorf("update block: %w", err)
 		}
+		inventoryChanged := false
 		if applyInventoryPlacement {
 			if !client.placeInventoryBlock(block) {
 				return fmt.Errorf("place inventory block %d: unavailable", block)
@@ -417,12 +418,21 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			if err := s.saveClientInventory(client); err != nil {
 				return err
 			}
+			inventoryChanged = true
+		}
+		if action.Action == api.BlockAction_DESTROY && world.IsPlaceable(previousBlock) {
+			if client.addInventoryBlock(previousBlock) {
+				if err := s.saveClientInventory(client); err != nil {
+					return err
+				}
+				inventoryChanged = true
+			}
 		}
 
 		if err := s.broadcastChunkUpdate(client, snapshot); err != nil {
 			return fmt.Errorf("send updated chunk %d,%d: %w", snapshot.X, snapshot.Z, err)
 		}
-		if applyInventoryPlacement {
+		if inventoryChanged {
 			if err := s.sendInventorySnapshotToSession(client); err != nil {
 				return fmt.Errorf("send inventory snapshot: %w", err)
 			}
@@ -613,6 +623,17 @@ func (c *clientSession) placeInventoryBlock(block world.BlockID) bool {
 	defer c.stateMu.Unlock()
 
 	if !c.inventory.PlaceBlock(block) {
+		return false
+	}
+	c.normalizeSelectedInventorySlotLocked()
+	return true
+}
+
+func (c *clientSession) addInventoryBlock(block world.BlockID) bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if !c.inventory.AddBlock(block) {
 		return false
 	}
 	c.normalizeSelectedInventorySlotLocked()

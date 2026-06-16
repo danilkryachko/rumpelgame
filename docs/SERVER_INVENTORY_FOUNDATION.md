@@ -20,11 +20,12 @@ Scope:
 - Guard the session placement and selected-slot boundaries with network handler tests.
 - Guard RocksDB player inventory key separation and record round-trip with storage tests.
 - Guard counted runtime placement, count decrement, server restart, and persisted count reload with `scripts/player_inventory_counted_smoke.sh`.
+- Guard counted runtime destroy-drop insertion, server restart, and persisted count reload with `scripts/player_inventory_break_drop_smoke.sh`.
 - Guard the local-player reconnect/restart runtime path through `scripts/player_inventory_reconnect_smoke.sh` as part of the gameplay loop foundation.
 
 Out of scope:
 
-- No crafting rules, drops, pickup packets, client UI changes, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or new database engines. Inventory action and snapshot compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
+- No crafting rules, item entity pickup packets, client UI changes, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or new database engines. Inventory action and snapshot compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
 
 ## Current Contract
 
@@ -36,6 +37,7 @@ Out of scope:
 - `NewCounted()` creates a counted inventory where successful placement decrements the matching stack.
 - `NewCountedHotbar()` derives the same placeable hotbar slots as creative mode, with `PlacementPolicyConsume` and finite stack counts.
 - `CanPlaceBlock()` and `PlaceBlock()` reject air, unknown block IDs, empty slots, and non-placeable registry entries.
+- `AddBlock()` accepts only placeable block IDs already represented by an inventory slot, increments counted stacks, and leaves creative retained stacks unchanged.
 - `CanSelectSlot()`, `PlaceableBlockAtSlot()`, and `FirstPlaceableSlot()` reject unavailable slots and expose slot selection without giving callers mutable inventory state.
 - `Slots()` returns a copy so callers cannot mutate inventory internals without going through the domain methods.
 - `State(selectedSlot)` and `NewFromState()` are the typed boundary used by persistence without exposing mutable inventory internals.
@@ -56,6 +58,9 @@ Out of scope:
 - In counted mode, the first persisted player inventory record stores `PlacementPolicyConsume` and the finite hotbar counts, so later reconnects keep the counted state.
 - Invalid or missing `player_id` values keep session-local inventory behavior and do not touch player inventory storage.
 - `BlockAction DESTROY` still maps to `world.Air` and does not require an inventory slot.
+- Connected-session destroy uses `World.ReplaceBlockGlobal` so the previous block is read atomically with the world edit.
+- After successful destroy of a placeable previous block, counted inventories add one block to the matching slot, save the bound player inventory state, and send a fresh snapshot after the chunk update.
+- Creative retained inventories do not change counts from destroy-drop insertion.
 - The legacy state handler keeps behavior-preserving creative inventory validation for tests that bypass `clientSession`.
 - A rejected placement due to missing inventory writes no chunk update to the origin client or interested clients.
 
@@ -65,7 +70,7 @@ Out of scope:
 - Do not hand-edit generated protocol files.
 - Persist player inventory only through the RocksDB player-inventory record format documented in `docs/STORAGE.md`.
 - Do not change RocksDB chunk keys, chunk payload bytes, or `Chunk.Serialize()`.
-- Do not bypass `World.SetBlockGlobal` after inventory validation passes.
+- Do not bypass `World.SetBlockGlobal` or `World.ReplaceBlockGlobal` after inventory validation passes.
 - Do not change block ID numeric values or block registry placeability semantics from this checkpoint.
 - Keep creative placement count retention unless a counted/survival gameplay gate explicitly owns the behavior change.
 - Keep counted mode behind `RUMPELMC_SERVER_INVENTORY_MODE=counted` until the broader survival loop owns default gameplay rules.
@@ -76,24 +81,27 @@ Use:
 
 ```sh
 sh scripts/player_inventory_counted_smoke.sh logs/player_inventory_counted_smoke_current
+sh scripts/player_inventory_break_drop_smoke.sh logs/player_inventory_break_drop_smoke_current
 sh scripts/server_inventory_foundation_gate.sh logs/server_inventory_foundation_current
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected current result is `status=pass`, `server_inventory_status=session_guarded`, `creative_inventory=unit_guarded`, `counted_inventory=unit_guarded`, `counted_inventory_runtime=live_server_guarded`, `counted_inventory_runtime_status=pass`, `counted_inventory_restarts>=1`, `block_action_inventory=session_guarded`, `player_inventory_persistence=rocksdb_guarded`, `active_protocol_change=0`, `active_storage_change=0`, and `go_tests=pass`.
+The expected current result is `status=pass`, `server_inventory_status=session_guarded`, `creative_inventory=unit_guarded`, `counted_inventory=unit_guarded`, `counted_inventory_runtime=live_server_guarded`, `counted_inventory_runtime_status=pass`, `counted_inventory_restarts>=1`, `break_drop_inventory=live_server_guarded`, `break_drop_inventory_status=pass`, `break_drop_inventory_restarts>=1`, `block_action_inventory=session_guarded`, `player_inventory_persistence=rocksdb_guarded`, `active_protocol_change=0`, `active_storage_change=0`, and `go_tests=pass`.
 
 The gate checks that:
 
 - This document records the current contract, session placement boundary, and compatibility rules.
-- `server/pkg/inventory` exposes the slot model, creative inventory, counted inventory, placement methods, selected-slot methods, and copy-out slots.
-- Inventory tests cover creative placeable blocks, retained creative counts, counted hotbar stacks, counted stack consumption, selected-slot validation, empty-slot rejection, air/unknown rejection, and copied slots.
-- Network tests cover session creative inventory, counted inventory mode, selected-slot action handling, player inventory load/save binding from `ClientPosition.player_id`, rejected placement when the session inventory lacks the requested block, retained counted inventory after a failed world edit, and snapshot refresh after counted placement.
+- `server/pkg/inventory` exposes the slot model, creative inventory, counted inventory, placement/drop insertion methods, selected-slot methods, and copy-out slots.
+- Inventory tests cover creative placeable blocks, retained creative counts, counted hotbar stacks, counted stack consumption, counted stack add-back, selected-slot validation, empty-slot rejection, air/unknown rejection, and copied slots.
+- World tests cover the previous-block-returning `ReplaceBlockGlobal` boundary and save-error rollback behavior.
+- Network tests cover session creative inventory, counted inventory mode, selected-slot action handling, player inventory load/save binding from `ClientPosition.player_id`, rejected placement when the session inventory lacks the requested block, retained counted inventory after a failed world edit, snapshot refresh after counted placement, counted destroy-drop insertion, no Air collection, and no collection after failed block edits.
 - The counted smoke summary proves a real counted-mode server decrements a placed stack and reloads the decremented count after restart.
-- `server/pkg/network/server.go` keeps the existing block registry placeability check, adds the session inventory placement check, and validates `InventoryAction SELECT_SLOT` through session inventory.
+- The break-drop smoke summary proves a real counted-mode server adds a destroyed placeable block to inventory and reloads the added count after restart.
+- `server/pkg/network/server.go` keeps the existing block registry placeability check, adds the session inventory placement check, adds counted destroy-drop insertion, and validates `InventoryAction SELECT_SLOT` through session inventory.
 - Storage tests cover player inventory record round-trip, key separation from chunk records, corrupt record rejection, and empty id rejection.
 - The gameplay loop foundation consumes the live player-inventory reconnect smoke and reports `player_inventory_reconnect=live_server_guarded`.
 - Protocol schema compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
 
 ## Current Status
 
-This checkpoint is complete when the gate reports `server_inventory_status=session_guarded`, `player_inventory_persistence=rocksdb_guarded`, and `counted_inventory_runtime=live_server_guarded`. The gameplay foundation additionally proves the runtime reconnect/restart path with `player_inventory_reconnect=live_server_guarded`. The server now owns the placement inventory boundary for connected sessions, persists local-player inventory state, and has a live guarded counted mode while current default creative placement behavior, chunk serialization, world generation, and renderer behavior remain unchanged.
+This checkpoint is complete when the gate reports `server_inventory_status=session_guarded`, `player_inventory_persistence=rocksdb_guarded`, `counted_inventory_runtime=live_server_guarded`, and `break_drop_inventory=live_server_guarded`. The gameplay foundation additionally proves the runtime reconnect/restart path with `player_inventory_reconnect=live_server_guarded`. The server now owns the placement and counted break-drop inventory boundary for connected sessions, persists local-player inventory state, and has live guarded counted placement/drop insertion while current default creative placement behavior, chunk serialization, world generation, and renderer behavior remain unchanged.

@@ -343,6 +343,29 @@ func TestSetBlockGlobalPersistsEditedChunkForReload(t *testing.T) {
 	assertSnapshotBlock(t, destroyedSnapshot, localX, int(blockY), localZ, Air)
 }
 
+func TestReplaceBlockGlobalReturnsPreviousGeneratedAndEditedBlocks(t *testing.T) {
+	w := NewWorld(nil)
+	blockX, blockY, blockZ := int32(1), int32(60), int32(1)
+
+	placedSnapshot, previousBlock, err := w.ReplaceBlockGlobal(blockX, blockY, blockZ, Wood)
+	if err != nil {
+		t.Fatalf("ReplaceBlockGlobal(place) error = %v", err)
+	}
+	if previousBlock != Stone {
+		t.Fatalf("previous block on generated terrain = %v, want Stone", previousBlock)
+	}
+	assertSnapshotBlock(t, placedSnapshot, int(blockX), int(blockY), int(blockZ), Wood)
+
+	destroyedSnapshot, previousBlock, err := w.ReplaceBlockGlobal(blockX, blockY, blockZ, Air)
+	if err != nil {
+		t.Fatalf("ReplaceBlockGlobal(destroy) error = %v", err)
+	}
+	if previousBlock != Wood {
+		t.Fatalf("previous block on edited terrain = %v, want Wood", previousBlock)
+	}
+	assertSnapshotBlock(t, destroyedSnapshot, int(blockX), int(blockY), int(blockZ), Air)
+}
+
 func TestHeightV1EditedChunkPersistsThroughStoreReload(t *testing.T) {
 	store := newSerializedChunkStore()
 	config := GeneratorConfig{
@@ -489,6 +512,29 @@ func TestSetBlockGlobalRollsBackInMemoryBlockOnSaveError(t *testing.T) {
 		t.Fatalf("ChunkSnapshot(reload after failing save) error = %v", err)
 	}
 	assertSnapshotBlock(t, reloadedSnapshot, int(blockX), int(blockY), int(blockZ), Wood)
+}
+
+func TestReplaceBlockGlobalReturnsErrorWithoutPreviousOnSaveError(t *testing.T) {
+	store := newSerializedChunkStore()
+	w := NewWorld(store)
+	blockX, blockY, blockZ := int32(1), int32(64), int32(1)
+
+	if _, err := w.SetBlockGlobal(blockX, blockY, blockZ, Wood); err != nil {
+		t.Fatalf("SetBlockGlobal(initial place) error = %v", err)
+	}
+
+	store.saveErr = errors.New("save failed")
+	if _, previousBlock, err := w.ReplaceBlockGlobal(blockX, blockY, blockZ, Dirt); err == nil {
+		t.Fatal("ReplaceBlockGlobal(failing save) error = nil, want save error")
+	} else if previousBlock != Air {
+		t.Fatalf("previous block on failing save = %v, want Air", previousBlock)
+	}
+
+	snapshot, err := w.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot(after failing save) error = %v", err)
+	}
+	assertSnapshotBlock(t, snapshot, int(blockX), int(blockY), int(blockZ), Wood)
 }
 
 func TestSetBlockGlobalRejectsOutOfRangeYWithoutSave(t *testing.T) {
