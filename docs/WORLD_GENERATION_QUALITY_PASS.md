@@ -174,12 +174,12 @@ Use:
 sh scripts/world_generation_quality_gate.sh logs/world_generation_quality_current
 ```
 
-The expected current result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `worldgen_height_v1=guarded`, `worldgen_biome_height_v1=guarded`, `worldgen_cave_height_v1=guarded`, `worldgen_biome_cave_height_v1=guarded`, `height_v1_serialization=guarded`, `biome_height_v1_serialization=guarded`, `cave_height_v1_serialization=guarded`, `biome_cave_height_v1_serialization=guarded`, `cave_distribution=guarded`, `resource_distribution=guarded`, `height_v1_live_smoke=guarded`, `biome_sampler=guarded`, `biome_matrix=guarded`, `cave_matrix=guarded`, `resource_matrix=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=opt_in_biome_cave_height_v1_guarded`, `coordinate_mapping=guarded`, `origin_chunk=guarded`, `flat_byte_hash=guarded`, and `world_tests=pass`.
+The expected current result is `status=pass`, `quality_pass_status=designed`, `worldgen_seed_version=guarded`, `worldgen_height_v1=guarded`, `worldgen_biome_height_v1=guarded`, `worldgen_cave_height_v1=guarded`, `worldgen_biome_cave_height_v1=guarded`, `height_v1_serialization=guarded`, `biome_height_v1_serialization=guarded`, `cave_height_v1_serialization=guarded`, `biome_cave_height_v1_serialization=guarded`, `cave_distribution=guarded`, `resource_distribution=guarded`, `height_v1_live_smoke=guarded`, `biome_sampler=guarded`, `biome_matrix=guarded`, `biome_atlas_tile_identity=guarded`, `biome_atlas_block_texture_usage=guarded`, `cave_matrix=guarded`, `resource_matrix=guarded`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=opt_in_biome_cave_height_v1_guarded`, `coordinate_mapping=guarded`, `origin_chunk=guarded`, `flat_byte_hash=guarded`, and `world_tests=pass`.
 
 The gate checks that:
 
 - This design includes the future generation layer order and determinism rules.
-- Biome foundation is clean and still deferred at runtime.
+- Biome foundation is clean, still deferred at runtime, and carries guarded atlas tile identity plus block texture usage.
 - `GeneratorConfig`, `GeneratorVersionFlatV1`, `GeneratorVersionHeightV1`, and `NewWorldWithGeneratorConfig` are present.
 - Server startup env parsing for world seed, dimension, and generator version is guarded.
 - Unknown generator versions are rejected.
