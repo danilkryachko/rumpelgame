@@ -12,7 +12,7 @@ SUMMARY_PATH="$OUT_DIR/shader-profiler-capture-pack.txt"
 MANIFEST_PATH="$OUT_DIR/shader-profiler-manifest.txt"
 FRAGMENT_SOURCE="$OUT_DIR/shader-fragment-source.tmp.glsl"
 SHADER_PATH="${RUMPELMC_SHADER_PROFILER_SHADER_PATH:-"$ROOT_DIR/client/shaders/gpu_terrain_render.glsl"}"
-MOVEMENT_SUMMARY="${RUMPELMC_SHADER_PROFILER_MOVEMENT_SUMMARY:-"$ROOT_DIR/logs/gpu_shader_atlas_offset_current/movement-stress-summary.txt"}"
+MOVEMENT_SUMMARY="${RUMPELMC_SHADER_PROFILER_MOVEMENT_SUMMARY:-"$ROOT_DIR/logs/gpu_shader_flat_varyings_current/movement-stress-summary.txt"}"
 MARKER_PATH="${RUMPELMC_SHADER_PROFILER_MARKER_PATH:-"$(dirname -- "$MOVEMENT_SUMMARY")/gpu-terrain-movement-stress.png.txt"}"
 
 fail() {
@@ -133,24 +133,29 @@ test -s "$MARKER_PATH" || fail "missing movement marker $MARKER_PATH"
 awk 'found { print } /^\/\/ -- FRAGMENT --/ { found = 1 }' "$SHADER_PATH" > "$FRAGMENT_SOURCE"
 test -s "$FRAGMENT_SOURCE" || fail "failed to extract fragment source from $SHADER_PATH"
 
-require_contains "$SHADER_PATH" 'layout(location = 0) out vec4 uv_tile_out;'
-require_contains "$SHADER_PATH" 'layout(location = 1) out vec3 lighting_out;'
-require_contains "$SHADER_PATH" 'layout(location = 0) in vec4 uv_tile_in;'
-require_contains "$SHADER_PATH" 'layout(location = 1) in vec3 lighting_in;'
+require_contains "$SHADER_PATH" 'layout(location = 0) out vec2 uv_out;'
+require_contains "$SHADER_PATH" 'layout(location = 1) flat out vec2 tile_offset_out;'
+require_contains "$SHADER_PATH" 'layout(location = 2) flat out vec3 lighting_out;'
+require_contains "$SHADER_PATH" 'layout(location = 0) in vec2 uv_in;'
+require_contains "$SHADER_PATH" 'layout(location = 1) flat in vec2 tile_offset_in;'
+require_contains "$SHADER_PATH" 'layout(location = 2) flat in vec3 lighting_in;'
 require_contains "$SHADER_PATH" 'const uint TRIANGLE_CORNER_INDICES[6]'
 require_contains "$SHADER_PATH" 'vec2 atlas_tile_offset(uint tile)'
-require_contains "$SHADER_PATH" 'uv_tile_out = vec4(face_uv(face_idx, corner_idx, extent), atlas_tile_offset(tile));'
+require_contains "$SHADER_PATH" 'uv_out = face_uv(face_idx, corner_idx, extent);'
+require_contains "$SHADER_PATH" 'tile_offset_out = atlas_tile_offset(tile);'
 require_contains "$SHADER_PATH" 'int(low & 32767u) - int(low & 32768u)'
 require_contains "$SHADER_PATH" 'vec3 direction_to_light = terrain_push.light_direction_ambient.xyz;'
 require_contains "$SHADER_PATH" 'return vec3(ambient) + light_color * diffuse * light_energy;'
-require_contains "$FRAGMENT_SOURCE" 'vec2 atlas_uv(vec4 tile_uv_offset)'
-require_contains "$FRAGMENT_SOURCE" 'vec2 tiled_uv = fract(tile_uv_offset.xy);'
+require_contains "$FRAGMENT_SOURCE" 'vec2 atlas_uv(vec2 tile_uv, vec2 tile_offset)'
+require_contains "$FRAGMENT_SOURCE" 'vec2 tiled_uv = fract(tile_uv);'
 require_not_contains "$FRAGMENT_SOURCE" 'mod('
 require_not_contains "$FRAGMENT_SOURCE" 'floor('
 require_not_contains "$FRAGMENT_SOURCE" 'terrain_push.atlas_layout.z'
 require_not_contains "$SHADER_PATH" 'normalize(terrain_push.light_direction_ambient.xyz)'
 require_not_contains "$SHADER_PATH" 'if (low >= 32768u)'
 require_not_contains "$SHADER_PATH" 'uint corner_map[6]'
+require_not_contains "$SHADER_PATH" 'out vec4 uv_tile_out'
+require_not_contains "$SHADER_PATH" 'in vec4 uv_tile_in'
 
 require_metric_eq smoke_err "$MARKER_PATH" "0"
 require_metric_eq gpu_upload_fail "$MARKER_PATH" "0"
@@ -180,7 +185,7 @@ test -n "$gpu_compositor_submit_max_parts_ms" || fail "missing compositor submit
     "$process_wall_p95_ms" \
     "$gpu_compositor_submit_max_ms" \
     "$gpu_compositor_submit_max_parts_ms"
-  printf 'shader_contract vertex_tile_offset=1 fragment_tile_index_math=0 branchless_signed_unpack=1 rust_sanitized_lighting=1 global_triangle_corner_indices=1 fragment_repeats_merged_face_uv=1 opaque_alpha=1\n'
+  printf 'shader_contract vertex_tile_offset=1 flat_tile_offset=1 flat_lighting=1 fragment_tile_index_math=0 branchless_signed_unpack=1 rust_sanitized_lighting=1 global_triangle_corner_indices=1 fragment_repeats_merged_face_uv=1 opaque_alpha=1\n'
   printf 'policy pending_capture_pack_is_not_evidence=1 local_fps_is_warning_only=1 godot_gpu_timestamp_is_warning_only=1 profiler_rows_required_before_claiming_gpu_time=1\n'
   printf 'command_generate_pack=sh scripts/gpu_shader_profiler_capture_pack.sh %s\n' "$(relative_path "$OUT_DIR")"
   printf 'command_shader_contract_test=cargo test --manifest-path client/rust_ext/Cargo.toml render_shader\n'

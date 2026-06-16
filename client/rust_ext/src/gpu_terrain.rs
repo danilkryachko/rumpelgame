@@ -4423,8 +4423,8 @@ mod tests {
         let (vertex_source, fragment_source) =
             split_render_shader_source().expect("render shader stages");
 
-        assert!(vertex_source.contains("layout(location = 1) out vec3 lighting_out;"));
-        assert!(fragment_source.contains("layout(location = 1) in vec3 lighting_in;"));
+        assert!(vertex_source.contains("layout(location = 2) flat out vec3 lighting_out;"));
+        assert!(fragment_source.contains("layout(location = 2) flat in vec3 lighting_in;"));
         assert!(vertex_source.contains("vec3 face_lighting(uint face_idx)"));
         assert!(vertex_source.contains("vec3 normal = face_normal(face_idx);"));
         assert!(
@@ -4458,8 +4458,12 @@ mod tests {
         let (vertex_source, fragment_source) =
             split_render_shader_source().expect("render shader stages");
 
-        assert!(vertex_source.contains("layout(location = 0) out vec4 uv_tile_out;"));
-        assert!(fragment_source.contains("layout(location = 0) in vec4 uv_tile_in;"));
+        assert!(vertex_source.contains("layout(location = 0) out vec2 uv_out;"));
+        assert!(vertex_source.contains("layout(location = 1) flat out vec2 tile_offset_out;"));
+        assert!(fragment_source.contains("layout(location = 0) in vec2 uv_in;"));
+        assert!(fragment_source.contains("layout(location = 1) flat in vec2 tile_offset_in;"));
+        assert!(!vertex_source.contains("out vec4 uv_tile_out"));
+        assert!(!fragment_source.contains("in vec4 uv_tile_in"));
         assert!(
             vertex_source.contains("vec3 face_corner(uint face_idx, uint corner_idx, vec2 extent)")
         );
@@ -4471,16 +4475,15 @@ mod tests {
             "vec2 extent = vec2(float(face.extent & 63u), float((face.extent >> 6u) & 63u));"
         ));
         assert!(vertex_source.contains("face_corner(face_idx, corner_idx, extent)"));
-        assert!(vertex_source.contains(
-            "uv_tile_out = vec4(face_uv(face_idx, corner_idx, extent), atlas_tile_offset(tile));"
-        ));
-        assert!(fragment_source.contains("vec2 atlas_uv(vec4 tile_uv_offset)"));
-        assert!(fragment_source.contains("vec2 tiled_uv = fract(tile_uv_offset.xy);"));
+        assert!(vertex_source.contains("uv_out = face_uv(face_idx, corner_idx, extent);"));
+        assert!(vertex_source.contains("tile_offset_out = atlas_tile_offset(tile);"));
+        assert!(fragment_source.contains("vec2 atlas_uv(vec2 tile_uv, vec2 tile_offset)"));
+        assert!(fragment_source.contains("vec2 tiled_uv = fract(tile_uv);"));
         assert!(
             fragment_source
-                .contains("return (tile_uv_offset.zw + tiled_uv) * terrain_push.atlas_layout.xy;")
+                .contains("return (tile_offset + tiled_uv) * terrain_push.atlas_layout.xy;")
         );
-        assert!(fragment_source.contains("vec2 uv_in = atlas_uv(uv_tile_in);"));
+        assert!(fragment_source.contains("vec2 atlas_uv_in = atlas_uv(uv_in, tile_offset_in);"));
         assert!(!fragment_source.contains("mod("));
         assert!(!fragment_source.contains("floor("));
         assert!(!fragment_source.contains("terrain_push.atlas_layout.z"));
@@ -4518,7 +4521,7 @@ mod tests {
                 .contains("layout(set = 0, binding = 1) uniform sampler2D atlas_texture;")
         );
         assert!(vertex_source.contains("PackedFace face = face_buffer.faces[face_instance];"));
-        assert!(fragment_source.contains("vec4 texel = texture(atlas_texture, uv_in);"));
+        assert!(fragment_source.contains("vec4 texel = texture(atlas_texture, atlas_uv_in);"));
     }
 
     #[test]

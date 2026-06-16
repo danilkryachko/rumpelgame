@@ -21,8 +21,9 @@ layout(push_constant, std430) uniform TerrainPushConstants {
     vec4 atlas_layout;
 } terrain_push;
 
-layout(location = 0) out vec4 uv_tile_out;
-layout(location = 1) out vec3 lighting_out;
+layout(location = 0) out vec2 uv_out;
+layout(location = 1) flat out vec2 tile_offset_out;
+layout(location = 2) flat out vec3 lighting_out;
 
 const vec3 FACE_NORMALS[8] = vec3[8](
     vec3(-1.0, 0.0, 0.0),
@@ -136,7 +137,8 @@ void main() {
     vec3 world_pos = local_pos + vec3(float(chunk_x * 32), float(sub_y * 32), float(chunk_z * 32));
 
     gl_Position = terrain_push.clip_from_world * vec4(world_pos, 1.0);
-    uv_tile_out = vec4(face_uv(face_idx, corner_idx, extent), atlas_tile_offset(tile));
+    uv_out = face_uv(face_idx, corner_idx, extent);
+    tile_offset_out = atlas_tile_offset(tile);
     lighting_out = face_lighting(face_idx);
 }
 
@@ -151,17 +153,18 @@ layout(push_constant, std430) uniform TerrainPushConstants {
     vec4 atlas_layout;
 } terrain_push;
 
-layout(location = 0) in vec4 uv_tile_in;
-layout(location = 1) in vec3 lighting_in;
+layout(location = 0) in vec2 uv_in;
+layout(location = 1) flat in vec2 tile_offset_in;
+layout(location = 2) flat in vec3 lighting_in;
 layout(location = 0) out vec4 frag_color;
 
-vec2 atlas_uv(vec4 tile_uv_offset) {
-    vec2 tiled_uv = fract(tile_uv_offset.xy);
-    return (tile_uv_offset.zw + tiled_uv) * terrain_push.atlas_layout.xy;
+vec2 atlas_uv(vec2 tile_uv, vec2 tile_offset) {
+    vec2 tiled_uv = fract(tile_uv);
+    return (tile_offset + tiled_uv) * terrain_push.atlas_layout.xy;
 }
 
 void main() {
-    vec2 uv_in = atlas_uv(uv_tile_in);
-    vec4 texel = texture(atlas_texture, uv_in);
+    vec2 atlas_uv_in = atlas_uv(uv_in, tile_offset_in);
+    vec4 texel = texture(atlas_texture, atlas_uv_in);
     frag_color = vec4(texel.rgb * lighting_in, 1.0);
 }
