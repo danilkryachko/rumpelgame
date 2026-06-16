@@ -44,6 +44,7 @@ Fresh local evidence:
 - Historical draw-command occupancy: `16.296%`
 - Historical upload failures: `0`
 - Historical fragmentation: `0.0%`
+- Transparent workload fields are surfaced as scoped values when present and as historical maxima for `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`.
 - Warning-only local `frame_p95_ms`: `8.368`
 - Warning-only local `fps_p05`: `120`
 - Warning-only local `gpu_compositor_gpu_max_us`: `0.0`

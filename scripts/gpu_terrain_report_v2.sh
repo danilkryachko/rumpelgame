@@ -141,6 +141,10 @@ scoped_gpu_upload_fail_fragmented="$(field_or_na gpu_upload_fail_fragmented "$SC
 scoped_effective_draws="$(field_or_na max_gpu_effective_draws "$SCOPED_SUMMARY")"
 scoped_faces="$(field_or_na max_gpu_faces "$SCOPED_SUMMARY")"
 scoped_terrain_queue_ms="$(field_or_na max_terrain_queue_ms "$SCOPED_SUMMARY")"
+scoped_transparent_blocks="$(field_or_na transparent_blocks "$SCOPED_SUMMARY")"
+scoped_transparent_faces="$(field_or_na transparent_faces "$SCOPED_SUMMARY")"
+scoped_transparent_draws="$(field_or_na transparent_draws "$SCOPED_SUMMARY")"
+scoped_transparent_subchunks="$(field_or_na transparent_subchunks "$SCOPED_SUMMARY")"
 
 historical_gpu_draws="$(report_metric_or_na 'max `gpu_draws`')"
 historical_effective_draws="$(report_metric_or_na 'max `gpu_effective_draws`')"
@@ -149,6 +153,10 @@ historical_draw_cmd_occupancy="$(report_metric_or_na 'max `gpu_draw_cmd_occupanc
 historical_upload_fail="$(report_metric_or_na 'sum `gpu_upload_fail`')"
 historical_fragmentation="$(report_metric_or_na 'max `gpu_fragmentation_pct`')"
 historical_terrain_queue_ms="$(report_metric_or_na 'max `terrain_queue_max_ms`')"
+historical_transparent_blocks="$(report_metric_or_na 'max `transparent_blocks`')"
+historical_transparent_faces="$(report_metric_or_na 'max `transparent_faces`')"
+historical_transparent_draws="$(report_metric_or_na 'max `transparent_draws`')"
+historical_transparent_subchunks="$(report_metric_or_na 'max `transparent_subchunks`')"
 warning_frame_p95_ms="$(report_metric_or_na 'max `frame_p95_ms`')"
 warning_fps_p05="$(report_metric_or_na 'max `fps_p05`')"
 warning_gpu_us="$(report_metric_or_na 'max `gpu_compositor_gpu_max_us`')"
@@ -167,7 +175,7 @@ elif [ "$scoped_status" != "pass" ] && [ "$scoped_status" != "deferred" ]; then
 fi
 
 {
-  printf 'gpu_terrain_report_v2 status=%s reason=%s scoped_status=%s resource_status=%s memory_status=%s legacy_error_scan=%s scoped_summary=%s resource_summary=%s memory_summary=%s legacy_report=%s historical_gpu_draws=%s historical_gpu_effective_draws=%s historical_gpu_faces=%s historical_draw_cmd_occupancy_pct=%s historical_gpu_upload_fail=%s historical_gpu_fragmentation_pct=%s warning_frame_p95_ms=%s warning_fps_p05=%s warning_gpu_compositor_gpu_max_us=%s\n' \
+  printf 'gpu_terrain_report_v2 status=%s reason=%s scoped_status=%s resource_status=%s memory_status=%s legacy_error_scan=%s scoped_summary=%s resource_summary=%s memory_summary=%s legacy_report=%s historical_gpu_draws=%s historical_gpu_effective_draws=%s historical_gpu_faces=%s historical_draw_cmd_occupancy_pct=%s historical_gpu_upload_fail=%s historical_gpu_fragmentation_pct=%s historical_transparent_blocks=%s historical_transparent_faces=%s historical_transparent_draws=%s historical_transparent_subchunks=%s warning_frame_p95_ms=%s warning_fps_p05=%s warning_gpu_compositor_gpu_max_us=%s\n' \
     "$status" \
     "$reason" \
     "$scoped_status" \
@@ -184,6 +192,10 @@ fi
     "$historical_draw_cmd_occupancy" \
     "$historical_upload_fail" \
     "$historical_fragmentation" \
+    "$historical_transparent_blocks" \
+    "$historical_transparent_faces" \
+    "$historical_transparent_draws" \
+    "$historical_transparent_subchunks" \
     "$warning_frame_p95_ms" \
     "$warning_fps_p05" \
     "$warning_gpu_us"
@@ -201,6 +213,10 @@ fi
   printf -- '- max_gpu_effective_draws: `%s`\n' "$scoped_effective_draws"
   printf -- '- max_gpu_faces: `%s`\n' "$scoped_faces"
   printf -- '- max_terrain_queue_ms: `%s`\n' "$scoped_terrain_queue_ms"
+  printf -- '- transparent_blocks: `%s`\n' "$scoped_transparent_blocks"
+  printf -- '- transparent_faces: `%s`\n' "$scoped_transparent_faces"
+  printf -- '- transparent_draws: `%s`\n' "$scoped_transparent_draws"
+  printf -- '- transparent_subchunks: `%s`\n' "$scoped_transparent_subchunks"
   printf -- '- gpu_upload_fail: `%s`\n' "$scoped_gpu_upload_fail"
   printf -- '- gpu_upload_fail_capacity: `%s`\n' "$scoped_gpu_upload_fail_capacity"
   printf -- '- gpu_upload_fail_fragmented: `%s`\n' "$scoped_gpu_upload_fail_fragmented"
@@ -220,6 +236,10 @@ fi
   printf -- '- sum_gpu_upload_fail: `%s`\n' "$historical_upload_fail"
   printf -- '- max_gpu_fragmentation_pct: `%s`\n' "$historical_fragmentation"
   printf -- '- max_terrain_queue_ms: `%s`\n' "$historical_terrain_queue_ms"
+  printf -- '- max_transparent_blocks: `%s`\n' "$historical_transparent_blocks"
+  printf -- '- max_transparent_faces: `%s`\n' "$historical_transparent_faces"
+  printf -- '- max_transparent_draws: `%s`\n' "$historical_transparent_draws"
+  printf -- '- max_transparent_subchunks: `%s`\n' "$historical_transparent_subchunks"
 
   printf '\n## Warning-Only Local Signals\n\n'
   printf 'These remain warning-only on local macOS/Metal unless external profiler evidence validates them.\n\n'

@@ -5013,8 +5013,8 @@ fn gpu_terrain_shadow_proxy_mesh_mode() -> GpuTerrainShadowProxyMeshMode {
 
 fn flag_state_from_value(value: &str) -> Option<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" | "on" => Some(true),
-        "0" | "false" | "no" | "off" => Some(false),
+        "1" | "true" | "yes" | "on" | "enabled" => Some(true),
+        "0" | "false" | "no" | "off" | "disabled" => Some(false),
         _ => None,
     }
 }
@@ -6791,9 +6791,11 @@ mod tests {
         assert_eq!(flag_state_from_value("1"), Some(true));
         assert_eq!(flag_state_from_value(" TRUE "), Some(true));
         assert_eq!(flag_state_from_value("on"), Some(true));
+        assert_eq!(flag_state_from_value("enabled"), Some(true));
         assert_eq!(flag_state_from_value("0"), Some(false));
         assert_eq!(flag_state_from_value("false"), Some(false));
         assert_eq!(flag_state_from_value("off"), Some(false));
+        assert_eq!(flag_state_from_value("disabled"), Some(false));
         assert_eq!(flag_state_from_value(""), None);
         assert_eq!(flag_state_from_value("invalid"), None);
     }

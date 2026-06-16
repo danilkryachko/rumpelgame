@@ -36,6 +36,7 @@ MIN_PROXY_SHADOW_ONLY="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_PROXY_SHADOW_ONLY:-0}"
 MIN_COMPACT_SHADOW_PROXY="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_COMPACT_SHADOW_PROXY:-0}"
 MIN_PROXY_REFRESH_REUSE="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_PROXY_REFRESH_REUSE:-0}"
 CUTOUT_PROTOTYPE="${RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE:-0}"
+TRANSPARENT_REQUEST="${RUMPELMC_GPU_TERRAIN_TRANSPARENT:-0}"
 
 fail() {
   echo "gpu_terrain_block_edit_stress: $*" >&2
@@ -103,6 +104,14 @@ require_text_metric_contains_all() {
     esac
   done
   IFS="$old_ifs"
+}
+
+env_truthy() {
+  value="$1"
+  case "$value" in
+    1|true|TRUE|yes|YES|on|ON|enabled|ENABLED) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 write_summary() {
@@ -232,8 +241,7 @@ fi
 if [ "$MIN_PROXY_REFRESH_REUSE" -gt 0 ]; then
   require_metric_ge "$marker_path" proxy_refresh_reuse "$MIN_PROXY_REFRESH_REUSE"
 fi
-case "$CUTOUT_PROTOTYPE" in
-  1|true|TRUE|yes|YES|on|ON|enabled|ENABLED)
+if env_truthy "$CUTOUT_PROTOTYPE"; then
     require_metric_eq "$marker_path" transparent_requested 1
     require_metric_eq "$marker_path" transparent_active 1
     require_metric_eq "$marker_path" transparent_fallback 0
@@ -241,8 +249,15 @@ case "$CUTOUT_PROTOTYPE" in
     require_metric_ge "$marker_path" transparent_faces 1
     require_metric_ge "$marker_path" transparent_draws 1
     require_metric_ge "$marker_path" transparent_subchunks 1
-    ;;
-esac
+elif [ "$EDIT_BLOCK_ID" = "5" ] && ! env_truthy "$TRANSPARENT_REQUEST"; then
+    require_metric_eq "$marker_path" transparent_requested 0
+    require_metric_eq "$marker_path" transparent_active 0
+    require_metric_eq "$marker_path" transparent_fallback 0
+    require_metric_eq "$marker_path" transparent_blocks 0
+    require_metric_eq "$marker_path" transparent_faces 0
+    require_metric_eq "$marker_path" transparent_draws 0
+    require_metric_eq "$marker_path" transparent_subchunks 0
+fi
 write_summary
 
 echo "GPU terrain block edit stress artifacts: $OUT_DIR"

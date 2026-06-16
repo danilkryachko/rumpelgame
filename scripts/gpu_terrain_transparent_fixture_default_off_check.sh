@@ -164,18 +164,27 @@ required_line "$scene_harness_check_path" "workload_gates=blocked_until_fixture"
 required_line "$scene_harness_check_path" "non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no" >/dev/null
 
 required_line "$RUST_SOURCE" "const GPU_TERRAIN_TRANSPARENT_ENV: &str = \"RUMPELMC_GPU_TERRAIN_TRANSPARENT\";" >/dev/null
+required_line "$RUST_SOURCE" "const GPU_TERRAIN_CUTOUT_PROTOTYPE_ENV: &str = \"RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE\";" >/dev/null
 required_line "$RUST_SOURCE" "const GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY_ENV: &str =" >/dev/null
 required_line "$RUST_SOURCE" "\"RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY\";" >/dev/null
 required_line "$RUST_SOURCE" "const GPU_TERRAIN_TRANSPARENT_IMPLEMENTED: bool = false;" >/dev/null
+required_line "$RUST_SOURCE" "const GPU_TERRAIN_CUTOUT_PROTOTYPE_IMPLEMENTED: bool = true;" >/dev/null
 required_line "$RUST_SOURCE" "gpu_terrain_transparent_active_decision(" >/dev/null
 required_line "$RUST_SOURCE" "GPU_TERRAIN_TRANSPARENT_IMPLEMENTED," >/dev/null
-required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_requested_decision(env_state: Option<bool>) -> bool {" >/dev/null
-required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_active_decision(requested: bool, implementation_ready: bool) -> bool {" >/dev/null
-required_line "$RUST_SOURCE" "requested && implementation_ready" >/dev/null
+required_line "$RUST_SOURCE" "GPU_TERRAIN_CUTOUT_PROTOTYPE_IMPLEMENTED," >/dev/null
+required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_requested_decision(" >/dev/null
+required_line "$RUST_SOURCE" "transparent_env_state: Option<bool>," >/dev/null
+required_line "$RUST_SOURCE" "cutout_requested: bool," >/dev/null
+required_line "$RUST_SOURCE" "transparent_env_state.unwrap_or(false) || cutout_requested" >/dev/null
+required_line "$RUST_SOURCE" "fn gpu_terrain_cutout_prototype_requested_decision(env_state: Option<bool>) -> bool {" >/dev/null
+required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_active_decision(" >/dev/null
+required_line "$RUST_SOURCE" "cutout_ready: bool," >/dev/null
+required_line "$RUST_SOURCE" "requested && (implementation_ready || (cutout_requested && cutout_ready))" >/dev/null
 required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_fallback_decision(requested: bool, active: bool) -> bool {" >/dev/null
 required_line "$RUST_SOURCE" "requested && !active" >/dev/null
-required_line "$RUST_SOURCE" "fn gpu_transparent_gate_stays_disabled_until_implemented()" >/dev/null
-required_line "$RUST_SOURCE" "assert!(!gpu_terrain_transparent_active_decision(true, false));" >/dev/null
+required_line "$RUST_SOURCE" "fn gpu_transparent_gate_keeps_legacy_fallback_and_allows_cutout_prototype()" >/dev/null
+required_line "$RUST_SOURCE" "assert!(!gpu_terrain_transparent_active_decision(" >/dev/null
+required_line "$RUST_SOURCE" "assert!(gpu_terrain_transparent_active_decision(" >/dev/null
 required_line "$RUST_SOURCE" "assert!(gpu_terrain_transparent_fallback_decision(true, false));" >/dev/null
 required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_fixture_overlay_requested_decision(env_state: Option<bool>) -> bool {" >/dev/null
 required_line "$RUST_SOURCE" "fn gpu_terrain_transparent_fixture_overlay_active_decision(" >/dev/null
@@ -194,7 +203,7 @@ required_line "$MOVEMENT_STRESS" 'require_metric_eq "$marker_path" "transparent_
 required_line "$MOVEMENT_STRESS" 'require_metric_eq "$marker_path" "transparent_fixture_overlay_active" 0' >/dev/null
 required_line "$MOVEMENT_STRESS" 'require_metric_eq "$marker_path" "transparent_fixture_overlay_fallback" 1' >/dev/null
 
-required_line "$CONTRACT_PATH" "While \`GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false\`, the env-on fixture must still report requested-but-fallback markers" >/dev/null
+required_line "$CONTRACT_PATH" "While \`GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false\`, the legacy \`RUMPELMC_GPU_TERRAIN_TRANSPARENT=1\` env-on fixture must still report requested-but-fallback markers" >/dev/null
 required_line "$CONTRACT_PATH" "transparent_fixture_overlay_requested=1" >/dev/null
 required_line "$CONTRACT_PATH" "transparent_fixture_overlay_active=0" >/dev/null
 required_line "$CONTRACT_PATH" "transparent_fixture_overlay_fallback=1" >/dev/null
@@ -212,6 +221,7 @@ trap 'rm -f "$tmp_check"' EXIT
   printf 'movement_stress=%s\n' "$(relative_path "$MOVEMENT_STRESS")"
   printf 'contract=%s\n' "$(relative_path "$CONTRACT_PATH")"
   printf 'transparent_implementation_gate=false\n'
+  printf 'cutout_prototype_gate=true\n'
   printf 'runtime_behavior=unchanged\n'
   printf 'ordinary_world_visibility=absent\n'
   printf 'transparent_fixture_overlay_default=0/0/0\n'
@@ -222,7 +232,7 @@ trap 'rm -f "$tmp_check"' EXIT
   printf 'future_gates=blocked_until_implementation\n'
   printf 'workload_gates=blocked_until_fixture\n'
   printf 'non_goals shader_alpha=no transparent_pass=no sorting=no block_id=no asset=no protocol=no storage=no worldgen=no\n'
-  printf 'summary transparent_fixture_default_off_status=pass transparent_fixture_acceptance_status=%s transparent_implementation_gate=false env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s future_active_expected=1/0/0\n' \
+  printf 'summary transparent_fixture_default_off_status=pass transparent_fixture_acceptance_status=%s transparent_implementation_gate=false cutout_prototype_gate=true env_on_expected=%s overlay_env_on_expected=%s overlay_metadata_expected=%s future_active_expected=1/0/0\n' \
     "$acceptance_status" \
     "$env_expected" \
     "$overlay_env_expected" \

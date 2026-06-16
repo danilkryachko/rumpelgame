@@ -149,10 +149,20 @@ sh scripts/gpu_terrain_block_edit_stress.sh logs/gpu_transparent_cutout_prototyp
 
 The block-edit stress summary now includes `block_edit_transparent ...`. With the cutout prototype flag enabled it must report `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero transparent workload counts, and `gpu_upload_fail=0`.
 
+Promote the runtime smoke into an aggregate-report acceptance artifact with:
+
+```sh
+sh scripts/gpu_terrain_cutout_prototype_acceptance_gate.sh logs/gpu_transparent_cutout_prototype_current
+```
+
+The gate validates the leaf placement smoke, source contracts, and report surfacing together. It requires block ID `5`, `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero cutout workload counts, `gpu_upload_fail=0`, `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, and no blended/sorted/default-on claim.
+
 Fresh local evidence, 2026-06-16:
 
 - `logs/gpu_transparent_cutout_prototype_current/block-edit-stress-summary.txt` placed block ID `5` (`LEAVES`) in release mode with the cutout prototype enabled.
-- The summary passed with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=1`, `transparent_faces=5`, `transparent_draws=1`, `transparent_subchunks=1`, `gpu_upload_fail=0`, `terrain_samples=384`, and `ground_misses=0`.
+- `logs/gpu_transparent_cutout_prototype_current/transparent-cutout-prototype-acceptance-summary.txt` passed the acceptance/report gate and links the runtime smoke to `logs/gpu_transparent_cutout_prototype_current/gpu-terrain-cutout-prototype-report.txt`.
+- `logs/transparent_fixture_acceptance_suite_current/transparent-fixture-acceptance-suite-summary.txt` passed after refreshing the fixture scene smoke and deferred active/sorting preflight summaries; the legacy full-transparent fixture remains requested-but-fallback while cutout stays the only active prototype path.
+- The runtime smoke passed with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=1`, `transparent_faces=5`, `transparent_draws=1`, `transparent_subchunks=1`, `gpu_upload_fail=0`, `terrain_samples=384` from the movement marker, and `ground_misses=0` from the movement summary.
 - This is local macOS/Metal cutout-only evidence, not blended transparency, sorting, default-on, or external profiler evidence.
 
 ## Required Telemetry
@@ -240,8 +250,10 @@ The current code slice is a default-off cutout prototype, not blended rendering:
 - `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1` activates only the cutout alpha-test prototype and does not make blended transparency active.
 - Perf markers expose `transparent_requested`, `transparent_active`, and `transparent_fallback`.
 - Perf markers expose current transparent workload fields: `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`. They stay `0` for the legacy transparent fallback path and become nonzero only for active default-off cutout workload.
+- The Rust env flag parser and GPU terrain mesher now share the same cutout truthy contract for `1`, `true`, `yes`, `on`, and `enabled`; `disabled` is explicit false.
 - Perf markers expose client-only fixture overlay metadata counts as `transparent_fixture_overlay_roles` and `transparent_fixture_overlay_blocks`. They are expected to stay `5` only when `RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1` is requested, and `0` otherwise.
 - `scripts/gpu_terrain_report.sh` aggregates those marker fields and records metric origins.
+- `scripts/gpu_terrain_cutout_prototype_acceptance_gate.sh` validates a default-off cutout block-edit smoke and requires the aggregate report to surface its selected acceptance summary.
 - The env-on release movement smoke in `logs/gpu_transparent_fallback_capture` passed with `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.
 - `scripts/gpu_terrain_movement_stress.sh` now fails env-on transparent captures unless those same requested/active/fallback marker values are present.
 - `scripts/gpu_terrain_transparent_fixture_plan.sh` validates this fixture contract plus the current movement-stress fallback guard and writes a line-oriented `transparent-fixture-plan.txt` checklist.
