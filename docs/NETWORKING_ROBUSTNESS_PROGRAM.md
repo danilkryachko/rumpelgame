@@ -35,7 +35,7 @@ Scope:
 - Guard nil `ClientPosition` payload bodies as ignored unsupported packet shapes instead of panicking or emitting chunk updates.
 - Guard nil `BlockAction` payload bodies as ignored unsupported packet shapes instead of panicking or emitting chunk updates.
 - Add a bounded live slow-reader smoke and load matrix that prove a non-reading TCP client hits the session write timeout while fast clients still receive bootstrap chunk data.
-- Consume a bounded client reconnect smoke that proves a live TCP disconnect, server restart, client reconnect, and rebootstrap back to `client_state=active`.
+- Require bounded client reconnect smoke and repeated reconnect soak summaries that prove live TCP disconnects, server restarts, client reconnects, and rebootstrap back to `client_state=active`.
 - Define reconnect and overload gaps before broader runtime policy changes.
 
 Out of scope:
@@ -53,7 +53,7 @@ Assumptions:
 Done when:
 
 - Server and Rust client packet boundary tests cover short, oversized, and malformed input paths.
-- A networking robustness gate runs the focused tests, can run or consume the slow-reader and reconnect smokes, and records deferred overload/backpressure work.
+- A networking robustness gate runs the focused tests, requires bounded slow-reader and reconnect runtime evidence, and records remaining overload/backpressure gaps.
 
 Checks:
 
@@ -287,7 +287,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `unknown_packet_policy=ignored_guarded`, `nil_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `empty_payload_frame=decode_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `conflict_semantics=last_write_wins_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=load_matrix_guarded` when a current slow-reader matrix summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `slow_reader_matrix_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_matrix_guarded` when current admission-limit matrix evidence exists.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `unknown_packet_policy=ignored_guarded`, `nil_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `empty_payload_frame=decode_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `conflict_semantics=last_write_wins_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded`, `reconnect_smoke_status=pass`, `reconnect_soak_status=pass`, `slow_client_status=load_matrix_guarded`, `slow_reader_smoke_status=pass`, `slow_reader_timeout_class=timeout`, `slow_reader_matrix_status=pass`, `multi_client_live_status=pass`, and `overload_status=admission_matrix_guarded`.
 
 To run the slow-reader smoke inside the gate:
 
@@ -301,9 +301,10 @@ To run the slow-reader matrix inside the gate:
 RUMPELMC_NETWORKING_ROBUSTNESS_RUN_SLOW_READER_MATRIX=1 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-To run the reconnect soak inside the gate:
+To run the reconnect smoke and soak inside the gate:
 
 ```sh
+RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SMOKE=1 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SOAK=1 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
@@ -322,9 +323,9 @@ The gate checks that:
 - Go server framing tests prove zero-length payload frames decode to empty packets before the session-level ignore policy applies.
 - Rust network and reader-drain session tests pass.
 - The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
-- The reconnect smoke and repeated reconnect soak summaries are clean when current artifacts exist or the runs are explicitly requested.
-- The slow-reader smoke and matrix scripts exist, require classified timeout log evidence, and the gate carries their status when current summaries exist or the runs are explicitly requested.
-- The reconnect smoke script exists, and the gate carries its status when a current reconnect summary exists or the smoke is explicitly run.
+- The reconnect smoke and repeated reconnect soak summaries are current and clean; explicit run flags refresh those required summaries before validation.
+- The slow-reader smoke and matrix scripts exist, require classified timeout log evidence, and the gate requires current clean summaries before reporting `status=pass`.
+- The reconnect smoke and soak scripts exist, and the gate requires current clean summaries before reporting `status=pass`.
 - Protocol schema/generated files are unchanged.
 
 ## Current Status

@@ -223,15 +223,18 @@ case "$RUN_RECONNECT_SOAK" in
     fail "unsupported RUMPELMC_NETWORKING_ROBUSTNESS_RUN_RECONNECT_SOAK=$RUN_RECONNECT_SOAK"
     ;;
 esac
-slow_reader_smoke_status="deferred"
+test -s "$SLOW_READER_SMOKE_SUMMARY" || fail "missing required input $SLOW_READER_SMOKE_SUMMARY"
+test -s "$SLOW_READER_MATRIX_SUMMARY" || fail "missing required input $SLOW_READER_MATRIX_SUMMARY"
+test -s "$RECONNECT_SMOKE_SUMMARY" || fail "missing required input $RECONNECT_SMOKE_SUMMARY"
+test -s "$RECONNECT_SOAK_SUMMARY" || fail "missing required input $RECONNECT_SOAK_SUMMARY"
+
+slow_reader_smoke_status="missing"
 slow_reader_timeout_observed="0"
 slow_reader_timeout_class="missing"
-if [ -s "$SLOW_READER_SMOKE_SUMMARY" ]; then
-  slow_reader_smoke_status="$(field_metric status "$SLOW_READER_SMOKE_SUMMARY")"
-  slow_reader_timeout_observed="$(field_metric slow_timeout_observed "$SLOW_READER_SMOKE_SUMMARY")"
-  slow_reader_timeout_class="$(field_metric slow_timeout_class "$SLOW_READER_SMOKE_SUMMARY")"
-fi
-slow_reader_matrix_status="deferred"
+slow_reader_smoke_status="$(field_metric status "$SLOW_READER_SMOKE_SUMMARY")"
+slow_reader_timeout_observed="$(field_metric slow_timeout_observed "$SLOW_READER_SMOKE_SUMMARY")"
+slow_reader_timeout_class="$(field_metric slow_timeout_class "$SLOW_READER_SMOKE_SUMMARY")"
+slow_reader_matrix_status="missing"
 slow_reader_matrix_counts_checked="0"
 slow_reader_matrix_passed_counts="0"
 slow_reader_matrix_max_fast_clients="0"
@@ -239,42 +242,36 @@ slow_reader_matrix_total_fast_clients="0"
 slow_reader_matrix_total_fast_bootstrap_chunks="0"
 slow_reader_matrix_total_slow_timeouts="0"
 slow_reader_matrix_protocol_change="0"
-if [ -s "$SLOW_READER_MATRIX_SUMMARY" ]; then
-  slow_reader_matrix_status="$(field_metric status "$SLOW_READER_MATRIX_SUMMARY")"
-  slow_reader_matrix_counts_checked="$(field_metric counts_checked "$SLOW_READER_MATRIX_SUMMARY")"
-  slow_reader_matrix_passed_counts="$(field_metric passed_counts "$SLOW_READER_MATRIX_SUMMARY")"
-  slow_reader_matrix_max_fast_clients="$(field_metric max_fast_clients "$SLOW_READER_MATRIX_SUMMARY")"
-  slow_reader_matrix_total_fast_clients="$(field_metric total_fast_clients "$SLOW_READER_MATRIX_SUMMARY")"
-  slow_reader_matrix_total_fast_bootstrap_chunks="$(field_metric total_fast_bootstrap_chunks "$SLOW_READER_MATRIX_SUMMARY")"
-  slow_reader_matrix_total_slow_timeouts="$(field_metric total_slow_timeouts "$SLOW_READER_MATRIX_SUMMARY")"
-  slow_reader_matrix_protocol_change="$(field_metric protocol_change "$SLOW_READER_MATRIX_SUMMARY")"
-fi
-reconnect_smoke_status="deferred"
+slow_reader_matrix_status="$(field_metric status "$SLOW_READER_MATRIX_SUMMARY")"
+slow_reader_matrix_counts_checked="$(field_metric counts_checked "$SLOW_READER_MATRIX_SUMMARY")"
+slow_reader_matrix_passed_counts="$(field_metric passed_counts "$SLOW_READER_MATRIX_SUMMARY")"
+slow_reader_matrix_max_fast_clients="$(field_metric max_fast_clients "$SLOW_READER_MATRIX_SUMMARY")"
+slow_reader_matrix_total_fast_clients="$(field_metric total_fast_clients "$SLOW_READER_MATRIX_SUMMARY")"
+slow_reader_matrix_total_fast_bootstrap_chunks="$(field_metric total_fast_bootstrap_chunks "$SLOW_READER_MATRIX_SUMMARY")"
+slow_reader_matrix_total_slow_timeouts="$(field_metric total_slow_timeouts "$SLOW_READER_MATRIX_SUMMARY")"
+slow_reader_matrix_protocol_change="$(field_metric protocol_change "$SLOW_READER_MATRIX_SUMMARY")"
+reconnect_smoke_status="missing"
 reconnect_smoke_client_state="missing"
 reconnect_smoke_reader_errors="0"
 reconnect_smoke_successes="0"
 reconnect_smoke_protocol_change="0"
-if [ -s "$RECONNECT_SMOKE_SUMMARY" ]; then
-  reconnect_smoke_status="$(field_metric status "$RECONNECT_SMOKE_SUMMARY")"
-  reconnect_smoke_client_state="$(field_metric client_state "$RECONNECT_SMOKE_SUMMARY")"
-  reconnect_smoke_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SMOKE_SUMMARY")"
-  reconnect_smoke_successes="$(field_metric reconnect_successes "$RECONNECT_SMOKE_SUMMARY")"
-  reconnect_smoke_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SMOKE_SUMMARY")"
-fi
-reconnect_soak_status="deferred"
+reconnect_smoke_status="$(field_metric status "$RECONNECT_SMOKE_SUMMARY")"
+reconnect_smoke_client_state="$(field_metric client_state "$RECONNECT_SMOKE_SUMMARY")"
+reconnect_smoke_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SMOKE_SUMMARY")"
+reconnect_smoke_successes="$(field_metric reconnect_successes "$RECONNECT_SMOKE_SUMMARY")"
+reconnect_smoke_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SMOKE_SUMMARY")"
+reconnect_soak_status="missing"
 reconnect_soak_client_state="missing"
 reconnect_soak_cycles="0"
 reconnect_soak_reader_errors="0"
 reconnect_soak_successes="0"
 reconnect_soak_protocol_change="0"
-if [ -s "$RECONNECT_SOAK_SUMMARY" ]; then
-  reconnect_soak_status="$(field_metric status "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_client_state="$(field_metric client_state "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_cycles="$(field_metric reconnect_cycles "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_successes="$(field_metric reconnect_successes "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SOAK_SUMMARY")"
-fi
+reconnect_soak_status="$(field_metric status "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_client_state="$(field_metric client_state "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_cycles="$(field_metric reconnect_cycles "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_successes="$(field_metric reconnect_successes "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SOAK_SUMMARY")"
 
 packet_error_fixture="$OUT_DIR/packet-error-class-fixture.log"
 cat > "$packet_error_fixture" <<'EOF'
@@ -357,11 +354,10 @@ awk \
   -v server_scalability_connection_lifecycle_close_failures="${server_scalability_connection_lifecycle_close_failures:-0}" \
   -v server_scalability_connection_lifecycle_accept_failures="${server_scalability_connection_lifecycle_accept_failures:-0}" \
   -v server_scalability_connection_lifecycle_missing_active_client_fields="${server_scalability_connection_lifecycle_missing_active_client_fields:-0}" \
-  -v slow_reader_smoke_status="${slow_reader_smoke_status:-deferred}" \
+  -v slow_reader_smoke_status="${slow_reader_smoke_status:-missing}" \
   -v slow_reader_timeout_observed="${slow_reader_timeout_observed:-0}" \
   -v slow_reader_timeout_class="${slow_reader_timeout_class:-missing}" \
-  -v slow_reader_required="$RUN_SLOW_READER_SMOKE" \
-  -v slow_reader_matrix_status="${slow_reader_matrix_status:-deferred}" \
+  -v slow_reader_matrix_status="${slow_reader_matrix_status:-missing}" \
   -v slow_reader_matrix_counts_checked="${slow_reader_matrix_counts_checked:-0}" \
   -v slow_reader_matrix_passed_counts="${slow_reader_matrix_passed_counts:-0}" \
   -v slow_reader_matrix_max_fast_clients="${slow_reader_matrix_max_fast_clients:-0}" \
@@ -369,20 +365,17 @@ awk \
   -v slow_reader_matrix_total_fast_bootstrap_chunks="${slow_reader_matrix_total_fast_bootstrap_chunks:-0}" \
   -v slow_reader_matrix_total_slow_timeouts="${slow_reader_matrix_total_slow_timeouts:-0}" \
   -v slow_reader_matrix_protocol_change="${slow_reader_matrix_protocol_change:-0}" \
-  -v slow_reader_matrix_required="$RUN_SLOW_READER_MATRIX" \
-  -v reconnect_smoke_status="${reconnect_smoke_status:-deferred}" \
+  -v reconnect_smoke_status="${reconnect_smoke_status:-missing}" \
   -v reconnect_smoke_client_state="${reconnect_smoke_client_state:-missing}" \
   -v reconnect_smoke_reader_errors="${reconnect_smoke_reader_errors:-0}" \
   -v reconnect_smoke_successes="${reconnect_smoke_successes:-0}" \
   -v reconnect_smoke_protocol_change="${reconnect_smoke_protocol_change:-0}" \
-  -v reconnect_smoke_required="$RUN_RECONNECT_SMOKE" \
-  -v reconnect_soak_status="${reconnect_soak_status:-deferred}" \
+  -v reconnect_soak_status="${reconnect_soak_status:-missing}" \
   -v reconnect_soak_client_state="${reconnect_soak_client_state:-missing}" \
   -v reconnect_soak_cycles="${reconnect_soak_cycles:-0}" \
   -v reconnect_soak_reader_errors="${reconnect_soak_reader_errors:-0}" \
   -v reconnect_soak_successes="${reconnect_soak_successes:-0}" \
   -v reconnect_soak_protocol_change="${reconnect_soak_protocol_change:-0}" \
-  -v reconnect_soak_required="$RUN_RECONNECT_SOAK" \
   -v packet_error_summary_status="${packet_error_summary_status:-missing}" \
   -v packet_error_summary_events="${packet_error_summary_events:-0}" \
   -v packet_error_summary_unknown="${packet_error_summary_unknown:-1}" \
@@ -490,19 +483,16 @@ awk \
     } else if (!scalability_ok) {
       status = "fail"
       reason = "server_scalability_gate_not_clean"
-    } else if (slow_reader_required == "1" && !slow_reader_ok) {
+    } else if (!slow_reader_ok) {
       status = "fail"
       reason = "slow_reader_smoke_failed"
-    } else if (slow_reader_matrix_required == "1" && !slow_reader_matrix_ok) {
+    } else if (!slow_reader_matrix_ok) {
       status = "fail"
       reason = "slow_reader_matrix_failed"
-    } else if (slow_reader_matrix_status != "deferred" && !slow_reader_matrix_ok) {
-      status = "fail"
-      reason = "slow_reader_matrix_summary_failed"
-    } else if (reconnect_smoke_required == "1" && !reconnect_ok) {
+    } else if (!reconnect_ok) {
       status = "fail"
       reason = "reconnect_smoke_failed"
-    } else if (reconnect_soak_required == "1" && !reconnect_soak_ok) {
+    } else if (!reconnect_soak_ok) {
       status = "fail"
       reason = "reconnect_soak_failed"
     } else if (!server_tests_ok) {
