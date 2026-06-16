@@ -105,7 +105,8 @@ Layer 2, client-visible but block-preserving:
 Layer 3, block-distribution changes:
 
 - Use biomes to vary surface blocks, resource blocks, caves, structures, or height.
-- Requires worldgen determinism tests, serialization compatibility checks, storage review, and updated perf/world streaming evidence.
+- The current opt-in `biome_height_v1` generator uses `biome_v1` to vary surface/subsurface block selection over the existing `height_v1` height field.
+- Broader biome resources, caves, structures, and default-world changes still require separate worldgen determinism tests, serialization compatibility checks, storage review, and updated perf/world streaming evidence.
 
 Layer 4, persisted/migrated biomes:
 
@@ -143,7 +144,7 @@ Use:
 sh scripts/biome_visual_variety_foundation_gate.sh logs/biome_visual_variety_foundation_current
 ```
 
-The expected current result is `status=pass`, `biome_foundation_status=designed`, `biome_sampler=guarded`, `biome_matrix=guarded`, `metadata_layer=guarded`, `active_worldgen_change=0`, `active_serialization_change=0`, `visual_variety_runtime=deferred`, and `world_tests=pass`.
+The expected current foundation result is `status=pass`, `biome_foundation_status=designed`, `biome_sampler=guarded`, `biome_matrix=guarded`, `metadata_layer=guarded`, `active_worldgen_change=0`, `active_serialization_change=0`, `visual_variety_runtime=deferred`, and `world_tests=pass`.
 
 The gate checks that:
 
@@ -159,4 +160,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a metadata-only biome foundation. Runtime biome terrain generation and visual variation remain inactive; `biome_v1` sampling and the representative matrix artifact are guarded as deterministic data and do not change chunk bytes, protocol, storage, atlas assets, material rendering, or default gameplay behavior.
+This block is complete as a metadata-only biome foundation. Default runtime biome terrain generation and visual variation remain inactive; `biome_v1` sampling and the representative matrix artifact are guarded as deterministic data and do not change chunk bytes, protocol, storage, atlas assets, material rendering, or default gameplay behavior. Opt-in `biome_height_v1` terrain block selection is tracked by the world generation quality gate, not by changing this foundation contract.

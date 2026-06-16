@@ -66,7 +66,7 @@ for token in \
   'Layer 2, client-visible but block-preserving' \
   'Layer 3, block-distribution changes' \
   'No terrain shape change' \
-  'Runtime biome terrain generation and visual variation remain inactive'; do
+  'Default runtime biome terrain generation and visual variation remain inactive'; do
   require_token "$DESIGN_DOC" "$token"
 done
 

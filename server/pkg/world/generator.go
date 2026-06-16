@@ -5,8 +5,9 @@ import "fmt"
 type GeneratorVersion string
 
 const (
-	GeneratorVersionFlatV1   GeneratorVersion = "flat_v1"
-	GeneratorVersionHeightV1 GeneratorVersion = "height_v1"
+	GeneratorVersionFlatV1        GeneratorVersion = "flat_v1"
+	GeneratorVersionHeightV1      GeneratorVersion = "height_v1"
+	GeneratorVersionBiomeHeightV1 GeneratorVersion = "biome_height_v1"
 
 	DefaultWorldSeed   int64  = 0
 	DefaultDimensionID string = "overworld"
@@ -65,6 +66,10 @@ func (g WorldGenerator) GenerateChunk(x, z int32) (*Chunk, error) {
 		chunk := NewChunk(x, z)
 		g.generateHeightV1(chunk)
 		return chunk, nil
+	case GeneratorVersionBiomeHeightV1:
+		chunk := NewChunk(x, z)
+		g.generateBiomeHeightV1(chunk)
+		return chunk, nil
 	default:
 		return nil, fmt.Errorf("unsupported world generator version %q", config.Version)
 	}
@@ -85,7 +90,7 @@ func validateGeneratorConfig(config GeneratorConfig) error {
 		return fmt.Errorf("world generator dimension id must not be empty")
 	}
 	switch config.Version {
-	case GeneratorVersionFlatV1, GeneratorVersionHeightV1:
+	case GeneratorVersionFlatV1, GeneratorVersionHeightV1, GeneratorVersionBiomeHeightV1:
 		return nil
 	default:
 		return fmt.Errorf("unsupported world generator version %q", config.Version)
@@ -99,17 +104,45 @@ func (g WorldGenerator) generateHeightV1(chunk *Chunk) {
 			worldZ := int64(chunk.Z)*int64(ChunkDepth) + int64(localZ)
 			surfaceY := g.heightV1SurfaceY(worldX, worldZ)
 
-			for y := 0; y <= surfaceY; y++ {
-				switch {
-				case y == surfaceY:
-					chunk.SetBlock(localX, y, localZ, Grass)
-				case y >= surfaceY-2:
-					chunk.SetBlock(localX, y, localZ, Dirt)
-				default:
-					chunk.SetBlock(localX, y, localZ, Stone)
-				}
-			}
+			fillHeightColumn(chunk, localX, localZ, surfaceY, Grass, Dirt)
 		}
+	}
+}
+
+func (g WorldGenerator) generateBiomeHeightV1(chunk *Chunk) {
+	for localX := 0; localX < ChunkWidth; localX++ {
+		for localZ := 0; localZ < ChunkDepth; localZ++ {
+			worldX := int64(chunk.X)*int64(ChunkWidth) + int64(localX)
+			worldZ := int64(chunk.Z)*int64(ChunkDepth) + int64(localZ)
+			surfaceY := g.heightV1SurfaceY(worldX, worldZ)
+			surfaceBlock, subsurfaceBlock := biomeHeightV1ColumnBlocks(g.SampleBiome(worldX, worldZ).ID)
+
+			fillHeightColumn(chunk, localX, localZ, surfaceY, surfaceBlock, subsurfaceBlock)
+		}
+	}
+}
+
+func fillHeightColumn(chunk *Chunk, localX, localZ, surfaceY int, surfaceBlock, subsurfaceBlock BlockID) {
+	for y := 0; y <= surfaceY; y++ {
+		switch {
+		case y == surfaceY:
+			chunk.SetBlock(localX, y, localZ, surfaceBlock)
+		case y >= surfaceY-2:
+			chunk.SetBlock(localX, y, localZ, subsurfaceBlock)
+		default:
+			chunk.SetBlock(localX, y, localZ, Stone)
+		}
+	}
+}
+
+func biomeHeightV1ColumnBlocks(biomeID BiomeID) (BlockID, BlockID) {
+	switch biomeID {
+	case BiomeDryHighlands:
+		return Dirt, Stone
+	case BiomeSnowfields:
+		return Stone, Dirt
+	default:
+		return Grass, Dirt
 	}
 }
 

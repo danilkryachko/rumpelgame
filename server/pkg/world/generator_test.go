@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	stableFlatChunkSHA256     = "41bc68c75bd63c8845bba319c5db67e4ef0ab627b0241cd74e406d5c1878bd94"
-	stableHeightV1ChunkSHA256 = "1101411ccf572478dc9dee8772428714fd80d5ea9f82f491401e2ca410369dc7"
+	stableFlatChunkSHA256          = "41bc68c75bd63c8845bba319c5db67e4ef0ab627b0241cd74e406d5c1878bd94"
+	stableHeightV1ChunkSHA256      = "1101411ccf572478dc9dee8772428714fd80d5ea9f82f491401e2ca410369dc7"
+	stableBiomeHeightV1ChunkSHA256 = "af66b8ea8a62f93acb3dda64fe20b845d08f3d7ac5e3de3f7712691b636d149b"
 )
 
 func TestWorldGeneratorConfigIsExplicitSeedVersionContract(t *testing.T) {
@@ -141,6 +142,80 @@ func TestConfiguredHeightV1GeneratorChangesWithSeedAndDimension(t *testing.T) {
 	}
 }
 
+func TestConfiguredBiomeHeightV1GeneratorIsDeterministicForSeedDimensionAndCoordinates(t *testing.T) {
+	config := GeneratorConfig{
+		Seed:        8675309,
+		DimensionID: "overworld",
+		Version:     GeneratorVersionBiomeHeightV1,
+	}
+	firstWorld, err := NewWorldWithGeneratorConfig(nil, config)
+	if err != nil {
+		t.Fatalf("NewWorldWithGeneratorConfig(first) error = %v", err)
+	}
+	secondWorld, err := NewWorldWithGeneratorConfig(nil, config)
+	if err != nil {
+		t.Fatalf("NewWorldWithGeneratorConfig(second) error = %v", err)
+	}
+
+	first, err := firstWorld.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("first ChunkSnapshot() error = %v", err)
+	}
+	second, err := secondWorld.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("second ChunkSnapshot() error = %v", err)
+	}
+	if !bytes.Equal(first.Blocks, second.Blocks) {
+		t.Fatal("biome_height_v1 chunk bytes differ across independent worlds for identical seed, dimension, and coordinates")
+	}
+	if len(first.Blocks) != SerializedChunkSize {
+		t.Fatalf("biome_height_v1 snapshot bytes = %d, want %d", len(first.Blocks), SerializedChunkSize)
+	}
+	sum := sha256.Sum256(first.Blocks)
+	if got := fmt.Sprintf("%x", sum); got != stableBiomeHeightV1ChunkSHA256 {
+		t.Fatalf("biome_height_v1 chunk SHA-256 = %s, want %s", got, stableBiomeHeightV1ChunkSHA256)
+	}
+	if got := fmt.Sprintf("%x", sum); got == stableHeightV1ChunkSHA256 {
+		t.Fatalf("biome_height_v1 representative chunk SHA-256 unexpectedly matches height_v1 hash %s", got)
+	}
+
+	chunk, err := DeserializeChunk(first.X, first.Z, first.Blocks)
+	if err != nil {
+		t.Fatalf("DeserializeChunk(biome_height_v1 snapshot) error = %v", err)
+	}
+	generator, err := NewWorldGenerator(config)
+	if err != nil {
+		t.Fatalf("NewWorldGenerator() error = %v", err)
+	}
+	assertHeightV1SurfaceVaries(t, generator, chunk)
+	assertBiomeHeightV1Columns(t, generator)
+}
+
+func TestConfiguredBiomeHeightV1GeneratorChangesWithSeedAndDimension(t *testing.T) {
+	base := biomeHeightV1SnapshotBytes(t, GeneratorConfig{
+		Seed:        42,
+		DimensionID: "overworld",
+		Version:     GeneratorVersionBiomeHeightV1,
+	})
+	otherSeed := biomeHeightV1SnapshotBytes(t, GeneratorConfig{
+		Seed:        43,
+		DimensionID: "overworld",
+		Version:     GeneratorVersionBiomeHeightV1,
+	})
+	otherDimension := biomeHeightV1SnapshotBytes(t, GeneratorConfig{
+		Seed:        42,
+		DimensionID: "alternate_dimension",
+		Version:     GeneratorVersionBiomeHeightV1,
+	})
+
+	if bytes.Equal(base, otherSeed) {
+		t.Fatal("biome_height_v1 chunk bytes did not change after seed change")
+	}
+	if bytes.Equal(base, otherDimension) {
+		t.Fatal("biome_height_v1 chunk bytes did not change after dimension change")
+	}
+}
+
 func TestNewWorldWithGeneratorConfigRejectsUnknownVersion(t *testing.T) {
 	if _, err := NewWorldWithGeneratorConfig(nil, GeneratorConfig{
 		Seed:        1,
@@ -152,6 +227,20 @@ func TestNewWorldWithGeneratorConfigRejectsUnknownVersion(t *testing.T) {
 }
 
 func heightV1SnapshotBytes(t *testing.T, config GeneratorConfig) []byte {
+	t.Helper()
+
+	world, err := NewWorldWithGeneratorConfig(nil, config)
+	if err != nil {
+		t.Fatalf("NewWorldWithGeneratorConfig() error = %v", err)
+	}
+	snapshot, err := world.ChunkSnapshot(2, -4)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot() error = %v", err)
+	}
+	return snapshot.Blocks
+}
+
+func biomeHeightV1SnapshotBytes(t *testing.T, config GeneratorConfig) []byte {
 	t.Helper()
 
 	world, err := NewWorldWithGeneratorConfig(nil, config)
@@ -188,6 +277,58 @@ func assertHeightV1Column(t *testing.T, generator WorldGenerator, chunk *Chunk, 
 	}
 	if got := chunk.GetBlock(localX, surfaceY+1, localZ); got != Air {
 		t.Fatalf("height_v1 air block at (%d, %d, %d) = %v, want Air", localX, surfaceY+1, localZ, got)
+	}
+}
+
+func assertBiomeHeightV1Columns(t *testing.T, generator WorldGenerator) {
+	t.Helper()
+
+	for _, biomeID := range []BiomeID{BiomePlains, BiomeForest, BiomeDryHighlands, BiomeSnowfields} {
+		worldX, worldZ := findBiomeSampleCoordinate(t, generator, biomeID)
+		chunkX, localX := GlobalToChunkLocal(int32(worldX), ChunkWidth)
+		chunkZ, localZ := GlobalToChunkLocal(int32(worldZ), ChunkDepth)
+		generated, err := generator.GenerateChunk(chunkX, chunkZ)
+		if err != nil {
+			t.Fatalf("GenerateChunk(%d,%d) error = %v", chunkX, chunkZ, err)
+		}
+		assertBiomeHeightV1Column(t, generator, generated, biomeID, worldX, worldZ, localX, localZ)
+	}
+}
+
+func findBiomeSampleCoordinate(t *testing.T, generator WorldGenerator, biomeID BiomeID) (int64, int64) {
+	t.Helper()
+
+	for worldX := int64(-512); worldX <= 512; worldX += 16 {
+		for worldZ := int64(-512); worldZ <= 512; worldZ += 16 {
+			if got := generator.SampleBiome(worldX, worldZ).ID; got == biomeID {
+				return worldX, worldZ
+			}
+		}
+	}
+	t.Fatalf("no sample coordinate found for biome %q", biomeID)
+	return 0, 0
+}
+
+func assertBiomeHeightV1Column(t *testing.T, generator WorldGenerator, chunk *Chunk, biomeID BiomeID, worldX, worldZ int64, localX, localZ int) {
+	t.Helper()
+
+	sample := generator.SampleBiome(worldX, worldZ)
+	if sample.ID != biomeID {
+		t.Fatalf("SampleBiome(%d,%d) = %q, want %q", worldX, worldZ, sample.ID, biomeID)
+	}
+	surfaceY := generator.heightV1SurfaceY(worldX, worldZ)
+	surfaceBlock, subsurfaceBlock := biomeHeightV1ColumnBlocks(biomeID)
+	if got := chunk.GetBlock(localX, surfaceY, localZ); got != surfaceBlock {
+		t.Fatalf("biome_height_v1 %s surface block at (%d,%d,%d) = %v, want %v", biomeID, localX, surfaceY, localZ, got, surfaceBlock)
+	}
+	if got := chunk.GetBlock(localX, surfaceY-1, localZ); got != subsurfaceBlock {
+		t.Fatalf("biome_height_v1 %s subsurface block at (%d,%d,%d) = %v, want %v", biomeID, localX, surfaceY-1, localZ, got, subsurfaceBlock)
+	}
+	if got := chunk.GetBlock(localX, surfaceY-3, localZ); got != Stone {
+		t.Fatalf("biome_height_v1 %s base block at (%d,%d,%d) = %v, want Stone", biomeID, localX, surfaceY-3, localZ, got)
+	}
+	if got := chunk.GetBlock(localX, surfaceY+1, localZ); got != Air {
+		t.Fatalf("biome_height_v1 %s air block at (%d,%d,%d) = %v, want Air", biomeID, localX, surfaceY+1, localZ, got)
 	}
 }
 

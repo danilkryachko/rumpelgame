@@ -69,7 +69,7 @@ for token in \
   'generator_version' \
   'validation_and_serialization' \
   'Do not use wall-clock time' \
-  'This block is complete as a seed/version, opt-in height-generator, and metadata-only biome checkpoint'; do
+  'This block is complete as a seed/version, opt-in height-generator, metadata-only biome, and opt-in biome-height checkpoint'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
@@ -83,12 +83,15 @@ require_token "$GENERATOR_SOURCE" "Seed"
 require_token "$GENERATOR_SOURCE" "DimensionID"
 require_token "$GENERATOR_SOURCE" "GeneratorVersionFlatV1"
 require_token "$GENERATOR_SOURCE" "GeneratorVersionHeightV1"
+require_token "$GENERATOR_SOURCE" "GeneratorVersionBiomeHeightV1"
 require_token "$GENERATOR_SOURCE" "DefaultGeneratorConfig"
 require_token "$GENERATOR_SOURCE" "func NewWorldGenerator"
 require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) GenerateChunk"
 require_token "$GENERATOR_SOURCE" "chunk.GenerateFlat()"
 require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) generateHeightV1"
+require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) generateBiomeHeightV1"
 require_token "$GENERATOR_SOURCE" "func (g WorldGenerator) heightV1SurfaceY"
+require_token "$GENERATOR_SOURCE" "func biomeHeightV1ColumnBlocks"
 require_token "$WORLD_SOURCE" "NewWorldWithGeneratorConfig"
 require_token "$WORLD_SOURCE" "w.generator.GenerateChunk"
 require_token "$WORLD_TEST" "TestOriginChunkSnapshotUsesFlatGenerationContract"
@@ -102,10 +105,15 @@ require_token "$GENERATOR_TEST" "TestWorldGeneratorConfigIsExplicitSeedVersionCo
 require_token "$GENERATOR_TEST" "TestConfiguredFlatV1GeneratorPreservesStableChunkBytes"
 require_token "$GENERATOR_TEST" "TestConfiguredHeightV1GeneratorIsDeterministicForSeedDimensionAndCoordinates"
 require_token "$GENERATOR_TEST" "TestConfiguredHeightV1GeneratorChangesWithSeedAndDimension"
+require_token "$GENERATOR_TEST" "TestConfiguredBiomeHeightV1GeneratorIsDeterministicForSeedDimensionAndCoordinates"
+require_token "$GENERATOR_TEST" "TestConfiguredBiomeHeightV1GeneratorChangesWithSeedAndDimension"
 require_token "$GENERATOR_TEST" "stableHeightV1ChunkSHA256"
+require_token "$GENERATOR_TEST" "stableBiomeHeightV1ChunkSHA256"
 require_token "$GENERATOR_TEST" "assertHeightV1SurfaceVaries"
+require_token "$GENERATOR_TEST" "assertBiomeHeightV1Columns"
 require_token "$GENERATOR_TEST" "TestNewWorldWithGeneratorConfigRejectsUnknownVersion"
 require_token "$CHUNK_ENCODING_TEST" "TestEncodeSerializedChunkRLERoundTripsHeightV1Chunk"
+require_token "$CHUNK_ENCODING_TEST" "TestEncodeSerializedChunkRLERoundTripsBiomeHeightV1Chunk"
 require_token "$HEIGHT_SMOKE_SCRIPT" "RUMPELMC_WORLD_GENERATOR_VERSION=height_v1"
 require_token "$HEIGHT_SMOKE_SCRIPT" "server_height_generator_smoke status=pass"
 require_token "$SERVER_CMD_SOURCE" "configuredWorldGeneratorConfig"
@@ -161,11 +169,13 @@ awk \
     quality_pass_status = "designed"
     worldgen_seed_version = "guarded"
     worldgen_height_v1 = "guarded"
+    worldgen_biome_height_v1 = "guarded"
     height_v1_serialization = "guarded"
+    biome_height_v1_serialization = "guarded"
     height_v1_live_smoke = "guarded"
     active_generator_change = 0
     active_chunk_byte_change = 0
-    runtime_quality_pass = "opt_in_height_v1_guarded"
+    runtime_quality_pass = "opt_in_biome_height_v1_guarded"
     coordinate_mapping = "guarded"
     origin_chunk = "guarded"
     flat_byte_hash = "guarded"
@@ -194,7 +204,7 @@ awk \
       reason = "world_tests_failed"
     }
 
-    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s worldgen_seed_version=%s worldgen_height_v1=%s height_v1_serialization=%s height_v1_live_smoke=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s origin_chunk=%s flat_byte_hash=%s world_tests=%s biome_status=%s biome_sampler=%s biome_matrix=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d height_smoke_status=%s height_smoke_encoding=%s design_doc=%s biome_summary=%s\n", status, reason, quality_pass_status, worldgen_seed_version, worldgen_height_v1, height_v1_serialization, height_v1_live_smoke, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, origin_chunk, flat_byte_hash, world_tests, biome_status, biome_sampler, biome_matrix, biome_runtime, biome_worldgen_change, biome_serialization_change, height_smoke_status, height_smoke_encoding, design_doc, biome_summary)
+    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s worldgen_seed_version=%s worldgen_height_v1=%s worldgen_biome_height_v1=%s height_v1_serialization=%s biome_height_v1_serialization=%s height_v1_live_smoke=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s origin_chunk=%s flat_byte_hash=%s world_tests=%s biome_status=%s biome_sampler=%s biome_matrix=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d height_smoke_status=%s height_smoke_encoding=%s design_doc=%s biome_summary=%s\n", status, reason, quality_pass_status, worldgen_seed_version, worldgen_height_v1, worldgen_biome_height_v1, height_v1_serialization, biome_height_v1_serialization, height_v1_live_smoke, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, origin_chunk, flat_byte_hash, world_tests, biome_status, biome_sampler, biome_matrix, biome_runtime, biome_worldgen_change, biome_serialization_change, height_smoke_status, height_smoke_encoding, design_doc, biome_summary)
     if (status != "pass") {
       exit 1
     }

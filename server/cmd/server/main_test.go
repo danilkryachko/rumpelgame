@@ -100,7 +100,7 @@ func TestConfiguredWorldGeneratorConfigDefaultsToFlatV1(t *testing.T) {
 func TestConfiguredWorldGeneratorConfigUsesEnvOverrides(t *testing.T) {
 	t.Setenv("RUMPELMC_WORLD_SEED", "-42")
 	t.Setenv("RUMPELMC_WORLD_DIMENSION_ID", "test_dimension")
-	t.Setenv("RUMPELMC_WORLD_GENERATOR_VERSION", string(world.GeneratorVersionHeightV1))
+	t.Setenv("RUMPELMC_WORLD_GENERATOR_VERSION", string(world.GeneratorVersionBiomeHeightV1))
 
 	got, err := configuredWorldGeneratorConfig()
 	if err != nil {
@@ -109,7 +109,7 @@ func TestConfiguredWorldGeneratorConfigUsesEnvOverrides(t *testing.T) {
 	want := world.GeneratorConfig{
 		Seed:        -42,
 		DimensionID: "test_dimension",
-		Version:     world.GeneratorVersionHeightV1,
+		Version:     world.GeneratorVersionBiomeHeightV1,
 	}
 	if got != want {
 		t.Fatalf("configuredWorldGeneratorConfig() = %+v, want %+v", got, want)
