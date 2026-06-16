@@ -33,4 +33,4 @@ RUMPELMC_GPU_LOAD_SCALING_SOURCE_SUMMARY=logs/world_streaming_resident_set_growt
 
 Fresh check:
 
-- `logs/gpu_terrain_load_scaling_radius16_summary_check/gpu-terrain-load-scaling-summary.txt` passed with `max_gpu_subchunks=2482`, `max_gpu_draws=2482`, `max_gpu_faces=3296`, draw-command occupancy `30.298%`, headroom `91360` bytes, `max_terrain_queue_ms=3.453`, `max_process_wall_p95_ms=0.052`, `max_gpu_compositor_submit_ms=0.207`, and zero GPU upload failures.
+- `logs/gpu_terrain_load_scaling_radius16_summary_check/gpu-terrain-load-scaling-summary.txt` passed with `max_gpu_subchunks=2482`, `max_gpu_draws=2482`, `max_gpu_faces=3165`, draw-command occupancy `30.298%`, headroom `91360` bytes, `max_terrain_queue_ms=2.214`, `max_process_wall_p95_ms=0.059`, `max_gpu_compositor_submit_ms=5.677`, and zero GPU upload failures.

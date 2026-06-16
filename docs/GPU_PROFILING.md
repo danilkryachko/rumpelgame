@@ -207,6 +207,14 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 
 The gate requires thousands of subchunks/draws/faces and nontrivial draw-command occupancy; see `docs/GPU_TERRAIN_LOAD_SCALING.md`.
 
+Use the mass chunk-load gate after refreshing high resident-set and upload-budget evidence. It requires thousands of resident GPU subchunks/draws/faces while preserving the current per-frame upload budget:
+
+```sh
+sh scripts/gpu_terrain_mass_chunk_load_gate.sh logs/gpu_terrain_mass_chunk_load_current
+```
+
+The gate writes `gpu-terrain-mass-chunk-load-summary.txt`; see `docs/GPU_TERRAIN_MASS_CHUNK_LOAD.md`.
+
 Use the resident-set matrix wrapper when planning needs a compact trend summary over resident-set growth artifacts without rerunning heavy captures:
 
 ```sh
