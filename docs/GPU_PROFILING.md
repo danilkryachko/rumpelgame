@@ -185,6 +185,14 @@ sh scripts/gpu_buffer_residency_budget.sh logs/gpu_buffer_residency_budget_curre
 
 The gate writes `gpu-buffer-residency-budget-summary.txt`; see `docs/GPU_BUFFER_RESIDENCY_BUDGET.md`.
 
+Use the streaming priority audit before changing server chunk ordering, client mesh/collision queue scheduling, unload policy, buffer repack/eviction policy, or GPU upload fallback policy. It composes current chunk-boundary, rapid camera-turn, unload churn, buffer residency, and upload-failure fallback summaries, checks client/server source contracts, and keeps profiler plus macOS/Windows validation blockers explicit:
+
+```sh
+sh scripts/gpu_streaming_priority_audit.sh logs/gpu_streaming_priority_audit_current
+```
+
+The gate writes `gpu-streaming-priority-audit-summary.txt`; see `docs/GPU_STREAMING_PRIORITY_AUDIT.md`.
+
 Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh

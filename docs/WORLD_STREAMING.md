@@ -315,6 +315,14 @@ Fresh check:
 
 - `logs/gpu_buffer_residency_budget_current/gpu-buffer-residency-budget-summary.txt` passed with `residency_pressure_class=high`, `residency_proof_status=partial`, configured buffers `67,239,936` bytes at `95.709%` of the soft budget, active face bytes `100,672` at `2.400%`, resident subchunks/logical draw records/submitted draw records `2482/2482/2482`, resident faces `6292`, draw-command occupancy/headroom `30.298%/91360` bytes, queue/process/submit `2.214/0.059/5.677ms`, upload failures `0`, and allocator/free-range evidence still missing in this checkout.
 
+## GPU Streaming Priority Audit
+
+The streaming priority audit is summary-only. It checks server chunk ordering, client mesh/collision queue priority, current chunk readiness, unload churn, buffer residency, and diagnostic upload-failure fallback before any scheduler, unload, repack, eviction, or default streaming policy change.
+
+Fresh check:
+
+- `logs/gpu_streaming_priority_audit_current/gpu-streaming-priority-audit-summary.txt` passed with `source_contracts_present=18`, `runtime_priority_status=pass`, `upload_fallback_status=pass`, `priority_proof_status=partial`, packet queue lag `27.437ms`, current chunk `2,2`, render/collision readiness `1/1`, current chunk submeshes/collision `2/2`, normal upload failures `0`, buffer upload failures `0`, diagnostic upload-fallback expected/injected failures `1052/1052`, `upload_fallback_shadow_path=arraymesh`, `residency_pressure_class=high`, and `scheduler_change_allowed=0`.
+
 ## GPU Report System V2
 
 The V2 report wrapper keeps the existing aggregate report but explicitly separates fresh scoped metrics, fail gates, historical aggregate maxima, and warning-only local signals.
@@ -337,7 +345,7 @@ The check strategy separates daily `fast`, pre-merge `full`, and heavy/nightly p
 
 Fresh check:
 
-- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, rapid camera-turn, chunk-boundary, load scaling, upload pressure, resource lifecycle, memory budget, buffer residency budget, report V2, baseline governance, and the GPU stress artifact index.
+- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, rapid camera-turn, chunk-boundary, streaming priority audit, load scaling, upload pressure, resource lifecycle, memory budget, buffer residency budget, report V2, baseline governance, and the GPU stress artifact index.
 
 ## GPU Repack Activation Preflight
 
@@ -730,6 +738,7 @@ Set `RUMPELMC_SERVER_CHUNK_ENCODING=raw` for the rollback path.
 - For RenderingDevice resource lifecycle checks, use `scripts/gpu_resource_lifecycle_audit.sh`; see `docs/RENDERINGDEVICE_RESOURCE_LIFECYCLE_AUDIT.md`.
 - For GPU terrain memory budget checks, use `scripts/gpu_terrain_memory_budget.sh`; see `docs/GPU_TERRAIN_MEMORY_BUDGETING.md`.
 - For GPU buffer residency budget checks, use `scripts/gpu_buffer_residency_budget.sh`; see `docs/GPU_BUFFER_RESIDENCY_BUDGET.md`.
+- For GPU streaming priority audits, use `scripts/gpu_streaming_priority_audit.sh`; see `docs/GPU_STREAMING_PRIORITY_AUDIT.md`.
 - For classified GPU report output, use `scripts/gpu_terrain_report_v2.sh`; see `docs/GPU_REPORT_SYSTEM_V2.md`.
 - For accepted baseline comparison, use `scripts/performance_baseline_governance.sh`; see `docs/PERFORMANCE_BASELINE_GOVERNANCE.md`.
 - For fast/full/nightly strategy checks, use `scripts/test_strategy_gate.sh`; see `docs/TEST_STRATEGY.md`.
