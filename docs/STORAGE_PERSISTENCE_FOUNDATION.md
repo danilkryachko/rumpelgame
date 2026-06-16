@@ -16,6 +16,7 @@ This note records the current approved persistence foundation for chunk storage.
 - Saving a chunk overwrites only that chunk key and must not alter neighboring chunk keys.
 - Opening a RocksDB store with an empty path fails before the C API boundary and does not return a usable store.
 - Opening a RocksDB store creates a missing parent directory for the configured path.
+- Opening a RocksDB store below an existing regular-file parent path fails and does not return a usable store.
 - Opening a RocksDB store on an existing regular file fails and does not return a usable store.
 - Concurrent save/load operations on distinct chunk keys through one open RocksDB store preserve each chunk payload.
 - RocksDB open errors include the configured path, and corrupt chunk decode errors include the affected chunk coordinates.

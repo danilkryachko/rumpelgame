@@ -142,6 +142,32 @@ func TestOpenRocksChunkStoreRejectsFilePath(t *testing.T) {
 	}
 }
 
+func TestOpenRocksChunkStoreRejectsFileParentPath(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(parent, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	path := filepath.Join(parent, "chunks.rocksdb")
+
+	store, err := OpenRocksChunkStore(path)
+	if err == nil {
+		if store != nil {
+			store.Close()
+		}
+		t.Fatal("OpenRocksChunkStore() error = nil, want failure for file parent path")
+	}
+	if store != nil {
+		store.Close()
+		t.Fatalf("OpenRocksChunkStore() store = %v, want nil on failure", store)
+	}
+	if !strings.Contains(err.Error(), "create RocksDB parent directory") {
+		t.Fatalf("OpenRocksChunkStore() error = %q, want parent directory context", err)
+	}
+	if !strings.Contains(err.Error(), parent) {
+		t.Fatalf("OpenRocksChunkStore() error = %q, want parent path %q", err, parent)
+	}
+}
+
 func TestOpenRocksChunkStoreRejectsEmptyPathBeforeCAPI(t *testing.T) {
 	store, err := OpenRocksChunkStore("")
 	if err == nil {

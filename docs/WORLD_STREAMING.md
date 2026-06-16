@@ -252,7 +252,7 @@ Fresh check:
 
 ## Storage Persistence Foundation
 
-The storage foundation slice keeps RocksDB as the implemented chunk persistence backend and does not add PostgreSQL behavior. It adds focused coverage for missing chunks, save/reopen round-trips, overwrite isolation between neighboring chunk keys, concurrent distinct-key save/load, corrupt persisted payload errors with chunk-coordinate context, missing-parent path creation, regular-file path rejection with path context, closed-store and nil-save lifecycle errors, and the server config boundary that keeps `RUMPELMC_SERVER_ROCKSDB_PATH` as the only current runtime chunk-store path override.
+The storage foundation slice keeps RocksDB as the implemented chunk persistence backend and does not add PostgreSQL behavior. It adds focused coverage for missing chunks, save/reopen round-trips, overwrite isolation between neighboring chunk keys, concurrent distinct-key save/load, corrupt persisted payload errors with chunk-coordinate context, missing-parent path creation, regular-file parent/database path rejection with path context, closed-store and nil-save lifecycle errors, and the server config boundary that keeps `RUMPELMC_SERVER_ROCKSDB_PATH` as the only current runtime chunk-store path override.
 
 Fresh check:
 
@@ -357,7 +357,7 @@ Fresh check:
 - Gameplay foundation keeps mining/building on `BlockAction` and `World.SetBlockGlobal`; local hotbar inventory is client-only and full edit reload persistence is deferred to the block-edit persistence gate.
 - Block edit persistence has a world-level save/reload guard for place and destroy edits, save-failure rollback, and persisted load-error propagation; runtime persisted-reload visual/collision/GPU smoke is still a heavier deferred check.
 - Dirty update scalability has a mass dirty unit guard, opt-in edge-runtime Godot smoke, bounded opt-in mass-edit runtime smoke, and bounded opt-in persisted-reload dirty runtime smoke; broader runtime mass-edit budgets remain separate from normal checks.
-- RocksDB chunk persistence is guarded by focused `server/pkg/storage` tests for key format, sorted signed coordinate keys, round-trip save/load, missing chunks, overwrite isolation, concurrent distinct-key save/load, actionable open/decode error context, corrupt payload errors, repeated close safety, closed-store operation errors, and nil chunk save rejection.
+- RocksDB chunk persistence is guarded by focused `server/pkg/storage` tests for key format, sorted signed coordinate keys, round-trip save/load, missing chunks, overwrite isolation, concurrent distinct-key save/load, actionable open/decode error context, corrupt payload errors, regular-file parent/database path rejection, repeated close safety, closed-store operation errors, and nil chunk save rejection.
 - Long-run exploration soak is available as a bounded report-only wrapper by default; do not treat the one-run smoke as multi-hour stability evidence.
 - GPU terrain load scaling is guarded by `scripts/gpu_terrain_load_scaling.sh`; standard 996-draw workload results are not enough for this gate.
 - GPU upload pressure is guarded by `scripts/gpu_terrain_upload_pressure.sh`; it must stay evidence-only unless a separate task explicitly changes upload capacity, allocator policy, or visible quality.

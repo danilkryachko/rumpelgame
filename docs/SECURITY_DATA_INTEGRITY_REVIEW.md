@@ -77,7 +77,7 @@ Checks:
 ### Storage Integrity
 
 - RocksDB keys keep the stable chunk-coordinate key format.
-- RocksDB tests cover missing chunks, save/reopen round-trip, overwrite isolation, concurrent distinct-key save/load, corrupt payload rejection, empty-path rejection before the C API boundary, missing-parent path creation, regular-file path rejection, key format, and signed coordinate ordering.
+- RocksDB tests cover missing chunks, save/reopen round-trip, overwrite isolation, concurrent distinct-key save/load, corrupt payload rejection, empty-path rejection before the C API boundary, missing-parent path creation, regular-file parent path rejection, regular-file database path rejection, key format, and signed coordinate ordering.
 - Server config tests prove `RUMPELMC_SERVER_ROCKSDB_PATH` is the current chunk-store override and PostgreSQL environment variables do not select a runtime chunk backend.
 - The review gate reports `storage_config=path_guarded` after validating empty path rejection, the RocksDB path/config documentation, and the current server config tests.
 - The review gate reports `storage_backend_policy=approved_only_guarded` after scanning runtime source areas for unapproved database engine references.
@@ -166,7 +166,7 @@ The gate checks that:
 - Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
 - Focused deterministic packet/RLE property tests are present in Go and Rust test sources and surfaced in the summary as `deterministic_property_tests=guarded`.
 - Focused Go protocol/network/storage/world tests pass.
-- Storage tests prove empty RocksDB paths are rejected before the C API boundary, missing parent directories are created, and existing regular-file RocksDB paths fail to open.
+- Storage tests prove empty RocksDB paths are rejected before the C API boundary, missing parent directories are created, and existing regular-file parent/database RocksDB paths fail to open.
 - Storage tests prove concurrent save/load operations on distinct RocksDB chunk keys preserve each chunk payload.
 - Storage tests prove open-path failures and corrupt persisted payload failures include actionable context.
 - Storage tests prove closed-store and nil-save paths return Go errors before the C API boundary.
