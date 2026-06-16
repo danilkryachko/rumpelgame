@@ -71,7 +71,7 @@ Fresh check:
 
 ## Chunk Delivery Order
 
-The default server stream remains nearest-first by squared chunk distance. `world.ChunksAround` preserves that old behavior.
+The default server stream remains nearest-first by squared chunk distance. `world.ChunksAround` preserves that old behavior and is unit-guarded for stable X/Z tie-breaks, per-batch limits, and sent-state advancement through `chunk_request_ordering=guarded`.
 
 `RUMPELMC_SERVER_CHUNK_ORDER=directional` enables an opt-in server-side tie-break for movement streaming. The server tracks the previous chunk center per connection, converts movement between chunk centers to a normalized `-1/0/1` direction, and passes that to `world.ChunksAroundOrdered`. Directional ordering does not change protocol, chunk payloads, storage, world generation, view distance, batch size, or bootstrap radius. It only chooses ahead-of-motion chunks first when candidates are already at the same distance from the current center.
 
@@ -337,7 +337,7 @@ Fresh check:
 - A full raw chunk payload is `1,048,576` bytes before protobuf and TCP framing.
 - `server/pkg/network` sends RLE `ChunkData.blocks` by default after the Rust client decodes them back to the same raw block bytes.
 - `RUMPELMC_SERVER_CHUNK_ENCODING=raw` switches chunk payloads back to the raw full chunk rollback path.
-- The default server stream sends up to `64` chunks per update, ordered nearest-first by chunk distance.
+- The default server stream sends up to `64` chunks per update, ordered nearest-first by chunk distance with stable same-distance tie-breaks.
 - `RUMPELMC_SERVER_CHUNK_ORDER=directional` enables opt-in movement-direction tie-break ordering while leaving nearest-first as the default.
 - `RUMPELMC_SERVER_CHUNKS_PER_UPDATE=6` restores the previous conservative stream batch.
 - The default first post-connect stream uses bootstrap radius `0`, sending only the current chunk first; normal position updates then continue with the full view distance.
@@ -718,7 +718,7 @@ Set `RUMPELMC_SERVER_CHUNK_ENCODING=raw` for the rollback path.
 - For texture atlas evolution planning, use `scripts/texture_atlas_evolution_gate.sh`; see `docs/TEXTURE_ATLAS_EVOLUTION_TRACK.md`. Current expected status is `pass` with no atlas asset or shader layout change.
 - For biome and visual-variety foundation, use `scripts/biome_visual_variety_foundation_gate.sh`; see `docs/BIOME_VISUAL_VARIETY_FOUNDATION.md`. Current expected status is `pass` with runtime biome visuals deferred and no worldgen/serialization change.
 - For world generation quality planning, use `scripts/world_generation_quality_gate.sh`; see `docs/WORLD_GENERATION_QUALITY_PASS.md`. Current expected status is `pass` with `origin_chunk=guarded`, `coordinate_mapping=guarded` for positive, negative, and high-positive boundaries, and runtime terrain/cave/resource/structure changes deferred.
-- For server scalability checks, use `scripts/server_scalability_pass_gate.sh`; see `docs/SERVER_SCALABILITY_PASS.md`. Current expected status is `pass` with multi-client sent-state, interested-client fanout, and `conflict_semantics=last_write_wins_guarded` guarded, plus bounded live/repeated multi-client evidence.
+- For server scalability checks, use `scripts/server_scalability_pass_gate.sh`; see `docs/SERVER_SCALABILITY_PASS.md`. Current expected status is `pass` with multi-client sent-state, interested-client fanout, `conflict_semantics=last_write_wins_guarded`, and `chunk_request_ordering=guarded`, plus bounded live/repeated multi-client evidence.
 - For networking robustness checks, use `scripts/networking_robustness_gate.sh`; see `docs/NETWORKING_ROBUSTNESS_PROGRAM.md`. Current expected status is `pass` with Go/Rust packet boundary tests, empty/unknown payload ignore policy, reconnect, slow-client, stale-session, packet-error classification, parser aggregation, live alert thresholds, `conflict_semantics=last_write_wins_guarded`, and opt-in admission guarded while adaptive overload/backpressure work remains deferred.
 - For client state-machine checks, use `scripts/client_state_machine_hardening_gate.sh`; see `docs/CLIENT_STATE_MACHINE_HARDENING.md`. Current expected status is `pass` with lifecycle transitions unit-guarded and runtime reconnect/state telemetry deferred.
 - For gameplay loop foundation checks, use `scripts/gameplay_loop_foundation_gate.sh`; see `docs/GAMEPLAY_LOOP_FOUNDATION.md`. Current expected status is `pass` with local hotbar inventory guarded and full reload persistence deferred.

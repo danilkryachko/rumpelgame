@@ -31,6 +31,40 @@ func TestChunksAroundUsesCircularRadius(t *testing.T) {
 	}
 }
 
+func TestChunksAroundOrdersNearestFirstAndAdvancesSentState(t *testing.T) {
+	w := NewWorld(nil)
+	alreadySent := map[ChunkCoord]bool{}
+
+	firstBatch, err := w.ChunksAround(0, 0, 2, alreadySent, 5)
+	if err != nil {
+		t.Fatalf("ChunksAround(first batch) error = %v", err)
+	}
+	assertSnapshotCoords(t, firstBatch, []ChunkCoord{
+		{X: 0, Z: 0},
+		{X: -1, Z: 0},
+		{X: 0, Z: -1},
+		{X: 0, Z: 1},
+		{X: 1, Z: 0},
+	})
+
+	for _, coord := range []ChunkCoord{{X: 0, Z: 0}, {X: -1, Z: 0}, {X: 0, Z: -1}, {X: 0, Z: 1}, {X: 1, Z: 0}} {
+		if !alreadySent[coord] {
+			t.Fatalf("alreadySent[%+v] = false after first batch", coord)
+		}
+	}
+
+	secondBatch, err := w.ChunksAround(0, 0, 2, alreadySent, 4)
+	if err != nil {
+		t.Fatalf("ChunksAround(second batch) error = %v", err)
+	}
+	assertSnapshotCoords(t, secondBatch, []ChunkCoord{
+		{X: -1, Z: -1},
+		{X: -1, Z: 1},
+		{X: 1, Z: -1},
+		{X: 1, Z: 1},
+	})
+}
+
 func TestChunksAroundOrderedKeepsCurrentChunkFirst(t *testing.T) {
 	w := NewWorld(nil)
 
@@ -397,5 +431,19 @@ func assertSnapshotBlock(t *testing.T, snapshot ChunkSnapshot, x, y, z int, want
 	}
 	if got := chunk.GetBlock(x, y, z); got != want {
 		t.Fatalf("snapshot block at (%d, %d, %d) = %v, want %v", x, y, z, got, want)
+	}
+}
+
+func assertSnapshotCoords(t *testing.T, snapshots []ChunkSnapshot, want []ChunkCoord) {
+	t.Helper()
+
+	if len(snapshots) != len(want) {
+		t.Fatalf("snapshot count = %d, want %d", len(snapshots), len(want))
+	}
+	for i, snapshot := range snapshots {
+		got := ChunkCoord{X: snapshot.X, Z: snapshot.Z}
+		if got != want[i] {
+			t.Fatalf("snapshot[%d] coord = %+v, want %+v", i, got, want[i])
+		}
 	}
 }
