@@ -13,6 +13,7 @@ func TestPacketPayloadFieldNumbersAreStable(t *testing.T) {
 	assertFieldNumber(t, packet, "position", 2)
 	assertFieldNumber(t, packet, "block_action", 3)
 	assertFieldNumber(t, packet, "inventory_snapshot", 4)
+	assertFieldNumber(t, packet, "inventory_action", 5)
 }
 
 func TestChunkDataFieldNumbersAreStable(t *testing.T) {
@@ -39,6 +40,16 @@ func TestInventorySnapshotFieldNumbersAreStable(t *testing.T) {
 	assertFieldNumber(t, slot, "block_id", 1)
 	assertFieldNumber(t, slot, "count", 2)
 	assertFieldNumber(t, snapshot, "slots", 1)
+	assertFieldNumber(t, snapshot, "selected_slot", 2)
+}
+
+func TestInventoryActionFieldNumbersAreStable(t *testing.T) {
+	action := (&InventoryAction{}).ProtoReflect().Descriptor()
+	actionType := InventoryAction_SELECT_SLOT.Descriptor()
+
+	assertFieldNumber(t, action, "action", 1)
+	assertFieldNumber(t, action, "slot", 2)
+	assertEnumNumber(t, actionType, "SELECT_SLOT", 0)
 }
 
 func assertFieldNumber(t *testing.T, message protoreflect.MessageDescriptor, name protoreflect.Name, want protoreflect.FieldNumber) {

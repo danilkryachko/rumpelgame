@@ -39,7 +39,8 @@
 - `Packet.position = 2`: client-to-server `ClientPosition`.
 - `Packet.block_action = 3`: client-to-server `BlockAction`.
 - `Packet.inventory_snapshot = 4`: server-to-client `InventorySnapshot`.
-- Packets with no active payload, nil `ClientPosition`/`BlockAction` bodies, or an unsupported payload shape are ignored by current handlers and must not emit chunk updates.
+- `Packet.inventory_action = 5`: client-to-server `InventoryAction`.
+- Packets with no active payload, nil `ClientPosition`/`BlockAction`/`InventoryAction` bodies, or an unsupported payload shape are ignored by current handlers and must not emit chunk updates.
 
 ## Chunk Data
 
@@ -69,9 +70,11 @@
 - Current inventory validation uses the existing `BlockAction` packet shape.
 - `BlockAction.block_id = 5` remains the requested placement block ID for `PLACE`.
 - `Packet.inventory_snapshot = 4` sends server-authoritative inventory slots to the client after admission.
-- `InventorySlot.block_id = 1`, `InventorySlot.count = 2`, and `InventorySnapshot.slots = 1` keep their current meanings.
+- `InventorySlot.block_id = 1`, `InventorySlot.count = 2`, `InventorySnapshot.slots = 1`, and `InventorySnapshot.selected_slot = 2` keep their current meanings.
+- `Packet.inventory_action = 5` carries client slot-selection requests.
+- `InventoryAction.action = 1`, `InventoryAction.slot = 2`, and `InventoryAction SELECT_SLOT = 0` keep their current meanings.
 - Server session inventory remains authoritative for placement approval.
-- New inventory packet payloads must use new `Packet.payload` tags greater than `4`.
+- New inventory packet payloads must use new `Packet.payload` tags greater than `5`.
 - New `BlockAction` fields must use field numbers greater than `5`.
 - Run `scripts/inventory_protocol_compatibility_gate.sh` before finishing inventory work that claims protocol compatibility.
 

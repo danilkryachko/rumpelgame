@@ -11,6 +11,7 @@ Decision: no protocol change is needed for the current streaming work. RLE alrea
 - `Packet.position = 2`: client-to-server `ClientPosition`.
 - `Packet.block_action = 3`: client-to-server `BlockAction`.
 - `Packet.inventory_snapshot = 4`: server-to-client `InventorySnapshot`.
+- `Packet.inventory_action = 5`: client-to-server `InventoryAction`.
 - `ChunkData.x = 1`, `ChunkData.z = 2`, `ChunkData.blocks = 3`, `ChunkData.encoding = 4`, `ChunkData.uncompressed_size = 5`.
 - `CHUNK_ENCODING_RAW = 0` remains compatibility default.
 - `CHUNK_ENCODING_RLE = 1` remains current default server encoding.
@@ -19,7 +20,7 @@ Decision: no protocol change is needed for the current streaming work. RLE alrea
 
 - Never reuse existing field numbers or change their meaning.
 - Do not hand-edit generated Go or Rust protocol files.
-- Any new `Packet.payload` variant must use a new oneof tag greater than `4`.
+- Any new `Packet.payload` variant must use a new oneof tag greater than `5`.
 - Any new field on an existing message must use a new field number greater than the current highest field for that message.
 - Old clients must continue to handle omitted new fields through default values.
 - Rollback must be explicit and documented before a protocol change becomes default.
@@ -52,7 +53,7 @@ These are reserved as planning concepts, not active schema:
 - Server capability packet: server declares selected encoding, stream policy, and fallback rules.
 - Client stream telemetry packet: client reports packet queue drain bursts, queue lag, decode work, terrain queue pressure, and resident pressure for adaptive batching.
 - Chunk delta packet: server sends block/subchunk deltas separately from full chunk snapshots when edit persistence requires it.
-- Inventory action packet: client requests non-placement inventory operations after server snapshot sync is already guarded.
+- Inventory stack operation packet: client requests stack transfers, pickups, or crafting operations after selected-slot actions and snapshot sync are already guarded.
 
 Do not add any of these until the relevant trigger has runtime evidence and a rollback path.
 

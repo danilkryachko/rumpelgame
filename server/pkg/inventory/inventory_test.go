@@ -86,6 +86,51 @@ func TestInventorySlotsReturnsCopy(t *testing.T) {
 	}
 }
 
+func TestInventorySlotSelectionRequiresAvailablePlaceableSlot(t *testing.T) {
+	inv := NewCounted([]Slot{
+		{BlockID: world.Stone, Count: 3},
+		{BlockID: world.Dirt, Count: 0},
+		{BlockID: world.Air, Count: 10},
+	})
+
+	if !inv.CanSelectSlot(0) {
+		t.Fatal("CanSelectSlot(0) = false, want true")
+	}
+	if inv.CanSelectSlot(1) {
+		t.Fatal("CanSelectSlot(empty dirt slot) = true, want false")
+	}
+	if inv.CanSelectSlot(2) {
+		t.Fatal("CanSelectSlot(air slot) = true, want false")
+	}
+	if inv.CanSelectSlot(3) {
+		t.Fatal("CanSelectSlot(out of range) = true, want false")
+	}
+
+	block, ok := inv.PlaceableBlockAtSlot(0)
+	if !ok {
+		t.Fatal("PlaceableBlockAtSlot(0) ok = false, want true")
+	}
+	if block != world.Stone {
+		t.Fatalf("PlaceableBlockAtSlot(0) block = %v, want Stone", block)
+	}
+}
+
+func TestInventoryFirstPlaceableSlotSkipsUnavailableSlots(t *testing.T) {
+	inv := NewCounted([]Slot{
+		{BlockID: world.Air, Count: 10},
+		{BlockID: world.Dirt, Count: 0},
+		{BlockID: world.Wood, Count: 1},
+	})
+
+	slot, ok := inv.FirstPlaceableSlot()
+	if !ok {
+		t.Fatal("FirstPlaceableSlot() ok = false, want true")
+	}
+	if slot != 2 {
+		t.Fatalf("FirstPlaceableSlot() = %d, want 2", slot)
+	}
+}
+
 func placeableBlockIDs(t *testing.T) []world.BlockID {
 	t.Helper()
 

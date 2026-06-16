@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -321,6 +322,7 @@ func TestNetworkErrorClassification(t *testing.T) {
 		{name: "malformed", err: fmt.Errorf("wrapped: %w", errMalformedPacket), want: networkErrorMalformedProtobuf},
 		{name: "encode", err: fmt.Errorf("wrapped: %w", errPacketEncode), want: networkErrorEncode},
 		{name: "timeout", err: timeoutError{}, want: networkErrorTimeout},
+		{name: "read connection reset", err: fmt.Errorf("wrapped: %w", &net.OpError{Op: "read", Err: syscall.ECONNRESET}), want: networkErrorEOF},
 		{name: "short write", err: fmt.Errorf("wrapped: %w", io.ErrShortWrite), want: networkErrorShortWrite},
 		{name: "short frame", err: fmt.Errorf("wrapped: %w", io.ErrUnexpectedEOF), want: networkErrorShortFrame},
 		{name: "eof", err: fmt.Errorf("wrapped: %w", io.EOF), want: networkErrorEOF},

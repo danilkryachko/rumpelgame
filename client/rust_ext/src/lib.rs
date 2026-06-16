@@ -100,6 +100,17 @@ fn authoritative_inventory_slots_from_snapshot(
         .collect()
 }
 
+fn inventory_action_select_slot_packet(slot: u32) -> crate::api::Packet {
+    crate::api::Packet {
+        payload: Some(crate::api::packet::Payload::InventoryAction(
+            crate::api::InventoryAction {
+                action: crate::api::inventory_action::ActionType::SelectSlot as i32,
+                slot,
+            },
+        )),
+    }
+}
+
 enum NetworkReaderEvent {
     Packet {
         session_id: u64,
@@ -179,6 +190,7 @@ pub struct GameClient {
     chunk_non_empty_subchunks: HashMap<(i32, i32), u32>,
     chunk_last_seen_sec: HashMap<(i32, i32), f64>,
     authoritative_inventory_slots: Vec<AuthoritativeInventorySlot>,
+    authoritative_inventory_selected_slot: u32,
     mesh_queue: VecDeque<SubchunkKey>,
     queued_subchunks: HashMap<SubchunkKey, MeshQueueReason>,
     collision_refresh_queue: VecDeque<SubchunkKey>,
@@ -226,6 +238,7 @@ impl INode for GameClient {
             chunk_non_empty_subchunks: HashMap::new(),
             chunk_last_seen_sec: HashMap::new(),
             authoritative_inventory_slots: Vec::new(),
+            authoritative_inventory_selected_slot: 0,
             mesh_queue: VecDeque::new(),
             queued_subchunks: HashMap::new(),
             collision_refresh_queue: VecDeque::new(),
@@ -551,6 +564,11 @@ impl GameClient {
         let callable_placed = self.base().callable(&StringName::from("on_block_placed"));
         player.connect(&StringName::from("block_placed"), &callable_placed);
 
+        let callable_hotbar = self
+            .base()
+            .callable(&StringName::from("on_hotbar_selected"));
+        player.connect(&StringName::from("hotbar_selected"), &callable_hotbar);
+
         let callable_log = self
             .base()
             .callable(&StringName::from("on_player_debug_log"));
@@ -706,14 +724,17 @@ impl GameClient {
     }
 
     fn update_inventory_snapshot(&mut self, snapshot: crate::api::InventorySnapshot) {
+        self.authoritative_inventory_selected_slot = snapshot.selected_slot;
         self.authoritative_inventory_slots = authoritative_inventory_slots_from_snapshot(&snapshot);
         self.last_block_action = format!(
-            "inventory slots {}",
-            self.authoritative_inventory_slots.len()
+            "inventory slots {} selected {}",
+            self.authoritative_inventory_slots.len(),
+            self.authoritative_inventory_selected_slot
         );
         self.emit_debug_log(&format!(
-            "Inventory snapshot received slots={}",
-            self.authoritative_inventory_slots.len()
+            "Inventory snapshot received slots={} selected={}",
+            self.authoritative_inventory_slots.len(),
+            self.authoritative_inventory_selected_slot
         ));
     }
 
@@ -6666,6 +6687,28 @@ impl GameClient {
         self.send_packet_to_server(&packet);
     }
 
+    #[func]
+    fn on_hotbar_selected(&mut self, slot: i32, block_id: i32) {
+        if slot < 0 {
+            self.emit_debug_log(&format!("Skipped invalid hotbar slot={slot}"));
+            return;
+        }
+        if !blocks::is_placeable(block_id as u32) {
+            self.emit_debug_log(&format!("Skipped invalid hotbar block id={block_id}"));
+            return;
+        }
+
+        self.last_block_action = format!(
+            "select slot {} block {}",
+            slot,
+            blocks::name(block_id as u32)
+        );
+        self.emit_debug_log(&format!("Hotbar slot selected: {slot} id={block_id}"));
+
+        let packet = inventory_action_select_slot_packet(slot as u32);
+        self.send_packet_to_server(&packet);
+    }
+
     #[signal]
     fn debug_log(message: GString);
 }
@@ -6722,6 +6765,7 @@ mod tests {
                     count: 7,
                 },
             ],
+            selected_slot: 1,
         };
 
         let slots = authoritative_inventory_slots_from_snapshot(&snapshot);
@@ -6739,6 +6783,17 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn inventory_action_select_slot_packet_uses_wire_slot() {
+        use prost::Message;
+
+        let packet = inventory_action_select_slot_packet(3);
+        let mut encoded = Vec::new();
+        packet.encode(&mut encoded).unwrap();
+
+        assert_eq!(encoded, vec![0x2a, 0x02, 0x10, 0x03]);
     }
 
     #[test]

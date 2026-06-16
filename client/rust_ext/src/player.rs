@@ -370,8 +370,19 @@ impl Player {
                     self.selected_block as crate::blocks::BlockId,
                     slot,
                 );
-                self.selected_hotbar_slot = selected_slot;
-                self.selected_block = selected_block as i32;
+                if selected_slot != self.selected_hotbar_slot {
+                    self.selected_hotbar_slot = selected_slot;
+                    self.selected_block = selected_block as i32;
+                    let selected_slot_arg = selected_slot as i32;
+                    let selected_block_arg = self.selected_block;
+                    self.base_mut().emit_signal(
+                        &StringName::from("hotbar_selected"),
+                        &[
+                            selected_slot_arg.to_variant(),
+                            selected_block_arg.to_variant(),
+                        ],
+                    );
+                }
             }
         }
     }
@@ -580,6 +591,9 @@ impl Player {
 
     #[signal]
     fn block_placed(x: i32, y: i32, z: i32, block_id: i32);
+
+    #[signal]
+    fn hotbar_selected(slot: i32, block_id: i32);
 
     #[signal]
     fn debug_log(message: GString);

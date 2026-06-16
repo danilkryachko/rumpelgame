@@ -34,7 +34,7 @@ Scope:
 
 Out of scope:
 
-- No inventory protocol, item stack persistence, crafting, drops, tools, durability, survival rules, new block IDs, new packet fields, new storage records, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
+- No item stack persistence, crafting, drops, tools, durability, survival rules, new block IDs beyond inventory action/snapshot compatibility, new storage records, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
 
 Assumptions:
 
@@ -81,8 +81,9 @@ The client now has a local creative hotbar inventory model:
 - `first_placeable_hotbar_slot()` initializes selection from the first usable slot
 - `selected_hotbar_state_after_request()` updates slot and block ID together only for usable slots
 - `hotbar_key_for_slot()` keeps key mapping bounded to slots `1..5`
+- `hotbar_selected(slot, block_id)` emits only when the requested usable slot changes, and `GameClient.on_hotbar_selected` sends `InventoryAction SELECT_SLOT`
 
-This is intentionally client-local and behavior-preserving for the existing hotbar. It gives future survival/server-inventory work a small seam without adding protocol or persistence fields now.
+This keeps the existing hotbar behavior while making selected-slot intent visible to the server. Authoritative selected-slot state still comes back through `InventorySnapshot`.
 
 ## Server Inventory Foundation
 
@@ -92,8 +93,10 @@ The server now has a session-owned inventory foundation:
 - `NewCreativeHotbar()` derives placeable slots from the server block registry.
 - `NewCounted()` supports counted stack consumption for server-side rules.
 - `clientSession` owns an inventory created by `NewCreativeHotbar()`.
+- `clientSession` owns `selectedInventorySlot`, initializes it from the first placeable slot, and validates `InventoryAction SELECT_SLOT` against session inventory.
 - `BlockAction_PLACE` keeps the existing `world.IsPlaceable(block)` check and requires `client.inventory.CanPlaceBlock(block)` before the world edit.
 - Counted placement is applied only after `World.SetBlockGlobal` succeeds.
+- Successful counted placement sends a fresh inventory snapshot after the chunk update and normalizes the selected slot if the selected stack is depleted.
 - Creative placement keeps counts retained, so current creative block placement behavior is unchanged.
 - Missing inventory entries reject placement before `World.SetBlockGlobal` and before chunk update broadcast.
 
@@ -111,10 +114,10 @@ The gameplay foundation relies on the existing server boundary:
 
 Still needed before calling gameplay production-ready:
 
-- Inventory action packet/schema design and compatibility tests.
 - Item stack persistence.
 - Tool/durability/mining-time rules.
 - Drops and pickup flow.
+- Stack transfer and crafting inventory actions.
 - Edit broadcast/fanout to other clients.
 - Broader dirty chunk save/reload coverage beyond the Block 41 persisted visual smoke.
 - Mass edit, chunk edge, collision, and GPU dirty scalability from Block 42.
@@ -122,7 +125,8 @@ Still needed before calling gameplay production-ready:
 ## Compatibility Rules
 
 - Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload.
-- Keep `scripts/inventory_protocol_compatibility_gate.sh` clean before advancing any inventory schema work.
+- Keep `Packet.inventory_action = 5` as the client-to-server selected-slot inventory action payload.
+- Keep `scripts/inventory_protocol_compatibility_gate.sh` clean after inventory schema work.
 - Do not add storage records for item stacks without a storage migration task.
 - Do not bypass `World.SetBlockGlobal` for persistent block edits.
 - Do not allow client-only block IDs through `BlockAction`.
@@ -143,7 +147,8 @@ The expected current result is `status=pass`, `gameplay_loop_status=foundation_g
 The gate checks that:
 
 - This document records mining/building flow, inventory foundation, persistence boundary, deferred work, and compatibility rules.
-- The player source contains the hotbar inventory model, selected slot state, selection helpers, and tests.
+- The player source contains the hotbar inventory model, selected slot state, selected-slot signal, selection helpers, and tests.
+- The client source contains selected-slot inventory action send coverage.
 - The server inventory foundation summary is present and clean.
 - Server block edits still flow through `World.SetBlockGlobal`.
 - `World.SetBlockGlobal` still calls `ChunkStore.SaveChunk`.

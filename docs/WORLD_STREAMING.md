@@ -30,7 +30,7 @@ See `docs/GAMEPLAY_LOOP_FOUNDATION.md` for the 2026-06-15 mining/building and lo
 
 See `docs/SERVER_INVENTORY_FOUNDATION.md` for the 2026-06-16 server-owned session inventory placement checkpoint.
 
-See `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` for the 2026-06-16 inventory protocol compatibility checkpoint over the current `BlockAction` packet shape and server-to-client inventory snapshot.
+See `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` for the 2026-06-16 inventory protocol compatibility checkpoint over the current `BlockAction` packet shape, server-to-client inventory snapshot, and client-to-server selected-slot action.
 
 See `docs/BLOCK_EDIT_PERSISTENCE_TRACK.md` for the 2026-06-15 block edit save/reload persistence proof.
 
@@ -239,11 +239,11 @@ Fresh check:
 
 ## Inventory Protocol Compatibility
 
-Inventory protocol compatibility is guarded with a server-to-client snapshot packet. The current wire contract uses `Packet.block_action = 3` plus `BlockAction.block_id = 5` for placement requests and `Packet.inventory_snapshot = 4` for authoritative inventory slots. Server session inventory remains the placement approval boundary. The compatibility gate requires clean protocol drift, server inventory, and gameplay foundation evidence.
+Inventory protocol compatibility is guarded with a server-to-client snapshot packet and a client-to-server selected-slot action packet. The current wire contract uses `Packet.block_action = 3` plus `BlockAction.block_id = 5` for placement requests, `Packet.inventory_snapshot = 4` for authoritative inventory slots plus selected slot, and `Packet.inventory_action = 5` for selected-slot requests. Server session inventory remains the placement approval and selected-slot validation boundary. The compatibility gate requires clean protocol drift, server inventory, and gameplay foundation evidence.
 
 Fresh check:
 
-- `logs/inventory_protocol_compatibility_current/inventory-protocol-compatibility-summary.txt` should report `status=pass`, `inventory_protocol_status=snapshot_guarded`, `active_schema_change=0`, `current_wire_contract=block_action_and_inventory_snapshot`, `inventory_snapshot_schema=tag_4_guarded`, `future_packet_tags=packet_gt_4`, `future_block_action_fields=block_action_gt_5`, `protocol_generated_drift=guarded`, `server_inventory_status=session_guarded`, and `gameplay_inventory_status=session_guarded` after this slice is committed.
+- `logs/inventory_protocol_compatibility_current/inventory-protocol-compatibility-summary.txt` should report `status=pass`, `inventory_protocol_status=action_guarded`, `active_schema_change=0`, `current_wire_contract=block_action_inventory_snapshot_and_action`, `inventory_snapshot_schema=tag_4_guarded`, `inventory_action_schema=tag_5_guarded`, `future_packet_tags=packet_gt_5`, `future_block_action_fields=block_action_gt_5`, `protocol_generated_drift=guarded`, `server_inventory_status=session_guarded`, and `gameplay_inventory_status=session_guarded` after this slice is committed.
 
 ## Block Edit Persistence
 

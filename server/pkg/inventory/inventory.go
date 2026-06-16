@@ -54,6 +54,32 @@ func (i *Inventory) CanPlaceBlock(blockID world.BlockID) bool {
 	return ok
 }
 
+func (i *Inventory) CanSelectSlot(slot uint32) bool {
+	_, ok := i.PlaceableBlockAtSlot(slot)
+	return ok
+}
+
+func (i *Inventory) FirstPlaceableSlot() (uint32, bool) {
+	for index, slot := range i.slots {
+		if inventorySlotCanPlace(slot) {
+			return uint32(index), true
+		}
+	}
+	return 0, false
+}
+
+func (i *Inventory) PlaceableBlockAtSlot(slot uint32) (world.BlockID, bool) {
+	if uint64(slot) >= uint64(len(i.slots)) {
+		return world.Air, false
+	}
+
+	inventorySlot := i.slots[slot]
+	if !inventorySlotCanPlace(inventorySlot) {
+		return world.Air, false
+	}
+	return inventorySlot.BlockID, true
+}
+
 func (i *Inventory) PlaceBlock(blockID world.BlockID) bool {
 	slotIndex, ok := i.placeableSlotIndex(blockID)
 	if !ok {
@@ -78,9 +104,13 @@ func (i *Inventory) placeableSlotIndex(blockID world.BlockID) (int, bool) {
 	}
 
 	for index, slot := range i.slots {
-		if slot.BlockID == blockID && slot.Count > 0 {
+		if slot.BlockID == blockID && inventorySlotCanPlace(slot) {
 			return index, true
 		}
 	}
 	return -1, false
+}
+
+func inventorySlotCanPlace(slot Slot) bool {
+	return slot.Count > 0 && world.IsPlaceable(slot.BlockID)
 }

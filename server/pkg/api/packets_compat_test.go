@@ -106,14 +106,31 @@ func TestPacketWireCompatibility(t *testing.T) {
 						Slots: []*InventorySlot{
 							{BlockId: 1, Count: 999},
 						},
+						SelectedSlot: 3,
 					},
 				},
 			},
 			expected: []byte{
-				0x22, 0x07,
+				0x22, 0x09,
 				0x0a, 0x05,
 				0x08, 0x01,
 				0x10, 0xe7, 0x07,
+				0x10, 0x03,
+			},
+		},
+		{
+			name: "inventory action payload tag 5",
+			packet: &Packet{
+				Payload: &Packet_InventoryAction{
+					InventoryAction: &InventoryAction{
+						Action: InventoryAction_SELECT_SLOT,
+						Slot:   3,
+					},
+				},
+			},
+			expected: []byte{
+				0x2a, 0x02,
+				0x10, 0x03,
 			},
 		},
 	}

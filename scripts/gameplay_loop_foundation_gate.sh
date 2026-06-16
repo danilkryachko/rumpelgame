@@ -67,7 +67,8 @@ for token in \
   'Compatibility Rules' \
   'Server Inventory Foundation' \
   'Block 41' \
-  'Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload'; do
+  'Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload' \
+  'Keep `Packet.inventory_action = 5` as the client-to-server selected-slot inventory action payload'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
@@ -86,6 +87,7 @@ require_token "$PLAYER_SOURCE" 'fn inventory_has_placeable_block'
 require_token "$PLAYER_SOURCE" 'fn hotbar_key_for_slot'
 require_token "$PLAYER_SOURCE" 'block_broken'
 require_token "$PLAYER_SOURCE" 'block_placed'
+require_token "$PLAYER_SOURCE" 'hotbar_selected'
 require_token "$PLAYER_SOURCE" 'initial_hotbar_inventory_contains_placeable_blocks'
 require_token "$PLAYER_SOURCE" 'inventory_slot_can_place_requires_count_and_placeable_block'
 require_token "$PLAYER_SOURCE" 'inventory_has_placeable_block_accepts_only_available_hotbar_blocks'
@@ -95,8 +97,12 @@ require_token "$PLAYER_SOURCE" 'selected_hotbar_state_tracks_placeable_slot'
 require_token "$PLAYER_SOURCE" 'selected_hotbar_state_ignores_unplaceable_or_empty_slot'
 require_token "$CLIENT_SOURCE" 'fn on_block_broken'
 require_token "$CLIENT_SOURCE" 'fn on_block_placed'
+require_token "$CLIENT_SOURCE" 'fn on_hotbar_selected'
+require_token "$CLIENT_SOURCE" 'inventory_action_select_slot_packet'
 require_token "$CLIENT_SOURCE" 'BlockAction'
+require_token "$CLIENT_SOURCE" 'InventoryAction'
 require_token "$SERVER_SOURCE" 'case *api.Packet_BlockAction:'
+require_token "$SERVER_SOURCE" 'case *api.Packet_InventoryAction:'
 require_token "$SERVER_SOURCE" 'world.IsPlaceable(block)'
 require_token "$SERVER_SOURCE" 's.world.SetBlockGlobal'
 require_token "$WORLD_SOURCE" 'func (w *World) SetBlockGlobal'
@@ -125,7 +131,7 @@ proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.pr
 
 inventory_tests="skipped"
 if [ "$RUN_RUST_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/client/rust_ext" && cargo test --lib inventory > "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib hotbar >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1); then
+  if (cd "$ROOT_DIR/client/rust_ext" && cargo test --lib inventory > "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib hotbar >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib inventory_action >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1); then
     inventory_tests="pass"
   else
     cat "$OUT_DIR/cargo-test-inventory.txt" >&2 || true

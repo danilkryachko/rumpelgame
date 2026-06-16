@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -308,6 +309,13 @@ func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Pa
 			return fmt.Errorf("send updated chunk %d,%d: %w", snapshot.X, snapshot.Z, err)
 		}
 
+	case *api.Packet_InventoryAction:
+		if p.InventoryAction == nil {
+			log.Printf("Ignored nil inventory action")
+			return nil
+		}
+		log.Printf("Ignored inventory action without session")
+
 	default:
 		log.Printf("Unknown packet received")
 	}
@@ -363,10 +371,41 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 		}
 		if applyInventoryPlacement {
 			client.inventory.PlaceBlock(block)
+			client.normalizeSelectedInventorySlot()
 		}
 
 		if err := s.broadcastChunkUpdate(client, snapshot); err != nil {
 			return fmt.Errorf("send updated chunk %d,%d: %w", snapshot.X, snapshot.Z, err)
+		}
+		if applyInventoryPlacement {
+			if err := s.sendInventorySnapshotToSession(client); err != nil {
+				return fmt.Errorf("send inventory snapshot: %w", err)
+			}
+		}
+
+	case *api.Packet_InventoryAction:
+		action := p.InventoryAction
+		if action == nil {
+			log.Printf("Ignored nil inventory action")
+			return nil
+		}
+		log.Printf("Received InventoryAction: action=%v, slot=%d", action.Action, action.Slot)
+
+		switch action.Action {
+		case api.InventoryAction_SELECT_SLOT:
+			if !client.selectInventorySlot(action.Slot) {
+				log.Printf("Ignored invalid inventory slot=%d", action.Slot)
+				if err := s.sendInventorySnapshotToSession(client); err != nil {
+					return fmt.Errorf("send inventory snapshot: %w", err)
+				}
+				return nil
+			}
+			if err := s.sendInventorySnapshotToSession(client); err != nil {
+				return fmt.Errorf("send inventory snapshot: %w", err)
+			}
+		default:
+			log.Printf("Ignored unknown inventory action=%v", action.Action)
+			return nil
 		}
 
 	default:
@@ -376,20 +415,25 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 }
 
 type clientSession struct {
-	conn        net.Conn
-	stateMu     sync.Mutex
-	writeMu     sync.Mutex
-	streamState clientChunkStreamState
-	inventory   playerinventory.Inventory
+	conn                  net.Conn
+	stateMu               sync.Mutex
+	writeMu               sync.Mutex
+	streamState           clientChunkStreamState
+	inventory             playerinventory.Inventory
+	selectedInventorySlot uint32
 }
 
 func newClientSession(conn net.Conn) *clientSession {
+	inventory := playerinventory.NewCreativeHotbar()
+	selectedSlot, _ := inventory.FirstPlaceableSlot()
+
 	return &clientSession{
 		conn: conn,
 		streamState: clientChunkStreamState{
 			sentChunks: make(map[world.ChunkCoord]bool),
 		},
-		inventory: playerinventory.NewCreativeHotbar(),
+		inventory:             inventory,
+		selectedInventorySlot: selectedSlot,
 	}
 }
 
@@ -412,6 +456,38 @@ func (c *clientSession) hasSentChunk(coord world.ChunkCoord) bool {
 	defer c.stateMu.Unlock()
 
 	return c.streamState.sentChunks[coord]
+}
+
+func (c *clientSession) selectedSlot() uint32 {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	return c.selectedInventorySlot
+}
+
+func (c *clientSession) selectInventorySlot(slot uint32) bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if !c.inventory.CanSelectSlot(slot) {
+		return false
+	}
+	c.selectedInventorySlot = slot
+	return true
+}
+
+func (c *clientSession) normalizeSelectedInventorySlot() {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if c.inventory.CanSelectSlot(c.selectedInventorySlot) {
+		return
+	}
+	if slot, ok := c.inventory.FirstPlaceableSlot(); ok {
+		c.selectedInventorySlot = slot
+		return
+	}
+	c.selectedInventorySlot = 0
 }
 
 type clientChunkStreamState struct {
@@ -725,7 +801,7 @@ func (s *Server) sendChunkToSession(client *clientSession, chunk world.ChunkSnap
 }
 
 func (s *Server) sendInventorySnapshotToSession(client *clientSession) error {
-	return s.sendPacketToSession(client, inventorySnapshotPacket(client.inventory))
+	return s.sendPacketToSession(client, inventorySnapshotPacket(client.inventory, client.selectedSlot()))
 }
 
 func (s *Server) sendPacketToSession(client *clientSession, packet *api.Packet) error {
@@ -784,15 +860,15 @@ func (s *Server) chunkPacket(chunk world.ChunkSnapshot) (*api.Packet, chunkSendS
 	return packet, stats, nil
 }
 
-func inventorySnapshotPacket(inventory playerinventory.Inventory) *api.Packet {
+func inventorySnapshotPacket(inventory playerinventory.Inventory, selectedSlot uint32) *api.Packet {
 	return &api.Packet{
 		Payload: &api.Packet_InventorySnapshot{
-			InventorySnapshot: inventorySnapshot(inventory),
+			InventorySnapshot: inventorySnapshot(inventory, selectedSlot),
 		},
 	}
 }
 
-func inventorySnapshot(inventory playerinventory.Inventory) *api.InventorySnapshot {
+func inventorySnapshot(inventory playerinventory.Inventory, selectedSlot uint32) *api.InventorySnapshot {
 	slots := inventory.Slots()
 	apiSlots := make([]*api.InventorySlot, 0, len(slots))
 	for _, slot := range slots {
@@ -801,7 +877,10 @@ func inventorySnapshot(inventory playerinventory.Inventory) *api.InventorySnapsh
 			Count:   slot.Count,
 		})
 	}
-	return &api.InventorySnapshot{Slots: apiSlots}
+	return &api.InventorySnapshot{
+		Slots:        apiSlots,
+		SelectedSlot: selectedSlot,
+	}
 }
 
 func (s *chunkStreamBatchStats) add(stats chunkSendStats) {
@@ -887,6 +966,10 @@ func classifyNetworkError(err error) networkErrorClass {
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return networkErrorTimeout
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "read" && errors.Is(opErr.Err, syscall.ECONNRESET) {
+		return networkErrorEOF
 	}
 	if errors.Is(err, errPacketTooLarge) {
 		return networkErrorOversizedFrame

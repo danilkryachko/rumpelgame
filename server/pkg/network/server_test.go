@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -743,6 +744,9 @@ func TestNewClientSessionStartsWithServerAuthoritativeCreativeInventory(t *testi
 	if client.inventory.CanPlaceBlock(world.Air) {
 		t.Fatal("new client session can place Air, want false")
 	}
+	if got := client.selectedSlot(); got != 0 {
+		t.Fatalf("new client session selected slot = %d, want 0", got)
+	}
 }
 
 func TestHandleClientPacketRejectsPlaceWhenSessionInventoryLacksBlock(t *testing.T) {
@@ -815,10 +819,13 @@ func TestInventorySnapshotPacketUsesSessionInventorySlots(t *testing.T) {
 		{BlockID: world.Wood, Count: 7},
 	})
 
-	packet := inventorySnapshotPacket(inv)
+	packet := inventorySnapshotPacket(inv, 1)
 	snapshot := packet.GetInventorySnapshot()
 	if snapshot == nil {
 		t.Fatal("inventory snapshot packet payload = nil")
+	}
+	if got := snapshot.GetSelectedSlot(); got != 1 {
+		t.Fatalf("snapshot selected slot = %d, want 1", got)
 	}
 	if got := len(snapshot.GetSlots()); got != 2 {
 		t.Fatalf("snapshot slots = %d, want 2", got)
@@ -866,6 +873,9 @@ func TestSendInventorySnapshotToSessionWritesInventorySnapshot(t *testing.T) {
 	if got := len(snapshot.GetSlots()); got != placeableBlocks {
 		t.Fatalf("snapshot slots = %d, want %d", got, placeableBlocks)
 	}
+	if got := snapshot.GetSelectedSlot(); got != 0 {
+		t.Fatalf("snapshot selected slot = %d, want 0", got)
+	}
 	for _, slot := range snapshot.GetSlots() {
 		if !world.IsPlaceable(world.BlockID(slot.GetBlockId())) {
 			t.Fatalf("snapshot block id %d is not placeable", slot.GetBlockId())
@@ -873,6 +883,125 @@ func TestSendInventorySnapshotToSessionWritesInventorySnapshot(t *testing.T) {
 		if slot.GetCount() != playerinventory.CreativeStackCount {
 			t.Fatalf("snapshot count = %d, want %d", slot.GetCount(), playerinventory.CreativeStackCount)
 		}
+	}
+}
+
+func TestHandleClientPacketInventoryActionSelectsSlotAndSendsSnapshot(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	client := newClientSession(&recordingConn{})
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 1},
+		{BlockID: world.Wood, Count: 1},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_InventoryAction{
+			InventoryAction: &api.InventoryAction{
+				Action: api.InventoryAction_SELECT_SLOT,
+				Slot:   1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if got := client.selectedSlot(); got != 1 {
+		t.Fatalf("selected slot = %d, want 1", got)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames = %d, want 1", got)
+	}
+	decoded := decodedPacket(t, frames[0])
+	snapshot := decoded.GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("inventory action response snapshot = nil")
+	}
+	if got := snapshot.GetSelectedSlot(); got != 1 {
+		t.Fatalf("response selected slot = %d, want 1", got)
+	}
+}
+
+func TestHandleClientPacketInventoryActionRejectsUnavailableSlot(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	client := newClientSession(&recordingConn{})
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 1},
+		{BlockID: world.Wood, Count: 0},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_InventoryAction{
+			InventoryAction: &api.InventoryAction{
+				Action: api.InventoryAction_SELECT_SLOT,
+				Slot:   1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if got := client.selectedSlot(); got != 0 {
+		t.Fatalf("selected slot = %d, want 0", got)
+	}
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames = %d, want 1", got)
+	}
+	snapshot := decodedPacket(t, frames[0]).GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("invalid slot response snapshot = nil")
+	}
+	if got := snapshot.GetSelectedSlot(); got != 0 {
+		t.Fatalf("invalid slot response selected slot = %d, want 0", got)
+	}
+}
+
+func TestHandleClientPacketPlaceSendsInventorySnapshotAfterCountedPlacement(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	client := newClientSession(&recordingConn{})
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 1},
+		{BlockID: world.Wood, Count: 1},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       64,
+				Z:       1,
+				BlockId: uint32(world.Stone),
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 2 {
+		t.Fatalf("frames = %d, want 2", got)
+	}
+	if decodedPacket(t, frames[0]).GetChunk() == nil {
+		t.Fatal("first frame chunk = nil")
+	}
+	snapshot := decodedPacket(t, frames[1]).GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("second frame inventory snapshot = nil")
+	}
+	if got := snapshot.GetSlots()[0].GetCount(); got != 0 {
+		t.Fatalf("stone count after placement = %d, want 0", got)
+	}
+	if got := snapshot.GetSelectedSlot(); got != 1 {
+		t.Fatalf("selected slot after depleted placement = %d, want 1", got)
 	}
 }
 
@@ -949,8 +1078,15 @@ func TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients(t *testing.T
 	originConn := origin.conn.(*recordingConn)
 	watcherConn := watcher.conn.(*recordingConn)
 	uninterestedConn := uninterested.conn.(*recordingConn)
-	if got := len(recordedFrames(t, originConn)); got != 1 {
-		t.Fatalf("origin frames = %d, want 1", got)
+	originFrames := recordedFrames(t, originConn)
+	if got := len(originFrames); got != 2 {
+		t.Fatalf("origin frames = %d, want 2", got)
+	}
+	if decodedPacket(t, originFrames[0]).GetChunk() == nil {
+		t.Fatal("origin first frame chunk = nil")
+	}
+	if decodedPacket(t, originFrames[1]).GetInventorySnapshot() == nil {
+		t.Fatal("origin second frame inventory snapshot = nil")
 	}
 	watcherFrames := recordedFrames(t, watcherConn)
 	if got := len(watcherFrames); got != 1 {
@@ -960,10 +1096,7 @@ func TestHandleClientPacketBroadcastsBlockUpdateToInterestedClients(t *testing.T
 		t.Fatalf("uninterested frames = %d, want 0", got)
 	}
 
-	decoded := &api.Packet{}
-	if err := proto.Unmarshal(watcherFrames[0], decoded); err != nil {
-		t.Fatalf("unmarshal watcher frame: %v", err)
-	}
+	decoded := decodedPacket(t, watcherFrames[0])
 	chunkData := decoded.GetChunk()
 	if chunkData == nil {
 		t.Fatal("watcher frame chunk = nil")
@@ -1012,21 +1145,33 @@ func TestHandleClientPacketConflictingBlockActionsUseLastWriteSnapshot(t *testin
 			t.Fatalf("handleClientPacketForSession(block=%d) error = %v", block, err)
 		}
 	}
-	blockInFrame := func(label string, frame []byte) world.BlockID {
+	blockInFrame := func(label string, frame []byte) (world.BlockID, bool) {
 		t.Helper()
-		decoded := &api.Packet{}
-		if err := proto.Unmarshal(frame, decoded); err != nil {
-			t.Fatalf("unmarshal %s frame: %v", label, err)
-		}
+		decoded := decodedPacket(t, frame)
 		chunkData := decoded.GetChunk()
 		if chunkData == nil {
-			t.Fatalf("%s frame chunk = nil", label)
+			return world.Air, false
 		}
 		chunk, err := world.DeserializeChunk(chunkData.GetX(), chunkData.GetZ(), chunkData.GetBlocks())
 		if err != nil {
 			t.Fatalf("DeserializeChunk(%s frame) error = %v", label, err)
 		}
-		return chunk.GetBlock(1, 64, 1)
+		return chunk.GetBlock(1, 64, 1), true
+	}
+	latestBlockInFrames := func(label string, frames [][]byte) world.BlockID {
+		t.Helper()
+		var block world.BlockID
+		found := false
+		for index, frame := range frames {
+			if frameBlock, ok := blockInFrame(fmt.Sprintf("%s[%d]", label, index), frame); ok {
+				block = frameBlock
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s frames include no chunk frames", label)
+		}
+		return block
 	}
 
 	sendPlace(first, world.Wood)
@@ -1034,16 +1179,16 @@ func TestHandleClientPacketConflictingBlockActionsUseLastWriteSnapshot(t *testin
 
 	firstFrames := recordedFrames(t, first.conn.(*recordingConn))
 	secondFrames := recordedFrames(t, second.conn.(*recordingConn))
-	if got := len(firstFrames); got != 2 {
-		t.Fatalf("first frames = %d, want 2", got)
+	if got := len(firstFrames); got != 3 {
+		t.Fatalf("first frames = %d, want 3", got)
 	}
-	if got := len(secondFrames); got != 2 {
-		t.Fatalf("second frames = %d, want 2", got)
+	if got := len(secondFrames); got != 3 {
+		t.Fatalf("second frames = %d, want 3", got)
 	}
-	if got := blockInFrame("first latest", firstFrames[len(firstFrames)-1]); got != world.Stone {
+	if got := latestBlockInFrames("first", firstFrames); got != world.Stone {
 		t.Fatalf("first latest block = %v, want Stone", got)
 	}
-	if got := blockInFrame("second latest", secondFrames[len(secondFrames)-1]); got != world.Stone {
+	if got := latestBlockInFrames("second", secondFrames); got != world.Stone {
 		t.Fatalf("second latest block = %v, want Stone", got)
 	}
 
@@ -1267,6 +1412,16 @@ func recordedFrames(t *testing.T, conn *recordingConn) [][]byte {
 		data = data[length:]
 	}
 	return frames
+}
+
+func decodedPacket(t *testing.T, frame []byte) *api.Packet {
+	t.Helper()
+
+	decoded := &api.Packet{}
+	if err := proto.Unmarshal(frame, decoded); err != nil {
+		t.Fatalf("unmarshal frame: %v", err)
+	}
+	return decoded
 }
 
 type failingWriteConn struct {

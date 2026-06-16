@@ -31,11 +31,11 @@
 
 ## Protocol Contract
 
-- Current packet payload variants are `ChunkData`, `ClientPosition`, and `BlockAction`.
+- Current packet payload variants are `ChunkData`, `ClientPosition`, `BlockAction`, `InventorySnapshot`, and `InventoryAction`.
 - `ChunkData.blocks` carries either raw serialized chunk bytes or RLE runs over the same serialized bytes.
 - `ChunkData.encoding` and `ChunkData.uncompressed_size` are compatibility fields for encoded chunks.
 - Block IDs remain the only current wire/storage identity for voxel contents.
-- Inventory placement remains on the current `BlockAction` packet shape, while server-to-client inventory slots use `Packet.inventory_snapshot = 4`; future inventory packets must use new `Packet.payload` tags and pass the inventory protocol compatibility gate.
+- Inventory placement remains on the current `BlockAction` packet shape, server-to-client inventory slots and selected slot use `Packet.inventory_snapshot = 4`, and client selected-slot requests use `Packet.inventory_action = 5`; additional inventory packets must use new `Packet.payload` tags and pass the inventory protocol compatibility gate.
 - Server and client block material metadata exists as registry-derived behavior for the existing block IDs only, with a parity gate comparing the current server/client registry summaries. Block IDs remain the only wire/storage identity; transparent material behavior, liquid/emissive runtime traits, and later protocol deltas remain separate work unless new protobuf fields and compatibility tests are added explicitly.
 
 ## Client Rust GDExtension
@@ -43,7 +43,7 @@
 - The client lifecycle model tracks connecting, waiting_chunks, spawning, active, reconnecting, and shutdown.
 - The packet reader feeds the main-thread packet queue; packet queue metrics are observational and do not implement backpressure or dropping.
 - Chunk replacements run through dirty-update detection. Partial dirty GPU upload is default-on; `RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD=0` is the full-rebuild rollback path.
-- Local creative hotbar state, including the selected slot and selected block ID, is client-side gameplay foundation. Server sessions own creative placement inventory for `BlockAction_PLACE`, and persistent block edits still flow through `World.SetBlockGlobal`.
+- Local creative hotbar state, including the selected slot and selected block ID, is client-side input state. Server sessions own creative placement inventory, selected-slot validation for `InventoryAction_SELECT_SLOT`, and placement approval for `BlockAction_PLACE`; persistent block edits still flow through `World.SetBlockGlobal`.
 - Reconnect execution, slow-client policy, block-edit broadcast fanout, and opt-in max-client admission with bounded live rejection evidence are guarded; adaptive overload/backpressure behavior remains deferred policy work.
 
 ## GPU Terrain Contract

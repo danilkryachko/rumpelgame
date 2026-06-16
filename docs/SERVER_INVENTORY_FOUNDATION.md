@@ -13,12 +13,13 @@ Scope:
 - Add `server/pkg/inventory` as the authoritative domain model for placeable block stacks.
 - Give each `clientSession` a server-owned creative hotbar inventory.
 - Keep `BlockAction PLACE` on the existing packet shape and require the session inventory before applying the edit.
+- Keep selected hotbar slot state on the server session and validate selected-slot actions against the session inventory.
 - Guard creative and counted stack behavior with Go unit tests.
-- Guard the session placement boundary with a network handler test.
+- Guard the session placement and selected-slot boundaries with network handler tests.
 
 Out of scope:
 
-- No client-to-server inventory action packet, storage records, item-stack persistence, crafting rules, drops, pickup packets, client UI changes, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or database changes. Server-to-client snapshot compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
+- No storage records, item-stack persistence, crafting rules, drops, pickup packets, client UI changes, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or database changes. Inventory action and snapshot compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
 
 ## Current Contract
 
@@ -28,21 +29,25 @@ Out of scope:
 - `PlacementPolicyRetain` keeps creative stacks unchanged after placement.
 - `NewCounted()` creates a counted inventory where successful placement decrements the matching stack.
 - `CanPlaceBlock()` and `PlaceBlock()` reject air, unknown block IDs, empty slots, and non-placeable registry entries.
+- `CanSelectSlot()`, `PlaceableBlockAtSlot()`, and `FirstPlaceableSlot()` reject unavailable slots and expose slot selection without giving callers mutable inventory state.
 - `Slots()` returns a copy so callers cannot mutate inventory internals without going through the domain methods.
 
 ## Session Placement Boundary
 
 - `newClientSession()` creates a server-owned creative hotbar inventory.
-- Connected sessions receive a server-to-client `InventorySnapshot` for the current inventory slots after admission.
+- `newClientSession()` initializes `selectedInventorySlot` from the first available placeable slot.
+- Connected sessions receive a server-to-client `InventorySnapshot` for the current inventory slots and selected slot after admission.
+- `InventoryAction SELECT_SLOT` updates the selected slot only when the requested slot is available in the session inventory, then sends a fresh snapshot.
+- Unavailable selected-slot requests leave server state unchanged and return the current snapshot for client reconciliation.
 - `BlockAction PLACE` still validates `world.IsPlaceable(block)` and now also requires `client.inventory.CanPlaceBlock(block)` before applying the edit.
 - `client.inventory.PlaceBlock(block)` is applied only after `World.SetBlockGlobal` succeeds, so rejected world edits do not consume counted stacks.
+- After successful counted placement, the server normalizes the selected slot if the selected stack becomes unavailable and sends a fresh snapshot after the chunk update.
 - `BlockAction DESTROY` still maps to `world.Air` and does not require an inventory slot.
 - The legacy state handler keeps behavior-preserving creative inventory validation for tests that bypass `clientSession`.
 - A rejected placement due to missing inventory writes no chunk update to the origin client or interested clients.
 
 ## Compatibility Rules
 
-- Do not add client-to-server inventory actions to `api/schema/packets.proto` in this checkpoint.
 - Keep the inventory protocol compatibility contract in `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md` clean before advancing schema work.
 - Do not hand-edit generated protocol files.
 - Do not persist item stacks or session inventory without a storage design and migration gate.
@@ -65,11 +70,11 @@ The expected current result is `status=pass`, `server_inventory_status=session_g
 The gate checks that:
 
 - This document records the current contract, session placement boundary, and compatibility rules.
-- `server/pkg/inventory` exposes the slot model, creative inventory, counted inventory, placement methods, and copy-out slots.
-- Inventory tests cover creative placeable blocks, retained creative counts, counted stack consumption, empty-slot rejection, air/unknown rejection, and copied slots.
-- Network tests cover session creative inventory, rejected placement when the session inventory lacks the requested block, and retained counted inventory after a failed world edit.
-- `server/pkg/network/server.go` keeps the existing block registry placeability check and adds the session inventory placement check.
-- Protocol schema/generated files and storage docs/source remain unchanged.
+- `server/pkg/inventory` exposes the slot model, creative inventory, counted inventory, placement methods, selected-slot methods, and copy-out slots.
+- Inventory tests cover creative placeable blocks, retained creative counts, counted stack consumption, selected-slot validation, empty-slot rejection, air/unknown rejection, and copied slots.
+- Network tests cover session creative inventory, selected-slot action handling, rejected placement when the session inventory lacks the requested block, retained counted inventory after a failed world edit, and snapshot refresh after counted placement.
+- `server/pkg/network/server.go` keeps the existing block registry placeability check, adds the session inventory placement check, and validates `InventoryAction SELECT_SLOT` through session inventory.
+- Storage docs/source remain unchanged; protocol schema compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
 
 ## Current Status
 
