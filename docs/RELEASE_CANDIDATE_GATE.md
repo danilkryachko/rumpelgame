@@ -104,6 +104,11 @@ Default summaries:
 
 ## Fresh Check
 
+Fresh 2026-06-16 current artifact:
+
+- `logs/release_candidate_gate_current/release-candidate-gate-summary.txt` reported `status=pass`, `reason=ok`, `rc_status=summary_ready`, `perf_matrix=summary_ready`, `visual_smoke=summary_ready`, `storage_protocol_compatibility=guarded`, `active_protocol_change=0`, `observability_error_scan=clean`, `observability_summary_count=50`, `current_summary_count=50`, `arch_runtime_change=none`, `baseline_warning_status=ok`, `shadow_active_native=deferred`, `transparent_active_fixture=deferred`, `lighting_ambient_status=deferred`, `live_checks=skipped`, `security_status=pass`, `observability_status=pass`, and `test_strategy_status=pass`.
+- This was a summary-only refresh after the security/data-integrity review update and GPU upload staging telemetry slice. Use the optional live flags below for a final release action.
+
 Fresh 2026-06-15 current artifact:
 
 - `logs/release_candidate_gate_current/release-candidate-gate-summary.txt` reported `status=pass`, `reason=ok`, `rc_status=summary_ready`, `perf_matrix=summary_ready`, `visual_smoke=summary_ready`, `storage_protocol_compatibility=guarded`, `active_protocol_change=0`, `observability_error_scan=clean`, `observability_summary_count=46`, `current_summary_count=46`, `arch_runtime_change=none`, `baseline_warning_status=ok`, `shadow_active_native=deferred`, `transparent_active_fixture=deferred`, `lighting_ambient_status=deferred`, `live_checks=full`, `fast_check=pass`, `full_check=pass`, `diff_check=pass`, and `diff_guard=pass`.

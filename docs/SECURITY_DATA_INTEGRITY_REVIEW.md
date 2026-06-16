@@ -31,11 +31,11 @@ Scope:
 - Validate chunk serialization and RLE compatibility guards.
 - Validate storage/load/save integrity guards.
 - Validate block edit persistence and invalid place-block rejection.
-- Record known deferred security/data-integrity work.
+- Record current guarded runtime boundaries and remaining security/data-integrity work.
 
 Out of scope:
 
-- No authentication, encryption, reconnect policy, slow-client policy, server admission control, packet schema change, storage migration, worldgen change, renderer change, or new external scanner integration.
+- No authentication, encryption, broad reconnect policy, broad slow-client/backpressure policy, server admission control, packet schema change, storage migration, worldgen change, renderer change, or new external scanner integration.
 
 Assumptions:
 
@@ -82,23 +82,30 @@ Checks:
 - `BlockAction_DESTROY` maps to `Air`.
 - Current edits return a full chunk snapshot; delta packets remain future protocol work.
 
+### Runtime Session Evidence
+
+- Server write deadlines, failed interested-client broadcast cleanup, bounded slow-reader timeout evidence, and bounded six-client fanout/load evidence are guarded by the networking and server scalability gates.
+- Client reconnect/rebootstrap is guarded by live disconnect/server-restart smoke and a bounded repeated reconnect soak, with reader-session stale-packet filtering covered by Rust unit tests.
+- Block edit persistence is guarded at the world/storage boundary, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
+- These runtime guards do not add authentication, packet replay, admission control, or new wire semantics.
+
 ## MCP Review Notes
 
-- Server error topology showed expected validation/check sites such as invalid place-block rejection and env parsing; no findings were emitted.
-- Server taint trace from `receivePacket` to `proto.Unmarshal` did not match an unguarded source-to-sink path.
+- Fresh 2026-06-16 server error topology showed expected validation/check sites such as invalid place-block rejection and env parsing; no findings were emitted.
+- Fresh 2026-06-16 server taint trace from `receivePacket` to `proto.Unmarshal` did not match an unguarded source-to-sink path.
 - World concurrency logic scan emitted no findings for `server/pkg/world/world.go`.
-- Rust network error-topology warnings were bounded heuristic false positives for `Result`-returning calls and test helpers; focused Rust tests cover short prefix, short payload, malformed payload, and oversized length behavior.
+- Rust network error-topology warnings remain bounded heuristic false positives around `Result`-returning connect paths and test-helper `bind`/`accept` calls; focused Rust tests cover short prefix, short payload, malformed payload, and oversized length behavior.
 
 ## Deferred Work
 
 Still needed:
 
 - Authentication/encryption or explicit local-only threat model before any non-local server exposure.
-- Slow-client write deadline and overload/admission policy.
-- Client reconnect state machine with stale packet handling.
-- Runtime persisted-reload smoke after server restart/reopen.
+- Broader overload/admission and backpressure policy beyond the bounded write-timeout and slow-reader guards.
+- Longer reconnect failure/idle soak and broad client loaded-state reset policy beyond the bounded reconnect/rebootstrap guards.
 - Corrupt edit recovery policy beyond current corrupt chunk load rejection.
-- Multi-client block edit broadcast and conflict semantics.
+- Multi-client conflict semantics beyond current interested-client fanout and failed-broadcast cleanup.
+- Packet error telemetry that classifies EOF, oversized frame, malformed protobuf, timeout, and short write causes.
 - Fuzz/property tests for packet framing and RLE decode if external exposure increases.
 
 ## Compatibility Rules
@@ -130,4 +137,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Production auth, slow-client policy, reconnect policy, and fuzzing remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, chunk decode, storage integrity, block edit validation, bounded slow-reader behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, overload/admission policy, broad reconnect reset policy, conflict semantics, and fuzz/property coverage remain future work.
