@@ -23,6 +23,7 @@ The current required GPU core rows are:
 
 - rapid camera-turn gate and its movement source summary
 - chunk-boundary gate and its high-pressure suite source summary
+- chunk unload churn diagnosis
 - strict load-scaling gate and its resident-set source summary
 - mass chunk-load gate
 - upload budget gate
@@ -56,7 +57,7 @@ Fresh local evidence:
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt`
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index.txt`
 
-The current index passed with `22` rows, `13` required rows, `13` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, and zero default-runtime-change violations.
+The current index passed with `23` rows, `14` required rows, `14` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, and zero default-runtime-change violations.
 
 Current normalized maxima:
 
@@ -65,7 +66,7 @@ Current normalized maxima:
 - Terrain queue max: `3.928ms`
 - Process wall p95: `0.059ms`
 - Compositor submit max: `5.677ms`
-- Packet queue lag max: `22.405ms`
+- Packet queue lag max: `27.437ms`
 - Cutout uploads: `265`
 - Cutout build envelope: `2.121ms`
 - Stage-pool reuses: `3128`
@@ -77,7 +78,7 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU stress artifact index summary and index rows.
 - `scripts/test_strategy_gate.sh` requires the index summary and includes the index command in the nightly summary command.
-- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item.
+- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis visible as a required row.
 
 ## External Context
 

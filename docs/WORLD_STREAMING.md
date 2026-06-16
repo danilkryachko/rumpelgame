@@ -143,6 +143,12 @@ Fresh `teleport-snap` checks:
 - Default grace in `logs/world_streaming_high_pressure_suite_teleport_unload_churn_check/world-load-suite-summary.txt` passed with `chunk_unload_total=0`, `chunk_unload_grace_kept=24375`, `chunk_unload_neighbor_refreshes=0`, `chunk_unload_max=0`, `chunk_unload_max_grace_kept=311`, `terrain_queue_max_ms=2.062`, and `gpu_upload_fail=0`.
 - Immediate-unload control in `logs/world_streaming_high_pressure_suite_teleport_unload_churn_grace0_check/world-load-suite-summary.txt` passed with `chunk_unload_total=375`, `chunk_unload_grace_kept=0`, `chunk_unload_neighbor_refreshes=296`, `chunk_unload_max=311`, `terrain_queue_max_ms=2.222`, and `gpu_upload_fail=0`.
 
+Current GPU unload diagnosis:
+
+- `scripts/gpu_chunk_unload_churn_diagnosis.sh` consumes the fresh chunk-boundary summary and emits `gpu-chunk-unload-churn-diagnosis-summary.txt`.
+- `logs/gpu_chunk_unload_churn_diagnosis_current/gpu-chunk-unload-churn-diagnosis-summary.txt` passed with `max_chunk_unload_total=0`, `max_chunk_unload_grace_kept=48984`, `max_chunk_unload_neighbor_refreshes=0`, `max_chunk_unload=0`, max queue/process/submit `2.258/0.049/0.124ms`, packet queue lag max `27.437ms`, `gpu_upload_fail=0`, `ground_misses=0`, and no render/collision not-ready cases.
+- The older teleport-only default/immediate control summaries are missing in this checkout, so the diagnosis records `default_control_status=missing`, `immediate_control_status=missing`, and `controls_required=0`. Set `RUMPELMC_GPU_CHUNK_UNLOAD_REQUIRE_CONTROLS=1` before using this gate to approve any unload policy change.
+
 ## World Pop-In Metrics
 
 The first pop-in metric is a report-only player-neighborhood probe. The default `RUMPELMC_CLIENT_POP_IN_PROBE_RADIUS=1` checks chunks around the current player chunk for loaded data and collision bodies. This is not yet an image-space or camera-occlusion hole detector.
@@ -275,7 +281,7 @@ Fresh local evidence:
 
 Fresh local evidence:
 
-- `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt` passed with `22` indexed rows, `13` required passes, optional missing rows `8`, max GPU subchunks/draws/faces `2482/2482/6292`, draw-command occupancy `30.298%`, max queue/process/submit `3.928/0.059/5.677ms`, max packet queue lag `22.405ms`, cutout uploads `265`, stage-pool reuses `3128`, grouped draw saved records `2174`, `external_profiler_status=pending_external_profiler`, and `mac_windows_validation_status=pending_external_validation`.
+- `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt` passed with `23` indexed rows, `14` required passes, optional missing rows `8`, max GPU subchunks/draws/faces `2482/2482/6292`, draw-command occupancy `30.298%`, max queue/process/submit `3.928/0.059/5.677ms`, max packet queue lag `27.437ms`, cutout uploads `265`, stage-pool reuses `3128`, grouped draw saved records `2174`, `external_profiler_status=pending_external_profiler`, and `mac_windows_validation_status=pending_external_validation`.
 
 ## GPU Terrain Load Scaling
 

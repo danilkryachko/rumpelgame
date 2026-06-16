@@ -148,6 +148,14 @@ sh scripts/gpu_terrain_chunk_boundary_stress.sh logs/gpu_terrain_chunk_boundary_
 
 The gate writes `chunk-boundary-stress-summary.txt`; see `docs/GPU_TERRAIN_CHUNK_BOUNDARY_STRESS.md`.
 
+Use the chunk unload churn diagnosis after changing client chunk unload policy, keep distance, grace behavior, movement streaming readiness, or residency reporting. It is summary-only by default: the current chunk-boundary proof is required, while teleport-only default/immediate controls are optional unless `RUMPELMC_GPU_CHUNK_UNLOAD_REQUIRE_CONTROLS=1` is set.
+
+```sh
+sh scripts/gpu_chunk_unload_churn_diagnosis.sh logs/gpu_chunk_unload_churn_diagnosis_current
+```
+
+The gate writes `gpu-chunk-unload-churn-diagnosis-summary.txt`; see `docs/GPU_CHUNK_UNLOAD_CHURN_DIAGNOSIS.md`.
+
 Use the rapid camera-turn stress gate after changing culling, camera-facing draw submission, visibility/proxy refresh behavior, or movement smoke camera poses. It keeps the player in a single chunk while rapidly rotating the camera through the `chunk_fast_turn` pose sequence:
 
 ```sh
