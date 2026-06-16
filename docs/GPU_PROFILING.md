@@ -21,6 +21,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 - `terrain_queue_gpu_upload_new_slots` / `terrain_queue_gpu_upload_new_slot_kb`: useful to separate initial GPU-resident world load pressure from later dirty/update replacement work.
 - `terrain_queue_gpu_upload_replace_slots` / `terrain_queue_gpu_upload_replace_slot_kb`: useful to isolate GPU slot replacement pressure from ordinary new-slot streaming.
 - `gpu_upload_stage_pool_enabled`, `gpu_upload_stage_pool_entries`, `gpu_upload_stage_pool_bytes`, `gpu_upload_stage_pba_creates`, and `gpu_upload_stage_pba_reuses`: useful to compare the default upload staging path against the opt-in exact-size `PackedByteArray` stage pool without treating it as a default policy.
+- `gpu_draw_grouped_enabled`, `gpu_draw_records_logical`, `gpu_draw_records_grouped`, and `gpu_draw_grouped_saved_records`: useful to compare the default one-record-per-subchunk indirect draw path against the opt-in grouped-record path. When grouping is enabled, use `gpu_draw_records_logical` for workload size and `gpu_draw_records_grouped` / `gpu_draws` for actual indirect records submitted.
 - `gpu_draws`, `gpu_effective_draws`, `gpu_faces`, `gpu_subchunks`: useful for workload size.
 - `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and `compact_shadow_normals_saved`: useful local signals for shadow proxy load and compact proxy savings.
 - `smoke_err`, `terrain_samples`, color buckets, and marker generation: useful for visual correctness gates.
@@ -264,6 +265,18 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 ```
 
 The gate requires thousands of subchunks/draws/faces and nontrivial draw-command occupancy; see `docs/GPU_TERRAIN_LOAD_SCALING.md`.
+
+Use the grouped draws comparison gate after changing indirect draw record layout, draw buffer rebuild logic, draw count telemetry, or the `RUMPELMC_GPU_TERRAIN_GROUPED_DRAWS` flag:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=42000 \
+GODOT_TIMEOUT_SEC=900 \
+sh scripts/gpu_terrain_grouped_draws_gate.sh logs/gpu_terrain_grouped_draws_current
+```
+
+The gate writes `gpu-terrain-grouped-draws-summary.txt`. Current 2026-06-16 local macOS/Metal evidence keeps grouped draws default-off behind `RUMPELMC_GPU_TERRAIN_GROUPED_DRAWS=1`: baseline and grouped lanes both reached `2289` logical records and `6292` faces, while grouped records dropped to `115` and draw-command bytes dropped from `36624` to `1840` with zero upload failures.
 
 Use the stage-pool load-scaling comparison when validating upload staging under deterministic high face pressure:
 

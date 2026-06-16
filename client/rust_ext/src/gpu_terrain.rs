@@ -50,6 +50,7 @@ const GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW_ENV: &str =
 const GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD";
 const GPU_TERRAIN_UPLOAD_STAGE_POOL_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL";
+const GPU_TERRAIN_GROUPED_DRAWS_ENV: &str = "RUMPELMC_GPU_TERRAIN_GROUPED_DRAWS";
 const GPU_TERRAIN_UPLOAD_RETRY_POLICY_NONE: &str = "none";
 
 pub const FACE_LEFT: u32 = 0;
@@ -1502,6 +1503,35 @@ fn remove_draw_key(
     })
 }
 
+fn sorted_draw_entries_for_grouping(
+    slots: impl Iterator<Item = (GpuSubchunkKey, GpuTerrainSlot)>,
+    max_draws: usize,
+) -> Vec<(GpuSubchunkKey, GpuTerrainSlot)> {
+    let mut entries = slots.collect::<Vec<_>>();
+    entries.sort_by_key(|(key, slot)| (slot.start_face, *key));
+    entries.truncate(max_draws);
+    entries
+}
+
+fn grouped_draw_records_from_sorted_slots(
+    slots: impl Iterator<Item = GpuTerrainSlot>,
+) -> Vec<GpuTerrainSlot> {
+    let mut records: Vec<GpuTerrainSlot> = Vec::new();
+    for slot in slots {
+        if slot.face_count == 0 {
+            continue;
+        }
+        if let Some(last) = records.last_mut()
+            && last.start_face.checked_add(last.face_count) == Some(slot.start_face)
+        {
+            last.face_count = last.face_count.saturating_add(slot.face_count);
+            continue;
+        }
+        records.push(slot);
+    }
+    records
+}
+
 fn should_upload_subchunk_in_place(
     enabled: bool,
     existing_slot: Option<GpuTerrainSlot>,
@@ -1523,6 +1553,10 @@ pub struct GpuTerrainStats {
     pub draw_command_bytes: usize,
     pub draw_command_capacity_bytes: usize,
     pub draw_command_stride_bytes: usize,
+    pub draw_grouped_enabled: u64,
+    pub draw_records_logical: usize,
+    pub draw_records_grouped: usize,
+    pub draw_grouped_saved_records: usize,
     pub compositor_draw_repeat: u32,
     pub compositor_effective_draw_count: usize,
     pub compositor_frames: u64,
@@ -1901,6 +1935,7 @@ pub struct GpuTerrainBufferPool {
     render_pipeline: Option<GpuTerrainRenderPipeline>,
     used_faces: usize,
     draw_count: usize,
+    draw_logical_count: usize,
     draw_dirty: bool,
     debug_offscreen_rendered: bool,
     compositor_frames: u64,
@@ -2001,6 +2036,7 @@ impl GpuTerrainBufferPool {
             render_pipeline,
             used_faces: 0,
             draw_count: 0,
+            draw_logical_count: 0,
             draw_dirty: false,
             debug_offscreen_rendered: false,
             compositor_frames: 0,
@@ -2217,6 +2253,14 @@ impl GpuTerrainBufferPool {
             draw_command_bytes: draw_command_active_bytes(self.draw_count),
             draw_command_capacity_bytes: draw_command_capacity_bytes(MAX_INDIRECT_DRAWS),
             draw_command_stride_bytes: INDIRECT_DRAW_BYTES,
+            draw_grouped_enabled: u64::from(gpu_terrain_grouped_draws_enabled()),
+            draw_records_logical: self.draw_logical_count,
+            draw_records_grouped: self.draw_count,
+            draw_grouped_saved_records: if gpu_terrain_grouped_draws_enabled() {
+                self.draw_logical_count.saturating_sub(self.draw_count)
+            } else {
+                0
+            },
             compositor_draw_repeat: gpu_terrain_compositor_draw_repeat(),
             compositor_effective_draw_count: self
                 .draw_count
@@ -2999,6 +3043,7 @@ impl GpuTerrainBufferPool {
         let draw_count = self.slots.len().min(MAX_INDIRECT_DRAWS);
         if draw_count == 0 {
             self.draw_count = 0;
+            self.draw_logical_count = 0;
             self.draw_keys.clear();
             self.draw_indices.clear();
             self.draw_dirty = false;
@@ -3006,13 +3051,34 @@ impl GpuTerrainBufferPool {
             return;
         }
 
-        let mut indirect_bytes = Vec::with_capacity(draw_count * INDIRECT_DRAW_BYTES);
         self.draw_keys.clear();
         self.draw_indices.clear();
-        for (key, slot) in self.slots.iter().take(draw_count) {
-            self.draw_indices.insert(*key, self.draw_keys.len());
-            self.draw_keys.push(*key);
-            IndirectDrawCommand::for_slot(*slot).append_bytes(&mut indirect_bytes);
+        let mut indirect_bytes = Vec::with_capacity(draw_count * INDIRECT_DRAW_BYTES);
+        if gpu_terrain_grouped_draws_enabled() {
+            let entries = sorted_draw_entries_for_grouping(
+                self.slots.iter().map(|(key, slot)| (*key, *slot)),
+                MAX_INDIRECT_DRAWS,
+            );
+            for (key, _) in &entries {
+                self.draw_indices.insert(*key, self.draw_keys.len());
+                self.draw_keys.push(*key);
+            }
+            let grouped_records =
+                grouped_draw_records_from_sorted_slots(entries.iter().map(|(_, slot)| *slot));
+            indirect_bytes.reserve(grouped_records.len() * INDIRECT_DRAW_BYTES);
+            for record in &grouped_records {
+                IndirectDrawCommand::for_slot(*record).append_bytes(&mut indirect_bytes);
+            }
+            self.draw_logical_count = entries.len();
+            self.draw_count = grouped_records.len();
+        } else {
+            for (key, slot) in self.slots.iter().take(draw_count) {
+                self.draw_indices.insert(*key, self.draw_keys.len());
+                self.draw_keys.push(*key);
+                IndirectDrawCommand::for_slot(*slot).append_bytes(&mut indirect_bytes);
+            }
+            self.draw_count = self.draw_keys.len();
+            self.draw_logical_count = self.draw_count;
         }
 
         let indirect_pba = PackedByteArray::from(indirect_bytes.as_slice());
@@ -3023,12 +3089,15 @@ impl GpuTerrainBufferPool {
             &indirect_pba,
         );
 
-        self.draw_count = self.draw_keys.len();
         self.draw_dirty = false;
         self.record_draw_rebuild_ms(rebuild_start.elapsed().as_secs_f64() * 1000.0);
     }
 
     fn insert_draw_command(&mut self, key: GpuSubchunkKey, slot: GpuTerrainSlot) {
+        if gpu_terrain_grouped_draws_enabled() {
+            self.draw_dirty = true;
+            return;
+        }
         let Some(draw_index) = insert_draw_key(
             &mut self.draw_keys,
             &mut self.draw_indices,
@@ -3041,9 +3110,14 @@ impl GpuTerrainBufferPool {
 
         self.write_draw_command(draw_index, slot);
         self.draw_count = self.draw_keys.len();
+        self.draw_logical_count = self.draw_count;
     }
 
     fn remove_draw_command(&mut self, key: GpuSubchunkKey) {
+        if gpu_terrain_grouped_draws_enabled() {
+            self.draw_dirty = true;
+            return;
+        }
         let Some(removal) = remove_draw_key(&mut self.draw_keys, &mut self.draw_indices, key)
         else {
             return;
@@ -3058,6 +3132,7 @@ impl GpuTerrainBufferPool {
         }
 
         self.draw_count = self.draw_keys.len();
+        self.draw_logical_count = self.draw_count;
         if self.slots.len() >= MAX_INDIRECT_DRAWS {
             self.draw_dirty = true;
         }
@@ -3729,6 +3804,13 @@ fn gpu_terrain_upload_stage_pool_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         gpu_terrain_buffer_repack_from_env(std::env::var(GPU_TERRAIN_UPLOAD_STAGE_POOL_ENV).ok())
+    })
+}
+
+fn gpu_terrain_grouped_draws_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(std::env::var(GPU_TERRAIN_GROUPED_DRAWS_ENV).ok())
     })
 }
 
@@ -4989,6 +5071,174 @@ mod tests {
             draw_command_capacity_bytes(MAX_INDIRECT_DRAWS),
             MAX_INDIRECT_DRAWS * INDIRECT_DRAW_BYTES
         );
+    }
+
+    #[test]
+    fn grouped_draw_records_merge_contiguous_face_ranges() {
+        let records = grouped_draw_records_from_sorted_slots(
+            [
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 8,
+                },
+                GpuTerrainSlot {
+                    start_face: 8,
+                    face_count: 5,
+                },
+                GpuTerrainSlot {
+                    start_face: 13,
+                    face_count: 2,
+                },
+            ]
+            .into_iter(),
+        );
+
+        assert_eq!(
+            records,
+            vec![GpuTerrainSlot {
+                start_face: 0,
+                face_count: 15,
+            }]
+        );
+        let command = IndirectDrawCommand::for_slot(records[0]);
+        let words = command
+            .to_le_bytes()
+            .chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(words, vec![6, 15, 0, 0]);
+    }
+
+    #[test]
+    fn grouped_draw_records_keep_gaps_and_sort_by_face_range() {
+        let high = GpuSubchunkKey {
+            chunk_x: 2,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let low = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let middle = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let entries = sorted_draw_entries_for_grouping(
+            [
+                (
+                    high,
+                    GpuTerrainSlot {
+                        start_face: 20,
+                        face_count: 3,
+                    },
+                ),
+                (
+                    low,
+                    GpuTerrainSlot {
+                        start_face: 0,
+                        face_count: 4,
+                    },
+                ),
+                (
+                    middle,
+                    GpuTerrainSlot {
+                        start_face: 8,
+                        face_count: 2,
+                    },
+                ),
+            ]
+            .into_iter(),
+            3,
+        );
+        assert_eq!(
+            entries.iter().map(|(key, _)| *key).collect::<Vec<_>>(),
+            vec![low, middle, high]
+        );
+
+        let records = grouped_draw_records_from_sorted_slots(entries.iter().map(|(_, slot)| *slot));
+        assert_eq!(
+            records,
+            vec![
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 4,
+                },
+                GpuTerrainSlot {
+                    start_face: 8,
+                    face_count: 2,
+                },
+                GpuTerrainSlot {
+                    start_face: 20,
+                    face_count: 3,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn grouped_draw_entries_respect_draw_capacity() {
+        let first = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let second = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let third = GpuSubchunkKey {
+            chunk_x: 2,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let entries = sorted_draw_entries_for_grouping(
+            [
+                (
+                    third,
+                    GpuTerrainSlot {
+                        start_face: 8,
+                        face_count: 4,
+                    },
+                ),
+                (
+                    first,
+                    GpuTerrainSlot {
+                        start_face: 0,
+                        face_count: 4,
+                    },
+                ),
+                (
+                    second,
+                    GpuTerrainSlot {
+                        start_face: 4,
+                        face_count: 4,
+                    },
+                ),
+            ]
+            .into_iter(),
+            2,
+        );
+
+        assert_eq!(
+            entries.iter().map(|(key, _)| *key).collect::<Vec<_>>(),
+            vec![first, second]
+        );
+        assert_eq!(
+            grouped_draw_records_from_sorted_slots(entries.iter().map(|(_, slot)| *slot)),
+            vec![GpuTerrainSlot {
+                start_face: 0,
+                face_count: 8,
+            }]
+        );
+    }
+
+    #[test]
+    fn grouped_draws_flag_stays_default_off() {
+        assert!(!gpu_terrain_grouped_draws_enabled());
     }
 
     #[test]

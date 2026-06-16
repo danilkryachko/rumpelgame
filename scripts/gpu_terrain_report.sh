@@ -452,6 +452,10 @@ error_scan() {
   printf -- '- max `gpu_draw_cmd_bytes`: `%s`\n' "$(metric_max gpu_draw_cmd_bytes)"
   printf -- '- max `gpu_draw_cmd_capacity_bytes`: `%s`\n' "$(metric_max gpu_draw_cmd_capacity_bytes)"
   printf -- '- max `gpu_draw_cmd_stride`: `%s`\n' "$(metric_max gpu_draw_cmd_stride)"
+  printf -- '- max `gpu_draw_grouped_enabled`: `%s`\n' "$(metric_max gpu_draw_grouped_enabled)"
+  printf -- '- max `gpu_draw_records_logical`: `%s`\n' "$(metric_max gpu_draw_records_logical)"
+  printf -- '- max `gpu_draw_records_grouped`: `%s`\n' "$(metric_max gpu_draw_records_grouped)"
+  printf -- '- max `gpu_draw_grouped_saved_records`: `%s`\n' "$(metric_max gpu_draw_grouped_saved_records)"
   printf -- '- max `gpu_draw_cmd_occupancy_pct`: `%s`\n' "$(metric_pair_ratio_max_percent gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes)"
   printf -- '- min `gpu_draw_cmd_headroom_bytes`: `%s`\n' "$(metric_pair_headroom_min gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes)"
   printf -- '- max `gpu_scene_target_create`: `%s`\n' "$(metric_max gpu_scene_target_create)"
@@ -658,6 +662,9 @@ error_scan() {
   printf '\n## Metric Origins\n\n'
   metric_max_source gpu_effective_draws | sed 's/^/- /'
   metric_max_source gpu_draw_cmd_bytes | sed 's/^/- /'
+  metric_max_source gpu_draw_records_logical | sed 's/^/- /'
+  metric_max_source gpu_draw_records_grouped | sed 's/^/- /'
+  metric_max_source gpu_draw_grouped_saved_records | sed 's/^/- /'
   metric_pair_ratio_max_source gpu_draw_cmd_occupancy_pct gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes | sed 's/^/- /'
   metric_max_source gpu_scene_target_create | sed 's/^/- /'
   metric_max_source gpu_scene_target_reuse | sed 's/^/- /'

@@ -122,11 +122,11 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 82. Remove or justify unused draw command fields.
 83. Verify draw command alignment.
 84. Log draw command buffer size.
-85. Research grouped draws.
-86. Prototype grouped draws behind an env flag.
-87. Test grouped draw layout.
-88. Compare grouped and current draws on workload matrix.
-89. Keep grouped draws only with equal parity and better metrics.
+85. Done 2026-06-16: researched grouped indirect draw submission against Godot `RenderingDevice`, Metal resource/upload guidance, Vulkan staging-buffer practice, and D3D12 upload/resource guidance.
+86. Done 2026-06-16: prototyped grouped indirect draw records behind `RUMPELMC_GPU_TERRAIN_GROUPED_DRAWS=1`; unset/`0` keeps the current one-record-per-subchunk path and incremental draw-command patching.
+87. Done 2026-06-16: added pure Rust coverage for contiguous face-range grouping, gap preservation, deterministic face-range sorting, draw-capacity truncation, and default-off flag behavior.
+88. Done 2026-06-16: added `scripts/gpu_terrain_grouped_draws_gate.sh` to compare baseline and grouped pressure workload lanes with equal logical workload, reduced indirect records/bytes, zero upload failures, current collision, terrain samples, and queue/process/submit budgets.
+89. Keep grouped draws default-off until equal parity, broader runtime stability, and external macOS/Windows profiler evidence justify rollout.
 90. Record draw submission decisions.
 
 ## Phase 10: Binding And Frame Data
