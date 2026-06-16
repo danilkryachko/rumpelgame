@@ -33,6 +33,7 @@ Scope:
 - Add an opt-in runtime mass-edit smoke that applies several block edits in one Godot session, then broaden it to a mixed place/destroy current-chunk budget.
 - Add an opt-in persisted-reload dirty runtime smoke that proves dirty updates still work across repeated server restart/reopen cycles and persist final results after each dirty pass.
 - Add an opt-in cross-chunk mass-edit runtime smoke that applies mixed place/destroy edits across multiple loaded chunks in one Godot session.
+- Add a high-count dirty runtime gate that requires a five-cycle persisted reload smoke and aggregates it with the current mass-edit and cross-chunk mass-edit runtime evidence.
 - Record which larger runtime workloads remain deferred.
 
 Out of scope:
@@ -59,6 +60,8 @@ Checks:
 - `RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_DIRTY_SCALABILITY_RUN_RUNTIME_SMOKE=1 sh scripts/dirty_update_scalability_gate.sh logs/dirty_update_scalability_current`
 - `RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_DIRTY_SCALABILITY_RUN_PERSISTED_RUNTIME_SMOKE=1 sh scripts/dirty_update_scalability_gate.sh logs/dirty_update_scalability_current`
 - `RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_DIRTY_SCALABILITY_RUN_CROSS_MASS_RUNTIME_SMOKE=1 sh scripts/dirty_update_scalability_gate.sh logs/dirty_update_scalability_current`
+- `RUMPELMC_DIRTY_HIGH_COUNT_RUN_PERSISTED_SMOKE=1 sh scripts/dirty_update_high_count_runtime_gate.sh logs/dirty_update_high_count_runtime_current`
+- `sh scripts/dirty_update_scalability_gate.sh logs/dirty_update_scalability_current`
 
 ## Current Dirty Update Contract
 
@@ -103,6 +106,7 @@ Existing runtime wrappers remain the correct heavy checks:
 - `scripts/dirty_update_mass_edit_runtime_smoke.sh`
 - `scripts/dirty_update_cross_chunk_mass_runtime_smoke.sh`
 - `scripts/dirty_update_persisted_reload_runtime_smoke.sh`
+- `scripts/dirty_update_high_count_runtime_gate.sh`
 
 The gate does not run them by default because they require Godot runtime capture, a free local server port, and longer execution time. It does verify their shell syntax and required metric tokens.
 
@@ -150,12 +154,32 @@ The smoke requires at least three soak cycles, at least four reload cycles, at l
 
 The smoke requires at least four distinct target chunks, four place actions, four destroy actions, cumulative dirty block/chunk replacement counters, edge-neighbor refresh, partial dirty/saved counters, current chunk collision evidence, budget-compliant terrain/compositor/process metrics, zero GPU upload failures, and no active protocol diff. It stores nested Godot artifacts outside the `_current` lane and writes `logs/dirty_update_cross_chunk_mass_runtime_current/dirty-update-cross-chunk-mass-runtime-summary.txt`.
 
+## Runtime High-Count Matrix Gate
+
+`scripts/dirty_update_high_count_runtime_gate.sh` requires a larger persisted-reload dirty runtime artifact and the current mass-edit/cross-chunk summaries:
+
+- five persisted dirty cycles through server restart/reopen
+- six reload cycles and 20 final persisted block verifications
+- 40 persisted dirty blocks, 40 chunk replacements, 80 edge-neighbor subchunks, 60 partial dirty subchunks, and 60 partial saved subchunks
+- current mass-edit and four-chunk cross-mass summaries still passing
+- aggregate matrix totals of at least 60 dirty blocks, 60 chunk replacements, and 24 edits
+- strict local budgets for terrain queue, compositor submit, process wall p95, zero GPU upload failures, and zero active protocol diff
+
+Run the larger artifact explicitly:
+
+```sh
+RUMPELMC_DIRTY_HIGH_COUNT_RUN_PERSISTED_SMOKE=1 \
+  sh scripts/dirty_update_high_count_runtime_gate.sh logs/dirty_update_high_count_runtime_current
+```
+
+The current fresh run passed with `persisted_soak_cycles=5`, `persisted_reload_cycles=6`, `persisted_final_verify_count=20`, `matrix_dirty_blocks=60`, `matrix_chunk_replace=60`, `matrix_edit_count=40`, `persisted_gpu_compositor_submit_max_ms=0.141`, and `persisted_gpu_upload_fail=0`.
+
 ## Deferred Work
 
 Still needed:
 
-- Longer overnight/high-count persisted reload plus dirty update soak beyond the bounded three-cycle runtime smoke.
-- Larger cross-chunk mass-edit matrices beyond the bounded four-chunk smoke.
+- Multi-hour overnight persisted reload soak beyond the five-cycle local high-count gate.
+- Larger cross-chunk mass-edit matrices beyond the current four-chunk plus persisted high-count matrix.
 - Stricter collision refresh budget under larger mass edits.
 - Stricter GPU upload budget under larger mass edits.
 - Multi-client block edit fanout once server broadcast exists.
@@ -176,7 +200,7 @@ Use:
 sh scripts/dirty_update_scalability_gate.sh logs/dirty_update_scalability_current
 ```
 
-Without a runtime smoke summary, the default summary remains `status=pass`, `dirty_scalability_status=unit_guarded`, `mass_dirty_unit=pass`, `edge_runtime_scripts=available`, `runtime_edge_dirty=deferred`, `runtime_mass_edit=deferred`, `runtime_cross_chunk_mass_edit=deferred`, `runtime_persisted_dirty=deferred`, `active_protocol_change=0`, and `block_edit_persistence_status=pass`.
+Without a runtime smoke summary, the default summary remains `status=pass`, `dirty_scalability_status=unit_guarded`, `mass_dirty_unit=pass`, `edge_runtime_scripts=available`, `runtime_edge_dirty=deferred`, `runtime_mass_edit=deferred`, `runtime_cross_chunk_mass_edit=deferred`, `runtime_persisted_dirty=deferred`, `runtime_high_count_matrix=deferred`, `active_protocol_change=0`, and `block_edit_persistence_status=pass`.
 
 The gate checks that:
 
@@ -187,12 +211,13 @@ The gate checks that:
 - Runtime mass-edit smoke evidence is clean when present or explicitly requested.
 - Runtime cross-chunk mass-edit smoke evidence is clean when present or explicitly requested.
 - Runtime persisted-reload dirty smoke evidence is clean when present or explicitly requested.
+- Runtime high-count matrix evidence is clean when present or explicitly requested.
 - Previous block edit persistence gate is clean.
 - Focused Rust dirty tests pass.
 - Protocol schema/generated files are unchanged.
 
-After the opt-in edge, mass, cross-chunk mass, and persisted-reload runtime smokes have been run, the expected current result is `status=pass`, `dirty_scalability_status=unit_edge_mixed_mass_persisted_and_cross_chunk_runtime_guarded`, `runtime_edge_dirty=godot_guarded`, `runtime_edge_dirty_status=pass`, `single_edge_compare=pass`, `corner_edge_compare=pass`, `corner_edge_repeat=pass`, `runtime_mass_edit=godot_guarded`, `runtime_mass_edit_status=pass`, `runtime_mass_budget=godot_guarded`, `mass_runtime_edit_count>=8`, `mass_runtime_place_actions>=4`, `mass_runtime_destroy_actions>=4`, `runtime_cross_chunk_mass_edit=godot_guarded`, `runtime_cross_chunk_mass_status=pass`, `cross_chunk_mass_budget=godot_guarded`, `cross_mass_runtime_cross_chunk_count>=4`, `cross_mass_runtime_edit_count>=8`, `runtime_persisted_dirty=godot_guarded`, `runtime_persisted_dirty_status=pass`, `persisted_runtime_soak_cycles>=3`, `persisted_runtime_reload_cycles>=4`, `persisted_runtime_final_verify_count>=12`, `active_protocol_change=0`, and `block_edit_persistence_status=pass`.
+After the opt-in edge, mass, cross-chunk mass, persisted-reload, and high-count runtime gates have been run, the expected current result is `status=pass`, `dirty_scalability_status=unit_edge_mixed_mass_persisted_cross_chunk_and_high_count_runtime_guarded`, `runtime_edge_dirty=godot_guarded`, `runtime_edge_dirty_status=pass`, `single_edge_compare=pass`, `corner_edge_compare=pass`, `corner_edge_repeat=pass`, `runtime_mass_edit=godot_guarded`, `runtime_mass_edit_status=pass`, `runtime_mass_budget=godot_guarded`, `mass_runtime_edit_count>=8`, `mass_runtime_place_actions>=4`, `mass_runtime_destroy_actions>=4`, `runtime_cross_chunk_mass_edit=godot_guarded`, `runtime_cross_chunk_mass_status=pass`, `cross_chunk_mass_budget=godot_guarded`, `cross_mass_runtime_cross_chunk_count>=4`, `cross_mass_runtime_edit_count>=8`, `runtime_persisted_dirty=godot_guarded`, `runtime_persisted_dirty_status=pass`, `persisted_runtime_soak_cycles>=3`, `persisted_runtime_reload_cycles>=4`, `persisted_runtime_final_verify_count>=12`, `runtime_high_count_matrix=persisted_reload_matrix_guarded`, `runtime_high_count_matrix_status=pass`, `high_count_persisted_soak_cycles>=5`, `high_count_persisted_final_verify_count>=20`, `high_count_matrix_dirty_blocks>=60`, `active_protocol_change=0`, and `block_edit_persistence_status=pass`.
 
 ## Current Status
 
-This block is complete as a unit, edge-runtime, mixed current-chunk mass-edit budget, bounded three-cycle persisted-reload dirty-runtime checkpoint, and bounded four-chunk mass-edit runtime checkpoint. Larger overnight soaks, broader cross-chunk matrices, stricter budgets, and multi-client fanout remain future work.
+This block is complete as a unit, edge-runtime, mixed current-chunk mass-edit budget, bounded three-cycle persisted-reload dirty-runtime checkpoint, bounded four-chunk mass-edit runtime checkpoint, and five-cycle high-count persisted-reload matrix checkpoint. Multi-hour soaks, stricter large-edit budgets, and multi-client block-edit fanout remain outside this checkpoint.
