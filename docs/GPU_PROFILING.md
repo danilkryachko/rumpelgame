@@ -79,6 +79,15 @@ Use the shader profiler capture pack after shader hot-path changes or before ext
 sh scripts/gpu_shader_profiler_capture_pack.sh logs/gpu_shader_profiler_capture_pack_current
 ```
 
+Record external shader profiler rows separately from the pending pack. Each result row must start with `external_profile_status=captured` and include `row`, `priority`, `platform`, `backend`, `profiler_tool`, `profiler_artifact`, positive `shader_pass_ms` and `draw_pass_ms`, nonnegative `vertex_stage_ms` and `fragment_stage_ms`, plus non-placeholder `counter_evidence`. Validate rows against the manifest before citing them:
+
+```sh
+sh scripts/gpu_shader_profiler_results_check.sh \
+  logs/gpu_shader_profiler_capture_pack_current/shader-profiler-manifest.txt \
+  logs/gpu_shader_profiler_capture_pack_current/shader-profiler-results.txt \
+  logs/gpu_shader_profiler_capture_pack_current/shader-profiler-results-summary.txt
+```
+
 Use the low-angle lighting pose when comparing directional-light behavior without changing the default scene:
 
 ```sh

@@ -164,7 +164,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 115. Design transparent block GPU path. See `docs/GPU_TRANSPARENT_PATH.md`.
 116. Split opaque and transparent pass design.
 117. Prototype transparent terrain behind an env flag.
-118. In progress 2026-06-16: shader profiler capture pack now emits macOS Metal and Windows GPU capture rows for the current render shader hot path; full cross-platform validation still needs real external profiler rows.
+118. In progress 2026-06-16: shader profiler capture pack now emits macOS Metal and Windows GPU capture rows, and `scripts/gpu_shader_profiler_results_check.sh` validates captured rows for the current render shader hot path; full cross-platform validation still needs real external profiler artifacts.
 119. Keep a trend log for important GPU metrics.
 120. Checkpoint the roadmap and choose the next bottleneck from data.
 
@@ -202,7 +202,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 
 21. Clean up binding/frame data only where measured churn justifies it.
 22. Done 2026-06-16: prepared `scripts/gpu_shader_profiler_capture_pack.sh` for the current branchless shader path. It validates the latest movement summary, source-level shader contracts, and emits pending macOS Metal plus Windows GPU profiler rows without treating the checklist as profiler evidence.
-23. Integrate validated external profiler results into reports when available.
+23. Done 2026-06-16: added `scripts/gpu_shader_profiler_results_check.sh` and report surfacing for captured shader profiler rows; no real external rows are present yet, so profiler status remains pending.
 24. Done 2026-06-16: shadow proxy cost decisions now go through `scripts/shadow_proxy_cost_decision_gate.sh`; without validated external profiler rows the required decision is `defer_runtime_change`.
 25. Checkpoint the shadow path; keep native shadow work behind a rollback flag.
 26. Build the first transparent fixture scene harness without enabling transparent rendering.

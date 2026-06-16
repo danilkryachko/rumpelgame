@@ -793,6 +793,8 @@ error_scan() {
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
   print_optional_file "Selected Workload Matrix Summary" "$(latest_file workload-matrix-summary.txt)"
   print_optional_file "Selected Perf Baseline Summary" "$(latest_file perf-baseline-summary.txt)"
+  print_optional_file "Selected Shader Profiler Results Summary" "$(latest_file shader-profiler-results-summary.txt)"
+  print_optional_artifact "Selected Shader Profiler Capture Pack" "$(latest_file shader-profiler-capture-pack.txt)"
   print_optional_file "Selected Shadow Proxy Cost Decision Summary" "$(latest_file shadow-proxy-cost-decision-summary.txt)"
   print_optional_file "Selected Shadow Profiler Results Summary" "$(latest_file shadow-radius-profiler-results-summary.txt)"
   print_optional_artifact "Selected Shadow Profiler Capture Pack" "$(latest_file shadow-radius-profiler-capture-pack.txt)"
