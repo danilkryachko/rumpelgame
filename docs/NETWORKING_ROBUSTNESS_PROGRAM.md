@@ -63,6 +63,7 @@ Checks:
 - Server `handleConnection` logs receive errors as disconnects and closes the connection through `defer conn.Close()`.
 - Server packet and write errors are classified into stable `packet_error_class` labels: `eof`, `short_frame`, `oversized_frame`, `malformed_protobuf`, `timeout`, `short_write`, `encode_error`, and `other`.
 - `scripts/packet_error_class_summary.sh` aggregates those labels from server log files, rejects unknown classes, and writes a count summary plus TSV.
+- `scripts/packet_error_alert_threshold_gate.sh` runs the class summary over current live server smoke logs and applies operational thresholds to the classified labels.
 - Server `receiveInitialClientPacket` has a bounded read deadline for startup probing and clears the deadline before normal streaming.
 - Server `sendPacket` writes the length prefix and payload through `writeFull`, which rejects zero-byte writes with `io.ErrShortWrite`.
 - Live session chunk writes set and clear a bounded write deadline using `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS`; `0` disables it as a rollback/control.
@@ -139,6 +140,32 @@ server_slow_reader_smoke status=pass slow_client=1 fast_client=1 fast_bootstrap_
 
 This is a bounded isolation smoke, not a throughput benchmark, admission-control policy, reconnect harness, or proof of broadcast/backpressure fairness under large client counts.
 
+## Packet Error Alert Thresholds
+
+`scripts/packet_error_alert_threshold_gate.sh` is the current operational alert threshold gate for live `packet_error_class` evidence. It intentionally uses live server smoke logs instead of the synthetic parser fixture used by `networking_robustness_gate.sh`.
+
+Default thresholds:
+
+- Unknown classes: `0`
+- Protocol error classes (`short_frame`, `oversized_frame`, `malformed_protobuf`): `0`
+- Write/internal error classes (`short_write`, `encode_error`, `other`): `0`
+- Timeout class: `2`, matching the current bounded slow-reader smoke evidence
+- EOF class: high default threshold, because clean client shutdowns currently log EOF disconnects
+
+Use:
+
+```sh
+sh scripts/packet_error_alert_threshold_gate.sh logs/packet_error_alert_threshold_current
+```
+
+Expected current summary:
+
+```text
+packet_error_alert_threshold status=pass alert_status=threshold_guarded classified_events=29 unknown_classes=0 eof=27 timeout=2 protocol_errors=0 write_errors=0
+```
+
+This is not authentication, abuse detection, or production monitoring. It is a deterministic local alert boundary for the classified labels already emitted by the server.
+
 ## Live Admission Limit Smoke
 
 The server scalability block owns `scripts/server_admission_limit_smoke.sh`. Networking consumes its summary through `scripts/server_scalability_pass_gate.sh`: when that smoke passes, `admission_policy=live_guarded` and this gate reports `overload_status=admission_live_guarded`.
@@ -190,7 +217,7 @@ Still needed before claiming a full networking robustness program:
 - Broader reconnect state reset rules, packet replay policy, and longer reconnect failure/idle soak.
 - Broader multi-client slow-reader load evidence across more active clients, broadcast fanout, and longer runs.
 - Load-tested max-client sizing and adaptive overload behavior under sustained load.
-- Operational alert thresholds for the existing classified packet error labels.
+- Production monitoring integration beyond the local classified packet-error threshold gate.
 - Backpressure policy for the existing client reader-thread channel.
 
 ## Compatibility Rules
@@ -210,7 +237,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_live_guarded` when current admission-limit smoke evidence exists.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_live_guarded` when current admission-limit smoke evidence exists.
 
 To run the slow-reader smoke inside the gate:
 
@@ -230,6 +257,7 @@ The gate checks that:
 - Server and client sources still enforce max packet sizes and exact reads.
 - Server logs still expose stable packet error classification labels for receive, decode, timeout, encode, and short-write failures.
 - The packet-error class summary parser accepts all known labels and rejects unknown label drift.
+- The packet-error alert threshold gate reports `packet_error_alert_threshold status=pass` over current live server smoke logs.
 - Go server framing/network tests pass.
 - Rust network and reader-drain session tests pass.
 - The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
@@ -240,4 +268,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a packet-boundary, classified packet-error, parser-guarded classified-error aggregation, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection evidence, two-client live fanout, bounded slow-reader, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broader live load, broadcast/backpressure policy, broad reconnect state reset, packet replay, and classified-error alert thresholds remain future work.
+This block is complete as a packet-boundary, classified packet-error, parser-guarded classified-error aggregation, local classified-error alert threshold, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection evidence, two-client live fanout, bounded slow-reader, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broader live load, broadcast/backpressure policy, broad reconnect state reset, packet replay, and production monitoring integration remain future work.

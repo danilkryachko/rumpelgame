@@ -24,6 +24,8 @@ RECONNECT_SMOKE_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SMOKE_SUMMAR
 RECONNECT_SOAK_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SOAK_SCRIPT:-"$ROOT_DIR/scripts/client_reconnect_soak.sh"}"
 RECONNECT_SOAK_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_RECONNECT_SOAK_SUMMARY:-"$ROOT_DIR/logs/client_reconnect_soak_current/client-reconnect-soak-summary.txt"}"
 PACKET_ERROR_SUMMARY_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_PACKET_ERROR_SUMMARY_SCRIPT:-"$ROOT_DIR/scripts/packet_error_class_summary.sh"}"
+PACKET_ERROR_ALERT_SCRIPT="${RUMPELMC_NETWORKING_ROBUSTNESS_PACKET_ERROR_ALERT_SCRIPT:-"$ROOT_DIR/scripts/packet_error_alert_threshold_gate.sh"}"
+PACKET_ERROR_ALERT_SUMMARY="${RUMPELMC_NETWORKING_ROBUSTNESS_PACKET_ERROR_ALERT_SUMMARY:-"$ROOT_DIR/logs/packet_error_alert_threshold_current/packet-error-alert-threshold-summary.txt"}"
 PACKET_ERROR_SUMMARY_DIR="${RUMPELMC_NETWORKING_ROBUSTNESS_PACKET_ERROR_SUMMARY_DIR:-"$OUT_DIR"}"
 case "$PACKET_ERROR_SUMMARY_DIR" in
   /*) ;;
@@ -69,7 +71,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$SERVER_SESSION_TEST" "$CLIENT_SOURCE" "$CLIENT_RUNTIME_SOURCE" "$SERVER_SCALABILITY_SUMMARY" "$SLOW_READER_SMOKE_SCRIPT" "$RECONNECT_SMOKE_SCRIPT" "$RECONNECT_SOAK_SCRIPT" "$PACKET_ERROR_SUMMARY_SCRIPT"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$SERVER_SESSION_TEST" "$CLIENT_SOURCE" "$CLIENT_RUNTIME_SOURCE" "$SERVER_SCALABILITY_SUMMARY" "$SLOW_READER_SMOKE_SCRIPT" "$RECONNECT_SMOKE_SCRIPT" "$RECONNECT_SOAK_SCRIPT" "$PACKET_ERROR_SUMMARY_SCRIPT" "$PACKET_ERROR_ALERT_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -83,6 +85,7 @@ for token in \
   'Live Reconnect Smoke' \
   'Repeated Reconnect Soak' \
   'Live Slow-Reader Smoke' \
+  'Packet Error Alert Thresholds' \
   'Load-tested max-client sizing'; do
   require_token "$DESIGN_DOC" "$token"
 done
@@ -115,6 +118,8 @@ require_token "$SLOW_READER_SMOKE_SCRIPT" 'server_slow_reader_smoke status=pass'
 require_token "$SLOW_READER_SMOKE_SCRIPT" 'packet_error_class=timeout'
 require_token "$RECONNECT_SMOKE_SCRIPT" 'client_reconnect_smoke status=pass'
 require_token "$RECONNECT_SOAK_SCRIPT" 'client_reconnect_soak status=pass'
+require_token "$PACKET_ERROR_ALERT_SCRIPT" 'packet_error_alert_threshold status='
+require_token "$PACKET_ERROR_ALERT_SCRIPT" 'protocol_error_threshold_exceeded'
 
 require_token "$CLIENT_SOURCE" 'const MAX_PACKET_LENGTH: usize = 16 * 1024 * 1024;'
 require_token "$CLIENT_SOURCE" 'self.stream.read_exact(&mut len_buf)?;'
@@ -228,6 +233,17 @@ else
   cat "$OUT_DIR/packet-error-class-summary-run.txt" >&2 || true
   fail "packet error class summary self-check failed"
 fi
+packet_error_alert_dir="$(dirname "$PACKET_ERROR_ALERT_SUMMARY")"
+if "$PACKET_ERROR_ALERT_SCRIPT" "$packet_error_alert_dir" > "$OUT_DIR/packet-error-alert-threshold-run.txt" 2>&1; then
+  packet_error_alert_status="$(field_metric status "$PACKET_ERROR_ALERT_SUMMARY")"
+  packet_error_alert_guard="$(field_metric alert_status "$PACKET_ERROR_ALERT_SUMMARY")"
+  packet_error_alert_protocol_errors="$(field_metric protocol_errors "$PACKET_ERROR_ALERT_SUMMARY")"
+  packet_error_alert_write_errors="$(field_metric write_errors "$PACKET_ERROR_ALERT_SUMMARY")"
+  packet_error_alert_unknown_classes="$(field_metric unknown_classes "$PACKET_ERROR_ALERT_SUMMARY")"
+else
+  cat "$OUT_DIR/packet-error-alert-threshold-run.txt" >&2 || true
+  fail "packet error alert threshold gate failed"
+fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 server_boundary_tests="skipped"
@@ -282,6 +298,12 @@ awk \
   -v packet_error_summary_events="${packet_error_summary_events:-0}" \
   -v packet_error_summary_unknown="${packet_error_summary_unknown:-1}" \
   -v packet_error_summary="$PACKET_ERROR_SUMMARY" \
+  -v packet_error_alert_status="${packet_error_alert_status:-missing}" \
+  -v packet_error_alert_guard="${packet_error_alert_guard:-missing}" \
+  -v packet_error_alert_protocol_errors="${packet_error_alert_protocol_errors:-1}" \
+  -v packet_error_alert_write_errors="${packet_error_alert_write_errors:-1}" \
+  -v packet_error_alert_unknown_classes="${packet_error_alert_unknown_classes:-1}" \
+  -v packet_error_alert_summary="$PACKET_ERROR_ALERT_SUMMARY" \
   -v proto_diff_count="$proto_diff_count" \
   -v server_boundary_tests="$server_boundary_tests" \
   -v client_boundary_tests="$client_boundary_tests" \
@@ -310,6 +332,12 @@ awk \
     packet_error_classification = server_boundary_tests == "pass" ? "unit_guarded" : "source_guarded"
     packet_error_summary_ok = packet_error_summary_status == "pass" && packet_error_summary_events + 0 == 8 && packet_error_summary_unknown + 0 == 0
     packet_error_aggregation = packet_error_summary_ok ? "parser_guarded" : "fail"
+    packet_error_alert_ok = packet_error_alert_status == "pass" &&
+      packet_error_alert_guard == "threshold_guarded" &&
+      packet_error_alert_protocol_errors + 0 == 0 &&
+      packet_error_alert_write_errors + 0 == 0 &&
+      packet_error_alert_unknown_classes + 0 == 0
+    packet_error_alerts = packet_error_alert_ok ? "threshold_guarded" : "fail"
     slow_reader_ok = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1 && slow_reader_timeout_class == "timeout"
     slow_client_status = slow_reader_ok ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred")
     multi_client_live_status = server_scalability_live_load
@@ -344,9 +372,12 @@ awk \
     } else if (!packet_error_summary_ok) {
       status = "fail"
       reason = "packet_error_summary_failed"
+    } else if (!packet_error_alert_ok) {
+      status = "fail"
+      reason = "packet_error_alert_threshold_failed"
     }
 
-    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s stale_packet_policy=%s packet_error_classification=%s packet_error_aggregation=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d slow_reader_timeout_class=%s multi_client_live_status=%s overload_status=%s server_scalability_admission_policy=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s packet_error_summary=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, stale_packet_policy, packet_error_classification, packet_error_aggregation, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, slow_reader_timeout_class, multi_client_live_status, overload_status, server_scalability_admission_policy, server_scalability_status, server_scalability_protocol_change, design_doc, packet_error_summary, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
+    printf("networking_robustness status=%s reason=%s robustness_status=%s active_protocol_change=%d server_boundary_tests=%s client_boundary_tests=%s stale_packet_policy=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s reconnect_status=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d slow_reader_timeout_class=%s multi_client_live_status=%s overload_status=%s server_scalability_admission_policy=%s server_scalability_status=%s server_scalability_protocol_change=%d design_doc=%s packet_error_summary=%s packet_error_alert_summary=%s server_scalability_summary=%s slow_reader_smoke_summary=%s reconnect_smoke_summary=%s reconnect_soak_summary=%s\n", status, reason, robustness_status, active_protocol_change, server_boundary_tests, client_boundary_tests, stale_packet_policy, packet_error_classification, packet_error_aggregation, packet_error_alerts, reconnect_status, reconnect_smoke_status, reconnect_smoke_client_state, reconnect_smoke_reader_errors, reconnect_smoke_successes, reconnect_soak_status, reconnect_soak_cycles, reconnect_soak_reader_errors, reconnect_soak_successes, slow_client_status, slow_reader_smoke_status, slow_reader_timeout_observed, slow_reader_timeout_class, multi_client_live_status, overload_status, server_scalability_admission_policy, server_scalability_status, server_scalability_protocol_change, design_doc, packet_error_summary, packet_error_alert_summary, server_scalability_summary, slow_reader_smoke_summary, reconnect_smoke_summary, reconnect_soak_summary)
     if (status != "pass") {
       exit 1
     }

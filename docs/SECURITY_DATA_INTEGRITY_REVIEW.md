@@ -89,6 +89,7 @@ Checks:
 - Opt-in max-client admission rejection is unit-guarded and bounded-live-guarded by the server scalability gate without adding wire semantics.
 - Classified server packet-error labels are guarded through the networking gate as `packet_error_classification`.
 - Classified server packet-error aggregation is guarded through the networking gate as `packet_error_aggregation`.
+- Classified server packet-error alert thresholds are guarded through the networking gate as `packet_error_alerts`.
 - Client reconnect/rebootstrap is guarded by live disconnect/server-restart smoke and a bounded repeated reconnect soak, with reader-session stale-packet filtering covered by Rust unit tests.
 - Block edit persistence is guarded at the world/storage boundary, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
 - These runtime guards do not add authentication, packet replay, adaptive admission, or new wire semantics.
@@ -109,7 +110,7 @@ Still needed:
 - Longer reconnect failure/idle soak and broad client loaded-state reset policy beyond the bounded reconnect/rebootstrap guards.
 - Corrupt edit recovery policy beyond current corrupt chunk load rejection.
 - Multi-client conflict semantics beyond current interested-client fanout and failed-broadcast cleanup.
-- Operational alert thresholds for the existing classified packet error labels.
+- Production monitoring integration for classified packet errors beyond the local threshold gate.
 - Fuzz/property tests for packet framing and RLE decode if external exposure increases.
 
 ## Compatibility Rules
@@ -128,7 +129,7 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -142,4 +143,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, classified packet errors, parser-guarded classified-error aggregation, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection evidence, bounded slow-reader behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, overload/admission sizing, broad reconnect reset policy, classified-error alert thresholds, conflict semantics, and fuzz/property coverage remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection evidence, bounded slow-reader behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and fuzz/property coverage remain future work.
