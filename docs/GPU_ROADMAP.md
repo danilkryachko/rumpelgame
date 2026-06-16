@@ -144,16 +144,16 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 
 ## Phase 11: Shader Hot Path
 
-101. Audit shader branches.
-102. Simplify shader hot path without changing output.
-103. Verify atlas UV parity.
-104. Verify lighting parity.
-105. Verify depth parity.
-106. Verify shadow proxy parity.
-107. Compare shader variants behind env flags if needed.
-108. Keep only variants with measured benefit.
-109. Record shader assumptions.
-110. Update profiling docs with shader findings.
+101. Done 2026-06-16: audited render shader branch sites; face-dependent normal, UV, corner, and signed-coordinate unpack paths are covered by Rust source-contract tests.
+102. Done 2026-06-16: simplified the vertex hot path with branchless lookup tables for face normals, tiled UVs, face corners, signed 16-bit chunk/subchunk coordinate unpack, and direct reads of Rust-sanitized lighting push constants while preserving packed-face layout.
+103. Done: atlas UV parity is covered by the parity smoke summary contract and the render shader tiled-UV source contract.
+104. Done: lighting parity is covered by default and low-angle lighting parity gates plus the render shader lighting handoff contract.
+105. Done: depth parity is covered by atlas/depth parity evidence and the reverse-Z `GREATER_OR_EQUAL` depth-state unit guard.
+106. Done: shadow proxy parity is covered by the lighting/shadow, compact-shadow, low-angle compact-shadow, disabled-shadow, and native-shadow fallback parity gates.
+107. Done: no alternate shader env variant is retained; the measured branchless path is the single current render shader path, and future variants require profiler justification.
+108. Done: stale branchy shader variants were removed rather than kept behind flags because parity and runtime smoke evidence supported the branchless path.
+109. Done: shader assumptions are recorded in `docs/GPU_PROFILING.md`, `docs/AGENT_MEMORY.md`, and the Rust shader source-contract tests.
+110. Done 2026-06-16: profiling docs and trend notes record the current branchless shader findings, parity evidence, and remaining external profiler caveat.
 
 ## Phase 12: Larger GPU Directions
 

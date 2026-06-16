@@ -4427,23 +4427,13 @@ mod tests {
         assert!(fragment_source.contains("layout(location = 1) in vec3 lighting_in;"));
         assert!(vertex_source.contains("vec3 face_lighting(uint face_idx)"));
         assert!(vertex_source.contains("vec3 normal = face_normal(face_idx);"));
-        assert!(vertex_source.contains(
-            "vec3 direction_to_light = normalize(terrain_push.light_direction_ambient.xyz);"
-        ));
-        assert!(
-            vertex_source.contains(
-                "float ambient = clamp(terrain_push.light_direction_ambient.w, 0.0, 1.0);"
-            )
-        );
-        assert!(
-            vertex_source.contains(
-                "vec3 light_color = max(terrain_push.light_color_energy.rgb, vec3(0.0));"
-            )
-        );
         assert!(
             vertex_source
-                .contains("float light_energy = max(terrain_push.light_color_energy.w, 0.0);")
+                .contains("vec3 direction_to_light = terrain_push.light_direction_ambient.xyz;")
         );
+        assert!(vertex_source.contains("float ambient = terrain_push.light_direction_ambient.w;"));
+        assert!(vertex_source.contains("vec3 light_color = terrain_push.light_color_energy.rgb;"));
+        assert!(vertex_source.contains("float light_energy = terrain_push.light_color_energy.w;"));
         assert!(
             vertex_source.contains("float diffuse = max(dot(normal, direction_to_light), 0.0);")
         );
@@ -4451,6 +4441,10 @@ mod tests {
             vertex_source.contains("return vec3(ambient) + light_color * diffuse * light_energy;")
         );
         assert!(vertex_source.contains("lighting_out = face_lighting(face_idx);"));
+        assert!(!vertex_source.contains("normalize(terrain_push.light_direction_ambient.xyz)"));
+        assert!(!vertex_source.contains("clamp(terrain_push.light_direction_ambient.w"));
+        assert!(!vertex_source.contains("max(terrain_push.light_color_energy.rgb"));
+        assert!(!vertex_source.contains("max(terrain_push.light_color_energy.w"));
         assert!(fragment_source.contains("frag_color = vec4(texel.rgb * lighting_in, 1.0);"));
         assert!(!fragment_source.contains("face_lighting("));
         assert!(!fragment_source.contains("face_normal("));
@@ -4558,6 +4552,25 @@ mod tests {
         assert!(vertex_source.contains("FACE_CORNER_EXTENT_Y_FACTORS[table_idx] * extent.y"));
         assert!(!vertex_source.contains("vec3 corners[4]"));
         assert!(!vertex_source.contains("if (face_idx == 0u) {"));
+    }
+
+    #[test]
+    fn render_shader_uses_branchless_signed_i16_unpack() {
+        let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
+        let unpack_start = vertex_source
+            .find("int unpack_signed_i16(uint value)")
+            .expect("signed i16 unpack helper");
+        let unpack_end = vertex_source[unpack_start..]
+            .find("}\n\nvoid main()")
+            .map(|idx| unpack_start + idx)
+            .expect("signed i16 unpack helper end");
+        let unpack_source = &vertex_source[unpack_start..unpack_end];
+
+        assert!(unpack_source.contains("uint low = value & 65535u;"));
+        assert!(unpack_source.contains("return int(low & 32767u) - int(low & 32768u);"));
+        assert!(!unpack_source.contains("if ("));
+        assert!(!unpack_source.contains("switch"));
+        assert!(!unpack_source.contains("65536"));
     }
 
     #[test]
@@ -6292,6 +6305,35 @@ mod tests {
         assert_eq!(lighting.color.b, 0.25);
         assert_eq!(lighting.energy, DEFAULT_TERRAIN_LIGHT_ENERGY);
         assert_eq!(lighting.ambient, 1.0);
+
+        let bytes = push_constant_bytes_from_projection(
+            Projection::from_cols(
+                Vector4::new(1.0, 0.0, 0.0, 0.0),
+                Vector4::new(0.0, 1.0, 0.0, 0.0),
+                Vector4::new(0.0, 0.0, 1.0, 0.0),
+                Vector4::new(0.0, 0.0, 0.0, 1.0),
+            ),
+            GpuTerrainLighting {
+                direction_to_light: Vector3::ZERO,
+                color: Color::from_rgb(f32::NAN, -1.0, 0.25),
+                energy: f32::INFINITY,
+                ambient: 1.5,
+            },
+            GpuTerrainAtlasLayout {
+                columns: 10,
+                rows: 1,
+            },
+        );
+        let default_light = default_light_direction_to_light();
+
+        assert_eq!(read_f32(&bytes, 64), default_light.x);
+        assert_eq!(read_f32(&bytes, 68), default_light.y);
+        assert_eq!(read_f32(&bytes, 72), default_light.z);
+        assert_eq!(read_f32(&bytes, 76), 1.0);
+        assert_eq!(read_f32(&bytes, 80), 1.0);
+        assert_eq!(read_f32(&bytes, 84), 1.0);
+        assert_eq!(read_f32(&bytes, 88), 0.25);
+        assert_eq!(read_f32(&bytes, 92), DEFAULT_TERRAIN_LIGHT_ENERGY);
     }
 
     #[test]

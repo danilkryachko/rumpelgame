@@ -92,10 +92,10 @@ vec3 face_normal(uint face_idx) {
 
 vec3 face_lighting(uint face_idx) {
     vec3 normal = face_normal(face_idx);
-    vec3 direction_to_light = normalize(terrain_push.light_direction_ambient.xyz);
-    float ambient = clamp(terrain_push.light_direction_ambient.w, 0.0, 1.0);
-    vec3 light_color = max(terrain_push.light_color_energy.rgb, vec3(0.0));
-    float light_energy = max(terrain_push.light_color_energy.w, 0.0);
+    vec3 direction_to_light = terrain_push.light_direction_ambient.xyz;
+    float ambient = terrain_push.light_direction_ambient.w;
+    vec3 light_color = terrain_push.light_color_energy.rgb;
+    float light_energy = terrain_push.light_color_energy.w;
     float diffuse = max(dot(normal, direction_to_light), 0.0);
     return vec3(ambient) + light_color * diffuse * light_energy;
 }
@@ -106,10 +106,7 @@ vec2 face_uv(uint face_idx, uint corner_idx, vec2 extent) {
 
 int unpack_signed_i16(uint value) {
     uint low = value & 65535u;
-    if (low >= 32768u) {
-        return int(low) - 65536;
-    }
-    return int(low);
+    return int(low & 32767u) - int(low & 32768u);
 }
 
 void main() {
