@@ -71,6 +71,7 @@ require_token "$BLOCKS_SOURCE" "pub const TEXTURE_ATLAS_COLUMNS: u32 = 10;"
 require_token "$BLOCKS_SOURCE" "pub const TEXTURE_ATLAS_ROWS: u32 = 1;"
 require_token "$BLOCKS_SOURCE" "const TILE_LEAVES: u32 = 9;"
 require_token "$BLOCKS_SOURCE" "pub const MAX_TEXTURE_TILE: u32 = TILE_LEAVES;"
+require_token "$BLOCKS_SOURCE" "fn texture_atlas_tile_identity_rows_are_stable"
 require_token "$BLOCKS_SOURCE" "pub fn texture_atlas_uv"
 require_token "$BLOCKS_SOURCE" "compute_mesher_glsl_atlas_layout"
 require_token "$GPU_TERRAIN_SOURCE" "debug_assert!(tile < 2048);"
@@ -114,6 +115,7 @@ awk \
     status = "pass"
     reason = "ok"
     atlas_metadata_status = "designed"
+    atlas_tile_identity = "guarded"
     shader_layout_change = 0
     active_asset_change = asset_diff_count + 0
     packed_tile_capacity = 2048
@@ -143,7 +145,7 @@ awk \
       reason = "atlas_asset_diff_present"
     }
 
-    printf("texture_atlas_evolution status=%s reason=%s atlas_metadata_status=%s active_asset_change=%d shader_layout_change=%d atlas_width=%d atlas_height=%d tile_size_px=%d columns=%d rows=%d tile_capacity=%d max_texture_tile=%d packed_tile_capacity=%d sampler=nearest/clamp_to_edge alpha_policy=opaque_alpha_forced manifest_status=not_introduced block_material_status=%s block_material_active_schema_change=%d design_doc=%s block_material_summary=%s\n", status, reason, atlas_metadata_status, active_asset_change, shader_layout_change, atlas_width, atlas_height, tile_size, columns, rows, tile_capacity, max_texture_tile, packed_tile_capacity, block_material_status, block_material_schema_change, design_doc, block_material_summary)
+    printf("texture_atlas_evolution status=%s reason=%s atlas_metadata_status=%s atlas_tile_identity=%s active_asset_change=%d shader_layout_change=%d atlas_width=%d atlas_height=%d tile_size_px=%d columns=%d rows=%d tile_capacity=%d max_texture_tile=%d packed_tile_capacity=%d sampler=nearest/clamp_to_edge alpha_policy=opaque_alpha_forced manifest_status=not_introduced block_material_status=%s block_material_active_schema_change=%d design_doc=%s block_material_summary=%s\n", status, reason, atlas_metadata_status, atlas_tile_identity, active_asset_change, shader_layout_change, atlas_width, atlas_height, tile_size, columns, rows, tile_capacity, max_texture_tile, packed_tile_capacity, block_material_status, block_material_schema_change, design_doc, block_material_summary)
     if (status != "pass") {
       exit 1
     }

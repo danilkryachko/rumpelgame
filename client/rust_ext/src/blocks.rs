@@ -613,6 +613,88 @@ mod tests {
     }
 
     #[test]
+    fn texture_atlas_tile_identity_rows_are_stable() {
+        #[derive(Debug, Eq, PartialEq)]
+        struct ExpectedTile {
+            id: u32,
+            name: &'static str,
+        }
+
+        let rows = vec![
+            ExpectedTile {
+                id: TILE_GRASS_TOP,
+                name: "grass_top",
+            },
+            ExpectedTile {
+                id: TILE_GRASS_SIDE,
+                name: "grass_side",
+            },
+            ExpectedTile {
+                id: TILE_SOIL,
+                name: "soil",
+            },
+            ExpectedTile {
+                id: TILE_STONE,
+                name: "stone",
+            },
+            ExpectedTile {
+                id: TILE_WOOD_SIDE,
+                name: "wood_side",
+            },
+            ExpectedTile {
+                id: TILE_WOOD_TOP,
+                name: "wood_top",
+            },
+            ExpectedTile {
+                id: TILE_LEAVES,
+                name: "leaves",
+            },
+        ];
+        assert_eq!(
+            rows,
+            vec![
+                ExpectedTile {
+                    id: 0,
+                    name: "grass_top",
+                },
+                ExpectedTile {
+                    id: 1,
+                    name: "grass_side",
+                },
+                ExpectedTile {
+                    id: 2,
+                    name: "soil",
+                },
+                ExpectedTile {
+                    id: 3,
+                    name: "stone",
+                },
+                ExpectedTile {
+                    id: 5,
+                    name: "wood_side",
+                },
+                ExpectedTile {
+                    id: 8,
+                    name: "wood_top",
+                },
+                ExpectedTile {
+                    id: 9,
+                    name: "leaves",
+                },
+            ]
+        );
+
+        let tile_capacity = TEXTURE_ATLAS_COLUMNS * TEXTURE_ATLAS_ROWS;
+        assert_eq!(TEXTURE_TILE_SIZE_PX, 64);
+        assert_eq!(TEXTURE_ATLAS_COLUMNS, 10);
+        assert_eq!(TEXTURE_ATLAS_ROWS, 1);
+        assert_eq!(tile_capacity, 10);
+        assert_eq!(MAX_TEXTURE_TILE, TILE_LEAVES);
+        assert_eq!(FALLBACK_TEXTURE_TILE, TILE_STONE);
+        assert!(MAX_TEXTURE_TILE < tile_capacity);
+    }
+
+    #[test]
     fn block_material_current_networked_blocks_preserve_opaque_contract() {
         let air = definition(AIR).expect("air definition");
         assert_eq!(air.render_class, RenderClass::Air);

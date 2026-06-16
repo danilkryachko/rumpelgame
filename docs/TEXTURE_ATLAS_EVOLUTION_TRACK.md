@@ -54,6 +54,7 @@ Checks:
 - Current capacity: `10` tiles.
 - Current maximum referenced tile is `TILE_LEAVES = 9`.
 - `MAX_TEXTURE_TILE` points at `TILE_LEAVES`, so the current atlas exactly covers tile IDs `0..9`.
+- Current code-owned tile identity rows are guarded by `texture_atlas_tile_identity_rows_are_stable`.
 - `GpuTerrainAtlasLayout::from_image_size` rejects images whose dimensions are not divisible by tile size or whose capacity cannot contain `MAX_TEXTURE_TILE`.
 - The GPU terrain shader extracts tile IDs from `PackedFace.pos_face_tile` with `(>> 21) & 2047`, so the current packed layout allows up to `2048` tile IDs before a layout migration is needed.
 - Atlas layout push constants are four floats: inverse columns, inverse rows, columns, rows.
@@ -95,7 +96,7 @@ Required invariants:
 ## Safe Expansion Path
 
 1. Keep the current code-owned constants as the source of truth for existing tiles.
-2. Add tests that compare declared columns/rows/tile capacity against the atlas image dimensions.
+2. Keep tests that guard current tile identity rows and compare declared columns/rows/tile capacity against the atlas image dimensions.
 3. Add new tile names only after the image includes the tile and `MAX_TEXTURE_TILE` is updated.
 4. Do not repack `grass`, `soil`, `stone`, `wood`, or `leaves` tile IDs.
 5. If the atlas grows beyond one row, verify CPU array mesh UVs, compute mesher UVs, and GPU renderer UVs with the same fixture.
@@ -123,11 +124,12 @@ Use:
 sh scripts/texture_atlas_evolution_gate.sh logs/texture_atlas_evolution_current
 ```
 
-The expected current result is `status=pass`, `atlas_metadata_status=designed`, `active_asset_change=0`, `shader_layout_change=0`, `tile_size_px=64`, `columns=10`, `rows=1`, `tile_capacity=10`, `max_texture_tile=9`, and `packed_tile_capacity=2048`.
+The expected current result is `status=pass`, `atlas_metadata_status=designed`, `atlas_tile_identity=guarded`, `active_asset_change=0`, `shader_layout_change=0`, `tile_size_px=64`, `columns=10`, `rows=1`, `tile_capacity=10`, `max_texture_tile=9`, and `packed_tile_capacity=2048`.
 
 The gate checks that:
 
 - This design includes atlas metadata, compatibility limits, sampler policy, alpha policy, and rollout rules.
+- The Rust block atlas constants include a stable current tile identity test.
 - The current PNG dimensions still match the code-owned tile layout.
 - Runtime atlas validation still rejects incompatible image sizes or insufficient capacity.
 - The shader still extracts an 11-bit tile index from `PackedFace.pos_face_tile`.
@@ -137,4 +139,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a design/checkpoint block. Texture atlas evolution should start with metadata/tests over existing tiles, then append stable tile IDs only after explicit asset and visual-smoke work.
+This block is complete as a design/checkpoint block. Texture atlas evolution should start with guarded metadata/tests over existing tiles, then append stable tile IDs only after explicit asset and visual-smoke work.
