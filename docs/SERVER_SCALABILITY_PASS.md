@@ -29,6 +29,7 @@ Scope:
 - Add an opt-in max-client admission cap with a default unlimited rollback/control.
 - Add a bounded live two-client smoke that validates real TCP chunk bootstrap, block-edit fanout, and server RSS/CPU sampling.
 - Add a bounded broader live smoke that validates bootstrap, block-edit fanout, and server RSS/CPU sampling across more than two clients.
+- Add a bounded repeated six-client smoke that validates several consecutive live runs and aggregates detail/resource evidence.
 - Add a bounded live admission-limit smoke that validates one accepted holder and one rejected excess TCP client.
 - Add a server connection lifecycle summary that counts connected, rejected, disconnected, close-failure, and accept-failure events from live smoke logs.
 - Define the next scalability evidence needed before broader runtime policy changes.
@@ -51,6 +52,7 @@ Done when:
 - Failed interested-client broadcast closes and unregisters that client.
 - Session writes set and clear a write deadline.
 - The scalability gate runs the focused network tests and can run or consume the live two-client and broader multi-client smoke summaries with server resource samples.
+- The scalability gate can run or consume repeated multi-client smoke evidence.
 - The scalability gate can run or consume a live max-client admission-limit smoke summary.
 - The scalability gate can generate and consume a connection lifecycle summary from available smoke server logs.
 
@@ -128,7 +130,25 @@ Current bounded evidence:
 - Two-client fanout smoke: `detail_clients=2`, `server_resource_samples=7`, `server_rss_kb_max=26512`, and `server_cpu_pct_max=1.4`.
 - Six-client fanout/load smoke: `detail_clients=6`, `server_resource_samples=6`, `server_rss_kb_max=31584`, and `server_cpu_pct_max=5.2`.
 
-The scalability gate reports `resource_profile_status=broader_live_guarded` when the broader live smoke summary has per-client detail rows for every client, at least one server resource sample, and a nonzero RSS maximum.
+The scalability gate reports `resource_profile_status=broader_live_guarded` when the broader live smoke summary has per-client detail rows for every client, at least one server resource sample, and a nonzero RSS maximum. When repeated multi-client evidence is present and clean, the gate raises both `scalability_status` and `resource_profile_status` to `repeat_live_guarded`.
+
+## Repeated Multi-Client Smoke
+
+`scripts/server_multi_client_repeat_smoke.sh` runs `scripts/server_multi_client_smoke.sh` several times, defaulting to three repeats with six clients each, then aggregates per-run totals, per-client detail counts, resource samples, max RSS, max CPU percentage, and protocol-change count.
+
+Use:
+
+```sh
+sh scripts/server_multi_client_repeat_smoke.sh logs/server_multi_client_repeat_smoke_current
+```
+
+Expected summary:
+
+```text
+server_multi_client_repeat_smoke status=pass repeats=3 clients=6 passed_runs=3 total_initial_chunks=18 total_fanout_updates=18 total_detail_clients=18 total_resource_samples=9 max_rss_kb=31120 max_cpu_pct=0.3 protocol_change=0
+```
+
+This is bounded repeated runtime evidence for fanout, per-client delivery detail, and resource sampling. It is not a soak test, throughput benchmark, admission sizing result, or production capacity claim.
 
 ## Live Admission Limit Smoke
 
@@ -167,7 +187,7 @@ This is log-summary evidence for connection cleanup visibility. It is not a reco
 Still needed before claiming full live multi-client scalability:
 
 - Longer CPU/memory profiling under multiple active clients beyond the bounded RSS/CPU smoke sampling.
-- Longer multi-client load evidence that records per-client chunks sent, elapsed time, disconnect behavior, server errors, and resource trends.
+- Longer multi-client load evidence beyond the bounded repeated three-run smoke.
 - Broader slow-client handling evidence under more clients and broadcast load; the networking robustness block now owns the bounded two-client slow-reader smoke.
 - Longer disconnect cleanup counters or production metric summaries beyond the bounded smoke-log lifecycle parser.
 - Load-tested max-client sizing for representative hardware and gameplay workloads beyond the bounded one-holder/one-rejected smoke.
@@ -189,7 +209,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result after collecting the broader live and admission-limit artifacts is `status=pass`, `scalability_status=broader_live_guarded`, `resource_profile_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live, repeated, and admission-limit artifacts is `status=pass`, `scalability_status=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `repeat_smoke_status=pass`, `repeat_smoke_repeats=3`, `repeat_smoke_clients=6`, `repeat_smoke_initial_chunks=18`, `repeat_smoke_fanout_updates=18`, `repeat_smoke_detail_clients=18`, `repeat_smoke_resource_samples=9`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
 
 To run the live smoke inside the gate:
 
@@ -206,6 +226,14 @@ RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1 sh scripts/server_scalabili
 ```
 
 With the broader smoke enabled, the expected result includes `broader_live_load_status=pass`.
+
+To run the repeated multi-client smoke inside the gate:
+
+```sh
+RUMPELMC_SERVER_SCALABILITY_RUN_REPEAT_SMOKE=1 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
+```
+
+With the repeated smoke enabled, the expected result includes `scalability_status=repeat_live_guarded` and `repeat_smoke_status=pass`.
 
 To run the live admission-limit smoke inside the gate:
 
@@ -224,7 +252,9 @@ The gate checks that:
 - The live smoke script records per-client detail fields in its summary.
 - The live smoke script records server resource sample fields in its summary.
 - The admission-limit smoke script exists and records `server_admission_limit_smoke status=pass`.
+- The repeated multi-client smoke script exists and records `server_multi_client_repeat_smoke status=pass`.
 - The broader live smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1`.
+- The repeated multi-client smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_REPEAT_SMOKE=1`.
 - The admission-limit smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE=1`.
 - The connection lifecycle summary script exists and records connected/rejected/disconnected counts with zero close and accept failures.
 - The multi-client sent-state, interested-client fanout, failed-broadcast cleanup, write-deadline, and max-client admission tests exist.
@@ -233,4 +263,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout/resource smokes, a bounded live opt-in max-client admission smoke, and a bounded connection lifecycle log summary. Longer CPU/memory profiling, broad slow-reader/load harnesses, load-tested admission sizing, adaptive overload policy, and production disconnect metrics remain future work.
+This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout/resource/detail smokes, a bounded repeated six-client smoke, a bounded live opt-in max-client admission smoke, and a bounded connection lifecycle log summary. Longer CPU/memory profiling, broad slow-reader/load harnesses, load-tested admission sizing, adaptive overload policy, and production disconnect metrics remain future work.
