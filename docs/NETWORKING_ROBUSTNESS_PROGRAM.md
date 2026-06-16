@@ -200,7 +200,7 @@ This is not authentication, abuse detection, or production monitoring. It is a d
 
 ## Live Admission Limit Smoke
 
-The server scalability block owns `scripts/server_admission_limit_smoke.sh` and `scripts/server_admission_limit_matrix_smoke.sh`. Networking consumes their summaries through `scripts/server_scalability_pass_gate.sh`: when the matrix passes, `admission_policy=matrix_live_guarded` and this gate reports `overload_status=admission_matrix_guarded`.
+The server scalability block owns `scripts/server_admission_limit_smoke.sh` and `scripts/server_admission_limit_matrix_smoke.sh`. Networking consumes their summaries through `scripts/server_scalability_pass_gate.sh`: when the matrix passes, `admission_policy=matrix_live_guarded` and this gate reports `overload_status=admission_matrix_guarded`. The same server-scalability summary must also report `nil_sent_state_policy=empty_guarded` and `view_distance_config=guarded` before networking robustness can pass, so request-state and view-distance configuration evidence stays attached to the networking checkpoint.
 
 The single smoke starts a local server with `RUMPELMC_SERVER_MAX_CLIENTS=<n>`, keeps `n` holder clients admitted through real chunk bootstrap, opens one excess client, requires that client to observe a close, and requires the server log to include `admission_result=rejected` with matching active/max client counts. The matrix currently checks limits `1 2 3`.
 
