@@ -138,32 +138,32 @@ case "$RUN_RECONNECT_SOAK" in
     fail "unsupported RUMPELMC_CLIENT_STATE_MACHINE_RUN_RECONNECT_SOAK=$RUN_RECONNECT_SOAK"
     ;;
 esac
-reconnect_smoke_status="deferred"
+test -s "$RECONNECT_SMOKE_SUMMARY" || fail "missing required input $RECONNECT_SMOKE_SUMMARY"
+test -s "$RECONNECT_SOAK_SUMMARY" || fail "missing required input $RECONNECT_SOAK_SUMMARY"
+
+reconnect_smoke_status="missing"
 reconnect_smoke_client_state="missing"
 reconnect_smoke_reader_errors="0"
 reconnect_smoke_successes="0"
 reconnect_smoke_protocol_change="0"
-if [ -s "$RECONNECT_SMOKE_SUMMARY" ]; then
-  reconnect_smoke_status="$(field_metric status "$RECONNECT_SMOKE_SUMMARY")"
-  reconnect_smoke_client_state="$(field_metric client_state "$RECONNECT_SMOKE_SUMMARY")"
-  reconnect_smoke_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SMOKE_SUMMARY")"
-  reconnect_smoke_successes="$(field_metric reconnect_successes "$RECONNECT_SMOKE_SUMMARY")"
-  reconnect_smoke_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SMOKE_SUMMARY")"
-fi
-reconnect_soak_status="deferred"
+reconnect_smoke_status="$(field_metric status "$RECONNECT_SMOKE_SUMMARY")"
+reconnect_smoke_client_state="$(field_metric client_state "$RECONNECT_SMOKE_SUMMARY")"
+reconnect_smoke_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SMOKE_SUMMARY")"
+reconnect_smoke_successes="$(field_metric reconnect_successes "$RECONNECT_SMOKE_SUMMARY")"
+reconnect_smoke_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SMOKE_SUMMARY")"
+
+reconnect_soak_status="missing"
 reconnect_soak_client_state="missing"
 reconnect_soak_cycles="0"
 reconnect_soak_reader_errors="0"
 reconnect_soak_successes="0"
 reconnect_soak_protocol_change="0"
-if [ -s "$RECONNECT_SOAK_SUMMARY" ]; then
-  reconnect_soak_status="$(field_metric status "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_client_state="$(field_metric client_state "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_cycles="$(field_metric reconnect_cycles "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_successes="$(field_metric reconnect_successes "$RECONNECT_SOAK_SUMMARY")"
-  reconnect_soak_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SOAK_SUMMARY")"
-fi
+reconnect_soak_status="$(field_metric status "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_client_state="$(field_metric client_state "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_cycles="$(field_metric reconnect_cycles "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_reader_errors="$(field_metric network_reader_errors "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_successes="$(field_metric reconnect_successes "$RECONNECT_SOAK_SUMMARY")"
+reconnect_soak_protocol_change="$(field_metric active_protocol_change "$RECONNECT_SOAK_SUMMARY")"
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 client_lifecycle_tests="skipped"
@@ -184,13 +184,13 @@ fi
 awk \
   -v networking_status="${networking_status:-missing}" \
   -v networking_protocol_change="${networking_protocol_change:-1}" \
-  -v reconnect_smoke_status="${reconnect_smoke_status:-deferred}" \
+  -v reconnect_smoke_status="${reconnect_smoke_status:-missing}" \
   -v reconnect_smoke_client_state="${reconnect_smoke_client_state:-missing}" \
   -v reconnect_smoke_reader_errors="${reconnect_smoke_reader_errors:-0}" \
   -v reconnect_smoke_successes="${reconnect_smoke_successes:-0}" \
   -v reconnect_smoke_protocol_change="${reconnect_smoke_protocol_change:-0}" \
   -v reconnect_smoke_required="$RUN_RECONNECT_SMOKE" \
-  -v reconnect_soak_status="${reconnect_soak_status:-deferred}" \
+  -v reconnect_soak_status="${reconnect_soak_status:-missing}" \
   -v reconnect_soak_client_state="${reconnect_soak_client_state:-missing}" \
   -v reconnect_soak_cycles="${reconnect_soak_cycles:-0}" \
   -v reconnect_soak_reader_errors="${reconnect_soak_reader_errors:-0}" \
@@ -232,10 +232,10 @@ awk \
     } else if (!networking_ok) {
       status = "fail"
       reason = "networking_robustness_gate_not_clean"
-    } else if (reconnect_smoke_required == "1" && !reconnect_ok) {
+    } else if (!reconnect_ok) {
       status = "fail"
       reason = "reconnect_smoke_failed"
-    } else if (reconnect_soak_required == "1" && !reconnect_soak_ok) {
+    } else if (!reconnect_soak_ok) {
       status = "fail"
       reason = "reconnect_soak_failed"
     } else if (!tests_ok) {

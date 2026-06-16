@@ -45,7 +45,7 @@ Assumptions:
 Done when:
 
 - The client lifecycle model names the required states and guards legal transitions with unit tests.
-- A state-machine hardening gate runs the focused Rust tests, can run or consume the live reconnect smoke, and records state telemetry.
+- A state-machine hardening gate runs the focused Rust tests, requires the bounded live reconnect smoke and repeated reconnect soak evidence, and records state telemetry.
 
 Checks:
 
@@ -178,8 +178,8 @@ The gate checks that:
 - The Rust client source contains the lifecycle states, event enum, transition function, runtime event wiring, and focused tests.
 - The Rust client source carries reader-thread error events to the main thread and exports marker state telemetry.
 - The Rust client source carries session ids on reader events, ignores stale-session events, and unit-guards same-drain packet reset after a current-session error.
-- The reconnect smoke script exists, and the gate carries its status when a current reconnect summary exists or the smoke is explicitly run.
-- The repeated reconnect soak script exists, and the gate carries its status when a current soak summary exists or the soak is explicitly run.
+- The reconnect smoke script exists, and the gate requires a clean current reconnect summary or a successful explicit smoke run.
+- The repeated reconnect soak script exists, and the gate requires a clean current soak summary or a successful explicit soak run.
 - The previous networking robustness gate is clean.
 - Focused Rust lifecycle tests pass.
 - Protocol schema/generated files are unchanged.
