@@ -102,6 +102,8 @@ biome_matrix_worldgen_change="$(field_metric active_worldgen_change "$BIOME_MATR
 biome_matrix_serialization_change="$(field_metric active_serialization_change "$BIOME_MATRIX_SUMMARY")"
 biome_matrix_protocol_change="$(field_metric protocol_change "$BIOME_MATRIX_SUMMARY")"
 atlas_status="$(field_metric status "$ATLAS_SUMMARY")"
+atlas_tile_identity="$(field_metric atlas_tile_identity "$ATLAS_SUMMARY")"
+atlas_block_texture_usage="$(field_metric block_texture_usage "$ATLAS_SUMMARY")"
 atlas_asset_change="$(field_metric active_asset_change "$ATLAS_SUMMARY")"
 atlas_shader_change="$(field_metric shader_layout_change "$ATLAS_SUMMARY")"
 chunk_source_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- server/pkg/world/chunk.go | awk 'END { print NR + 0 }')"
@@ -125,6 +127,8 @@ awk \
   -v biome_matrix_serialization_change="${biome_matrix_serialization_change:-1}" \
   -v biome_matrix_protocol_change="${biome_matrix_protocol_change:-1}" \
   -v atlas_status="${atlas_status:-missing}" \
+  -v atlas_tile_identity="${atlas_tile_identity:-missing}" \
+  -v atlas_block_texture_usage="${atlas_block_texture_usage:-missing}" \
   -v atlas_asset_change="${atlas_asset_change:-1}" \
   -v atlas_shader_change="${atlas_shader_change:-1}" \
   -v chunk_source_diff_count="$chunk_source_diff_count" \
@@ -152,6 +156,8 @@ awk \
       biome_matrix_serialization_change + 0 == 0 &&
       biome_matrix_protocol_change + 0 == 0 &&
       atlas_status == "pass" &&
+      atlas_tile_identity == "guarded" &&
+      atlas_block_texture_usage == "guarded" &&
       atlas_asset_change + 0 == 0 &&
       atlas_shader_change + 0 == 0
     tests_ok = world_tests == "pass" || world_tests == "skipped"
@@ -167,7 +173,7 @@ awk \
       reason = "world_tests_failed"
     }
 
-    printf("biome_visual_variety_foundation status=%s reason=%s biome_foundation_status=%s biome_sampler=%s biome_matrix=%s metadata_layer=%s active_worldgen_change=%d active_serialization_change=%d visual_variety_runtime=%s deterministic_model=designed world_tests=%s block_material_status=%s block_material_active_schema_change=%d atlas_status=%s atlas_active_asset_change=%d atlas_shader_layout_change=%d design_doc=%s worldgen_doc=%s block_material_summary=%s atlas_summary=%s\n", status, reason, biome_foundation_status, biome_sampler, biome_matrix, metadata_layer, active_worldgen_change, active_serialization_change, visual_variety_runtime, world_tests, block_material_status, block_material_schema_change, atlas_status, atlas_asset_change, atlas_shader_change, design_doc, worldgen_doc, block_material_summary, atlas_summary)
+    printf("biome_visual_variety_foundation status=%s reason=%s biome_foundation_status=%s biome_sampler=%s biome_matrix=%s metadata_layer=%s active_worldgen_change=%d active_serialization_change=%d visual_variety_runtime=%s deterministic_model=designed world_tests=%s block_material_status=%s block_material_active_schema_change=%d atlas_status=%s atlas_tile_identity=%s atlas_block_texture_usage=%s atlas_active_asset_change=%d atlas_shader_layout_change=%d design_doc=%s worldgen_doc=%s block_material_summary=%s atlas_summary=%s\n", status, reason, biome_foundation_status, biome_sampler, biome_matrix, metadata_layer, active_worldgen_change, active_serialization_change, visual_variety_runtime, world_tests, block_material_status, block_material_schema_change, atlas_status, atlas_tile_identity, atlas_block_texture_usage, atlas_asset_change, atlas_shader_change, design_doc, worldgen_doc, block_material_summary, atlas_summary)
     if (status != "pass") {
       exit 1
     }

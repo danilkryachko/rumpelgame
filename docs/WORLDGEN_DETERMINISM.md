@@ -57,7 +57,7 @@ Biome and visual-variety foundation work is tracked in `docs/BIOME_VISUAL_VARIET
 sh scripts/biome_visual_variety_foundation_gate.sh logs/biome_visual_variety_foundation_current
 ```
 
-The current expected result is `status=pass`, `biome_foundation_status=designed`, `active_worldgen_change=0`, `active_serialization_change=0`, and `visual_variety_runtime=deferred`. Do not add biome-driven terrain shape, block distribution, visual tint, storage, or protocol behavior without a deterministic seed/model and updated compatibility gates.
+The current expected result is `status=pass`, `biome_foundation_status=designed`, `atlas_tile_identity=guarded`, `atlas_block_texture_usage=guarded`, `active_worldgen_change=0`, `active_serialization_change=0`, and `visual_variety_runtime=deferred`. Do not add biome-driven terrain shape, block distribution, visual tint, storage, or protocol behavior without a deterministic seed/model and updated compatibility gates.
 
 ## Worldgen Quality Pass
 

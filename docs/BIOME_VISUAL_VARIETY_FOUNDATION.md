@@ -146,7 +146,7 @@ Use:
 sh scripts/biome_visual_variety_foundation_gate.sh logs/biome_visual_variety_foundation_current
 ```
 
-The expected current foundation result is `status=pass`, `biome_foundation_status=designed`, `biome_sampler=guarded`, `biome_matrix=guarded`, `metadata_layer=guarded`, `active_worldgen_change=0`, `active_serialization_change=0`, `visual_variety_runtime=deferred`, and `world_tests=pass`.
+The expected current foundation result is `status=pass`, `biome_foundation_status=designed`, `biome_sampler=guarded`, `biome_matrix=guarded`, `metadata_layer=guarded`, `atlas_tile_identity=guarded`, `atlas_block_texture_usage=guarded`, `active_worldgen_change=0`, `active_serialization_change=0`, `visual_variety_runtime=deferred`, and `world_tests=pass`.
 
 The gate checks that:
 
@@ -158,7 +158,7 @@ The gate checks that:
 - `Chunk.GenerateFlat()` still uses the current strata thresholds.
 - `Chunk.Serialize()` still writes little-endian `uint16` block IDs.
 - Chunk/world determinism tests still exist and pass.
-- Block material and texture atlas gates remain clean.
+- Block material and texture atlas gates remain clean, including guarded atlas tile identity and block texture usage.
 
 ## Current Status
 
