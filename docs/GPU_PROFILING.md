@@ -265,6 +265,14 @@ sh scripts/gpu_terrain_repeated_edit_benchmark.sh logs/gpu_terrain_repeated_edit
 
 The gate writes `gpu-terrain-repeated-edit-benchmark-summary.txt` and `gpu-terrain-repeated-edit-benchmark-cases.txt`; see `docs/GPU_TERRAIN_REPEATED_EDIT_BENCHMARK.md`.
 
+Use the border edit benchmark after changing chunk-edge dirty update behavior, border/corner edit harnesses, pressure dirty fixtures, collision refresh, proxy refresh, or GPU dirty upload budget logic. It composes repeated single-edge/corner-edge evidence with the high-volume pressure dirty compare at local chunk border `31,31`:
+
+```sh
+sh scripts/gpu_terrain_border_edit_benchmark.sh logs/gpu_terrain_border_edit_benchmark_current
+```
+
+The gate writes `gpu-terrain-border-edit-benchmark-summary.txt` and `gpu-terrain-border-edit-benchmark-cases.txt`; see `docs/GPU_TERRAIN_BORDER_EDIT_BENCHMARK.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh

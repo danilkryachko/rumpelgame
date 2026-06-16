@@ -259,7 +259,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 
 61. Done 2026-06-16: added `scripts/gpu_streaming_scheduler_tie_probe.sh` and `docs/GPU_STREAMING_SCHEDULER_TIE_PROBE.md` as a deterministic tie-heavy scheduler probe over the stable `chunk_fly_snap_back` matrix lanes, requiring runtime tie signal while preserving default `nearest`, scheduler-change lockout, and external macOS/Windows profiler blockers.
 62. Done 2026-06-16: added `scripts/gpu_terrain_repeated_edit_benchmark.sh` and `docs/GPU_TERRAIN_REPEATED_EDIT_BENCHMARK.md` to benchmark repeated single-edge and corner-edge dirty edits over three fresh runs each, requiring zero GPU upload failures and CPU-side queue/process/submit budgets without changing default runtime or visible quality.
-63. Benchmark border edits.
+63. Done 2026-06-16: added `scripts/gpu_terrain_border_edit_benchmark.sh` and `docs/GPU_TERRAIN_BORDER_EDIT_BENCHMARK.md` to compose repeated single/corner-edge dirty edit evidence with the pressure dirty compare at local border `31,31`, requiring zero upload/ground failures and CPU-side budgets while keeping default runtime and visible quality unchanged.
 64. Refresh dirty partial-upload edge cases.
 65. Audit collision refresh cost.
 66. Audit shadow proxy refresh cost.

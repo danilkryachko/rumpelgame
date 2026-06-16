@@ -251,6 +251,18 @@ Fresh check:
 
 - `logs/gpu_terrain_repeated_edit_benchmark_current/gpu-terrain-repeated-edit-benchmark-summary.txt` passed with `case_count=2`, `single_edge_runs=3`, `corner_edge_runs=3`, min edge-neighbor subchunks `4`, min partial saved subchunks `2`, max queue/process/submit `2.972/0.050/0.150ms`, `gpu_upload_fail=0`, and `visible_quality_change_allowed=0`.
 
+## GPU Terrain Border Edit Benchmark
+
+The border edit benchmark composes repeated single-edge/corner-edge dirty edit evidence with the high-volume pressure dirty compare at local border `31,31`. It validates border dirty bounds, edge-neighbor refresh, saved partial subchunks, collision readiness, terrain samples, zero upload failures, zero ground misses, and CPU-side queue/process/submit budgets without changing visible quality or default runtime policy.
+
+Fresh check:
+
+- `logs/gpu_terrain_border_edit_benchmark_current/gpu-terrain-border-edit-benchmark-summary.txt` passed with `case_count=3`, `single_edge_runs=3`, `corner_edge_runs=3`, `pressure_fixture=chunk_disc`, pressure local `31,31`, max dirty blocks `709`, max edge-neighbor subchunks `2836`, max partial saved subchunks `1418`, max queue/process/submit `4.777/0.050/0.171ms`, `gpu_upload_fail=0`, `ground_misses=0`, and `visible_quality_change_allowed=0`.
+
+Remaining coverage gap:
+
+- Runtime border matrix coverage for local `0` edges, `neg_x`, `neg_z`, single `pos_z`/`neg_z`, and all four corner combinations is still future work before claiming full border-edit coverage.
+
 ## Storage Persistence Foundation
 
 The storage foundation slice keeps RocksDB as the implemented chunk persistence backend and does not add PostgreSQL behavior. It adds focused coverage for missing chunks, save/reopen round-trips, overwrite isolation between neighboring chunk keys, and corrupt persisted payload errors.
@@ -289,7 +301,7 @@ Fresh local evidence:
 
 Fresh local evidence:
 
-- `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt` passed with `23` indexed rows, `14` required passes, optional missing rows `8`, max GPU subchunks/draws/faces `2482/2482/6292`, draw-command occupancy `30.298%`, max queue/process/submit `3.928/0.059/5.677ms`, max packet queue lag `27.437ms`, cutout uploads `265`, stage-pool reuses `3128`, grouped draw saved records `2174`, `external_profiler_status=pending_external_profiler`, and `mac_windows_validation_status=pending_external_validation`.
+- `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt` passed with `33` indexed rows, `23` required passes, optional missing rows `9`, max GPU subchunks/draws/faces `2482/2482/6292`, draw-command occupancy `30.298%`, max queue/process/submit `6.174/0.070/5.677ms`, max packet queue lag `67.578ms`, cutout uploads `265`, stage-pool reuses `3128`, grouped draw saved records `2174`, `external_profiler_status=pending_external_profiler`, and `mac_windows_validation_status=pending_external_validation`.
 
 ## GPU Terrain Load Scaling
 
