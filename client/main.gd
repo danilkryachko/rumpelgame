@@ -21,6 +21,17 @@ const VISUAL_SMOKE_BLOCK_EDIT_Y_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_Y"
 const VISUAL_SMOKE_BLOCK_EDIT_Z_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_Z"
 const VISUAL_SMOKE_BLOCK_EDIT_ID_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_ID"
 const VISUAL_SMOKE_BLOCK_EDIT_WAIT_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_BLOCK_EDIT_WAIT_SEC"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_COLUMNS_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_COLUMNS"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_ROWS_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_ROWS"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_X_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_X"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_Z_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_Z"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_Y_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_Y"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC"
+const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE"
 const VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC"
 const VISUAL_SMOKE_FORCE_UNCAPPED_ENV = "RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED"
 const VISUAL_SMOKE_MAX_FPS_ENV = "RUMPELMC_VISUAL_SMOKE_MAX_FPS"
@@ -33,6 +44,16 @@ const VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_X = 112
 const VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_Y = 64
 const VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_Z = 80
 const VISUAL_SMOKE_DEFAULT_BLOCK_EDIT_ID = 1
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_COLUMNS = 16
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_ROWS = 12
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_RADIUS = 15
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_X = 0
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_Z = 0
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_Y = 96
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID = 1
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC = 20.0
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC = 30.0
+const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE = 16
 const VISUAL_SMOKE_SKY_COLOR = Color(0.34, 0.43, 0.54)
 const VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD = 0.08
 const VISUAL_SMOKE_MIN_TERRAIN_SAMPLES = 12
@@ -59,6 +80,9 @@ var visual_smoke_motion_steps: int = 0
 var visual_smoke_motion_chunks = {}
 var visual_smoke_block_edit_name: String = "none"
 var visual_smoke_block_edit_dirty_observed: int = 0
+var visual_smoke_terrain_pressure_fixture_name: String = "none"
+var visual_smoke_terrain_pressure_fixture_blocks: int = 0
+var visual_smoke_terrain_pressure_fixture_dirty_observed: int = 0
 var visual_smoke_lighting_variant: String = VISUAL_SMOKE_DEFAULT_LIGHTING_VARIANT
 
 func _ready():
@@ -273,8 +297,13 @@ func capture_visual_smoke(screenshot_path: String):
 		visual_smoke_motion_chunks.size(),
 		visual_smoke_client_text("get_current_chunk_text", "n/a")
 	])
+	await run_visual_smoke_terrain_pressure_fixture()
 	await run_visual_smoke_block_edit()
-	apply_visual_smoke_pose(pose_name)
+	if visual_smoke_terrain_pressure_fixture_name == "none":
+		apply_visual_smoke_pose(pose_name)
+	else:
+		log_event("Visual smoke pose preserved after terrain pressure fixture requested_pose=%s" % pose_name)
+		pose_name = "motion_preserved"
 	var ground_metrics = visual_smoke_ground_metrics()
 	var post_draw_wait_start_usec = Time.get_ticks_usec()
 	await get_tree().process_frame
@@ -315,7 +344,7 @@ func capture_visual_smoke(screenshot_path: String):
 	var frame_metrics = visual_smoke_frame_metrics()
 	var process_metrics = visual_smoke_process_wall_metrics()
 	var runtime_metrics = visual_smoke_runtime_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" lighting_variant=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f ground_samples=%d ground_hits=%d ground_misses=%d ground_max_distance=%.3f ground_min_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" lighting_variant=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d terrain_pressure_fixture=\"%s\" terrain_pressure_fixture_blocks=%d terrain_pressure_fixture_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f ground_samples=%d ground_hits=%d ground_misses=%d ground_max_distance=%.3f ground_min_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		visual_smoke_lighting_variant,
@@ -324,6 +353,9 @@ func capture_visual_smoke(screenshot_path: String):
 		visual_smoke_motion_chunks.size(),
 		visual_smoke_block_edit_name,
 		visual_smoke_block_edit_dirty_observed,
+		visual_smoke_terrain_pressure_fixture_name,
+		visual_smoke_terrain_pressure_fixture_blocks,
+		visual_smoke_terrain_pressure_fixture_dirty_observed,
 		image.get_width(),
 		image.get_height(),
 		metrics["avg_luma"],
@@ -824,13 +856,96 @@ func run_visual_smoke_block_edit():
 		visual_smoke_perf_int("chunk_replace", 0)
 	])
 
+func run_visual_smoke_terrain_pressure_fixture():
+	visual_smoke_terrain_pressure_fixture_name = OS.get_environment(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_ENV).strip_edges().to_lower()
+	visual_smoke_terrain_pressure_fixture_blocks = 0
+	visual_smoke_terrain_pressure_fixture_dirty_observed = 0
+	if visual_smoke_terrain_pressure_fixture_name.is_empty() or visual_smoke_terrain_pressure_fixture_name == "none":
+		visual_smoke_terrain_pressure_fixture_name = "none"
+		return
+	if visual_smoke_terrain_pressure_fixture_name != "chunk_grid" and visual_smoke_terrain_pressure_fixture_name != "chunk_disc":
+		log_event("Unknown visual smoke terrain pressure fixture: %s" % visual_smoke_terrain_pressure_fixture_name)
+		visual_smoke_terrain_pressure_fixture_name = "unknown"
+		return
+
+	var client = get_node_or_null("GameClient")
+	if not client or not client.has_method("on_block_placed"):
+		log_event("Visual smoke terrain pressure fixture skipped: missing GameClient block place method")
+		return
+
+	var columns = clamp(env_int(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_COLUMNS_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_COLUMNS), 1, 32)
+	var rows = clamp(env_int(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_ROWS_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_ROWS), 1, 32)
+	var radius = clamp(env_int(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_RADIUS), 1, 32)
+	var base_chunk_x = env_int(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_X_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_X)
+	var base_chunk_z = env_int(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_Z_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_BASE_CHUNK_Z)
+	var y = env_int(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_Y_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_Y)
+	var block_id = env_int(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID)
+	var wait_sec = max(env_float(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC), 0.1)
+	var queue_settle_sec = max(env_float(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC), 0.0)
+	var max_queue = max(env_int(VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE_ENV, VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE), 0)
+	var before_dirty = visual_smoke_perf_int("dirty_blocks", 0)
+	var blocks = 0
+	if visual_smoke_terrain_pressure_fixture_name == "chunk_disc":
+		var center = visual_smoke_current_chunk_coords(base_chunk_x, base_chunk_z)
+		for dz in range(-radius, radius + 1):
+			for dx in range(-radius, radius + 1):
+				if dx * dx + dz * dz > radius * radius:
+					continue
+				var x = int((center.x + dx) * int(VISUAL_SMOKE_CHUNK_SIZE) + 16)
+				var z = int((center.y + dz) * int(VISUAL_SMOKE_CHUNK_SIZE) + 16)
+				client.call("on_block_placed", x, y, z, block_id)
+				blocks += 1
+				if blocks % 16 == 0:
+					await get_tree().process_frame
+	else:
+		for row in range(rows):
+			for column in range(columns):
+				var x = int((base_chunk_x + column) * int(VISUAL_SMOKE_CHUNK_SIZE) + 16)
+				var z = int((base_chunk_z + row) * int(VISUAL_SMOKE_CHUNK_SIZE) + 16)
+				client.call("on_block_placed", x, y, z, block_id)
+				blocks += 1
+				if blocks % 16 == 0:
+					await get_tree().process_frame
+	visual_smoke_terrain_pressure_fixture_blocks = blocks
+	var exact_dirty_seen = await wait_for_visual_smoke_dirty_update_delta(before_dirty, blocks, wait_sec)
+	var dirty_seen = exact_dirty_seen or visual_smoke_perf_int("dirty_blocks", before_dirty) > before_dirty
+	visual_smoke_terrain_pressure_fixture_dirty_observed = 1 if dirty_seen else 0
+	var queue_drained = await wait_for_visual_smoke_perf_int_at_most("queue", max_queue, queue_settle_sec)
+	log_event("Visual smoke terrain pressure fixture complete name=%s blocks=%d dirty_observed=%d dirty_blocks=%d queue_drained=%d queue=%d" % [
+		visual_smoke_terrain_pressure_fixture_name,
+		visual_smoke_terrain_pressure_fixture_blocks,
+		visual_smoke_terrain_pressure_fixture_dirty_observed,
+		visual_smoke_perf_int("dirty_blocks", 0),
+		1 if queue_drained else 0,
+		visual_smoke_perf_int("queue", 0)
+	])
+
 func wait_for_visual_smoke_dirty_update(before_dirty: int, wait_sec: float) -> bool:
+	return await wait_for_visual_smoke_dirty_update_delta(before_dirty, 1, wait_sec)
+
+func wait_for_visual_smoke_dirty_update_delta(before_dirty: int, target_delta: int, wait_sec: float) -> bool:
+	var deadline_msec = Time.get_ticks_msec() + int(wait_sec * 1000.0)
+	var target_dirty = before_dirty + max(target_delta, 1)
+	while Time.get_ticks_msec() < deadline_msec:
+		await get_tree().process_frame
+		if visual_smoke_perf_int("dirty_blocks", 0) >= target_dirty:
+			return true
+	return false
+
+func wait_for_visual_smoke_perf_int_at_most(key: String, max_value: int, wait_sec: float) -> bool:
 	var deadline_msec = Time.get_ticks_msec() + int(wait_sec * 1000.0)
 	while Time.get_ticks_msec() < deadline_msec:
 		await get_tree().process_frame
-		if visual_smoke_perf_int("dirty_blocks", 0) > before_dirty:
+		if visual_smoke_perf_int(key, max_value + 1) <= max_value:
 			return true
-	return false
+	return visual_smoke_perf_int(key, max_value + 1) <= max_value
+
+func visual_smoke_current_chunk_coords(default_x: int, default_z: int) -> Vector2i:
+	var text = visual_smoke_client_text("get_current_chunk_text", "")
+	var parts = text.split(",", false)
+	if parts.size() != 2:
+		return Vector2i(default_x, default_z)
+	return Vector2i(int(parts[0]), int(parts[1]))
 
 func visual_smoke_perf_int(key: String, fallback: int) -> int:
 	var text = visual_smoke_client_text("get_perf_text", "")

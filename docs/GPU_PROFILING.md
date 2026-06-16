@@ -253,6 +253,18 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 
 The gate requires thousands of subchunks/draws/faces and nontrivial draw-command occupancy; see `docs/GPU_TERRAIN_LOAD_SCALING.md`.
 
+Use the stage-pool load-scaling comparison when validating upload staging under deterministic high face pressure:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=36000 \
+GODOT_TIMEOUT_SEC=700 \
+sh scripts/gpu_terrain_upload_stage_pool_load_scaling_gate.sh logs/gpu_terrain_upload_stage_pool_load_scaling_current
+```
+
+This gate uses the `pressure` workload case and `chunk_disc` terrain pressure fixture by default, then compares baseline and `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=1` lanes. Keep the stage pool default-off until external macOS/Windows profiler evidence supports a rollout.
+
 Use the mass chunk-load gate after refreshing high resident-set and upload-budget evidence. It requires thousands of resident GPU subchunks/draws/faces while preserving the current per-frame upload budget:
 
 ```sh

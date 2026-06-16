@@ -201,6 +201,9 @@ write_summary() {
   compositor_gpu_us_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 2)")"
   compositor_gpu_us_max="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 3)")"
   compositor_gpu_samples="$(metric gpu_compositor_gpu_samples "$marker_path")"
+  terrain_pressure_fixture="$(text_metric terrain_pressure_fixture "$marker_path")"
+  terrain_pressure_fixture_blocks="$(metric terrain_pressure_fixture_blocks "$marker_path")"
+  terrain_pressure_fixture_dirty_observed="$(metric terrain_pressure_fixture_dirty_observed "$marker_path")"
   gpu_effective_draws="$(metric gpu_effective_draws "$marker_path")"
   gpu_draw_repeat="$(metric gpu_draw_repeat "$marker_path")"
   gpu_draw_cmd_bytes="$(metric gpu_draw_cmd_bytes "$marker_path")"
@@ -828,6 +831,10 @@ write_summary() {
         printf("movement_readiness current_chunk_loaded=%d current_render_ready=%d current_chunk_submeshes=%d current_collision_ready=%d current_chunk_collision=%d ground_misses=%d popin_collision_missing_max=%d startup_collision_ms=%.3f startup_player_spawn_ms=%.3f\n", current_chunk_loaded, current_chunk_submeshes > 0, current_chunk_submeshes, current_chunk_collision > 0, current_chunk_collision, ground_misses, popin_collision_missing_max, startup_collision_ms, startup_player_spawn_ms)
       }
     ' > "$summary_path"
+  printf 'movement_terrain_pressure_fixture fixture=%s blocks=%s dirty_observed=%s\n' \
+    "${terrain_pressure_fixture:-none}" \
+    "${terrain_pressure_fixture_blocks:-0}" \
+    "${terrain_pressure_fixture_dirty_observed:-0}" >> "$summary_path"
   cat "$summary_path"
 }
 

@@ -15,6 +15,15 @@ CLIENT_KEEP_CHUNK_DISTANCE="${RUMPELMC_RESIDENT_SET_CLIENT_KEEP_CHUNK_DISTANCE:-
 SMOKE_DELAY_SEC="${RUMPELMC_RESIDENT_SET_SMOKE_DELAY_SEC:-20.0}"
 TARGET_FPS="${RUMPELMC_RESIDENT_SET_TARGET_FPS:-150}"
 MIN_GPU_DRAWS="${RUMPELMC_RESIDENT_SET_MIN_GPU_DRAWS:-1500}"
+SERVER_CHUNKS_PER_UPDATE="${RUMPELMC_RESIDENT_SET_SERVER_CHUNKS_PER_UPDATE:-${RUMPELMC_WORKLOAD_MATRIX_SERVER_CHUNKS_PER_UPDATE:-64}}"
+CASE_SET="${RUMPELMC_RESIDENT_SET_CASE_SET:-heavy}"
+TERRAIN_PRESSURE_FIXTURE="${RUMPELMC_RESIDENT_SET_TERRAIN_PRESSURE_FIXTURE:-none}"
+TERRAIN_PRESSURE_FIXTURE_CHUNK_COLUMNS="${RUMPELMC_RESIDENT_SET_TERRAIN_PRESSURE_FIXTURE_CHUNK_COLUMNS:-16}"
+TERRAIN_PRESSURE_FIXTURE_CHUNK_ROWS="${RUMPELMC_RESIDENT_SET_TERRAIN_PRESSURE_FIXTURE_CHUNK_ROWS:-12}"
+TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS="${RUMPELMC_RESIDENT_SET_TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS:-15}"
+TERRAIN_PRESSURE_FIXTURE_WAIT_SEC="${RUMPELMC_RESIDENT_SET_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC:-20.0}"
+TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC="${RUMPELMC_RESIDENT_SET_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC:-30.0}"
+TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE="${RUMPELMC_RESIDENT_SET_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE:-16}"
 GODOT_TIMEOUT_SEC="${GODOT_TIMEOUT_SEC:-480}"
 GODOT_QUIT_AFTER_FRAMES="${GODOT_QUIT_AFTER_FRAMES:-36000}"
 
@@ -27,11 +36,19 @@ fail() {
 
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE="${RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE:-1}" \
   RUMPELMC_GODOT_RUST_EXT_PROFILE="${RUMPELMC_GODOT_RUST_EXT_PROFILE:-release}" \
-  RUMPELMC_WORKLOAD_MATRIX_CASE_SET=heavy \
+  RUMPELMC_WORKLOAD_MATRIX_CASE_SET="$CASE_SET" \
   RUMPELMC_WORKLOAD_MATRIX_SERVER_VIEW_DISTANCE="$SERVER_VIEW_DISTANCE" \
   RUMPELMC_WORKLOAD_MATRIX_CLIENT_KEEP_CHUNK_DISTANCE="$CLIENT_KEEP_CHUNK_DISTANCE" \
+  RUMPELMC_WORKLOAD_MATRIX_SERVER_CHUNKS_PER_UPDATE="$SERVER_CHUNKS_PER_UPDATE" \
   RUMPELMC_WORKLOAD_MATRIX_SMOKE_DELAY_SEC="$SMOKE_DELAY_SEC" \
   RUMPELMC_WORKLOAD_MATRIX_TARGET_FPS="$TARGET_FPS" \
+  RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE="$TERRAIN_PRESSURE_FIXTURE" \
+  RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_CHUNK_COLUMNS="$TERRAIN_PRESSURE_FIXTURE_CHUNK_COLUMNS" \
+  RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_CHUNK_ROWS="$TERRAIN_PRESSURE_FIXTURE_CHUNK_ROWS" \
+  RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS="$TERRAIN_PRESSURE_FIXTURE_CHUNK_RADIUS" \
+  RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC="$TERRAIN_PRESSURE_FIXTURE_WAIT_SEC" \
+  RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC="$TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC" \
+  RUMPELMC_WORKLOAD_MATRIX_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE="$TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE" \
   GODOT_TIMEOUT_SEC="$GODOT_TIMEOUT_SEC" \
   GODOT_QUIT_AFTER_FRAMES="$GODOT_QUIT_AFTER_FRAMES" \
   /bin/sh "$ROOT_DIR/scripts/gpu_terrain_workload_matrix.sh" "$WORKLOAD_DIR"
@@ -43,6 +60,9 @@ awk \
   -v min_gpu_draws="$MIN_GPU_DRAWS" \
   -v server_view_distance="$SERVER_VIEW_DISTANCE" \
   -v client_keep_chunk_distance="$CLIENT_KEEP_CHUNK_DISTANCE" \
+  -v case_set="$CASE_SET" \
+  -v server_chunks_per_update="$SERVER_CHUNKS_PER_UPDATE" \
+  -v terrain_pressure_fixture="$TERRAIN_PRESSURE_FIXTURE" \
   -v smoke_delay_sec="$SMOKE_DELAY_SEC" \
   -v target_fps="$TARGET_FPS" \
   -v matrix_summary="$matrix_summary" '
@@ -69,6 +89,8 @@ awk \
       if (key == "gpu_upload_stage_pool_bytes" && value > max_stage_pool_bytes) max_stage_pool_bytes = value
       if (key == "gpu_upload_stage_pba_creates" && value > max_stage_pba_creates) max_stage_pba_creates = value
       if (key == "gpu_upload_stage_pba_reuses" && value > max_stage_pba_reuses) max_stage_pba_reuses = value
+      if (key == "terrain_pressure_fixture_blocks" && value > max_terrain_pressure_fixture_blocks) max_terrain_pressure_fixture_blocks = value
+      if (key == "terrain_pressure_fixture_dirty_observed" && value > max_terrain_pressure_fixture_dirty_observed) max_terrain_pressure_fixture_dirty_observed = value
     }
   }
   END {
@@ -76,7 +98,7 @@ awk \
     if (max_draws < min_gpu_draws || upload_fail > 0 || upload_fail_capacity > 0 || upload_fail_fragmented > 0) {
       status = "fail"
     }
-    printf("resident_set_growth status=%s server_view_distance=%s client_keep_chunk_distance=%s smoke_delay_sec=%s target_fps=%s min_gpu_draws=%d max_gpu_subchunks=%d max_gpu_draws=%d max_gpu_faces=%d max_gpu_draw_cmd_bytes=%d max_gpu_draw_cmd_capacity_bytes=%d max_terrain_queue_ms=%.3f max_process_wall_p95_ms=%.3f max_gpu_compositor_submit_ms=%.3f max_gpu_uploads=%d gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d max_gpu_upload_stage_pool_enabled=%d max_gpu_upload_stage_pool_entries=%d max_gpu_upload_stage_pool_bytes=%d max_gpu_upload_stage_pba_creates=%d max_gpu_upload_stage_pba_reuses=%d matrix_summary=%s\n", status, server_view_distance, client_keep_chunk_distance, smoke_delay_sec, target_fps, min_gpu_draws, max_subchunks, max_draws, max_faces, max_draw_cmd_bytes, max_draw_cmd_capacity_bytes, max_queue, max_process, max_submit, max_uploads, upload_fail, upload_fail_capacity, upload_fail_fragmented, max_stage_pool_enabled, max_stage_pool_entries, max_stage_pool_bytes, max_stage_pba_creates, max_stage_pba_reuses, matrix_summary)
+    printf("resident_set_growth status=%s server_view_distance=%s client_keep_chunk_distance=%s case_set=%s server_chunks_per_update=%s terrain_pressure_fixture=%s smoke_delay_sec=%s target_fps=%s min_gpu_draws=%d max_gpu_subchunks=%d max_gpu_draws=%d max_gpu_faces=%d max_gpu_draw_cmd_bytes=%d max_gpu_draw_cmd_capacity_bytes=%d max_terrain_queue_ms=%.3f max_process_wall_p95_ms=%.3f max_gpu_compositor_submit_ms=%.3f max_gpu_uploads=%d gpu_upload_fail=%d gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d max_gpu_upload_stage_pool_enabled=%d max_gpu_upload_stage_pool_entries=%d max_gpu_upload_stage_pool_bytes=%d max_gpu_upload_stage_pba_creates=%d max_gpu_upload_stage_pba_reuses=%d max_terrain_pressure_fixture_blocks=%d max_terrain_pressure_fixture_dirty_observed=%d matrix_summary=%s\n", status, server_view_distance, client_keep_chunk_distance, case_set, server_chunks_per_update, terrain_pressure_fixture, smoke_delay_sec, target_fps, min_gpu_draws, max_subchunks, max_draws, max_faces, max_draw_cmd_bytes, max_draw_cmd_capacity_bytes, max_queue, max_process, max_submit, max_uploads, upload_fail, upload_fail_capacity, upload_fail_fragmented, max_stage_pool_enabled, max_stage_pool_entries, max_stage_pool_bytes, max_stage_pba_creates, max_stage_pba_reuses, max_terrain_pressure_fixture_blocks, max_terrain_pressure_fixture_dirty_observed, matrix_summary)
     if (status != "pass") {
       exit 1
     }

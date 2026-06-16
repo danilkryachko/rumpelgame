@@ -64,7 +64,7 @@ GODOT_TIMEOUT_SEC=600 \
 sh scripts/gpu_terrain_upload_stage_pool_load_scaling_gate.sh logs/gpu_terrain_upload_stage_pool_load_scaling_current
 ```
 
-The gate runs baseline and pooled `scripts/gpu_terrain_load_scaling.sh` captures against isolated RocksDB paths unless `RUMPELMC_GPU_STAGE_POOL_LOAD_BASELINE_SUMMARY` and `RUMPELMC_GPU_STAGE_POOL_LOAD_POOLED_SUMMARY` point at existing `gpu-terrain-load-scaling-summary.txt` files. Both summaries must pass the high resident-set pressure thresholds (`2000` subchunks, `2000` draws, `3000` faces, `25%` draw-command occupancy), keep queue/process/submit within the 150 FPS budget, and keep upload failures at zero. The baseline must report pool enabled/creates/reuses as `0/0/0`; the pooled run must report the pool enabled with nonzero entries/bytes/creates/reuses and fewer creates than total uploads.
+The gate runs baseline and pooled `scripts/gpu_terrain_load_scaling.sh` captures against isolated RocksDB paths unless `RUMPELMC_GPU_STAGE_POOL_LOAD_BASELINE_SUMMARY` and `RUMPELMC_GPU_STAGE_POOL_LOAD_POOLED_SUMMARY` point at existing `gpu-terrain-load-scaling-summary.txt` files. By default it uses the `pressure` workload case with a `chunk_disc` visual-smoke terrain pressure fixture inside the current client keep radius, then requires the high resident-set pressure thresholds (`2000` subchunks, `2000` draws, `3000` faces, `25%` draw-command occupancy), queue/process/submit within the 150 FPS budget, and zero upload failures. The baseline must report pool enabled/creates/reuses as `0/0/0`; the pooled run must report the pool enabled with nonzero entries/bytes/creates/reuses and fewer creates than total uploads. Summary-only mode rejects older load-scaling summaries that lack `source_case_set`, terrain-pressure fixture fields, or upload/stage-pool counters.
 
 ## Fresh Evidence
 
@@ -76,7 +76,13 @@ Fresh local release evidence from `logs/gpu_terrain_upload_stage_pool_current/gp
 - In-place pooled: `in_place_pooled_uploads=853`, `in_place_pooled_in_place_uploads=1`, pool enabled `1`, entries `8`, bytes `720`, creates `8`, reuses `845`, upload failures `0`.
 - Pooled dirty upload summary stayed within local CPU-side budgets: `terrain_queue_max_ms=2.141`, `process_wall_p95_ms=0.054`, `gpu_compositor_submit_max_ms=0.148`, retry/backoff `none/0`.
 
-Fresh 2026-06-16 load-scaling attempts intentionally did not promote the pool. A summary-only negative check over an older load-scaling artifact failed with `reason=baseline_uploads_missing`, proving the comparison gate rejects summaries that lack upload/stage-pool counters. New runtime probes kept upload failures at zero but did not reproduce the existing `min_gpu_faces=3000` pressure: the best isolated baseline reached `max_gpu_subchunks=2156`, `max_gpu_draws=2156`, `max_gpu_faces=2784`; the heavier radius-18-style probe reached `2150/2150/2762`; a default-DB probe reached `1856/1856/2125`. Keep the pool default-off until a fresh high resident-set workload reaches the existing face-pressure threshold in both baseline and pooled lanes.
+Fresh 2026-06-16 load-scaling evidence from `logs/gpu_terrain_upload_stage_pool_load_scaling_current/gpu-terrain-upload-stage-pool-load-scaling-summary.txt`:
+
+- Baseline lane passed with `source_case_set=pressure`, `terrain_pressure_fixture=chunk_disc`, `terrain_pressure_fixture_blocks=709`, `max_gpu_subchunks=2289`, `max_gpu_draws=2289`, `max_gpu_faces=6292`, draw-command occupancy `27.942%`, `max_terrain_queue_ms=1.432`, `max_process_wall_p95_ms=0.031`, `max_gpu_compositor_submit_ms=0.119`, `baseline_uploads=3135`, upload failures `0`, and pool enabled/entries/bytes/creates/reuses `0/0/0/0/0`.
+- Pooled lane passed on the same pressure with `max_gpu_subchunks=2289`, `max_gpu_draws=2289`, `max_gpu_faces=6292`, draw-command occupancy `27.942%`, `max_terrain_queue_ms=1.518`, `max_process_wall_p95_ms=0.029`, `max_gpu_compositor_submit_ms=0.157`, `pooled_uploads=3137`, upload failures `0`, pool enabled `1`, entries `9`, bytes `816`, creates `9`, and reuses `3128`.
+- Summary-only negative validation over the older radius-16 summary failed with `missing source_case_set`, proving stale pre-fixture summaries are rejected.
+
+The pool remains default-off. This is local macOS/Metal runtime evidence; Windows/Vulkan/Direct3D profiler validation and any default-on rollout remain separate work.
 
 ## Rollout Rules
 
