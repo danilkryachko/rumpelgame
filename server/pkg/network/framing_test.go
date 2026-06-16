@@ -138,6 +138,61 @@ func TestReceivePacketRejectsMalformedPayload(t *testing.T) {
 	}
 }
 
+func TestReceivePacketConsumesExactFrameBoundaries(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	packets := []*api.Packet{
+		{
+			Payload: &api.Packet_Position{
+				Position: &api.ClientPosition{X: 1, Y: 2, Z: 3},
+			},
+		},
+		{
+			Payload: &api.Packet_BlockAction{
+				BlockAction: &api.BlockAction{
+					Action:  api.BlockAction_PLACE,
+					X:       4,
+					Y:       5,
+					Z:       6,
+					BlockId: 7,
+				},
+			},
+		},
+	}
+
+	writeErrCh := make(chan error, 1)
+	go func() {
+		for _, packet := range packets {
+			data, err := proto.Marshal(packet)
+			if err != nil {
+				writeErrCh <- err
+				return
+			}
+			if err := writeRawFrame(clientConn, data); err != nil {
+				writeErrCh <- err
+				return
+			}
+		}
+		writeErrCh <- nil
+	}()
+
+	server := NewServer(":0", world.NewWorld(nil))
+	for i, want := range packets {
+		got, err := server.receivePacket(serverConn)
+		if err != nil {
+			t.Fatalf("receivePacket(frame %d) error = %v", i+1, err)
+		}
+		if !proto.Equal(got, want) {
+			t.Fatalf("receivePacket(frame %d) mismatch:\n got: %v\nwant: %v", i+1, got, want)
+		}
+	}
+	if err := <-writeErrCh; err != nil {
+		t.Fatalf("write frames: %v", err)
+	}
+}
+
 func TestReceiveInitialClientPacketIgnoresClosedProbe(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()
@@ -348,12 +403,19 @@ func readFrame(t *testing.T, conn net.Conn) []byte {
 func writeFrame(t *testing.T, conn net.Conn, data []byte) {
 	t.Helper()
 
+	if err := writeRawFrame(conn, data); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeRawFrame(conn net.Conn, data []byte) error {
 	lenBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(lenBuf, uint32(len(data)))
-	if _, err := conn.Write(lenBuf); err != nil {
-		t.Fatalf("write frame length: %v", err)
+	if err := writeFull(conn, lenBuf); err != nil {
+		return fmt.Errorf("write frame length: %w", err)
 	}
-	if _, err := conn.Write(data); err != nil {
-		t.Fatalf("write frame payload: %v", err)
+	if err := writeFull(conn, data); err != nil {
+		return fmt.Errorf("write frame payload: %w", err)
 	}
+	return nil
 }

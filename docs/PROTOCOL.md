@@ -48,7 +48,7 @@
 - A full chunk payload currently contains `32 * 32 * 512 * 2` block bytes.
 - RLE chunk payloads are a sequence of runs. Each run is a 2-byte little-endian block ID followed by an unsigned protobuf-style varint run length in blocks.
 - RLE chunk payloads are the server default. `RUMPELMC_SERVER_CHUNK_ENCODING=raw` enables the raw full-chunk rollback path.
-- Compatibility tests guard raw default fields, RLE run-vector stability, schema field numbers, enum wire values, and unknown `ChunkData` fields.
+- Compatibility tests guard raw default fields, exact packet frame boundaries, RLE run-vector stability, representative RLE run patterns, schema field numbers, enum wire values, and unknown `ChunkData` fields.
 - Block material metadata is registry-derived behavior. Do not add render, collision, liquid, emissive, or material flags into `ChunkData.blocks`; if metadata ever needs to cross the wire, add new protobuf fields with new field numbers and compatibility tests.
 
 ## Block Actions

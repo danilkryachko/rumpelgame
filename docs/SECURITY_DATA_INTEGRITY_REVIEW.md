@@ -28,7 +28,7 @@ Context inspected:
 Scope:
 
 - Validate packet framing and malformed input guards.
-- Validate chunk serialization and RLE compatibility guards.
+- Validate chunk serialization, RLE compatibility guards, and deterministic packet/RLE property coverage.
 - Validate storage/load/save integrity guards.
 - Validate block edit persistence and invalid place-block rejection.
 - Record current guarded runtime boundaries and remaining security/data-integrity work.
@@ -62,12 +62,14 @@ Checks:
 - Malformed protobuf payloads return errors instead of partial packets.
 - Server receive/decode errors close the client connection through the existing connection loop.
 - Server receive, decode, timeout, encode, and short-write errors are logged with stable `packet_error_class` labels guarded by Go network tests, including a connection-loop malformed-packet log test, and the networking robustness gate.
+- Go packet framing tests include an exact-boundary check that reads two back-to-back protobuf frames without over-reading across frame boundaries.
 
 ### Chunk Serialization
 
 - `ChunkData` raw and RLE compatibility is covered by Go tests.
 - RLE payloads remain runs over the same serialized chunk byte order.
 - Unknown Go-side `ChunkData` fields are preserved through protobuf round trip.
+- Go and Rust RLE tests cover representative run patterns across single-byte and multi-byte varint run-length boundaries.
 - Rust chunk decode rejects short raw chunks, bad RLE uncompressed size, malformed RLE runs, and unknown encodings.
 
 ### Storage Integrity
@@ -111,7 +113,7 @@ Still needed:
 - Corrupt edit recovery policy beyond current corrupt chunk load rejection.
 - Multi-client conflict semantics beyond current interested-client fanout and failed-broadcast cleanup.
 - Production monitoring integration for classified packet errors beyond the local threshold gate.
-- Fuzz/property tests for packet framing and RLE decode if external exposure increases.
+- External fuzz campaigns for packet framing and RLE decode remain outside the current local gate unless exposure changes.
 
 ## Compatibility Rules
 
@@ -136,6 +138,7 @@ The gate checks that:
 - This document records reviewed boundaries, MCP notes, deferred work, and compatibility rules.
 - Server/Rust sources still contain packet-size, exact-read, decode, and block-edit validation hooks.
 - Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
+- Focused deterministic packet/RLE property tests are present in Go and Rust test sources.
 - Focused Go protocol/network/storage/world tests pass.
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean.
@@ -143,4 +146,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and fuzz/property coverage remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, deterministic packet/RLE property coverage, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and external fuzz campaigns remain future work.

@@ -8878,6 +8878,33 @@ mod tests {
     }
 
     #[test]
+    fn decode_serialized_chunk_rle_accepts_representative_runs() {
+        let block_count = SERIALIZED_CHUNK_BYTES / BLOCK_BYTES;
+        let runs = [
+            (1u16, 1usize),
+            (2u16, 126usize),
+            (3u16, 127usize),
+            (4u16, 128usize),
+            (5u16, 255usize),
+            (0x1234u16, block_count - 637),
+        ];
+        let mut encoded = Vec::new();
+        let mut expected = Vec::with_capacity(SERIALIZED_CHUNK_BYTES);
+        for (block, run_length) in runs {
+            encoded.extend_from_slice(&block.to_le_bytes());
+            push_test_uvarint(&mut encoded, run_length as u64);
+            for _ in 0..run_length {
+                expected.extend_from_slice(&block.to_le_bytes());
+            }
+        }
+
+        let decoded =
+            decode_serialized_chunk_rle(&encoded, SERIALIZED_CHUNK_BYTES).expect("RLE decodes");
+
+        assert_eq!(decoded, expected);
+    }
+
+    #[test]
     fn decode_chunk_blocks_rejects_rle_wrong_uncompressed_size() {
         let chunk = test_chunk_data(vec![], crate::api::ChunkEncoding::Rle, 12);
 
@@ -8896,6 +8923,10 @@ mod tests {
 
         let truncated_varint = vec![1, 0, 0x80];
         assert!(decode_serialized_chunk_rle(&truncated_varint, SERIALIZED_CHUNK_BYTES).is_err());
+
+        let mut overflowing_varint = 1u16.to_le_bytes().to_vec();
+        overflowing_varint.extend_from_slice(&[0x80; 11]);
+        assert!(decode_serialized_chunk_rle(&overflowing_varint, SERIALIZED_CHUNK_BYTES).is_err());
     }
 
     #[test]

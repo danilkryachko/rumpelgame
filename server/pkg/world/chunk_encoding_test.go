@@ -60,6 +60,59 @@ func TestEncodeSerializedChunkRLEPreservesEditedChunk(t *testing.T) {
 	}
 }
 
+func TestEncodeSerializedChunkRLERoundTripsRepresentativeRunPatterns(t *testing.T) {
+	blockCount := SerializedChunkSize / 2
+	manyShortRuns := make([]testBlockRun, 0, 257)
+	for i := 0; i < 256; i++ {
+		manyShortRuns = append(manyShortRuns, testBlockRun{
+			block:     BlockID(0x20 + i%7),
+			runLength: 1,
+		})
+	}
+	manyShortRuns = append(manyShortRuns, testBlockRun{
+		block:     Air,
+		runLength: uint64(blockCount - 256),
+	})
+
+	tests := []struct {
+		name string
+		runs []testBlockRun
+	}{
+		{
+			name: "varint boundaries",
+			runs: []testBlockRun{
+				{block: Stone, runLength: 1},
+				{block: Dirt, runLength: 126},
+				{block: Grass, runLength: 127},
+				{block: Wood, runLength: 128},
+				{block: Leaves, runLength: 255},
+				{block: BlockID(0x1234), runLength: uint64(blockCount - 637)},
+			},
+		},
+		{
+			name: "many short runs",
+			runs: manyShortRuns,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := serializedChunkFromRuns(t, tc.runs)
+			encoded, err := EncodeSerializedChunkRLE(raw)
+			if err != nil {
+				t.Fatalf("EncodeSerializedChunkRLE() error = %v", err)
+			}
+			decoded, err := DecodeSerializedChunkRLE(encoded)
+			if err != nil {
+				t.Fatalf("DecodeSerializedChunkRLE() error = %v", err)
+			}
+			if !bytes.Equal(decoded, raw) {
+				t.Fatal("decoded representative run pattern differs from raw chunk")
+			}
+		})
+	}
+}
+
 func TestEncodeSerializedChunkRLEUsesStableWireVector(t *testing.T) {
 	raw := make([]byte, SerializedChunkSize)
 	writeSerializedBlock(raw, 0, Stone)
@@ -104,6 +157,7 @@ func TestDecodeSerializedChunkRLERejectsMalformedRuns(t *testing.T) {
 		{name: "truncated block id", encoded: []byte{0x01}},
 		{name: "missing run length", encoded: []byte{0x01, 0x00}},
 		{name: "zero run length", encoded: []byte{0x01, 0x00, 0x00}},
+		{name: "overflowing varint", encoded: append([]byte{0x01, 0x00}, bytes.Repeat([]byte{0x80}, binary.MaxVarintLen64+1)...)},
 		{name: "overflow run length", encoded: singleRun(Air, uint64(SerializedChunkSize/2+1))},
 	}
 
@@ -114,6 +168,31 @@ func TestDecodeSerializedChunkRLERejectsMalformedRuns(t *testing.T) {
 			}
 		})
 	}
+}
+
+type testBlockRun struct {
+	block     BlockID
+	runLength uint64
+}
+
+func serializedChunkFromRuns(t *testing.T, runs []testBlockRun) []byte {
+	t.Helper()
+
+	raw := make([]byte, 0, SerializedChunkSize)
+	var total uint64
+	for _, run := range runs {
+		if run.runLength == 0 {
+			t.Fatalf("zero run in test fixture for block %v", run.block)
+		}
+		total += run.runLength
+		for i := uint64(0); i < run.runLength; i++ {
+			raw = binary.LittleEndian.AppendUint16(raw, uint16(run.block))
+		}
+	}
+	if len(raw) != SerializedChunkSize {
+		t.Fatalf("serialized fixture has %d bytes from %d blocks, want %d bytes", len(raw), total, SerializedChunkSize)
+	}
+	return raw
 }
 
 func singleRun(block BlockID, runLength uint64) []byte {

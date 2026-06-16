@@ -60,6 +60,7 @@ Checks:
 - Server `receivePacket` uses `io.ReadFull` for both the length prefix and the advertised payload.
 - Server `receivePacket` rejects lengths above `maxPacketSize` before allocating payload storage.
 - Server `receivePacket` decodes exactly one protobuf `api.Packet` per frame and returns decode errors to the connection loop.
+- Go packet framing tests prove back-to-back protobuf frames are consumed on exact frame boundaries.
 - Server `handleConnection` logs receive errors as disconnects and closes the connection through `defer conn.Close()`.
 - Server packet and write errors are classified into stable `packet_error_class` labels: `eof`, `short_frame`, `oversized_frame`, `malformed_protobuf`, `timeout`, `short_write`, `encode_error`, and `other`.
 - `scripts/packet_error_class_summary.sh` aggregates those labels from server log files, rejects unknown classes, and writes a count summary plus TSV.
@@ -104,6 +105,7 @@ This policy prevents old reader errors or same-frame disconnect packets from mut
 - short payload receive errors
 - oversized length rejection
 - malformed protobuf rejection
+- exact back-to-back frame-boundary reads
 - closed initial-client probe handling
 - timeout initial-client probe handling after wrapped read errors
 - initial position handshake read
