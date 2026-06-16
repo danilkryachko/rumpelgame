@@ -217,6 +217,10 @@ impl PackedFaceBatch {
         self.faces.len() * PACKED_FACE_BYTES
     }
 
+    pub fn cutout_byte_len(&self) -> usize {
+        self.cutout_face_count() * PACKED_FACE_BYTES
+    }
+
     pub fn build_cpu_proxy_mesh(&self) -> CpuProxyMesh {
         let proxy_vertices = self.cpu_proxy_vertices();
         let mut vertices = Vec::with_capacity(proxy_vertices.len());
@@ -1609,6 +1613,13 @@ pub struct GpuTerrainStats {
     pub upload_count: u64,
     pub upload_bytes: usize,
     pub last_upload_bytes: usize,
+    pub cutout_upload_count: u64,
+    pub cutout_upload_bytes: usize,
+    pub cutout_upload_faces: usize,
+    pub cutout_upload_face_bytes: usize,
+    pub last_cutout_upload_bytes: usize,
+    pub last_cutout_upload_faces: usize,
+    pub last_cutout_upload_face_bytes: usize,
     pub last_upload_ms: f64,
     pub avg_upload_ms: f64,
     pub max_upload_ms: f64,
@@ -1987,6 +1998,13 @@ pub struct GpuTerrainBufferPool {
     upload_count: u64,
     upload_bytes: usize,
     last_upload_bytes: usize,
+    cutout_upload_count: u64,
+    cutout_upload_bytes: usize,
+    cutout_upload_faces: usize,
+    cutout_upload_face_bytes: usize,
+    last_cutout_upload_bytes: usize,
+    last_cutout_upload_faces: usize,
+    last_cutout_upload_face_bytes: usize,
     last_upload_ms: f64,
     avg_upload_ms: f64,
     max_upload_ms: f64,
@@ -2090,6 +2108,13 @@ impl GpuTerrainBufferPool {
             upload_count: 0,
             upload_bytes: 0,
             last_upload_bytes: 0,
+            cutout_upload_count: 0,
+            cutout_upload_bytes: 0,
+            cutout_upload_faces: 0,
+            cutout_upload_face_bytes: 0,
+            last_cutout_upload_bytes: 0,
+            last_cutout_upload_faces: 0,
+            last_cutout_upload_face_bytes: 0,
             last_upload_ms: 0.0,
             avg_upload_ms: 0.0,
             max_upload_ms: 0.0,
@@ -2213,6 +2238,21 @@ impl GpuTerrainBufferPool {
         self.upload_count += 1;
         self.upload_bytes += upload_len;
         self.last_upload_bytes = upload_len;
+        let cutout_upload_faces = batch.cutout_face_count();
+        let cutout_upload_face_len = batch.cutout_byte_len();
+        if cutout_upload_faces > 0 {
+            self.cutout_upload_count += 1;
+            self.cutout_upload_bytes += upload_len;
+            self.cutout_upload_faces += cutout_upload_faces;
+            self.cutout_upload_face_bytes += cutout_upload_face_len;
+            self.last_cutout_upload_bytes = upload_len;
+            self.last_cutout_upload_faces = cutout_upload_faces;
+            self.last_cutout_upload_face_bytes = cutout_upload_face_len;
+        } else {
+            self.last_cutout_upload_bytes = 0;
+            self.last_cutout_upload_faces = 0;
+            self.last_cutout_upload_face_bytes = 0;
+        }
         self.record_upload_timing(
             upload_start.elapsed().as_secs_f64() * 1000.0,
             upload_encode_ms,
@@ -2344,6 +2384,13 @@ impl GpuTerrainBufferPool {
             upload_count: self.upload_count,
             upload_bytes: self.upload_bytes,
             last_upload_bytes: self.last_upload_bytes,
+            cutout_upload_count: self.cutout_upload_count,
+            cutout_upload_bytes: self.cutout_upload_bytes,
+            cutout_upload_faces: self.cutout_upload_faces,
+            cutout_upload_face_bytes: self.cutout_upload_face_bytes,
+            last_cutout_upload_bytes: self.last_cutout_upload_bytes,
+            last_cutout_upload_faces: self.last_cutout_upload_faces,
+            last_cutout_upload_face_bytes: self.last_cutout_upload_face_bytes,
             last_upload_ms: self.last_upload_ms,
             avg_upload_ms: self.avg_upload_ms,
             max_upload_ms: self.max_upload_ms,

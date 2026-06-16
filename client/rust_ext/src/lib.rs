@@ -778,7 +778,12 @@ impl GameClient {
             if uploaded {
                 uploads = 1;
                 bytes = upload_bytes;
-                breakdown.record_upload(existing_gpu_slot, upload_bytes);
+                breakdown.record_upload(
+                    existing_gpu_slot,
+                    upload_bytes,
+                    packed_faces.cutout_face_count(),
+                    packed_faces.cutout_byte_len(),
+                );
             }
         } else if existing_gpu_slot {
             state = TerrainGpuUploadState::Uploaded;
@@ -2057,16 +2062,32 @@ struct GpuUploadBreakdown {
     new_slot_bytes: usize,
     replace_slot_uploads: usize,
     replace_slot_bytes: usize,
+    cutout_uploads: usize,
+    cutout_upload_bytes: usize,
+    cutout_faces: usize,
+    cutout_face_bytes: usize,
 }
 
 impl GpuUploadBreakdown {
-    fn record_upload(&mut self, existing_gpu_slot: bool, bytes: usize) {
+    fn record_upload(
+        &mut self,
+        existing_gpu_slot: bool,
+        bytes: usize,
+        cutout_faces: usize,
+        cutout_face_bytes: usize,
+    ) {
         if existing_gpu_slot {
             self.replace_slot_uploads += 1;
             self.replace_slot_bytes += bytes;
         } else {
             self.new_slot_uploads += 1;
             self.new_slot_bytes += bytes;
+        }
+        if cutout_faces > 0 {
+            self.cutout_uploads += 1;
+            self.cutout_upload_bytes += bytes;
+            self.cutout_faces += cutout_faces;
+            self.cutout_face_bytes += cutout_face_bytes;
         }
     }
 
@@ -2075,6 +2096,10 @@ impl GpuUploadBreakdown {
         self.new_slot_bytes += other.new_slot_bytes;
         self.replace_slot_uploads += other.replace_slot_uploads;
         self.replace_slot_bytes += other.replace_slot_bytes;
+        self.cutout_uploads += other.cutout_uploads;
+        self.cutout_upload_bytes += other.cutout_upload_bytes;
+        self.cutout_faces += other.cutout_faces;
+        self.cutout_face_bytes += other.cutout_face_bytes;
     }
 }
 
@@ -2328,6 +2353,8 @@ struct PerfStats {
     max_terrain_queue_gpu_upload_bytes: usize,
     terrain_queue_gpu_new_slot_uploads: TerrainQueueUploadStats,
     terrain_queue_gpu_replace_slot_uploads: TerrainQueueUploadStats,
+    terrain_queue_gpu_cutout_slot_uploads: TerrainQueueUploadStats,
+    terrain_queue_gpu_cutout_face_uploads: TerrainQueueUploadStats,
     last_collision_refresh_phase: CollisionRefreshPhaseTiming,
     max_collision_refresh_phase: CollisionRefreshPhaseTiming,
     last_vertices: usize,
@@ -3017,6 +3044,16 @@ impl PerfStats {
         self.terrain_queue_gpu_replace_slot_uploads.record_frame(
             gpu_upload_breakdown.replace_slot_uploads,
             gpu_upload_breakdown.replace_slot_bytes,
+            n,
+        );
+        self.terrain_queue_gpu_cutout_slot_uploads.record_frame(
+            gpu_upload_breakdown.cutout_uploads,
+            gpu_upload_breakdown.cutout_upload_bytes,
+            n,
+        );
+        self.terrain_queue_gpu_cutout_face_uploads.record_frame(
+            gpu_upload_breakdown.cutout_faces,
+            gpu_upload_breakdown.cutout_face_bytes,
             n,
         );
         if work_ms >= self.max_terrain_queue_work_ms {
@@ -4797,6 +4834,30 @@ fn gpu_terrain_transparent_workload_counts(
     )
 }
 
+fn gpu_terrain_transparent_upload_counts(
+    active: bool,
+    cutout_requested: bool,
+    gpu_stats: Option<gpu_terrain::GpuTerrainStats>,
+) -> (u64, usize, usize, usize, usize, usize, usize) {
+    if !active || !cutout_requested {
+        return (0, 0, 0, 0, 0, 0, 0);
+    }
+
+    let Some(stats) = gpu_stats else {
+        return (0, 0, 0, 0, 0, 0, 0);
+    };
+
+    (
+        stats.cutout_upload_count,
+        stats.cutout_upload_bytes,
+        stats.cutout_upload_faces,
+        stats.cutout_upload_face_bytes,
+        stats.last_cutout_upload_bytes,
+        stats.last_cutout_upload_faces,
+        stats.last_cutout_upload_face_bytes,
+    )
+}
+
 fn saturating_u32(value: usize) -> u32 {
     value.min(u32::MAX as usize) as u32
 }
@@ -6172,6 +6233,19 @@ impl GameClient {
                 transparent_cutout_blocks,
                 gpu_terrain_stats,
             );
+        let (
+            transparent_cutout_uploads,
+            transparent_cutout_upload_bytes,
+            transparent_cutout_upload_faces,
+            transparent_cutout_upload_face_bytes,
+            transparent_cutout_last_upload_bytes,
+            transparent_cutout_last_upload_faces,
+            transparent_cutout_last_upload_face_bytes,
+        ) = gpu_terrain_transparent_upload_counts(
+            transparent_active,
+            transparent_cutout_requested,
+            gpu_terrain_stats,
+        );
         let transparent_fixture_overlay_requested =
             gpu_terrain_transparent_fixture_overlay_requested();
         let transparent_fixture_overlay_active =
@@ -6192,7 +6266,7 @@ impl GameClient {
         let dirty_bounds = dirty_bounds_label(self.perf.last_dirty_bounds);
         let dirty_edges = dirty_edge_label(self.perf.last_dirty_edge_mask);
         let text = format!(
-            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_depth_attachment_status={} native_shadow_depth_attachment_binding_count={} native_shadow_depth_attachment_clear_count={} native_shadow_resource_barrier_status={} native_shadow_resource_transition_count={} native_shadow_resource_barrier_error_count={} native_shadow_framebuffer_status={} native_shadow_framebuffer_rid_allocated={} native_shadow_framebuffer_attachment_count={} native_shadow_framebuffer_pass_compat_status={} native_shadow_framebuffer_pass_compat_error_count={} native_shadow_framebuffer_depth_only_enabled={} native_shadow_framebuffer_color_attachment_count={} native_shadow_framebuffer_attachment_owned={} native_shadow_framebuffer_attachment_reuse_count={} native_shadow_framebuffer_descriptor_valid={} native_shadow_framebuffer_descriptor_error_count={} native_shadow_framebuffer_bind_ready={} native_shadow_framebuffer_bind_error_count={} native_shadow_pass_descriptor_valid={} native_shadow_pass_descriptor_error_count={} native_shadow_pass_status={} native_shadow_pass_rid_allocated={} native_shadow_pass_submit_status={} native_shadow_pass_lifecycle_ready={} native_shadow_pass_lifecycle_error_count={} native_shadow_pass_begin_count={} native_shadow_pass_end_count={} native_shadow_command_buffer_status={} native_shadow_command_buffer_record_ready={} native_shadow_command_buffer_record_error_count={} native_shadow_command_buffer_submit_ready={} native_shadow_command_buffer_submit_error_count={} native_shadow_command_buffer_submit_count={} native_shadow_command_buffer_error_count={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_draw_status={} native_shadow_draw_call_count={} native_shadow_draw_face_count={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_shader_source_bytes={} native_shadow_shader_source_checksum={} native_shadow_shader_module_status={} native_shadow_shader_module_rid_allocated={} native_shadow_light_source={} native_shadow_light_space={} native_shadow_cascade_count={} native_shadow_light_matrix_bytes={} native_shadow_depth_clip_space={} native_shadow_depth_range_source={} native_shadow_depth_near_milli={} native_shadow_depth_far_chunks={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} chunk_unload_scans={} chunk_unload_scanned={} chunk_unload_grace_kept={} chunk_unload_total={} chunk_unload_neighbor_refresh={} chunk_unload_last={} chunk_unload_last_grace_kept={} chunk_unload_last_neighbor_refresh={} chunk_unload_max={} chunk_unload_max_grace_kept={} chunk_unload_max_neighbor_refresh={} popin_frames={} popin_complete_frames={} popin_missing_frames={} popin_collision_missing_frames={} popin_missing_chunks={} popin_collision_missing_chunks={} popin_probe_last={} popin_missing_last={} popin_collision_missing_last={} popin_missing_max={} popin_collision_missing_max={} popin_probe_radius={} packet_q_frames={} packet_q_nonempty={} packet_q_drained={} packet_q_chunk_drained={} packet_q_last_drain={} packet_q_max_drain={} packet_q_last_chunk_drain={} packet_q_max_chunk_drain={} packet_q_lag_ms={:.3}/{:.3}/{:.3} packet_q_read_work_ms={:.3}/{:.3}/{:.3} packet_q_decode_work_ms={:.3}/{:.3}/{:.3} packet_q_reader_elapsed_ms={:.3}/{:.3} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_new_slots={}/{:.2}/{} terrain_queue_gpu_upload_replace_slots={}/{:.2}/{} terrain_queue_gpu_upload_new_slot_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_replace_slot_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
+            "rust_ext_profile={} queue={} queue_max={} queue_enq={} queue_geom_enq={} queue_proxy_enq={} queue_dup={} queue_geom_dup={} queue_proxy_dup={} queue_drained={} queue_geom_drained={} queue_proxy_drained={} queue_last_drain={} queue_last_geom_drain={} queue_last_proxy_drain={} queue_stale={} queue_last_stale={} queue_missing={} queue_last_missing={} jobs={} cpu_proxy={} mesh_visible={} mesh_shadow_off={} mesh_shadow_double={} mesh_shadow_only={} proxy_coll={} proxy_shadow={} proxy_both={} proxy_shadow_only={} shadow_path={} native_shadow_requested={} native_shadow_active={} native_shadow_fallback={} native_shadow_implemented={} native_shadow_resource_status={} native_shadow_resource_radius={} native_shadow_resource_map={} native_shadow_resource_width={} native_shadow_resource_height={} native_shadow_resource_layers={} native_shadow_resource_bytes_per_texel={} native_shadow_resource_bytes={} native_shadow_resource_format={} native_shadow_resource_usage={} native_shadow_pass_load_op={} native_shadow_pass_store_op={} native_shadow_pass_clear_depth_milli={} native_shadow_depth_attachment_status={} native_shadow_depth_attachment_binding_count={} native_shadow_depth_attachment_clear_count={} native_shadow_resource_barrier_status={} native_shadow_resource_transition_count={} native_shadow_resource_barrier_error_count={} native_shadow_framebuffer_status={} native_shadow_framebuffer_rid_allocated={} native_shadow_framebuffer_attachment_count={} native_shadow_framebuffer_pass_compat_status={} native_shadow_framebuffer_pass_compat_error_count={} native_shadow_framebuffer_depth_only_enabled={} native_shadow_framebuffer_color_attachment_count={} native_shadow_framebuffer_attachment_owned={} native_shadow_framebuffer_attachment_reuse_count={} native_shadow_framebuffer_descriptor_valid={} native_shadow_framebuffer_descriptor_error_count={} native_shadow_framebuffer_bind_ready={} native_shadow_framebuffer_bind_error_count={} native_shadow_pass_descriptor_valid={} native_shadow_pass_descriptor_error_count={} native_shadow_pass_status={} native_shadow_pass_rid_allocated={} native_shadow_pass_submit_status={} native_shadow_pass_lifecycle_ready={} native_shadow_pass_lifecycle_error_count={} native_shadow_pass_begin_count={} native_shadow_pass_end_count={} native_shadow_command_buffer_status={} native_shadow_command_buffer_record_ready={} native_shadow_command_buffer_record_error_count={} native_shadow_command_buffer_submit_ready={} native_shadow_command_buffer_submit_error_count={} native_shadow_command_buffer_submit_count={} native_shadow_command_buffer_error_count={} native_shadow_sampler_filter={} native_shadow_sampler_address={} native_shadow_sampler_compare_op={} native_shadow_sampler_compare_enabled={} native_shadow_depth_bias_constant_milli={} native_shadow_depth_bias_slope_milli={} native_shadow_depth_bias_clamp_milli={} native_shadow_viewport_x_px={} native_shadow_viewport_y_px={} native_shadow_viewport_width_px={} native_shadow_viewport_height_px={} native_shadow_viewport_min_depth_milli={} native_shadow_viewport_max_depth_milli={} native_shadow_pipeline_depth_test_enabled={} native_shadow_pipeline_depth_write_enabled={} native_shadow_pipeline_cull_mode={} native_shadow_pipeline_front_face={} native_shadow_draw_source={} native_shadow_draw_primitive={} native_shadow_draw_face_stride_bytes={} native_shadow_draw_command_stride_bytes={} native_shadow_draw_indirect_enabled={} native_shadow_draw_status={} native_shadow_draw_call_count={} native_shadow_draw_face_count={} native_shadow_uniform_set_index={} native_shadow_face_buffer_binding={} native_shadow_push_constant_bytes={} native_shadow_texture_sampling_enabled={} native_shadow_shader_language={} native_shadow_shader_entry={} native_shadow_shader_depth_output_enabled={} native_shadow_shader_color_output_enabled={} native_shadow_shader_source_bytes={} native_shadow_shader_source_checksum={} native_shadow_shader_module_status={} native_shadow_shader_module_rid_allocated={} native_shadow_light_source={} native_shadow_light_space={} native_shadow_cascade_count={} native_shadow_light_matrix_bytes={} native_shadow_depth_clip_space={} native_shadow_depth_range_source={} native_shadow_depth_near_milli={} native_shadow_depth_far_chunks={} native_shadow_resource_creates={} native_shadow_resource_reuses={} native_shadow_resource_replaces={} native_shadow_resource_releases={} native_shadow_covered_chunks={} native_shadow_covered_subchunks={} transparent_requested={} transparent_active={} transparent_fallback={} transparent_blocks={} transparent_faces={} transparent_draws={} transparent_subchunks={} transparent_cutout_uploads={} transparent_cutout_upload_bytes={} transparent_cutout_upload_faces={} transparent_cutout_upload_face_bytes={} transparent_cutout_last_upload_bytes={} transparent_cutout_last_upload_faces={} transparent_cutout_last_upload_face_bytes={} transparent_fixture_overlay_requested={} transparent_fixture_overlay_active={} transparent_fixture_overlay_fallback={} transparent_fixture_overlay_roles={} transparent_fixture_overlay_blocks={} shadow_mode={} shadow_mesh={} compact_shadow_proxy={} compact_shadow_normals_saved={} compact_collision_proxy={} compact_collision_normals_saved={} fast_proxy={} proxy_refresh_reuse={} collision={} collision_refresh={} collision_refresh_empty={} collision_refresh_rebuilt={} collision_refresh_unchanged={} collision_refresh_missing={} collision_refresh_last={} collision_refresh_last_empty={} collision_refresh_last_rebuilt={} collision_refresh_last_unchanged={} collision_refresh_last_missing={} collision_q={} collision_q_max={} collision_q_enq={} collision_q_dup={} collision_q_drained={} collision_q_last_drain={} collision_q_stale={} collision_q_last_stale={} collision_q_missing={} collision_q_last_missing={} chunk_initial={} chunk_replace={} chunk_unload_scans={} chunk_unload_scanned={} chunk_unload_grace_kept={} chunk_unload_total={} chunk_unload_neighbor_refresh={} chunk_unload_last={} chunk_unload_last_grace_kept={} chunk_unload_last_neighbor_refresh={} chunk_unload_max={} chunk_unload_max_grace_kept={} chunk_unload_max_neighbor_refresh={} popin_frames={} popin_complete_frames={} popin_missing_frames={} popin_collision_missing_frames={} popin_missing_chunks={} popin_collision_missing_chunks={} popin_probe_last={} popin_missing_last={} popin_collision_missing_last={} popin_missing_max={} popin_collision_missing_max={} popin_probe_radius={} packet_q_frames={} packet_q_nonempty={} packet_q_drained={} packet_q_chunk_drained={} packet_q_last_drain={} packet_q_max_drain={} packet_q_last_chunk_drain={} packet_q_max_chunk_drain={} packet_q_lag_ms={:.3}/{:.3}/{:.3} packet_q_read_work_ms={:.3}/{:.3}/{:.3} packet_q_decode_work_ms={:.3}/{:.3}/{:.3} packet_q_reader_elapsed_ms={:.3}/{:.3} startup_chunk_packet_ms={:.3} startup_packet_read_work_ms={:.3} startup_packet_decode_work_ms={:.3} startup_packet_reader_elapsed_ms={:.3} startup_packet_queue_lag_ms={:.3} startup_chunk_decode_work_ms={:.3} startup_chunk_inserted_ms={:.3} startup_chunk_loaded_ms={:.3} startup_mesh_queued_ms={:.3} startup_mesh_dispatched_ms={:.3} startup_first_mesh_ms={:.3} startup_first_mesh_work_ms={:.3} startup_first_mesh_phase_ms={:.3}/{:.3}/{:.3}/{:.3}/{:.3}/{:.3} startup_first_mesh_collision_work_ms={:.3} startup_collision_ms={:.3} startup_player_spawn_ms={:.3} dirty_chunks={} dirty_blocks={} dirty_changed_subchunks={} dirty_rebuild_subchunks={} dirty_edge_chunks={} dirty_edge_neighbor_chunks={} dirty_edge_neighbor_subchunks={} dirty_last_edge_neighbor_chunks={} dirty_last_edge_neighbor_subchunks={} dirty_partial_chunks={} dirty_partial_subchunks={} dirty_partial_saved_subchunks={} dirty_last_blocks={} dirty_last_changed_subchunks={} dirty_last_rebuild_subchunks={} dirty_last_partial_subchunks={} dirty_last_partial_saved_subchunks={} dirty_last_changed_mask={} dirty_last_rebuild_mask={} dirty_last_bounds={} dirty_last_edges={} terrain_queue_work_frames={} terrain_queue_work_ms={:.3}/{:.3}/{:.3} terrain_queue_work_max_parts={:.3}/{:.3} terrain_queue_gpu_uploads={}/{:.2}/{} terrain_queue_gpu_upload_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_new_slots={}/{:.2}/{} terrain_queue_gpu_upload_replace_slots={}/{:.2}/{} terrain_queue_gpu_upload_new_slot_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_replace_slot_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_cutout_slots={}/{:.2}/{} terrain_queue_gpu_upload_cutout_kb={:.1}/{:.1}/{:.1} terrain_queue_gpu_upload_cutout_faces={}/{:.2}/{} terrain_queue_gpu_upload_cutout_face_kb={:.1}/{:.1}/{:.1} mesh {:.2}/{:.2}/{:.2}ms max_mesh_reason={} max_mesh_cpu_proxy={} max_mesh_compact_shadow={} max_mesh_compact_collision={} max_mesh_collision_bodies={} max_mesh_verts={}/{} max_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} max_array_mesh_reason={} max_array_mesh_cpu_proxy={} max_array_mesh_compact_shadow={} max_array_mesh_compact_collision={} max_array_mesh_collision_bodies={} max_array_mesh_verts={}/{} max_array_mesh_phase={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_avg={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} mesh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2}/{:.2} gpu prep/sub/sync/read/parse {:.2}/{:.2}/{:.2}/{:.2}/{:.2}ms coll {:.2}/{:.2}/{:.2}ms collision_refresh_phase_last={:.2}/{:.2}/{:.2}/{:.2}/{:.2} collision_refresh_phase_max={:.2}/{:.2}/{:.2}/{:.2}/{:.2} verts last={}/{} total={} normals last={} total={} mem={:.1}MB{}",
             rust_ext_build_profile(),
             self.perf.mesh_queue_depth,
             self.perf.max_mesh_queue_depth,
@@ -6333,6 +6407,13 @@ impl GameClient {
             transparent_faces,
             transparent_draws,
             transparent_subchunks,
+            transparent_cutout_uploads,
+            transparent_cutout_upload_bytes,
+            transparent_cutout_upload_faces,
+            transparent_cutout_upload_face_bytes,
+            transparent_cutout_last_upload_bytes,
+            transparent_cutout_last_upload_faces,
+            transparent_cutout_last_upload_face_bytes,
             transparent_fixture_overlay_requested as u8,
             transparent_fixture_overlay_active as u8,
             transparent_fixture_overlay_fallback as u8,
@@ -6479,6 +6560,18 @@ impl GameClient {
             self.perf.terrain_queue_gpu_replace_slot_uploads.last_bytes as f64 / 1024.0,
             self.perf.terrain_queue_gpu_replace_slot_uploads.avg_bytes / 1024.0,
             self.perf.terrain_queue_gpu_replace_slot_uploads.max_bytes as f64 / 1024.0,
+            self.perf.terrain_queue_gpu_cutout_slot_uploads.last_uploads,
+            self.perf.terrain_queue_gpu_cutout_slot_uploads.avg_uploads,
+            self.perf.terrain_queue_gpu_cutout_slot_uploads.max_uploads,
+            self.perf.terrain_queue_gpu_cutout_slot_uploads.last_bytes as f64 / 1024.0,
+            self.perf.terrain_queue_gpu_cutout_slot_uploads.avg_bytes / 1024.0,
+            self.perf.terrain_queue_gpu_cutout_slot_uploads.max_bytes as f64 / 1024.0,
+            self.perf.terrain_queue_gpu_cutout_face_uploads.last_uploads,
+            self.perf.terrain_queue_gpu_cutout_face_uploads.avg_uploads,
+            self.perf.terrain_queue_gpu_cutout_face_uploads.max_uploads,
+            self.perf.terrain_queue_gpu_cutout_face_uploads.last_bytes as f64 / 1024.0,
+            self.perf.terrain_queue_gpu_cutout_face_uploads.avg_bytes / 1024.0,
+            self.perf.terrain_queue_gpu_cutout_face_uploads.max_bytes as f64 / 1024.0,
             self.perf.last_mesh_ms,
             self.perf.avg_mesh_ms,
             self.perf.max_mesh_ms,
@@ -7739,6 +7832,31 @@ mod tests {
             ),
             (7, 12, 3, 3)
         );
+        assert_eq!(
+            gpu_terrain_transparent_upload_counts(false, true, None),
+            (0, 0, 0, 0, 0, 0, 0)
+        );
+        assert_eq!(
+            gpu_terrain_transparent_upload_counts(true, false, None),
+            (0, 0, 0, 0, 0, 0, 0)
+        );
+        assert_eq!(
+            gpu_terrain_transparent_upload_counts(
+                true,
+                true,
+                Some(gpu_terrain::GpuTerrainStats {
+                    cutout_upload_count: 4,
+                    cutout_upload_bytes: 4096,
+                    cutout_upload_faces: 12,
+                    cutout_upload_face_bytes: 192,
+                    last_cutout_upload_bytes: 1024,
+                    last_cutout_upload_faces: 3,
+                    last_cutout_upload_face_bytes: 48,
+                    ..Default::default()
+                }),
+            ),
+            (4, 4096, 12, 192, 1024, 3, 48)
+        );
         assert!(!gpu_terrain_transparent_fixture_overlay_requested_decision(
             None
         ));
@@ -8571,11 +8689,11 @@ mod tests {
     fn perf_records_terrain_queue_frame_work() {
         let mut perf = PerfStats::default();
         let mut first_uploads = GpuUploadBreakdown::default();
-        first_uploads.record_upload(false, 4096);
+        first_uploads.record_upload(false, 4096, 0, 0);
         let mut second_uploads = GpuUploadBreakdown::default();
-        second_uploads.record_upload(false, 4096);
-        second_uploads.record_upload(true, 4096);
-        second_uploads.record_upload(true, 4096);
+        second_uploads.record_upload(false, 4096, 5, 80);
+        second_uploads.record_upload(true, 4096, 2, 32);
+        second_uploads.record_upload(true, 4096, 0, 0);
 
         perf.record_terrain_queue_frame_work(1.5, 0.5, first_uploads);
         perf.record_terrain_queue_frame_work(4.0, 2.0, second_uploads);
@@ -8614,23 +8732,49 @@ mod tests {
                 < 0.000_001
         );
         assert_eq!(perf.terrain_queue_gpu_replace_slot_uploads.max_bytes, 8192);
+        assert_eq!(perf.terrain_queue_gpu_cutout_slot_uploads.last_uploads, 0);
+        assert!(
+            (perf.terrain_queue_gpu_cutout_slot_uploads.avg_uploads - 2.0 / 3.0).abs() < 0.000_001
+        );
+        assert_eq!(perf.terrain_queue_gpu_cutout_slot_uploads.max_uploads, 2);
+        assert_eq!(perf.terrain_queue_gpu_cutout_slot_uploads.last_bytes, 0);
+        assert!(
+            (perf.terrain_queue_gpu_cutout_slot_uploads.avg_bytes - (8192.0 / 3.0)).abs()
+                < 0.000_001
+        );
+        assert_eq!(perf.terrain_queue_gpu_cutout_slot_uploads.max_bytes, 8192);
+        assert_eq!(perf.terrain_queue_gpu_cutout_face_uploads.last_uploads, 0);
+        assert!(
+            (perf.terrain_queue_gpu_cutout_face_uploads.avg_uploads - 7.0 / 3.0).abs() < 0.000_001
+        );
+        assert_eq!(perf.terrain_queue_gpu_cutout_face_uploads.max_uploads, 7);
+        assert_eq!(perf.terrain_queue_gpu_cutout_face_uploads.last_bytes, 0);
+        assert!(
+            (perf.terrain_queue_gpu_cutout_face_uploads.avg_bytes - (112.0 / 3.0)).abs()
+                < 0.000_001
+        );
+        assert_eq!(perf.terrain_queue_gpu_cutout_face_uploads.max_bytes, 112);
     }
 
     #[test]
     fn gpu_upload_breakdown_separates_new_and_replacement_slots() {
         let mut breakdown = GpuUploadBreakdown::default();
-        breakdown.record_upload(false, 128);
-        breakdown.record_upload(true, 64);
+        breakdown.record_upload(false, 128, 4, 64);
+        breakdown.record_upload(true, 64, 0, 0);
 
         let mut extra = GpuUploadBreakdown::default();
-        extra.record_upload(false, 32);
-        extra.record_upload(true, 16);
+        extra.record_upload(false, 32, 1, 16);
+        extra.record_upload(true, 16, 2, 32);
         breakdown.add(extra);
 
         assert_eq!(breakdown.new_slot_uploads, 2);
         assert_eq!(breakdown.new_slot_bytes, 160);
         assert_eq!(breakdown.replace_slot_uploads, 2);
         assert_eq!(breakdown.replace_slot_bytes, 80);
+        assert_eq!(breakdown.cutout_uploads, 3);
+        assert_eq!(breakdown.cutout_upload_bytes, 176);
+        assert_eq!(breakdown.cutout_faces, 7);
+        assert_eq!(breakdown.cutout_face_bytes, 112);
     }
 
     #[test]

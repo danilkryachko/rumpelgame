@@ -20,9 +20,11 @@ This document defines how GPU terrain performance should be measured. The goal i
 - `gpu_compositor_submit_max_parts`: useful to separate setup, target, constants, and draw submission cost.
 - `terrain_queue_gpu_upload_new_slots` / `terrain_queue_gpu_upload_new_slot_kb`: useful to separate initial GPU-resident world load pressure from later dirty/update replacement work.
 - `terrain_queue_gpu_upload_replace_slots` / `terrain_queue_gpu_upload_replace_slot_kb`: useful to isolate GPU slot replacement pressure from ordinary new-slot streaming.
+- `terrain_queue_gpu_upload_cutout_slots` / `terrain_queue_gpu_upload_cutout_kb` and `terrain_queue_gpu_upload_cutout_faces` / `terrain_queue_gpu_upload_cutout_face_kb`: useful to prove that active cutout workloads actually upload GPU payloads containing cutout faces, while staying inside the existing opaque-pass terrain buffer.
 - `gpu_upload_stage_pool_enabled`, `gpu_upload_stage_pool_entries`, `gpu_upload_stage_pool_bytes`, `gpu_upload_stage_pba_creates`, and `gpu_upload_stage_pba_reuses`: useful to compare the default upload staging path against the opt-in exact-size `PackedByteArray` stage pool without treating it as a default policy.
 - `gpu_draw_grouped_enabled`, `gpu_draw_records_logical`, `gpu_draw_records_grouped`, and `gpu_draw_grouped_saved_records`: useful to compare the default one-record-per-subchunk indirect draw path against the opt-in grouped-record path. When grouping is enabled, use `gpu_draw_records_logical` for workload size and `gpu_draw_records_grouped` / `gpu_draws` for actual indirect records submitted.
 - `transparent_requested`, `transparent_active`, `transparent_fallback`, `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`: useful to distinguish the legacy full-transparent fallback from the active default-off cutout prototype. These fields are local workload evidence only; they do not replace depth/sorting/collision parity or external profiler evidence.
+- `transparent_cutout_uploads`, `transparent_cutout_upload_bytes`, `transparent_cutout_upload_faces`, and `transparent_cutout_upload_face_bytes`: useful to distinguish visible cutout workload from actual GPU upload work. `transparent_cutout_upload_bytes` is the full uploaded packed-face payload for subchunks that contain cutout faces; `transparent_cutout_upload_face_bytes` is the logical cutout-face subset.
 - `gpu_draws`, `gpu_effective_draws`, `gpu_faces`, `gpu_subchunks`: useful for workload size.
 - `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and `compact_shadow_normals_saved`: useful local signals for shadow proxy load and compact proxy savings.
 - `smoke_err`, `terrain_samples`, color buckets, and marker generation: useful for visual correctness gates.
@@ -185,7 +187,7 @@ sh scripts/gpu_terrain_upload_stage_pool_load_scaling_gate.sh logs/gpu_terrain_u
 
 The gate writes `gpu-terrain-upload-stage-pool-load-scaling-summary.txt`; current 2026-06-16 runtime probes are negative face-pressure evidence, not default-on evidence.
 
-Use the cutout pressure load-scaling gate after changing the default-off cutout prototype, transparent workload markers, workload-matrix pressure fixtures, or load-scaling summary plumbing. It runs a high resident-set `pressure` workload with `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`, the `chunk_disc` fixture, and leaf block ID `5`, then fails unless the active cutout path reports nonzero transparent workload, zero fallback, zero upload failures, CPU-side budgets below the 150 FPS frame budget, and aggregate report surfacing:
+Use the cutout pressure load-scaling gate after changing the default-off cutout prototype, transparent workload markers, cutout upload metrics, workload-matrix pressure fixtures, or load-scaling summary plumbing. It runs a high resident-set `pressure` workload with `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`, the `chunk_disc` fixture, and leaf block ID `5`, then fails unless the active cutout path reports nonzero transparent workload, nonzero cutout upload counts/bytes/faces, zero fallback, zero upload failures, CPU-side budgets below the 150 FPS frame budget, and aggregate report surfacing:
 
 ```sh
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
@@ -195,7 +197,7 @@ GODOT_TIMEOUT_SEC=600 \
 sh scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh logs/gpu_terrain_cutout_pressure_load_scaling_current
 ```
 
-The gate writes `gpu-terrain-cutout-pressure-load-scaling-summary.txt`. It is local macOS/Metal cutout-only pressure evidence; do not treat it as blended transparency, sorting/depth parity, Windows validation, external profiler evidence, or default-on approval.
+The gate writes `gpu-terrain-cutout-pressure-load-scaling-summary.txt`. It is local macOS/Metal cutout-only pressure/upload evidence; do not treat it as blended transparency, sorting/depth parity, Windows validation, external profiler evidence, or default-on approval.
 
 Use the cutout fixture scene smoke after changing visual smoke fixture placement, cutout block role handling, cutout depth/collision evidence, same-material cutout seam policy, or transparent workload report surfacing. It runs a fixed release-profile scene with isolated RocksDB, the default-off cutout prototype, four leaf/cutout roles including one adjacent same-material pair, one opaque occluder, collision rays, an opaque occlusion probe, exact cutout workload checks, and aggregate acceptance:
 
@@ -209,7 +211,7 @@ sh scripts/gpu_terrain_cutout_fixture_scene_smoke.sh logs/gpu_transparent_cutout
 sh scripts/gpu_terrain_cutout_fixture_acceptance_gate.sh logs/gpu_transparent_cutout_fixture_scene_smoke_current
 ```
 
-The smoke writes `transparent-cutout-fixture-scene-smoke-summary.txt`; the gate writes `transparent-cutout-fixture-acceptance-summary.txt` and a `transparent_cutout_seam_culling_status=pass` summary line. This is local macOS/Metal cutout depth/collision and same-material adjacent-pair evidence only; it does not validate blended transparency, sorting, default-on behavior, external profiler cost, or Windows behavior.
+The smoke writes `transparent-cutout-fixture-scene-smoke-summary.txt`; the gate writes `transparent-cutout-fixture-acceptance-summary.txt` and a `transparent_cutout_seam_culling_status=pass` summary line. The smoke and gate also require nonzero cutout upload counts/bytes/faces and enforce `transparent_cutout_upload_bytes >= transparent_cutout_upload_face_bytes`. This is local macOS/Metal cutout depth/collision, upload, and same-material adjacent-pair evidence only; it does not validate blended transparency, sorting, default-on behavior, external profiler cost, or Windows behavior.
 
 Use the upload failure recovery unit guards after touching mesh-build planning, proxy refresh reuse, GPU slot state, or CPU fallback removal:
 
@@ -477,7 +479,7 @@ RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 sh scripts/gpu_terrain_block_edit_stress.sh logs/gpu_transparent_cutout_prototype_current
 ```
 
-The block-edit summary must include `block_edit_transparent` with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero transparent workload counts, and `gpu_upload_fail=0`.
+The block-edit summary must include `block_edit_transparent` with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero transparent workload counts, nonzero `transparent_cutout_uploads` / `transparent_cutout_upload_bytes` / `transparent_cutout_upload_faces` / `transparent_cutout_upload_face_bytes`, and `gpu_upload_fail=0`.
 
 Use the external profiling campaign gate before citing cross-platform GPU profiler state:
 

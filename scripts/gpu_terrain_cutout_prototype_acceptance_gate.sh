@@ -129,6 +129,10 @@ transparent_blocks="$(required_token transparent_blocks "$transparent_line" "blo
 transparent_faces="$(required_token transparent_faces "$transparent_line" "block-edit transparent")"
 transparent_draws="$(required_token transparent_draws "$transparent_line" "block-edit transparent")"
 transparent_subchunks="$(required_token transparent_subchunks "$transparent_line" "block-edit transparent")"
+transparent_cutout_uploads="$(required_token transparent_cutout_uploads "$transparent_line" "block-edit transparent")"
+transparent_cutout_upload_bytes="$(required_token transparent_cutout_upload_bytes "$transparent_line" "block-edit transparent")"
+transparent_cutout_upload_faces="$(required_token transparent_cutout_upload_faces "$transparent_line" "block-edit transparent")"
+transparent_cutout_upload_face_bytes="$(required_token transparent_cutout_upload_face_bytes "$transparent_line" "block-edit transparent")"
 gpu_upload_fail="$(required_token gpu_upload_fail "$transparent_line" "block-edit transparent")"
 
 require_metric_eq action "$action" "$EXPECTED_ACTION"
@@ -140,10 +144,18 @@ require_metric_ge transparent_blocks "$transparent_blocks" 1
 require_metric_ge transparent_faces "$transparent_faces" 1
 require_metric_ge transparent_draws "$transparent_draws" 1
 require_metric_ge transparent_subchunks "$transparent_subchunks" 1
+require_metric_ge transparent_cutout_uploads "$transparent_cutout_uploads" 1
+require_metric_ge transparent_cutout_upload_bytes "$transparent_cutout_upload_bytes" 1
+require_metric_ge transparent_cutout_upload_faces "$transparent_cutout_upload_faces" 1
+require_metric_ge transparent_cutout_upload_face_bytes "$transparent_cutout_upload_face_bytes" 1
+if [ "$transparent_cutout_upload_bytes" -lt "$transparent_cutout_upload_face_bytes" ]; then
+  fail "transparent_cutout_upload_bytes=$transparent_cutout_upload_bytes is below transparent_cutout_upload_face_bytes=$transparent_cutout_upload_face_bytes"
+fi
 require_metric_eq gpu_upload_fail "$gpu_upload_fail" 0
 
 require_source_token "$RUST_SOURCE" "const GPU_TERRAIN_TRANSPARENT_IMPLEMENTED: bool = false;"
 require_source_token "$RUST_SOURCE" "RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE"
+require_source_token "$RUST_SOURCE" "transparent_cutout_uploads"
 require_source_token "$SHADER_SOURCE" "PACKED_FACE_CUTOUT_ALPHA_TEST"
 require_source_token "$SHADER_SOURCE" "CUTOUT_ALPHA_THRESHOLD"
 require_source_token "$SHADER_SOURCE" "discard;"
@@ -165,7 +177,7 @@ trap 'rm -f "$tmp_summary"' EXIT HUP INT TERM
   printf 'requires_mac_windows_validation=1\n'
   printf 'action=%s\n' "$action"
   printf 'block_id=%s\n' "$block_id"
-  printf 'summary transparent_cutout_prototype_acceptance_status=pass runtime_contract=default_off_cutout_only action=%s block_id=%s transparent_requested=%s transparent_active=%s transparent_fallback=%s transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s gpu_upload_fail=%s default_runtime_change_allowed=0 report=%s smoke_summary=%s\n' \
+  printf 'summary transparent_cutout_prototype_acceptance_status=pass runtime_contract=default_off_cutout_only action=%s block_id=%s transparent_requested=%s transparent_active=%s transparent_fallback=%s transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s transparent_cutout_uploads=%s transparent_cutout_upload_bytes=%s transparent_cutout_upload_faces=%s transparent_cutout_upload_face_bytes=%s gpu_upload_fail=%s default_runtime_change_allowed=0 report=%s smoke_summary=%s\n' \
     "$action" \
     "$block_id" \
     "$transparent_requested" \
@@ -175,6 +187,10 @@ trap 'rm -f "$tmp_summary"' EXIT HUP INT TERM
     "$transparent_faces" \
     "$transparent_draws" \
     "$transparent_subchunks" \
+    "$transparent_cutout_uploads" \
+    "$transparent_cutout_upload_bytes" \
+    "$transparent_cutout_upload_faces" \
+    "$transparent_cutout_upload_face_bytes" \
     "$gpu_upload_fail" \
     "$(relative_path "$REPORT_PATH")" \
     "$(relative_path "$SMOKE_SUMMARY")"

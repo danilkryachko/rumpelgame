@@ -500,6 +500,10 @@ error_scan() {
   printf -- '- max `terrain_queue_gpu_upload_replace_slots` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_replace_slots)"
   printf -- '- max `terrain_queue_gpu_upload_new_slot_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_new_slot_kb)"
   printf -- '- max `terrain_queue_gpu_upload_replace_slot_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_replace_slot_kb)"
+  printf -- '- max `terrain_queue_gpu_upload_cutout_slots` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_cutout_slots)"
+  printf -- '- max `terrain_queue_gpu_upload_cutout_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_cutout_kb)"
+  printf -- '- max `terrain_queue_gpu_upload_cutout_faces` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_cutout_faces)"
+  printf -- '- max `terrain_queue_gpu_upload_cutout_face_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_cutout_face_kb)"
   printf -- '- max `chunk_replace`: `%s`\n' "$(metric_max chunk_replace)"
   printf -- '- max `dirty_chunks`: `%s`\n' "$(metric_max dirty_chunks)"
   printf -- '- max `dirty_blocks`: `%s`\n' "$(metric_max dirty_blocks)"
@@ -594,6 +598,10 @@ error_scan() {
   printf -- '- max `transparent_faces`: `%s`\n' "$(metric_max transparent_faces)"
   printf -- '- max `transparent_draws`: `%s`\n' "$(metric_max transparent_draws)"
   printf -- '- max `transparent_subchunks`: `%s`\n' "$(metric_max transparent_subchunks)"
+  printf -- '- max `transparent_cutout_uploads`: `%s`\n' "$(metric_max transparent_cutout_uploads)"
+  printf -- '- max `transparent_cutout_upload_bytes`: `%s`\n' "$(metric_max transparent_cutout_upload_bytes)"
+  printf -- '- max `transparent_cutout_upload_faces`: `%s`\n' "$(metric_max transparent_cutout_upload_faces)"
+  printf -- '- max `transparent_cutout_upload_face_bytes`: `%s`\n' "$(metric_max transparent_cutout_upload_face_bytes)"
   printf -- '- max `cutout_fixture_adjacent_pair_blocks`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_blocks)"
   printf -- '- max `cutout_fixture_adjacent_pair_block_id`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_block_id)"
   printf -- '- max `cutout_fixture_adjacent_pair_same_material`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_same_material)"
@@ -783,6 +791,10 @@ error_scan() {
   metric_max_source transparent_faces | sed 's/^/- /'
   metric_max_source transparent_draws | sed 's/^/- /'
   metric_max_source transparent_subchunks | sed 's/^/- /'
+  metric_max_source transparent_cutout_uploads | sed 's/^/- /'
+  metric_max_source transparent_cutout_upload_bytes | sed 's/^/- /'
+  metric_max_source transparent_cutout_upload_faces | sed 's/^/- /'
+  metric_max_source transparent_cutout_upload_face_bytes | sed 's/^/- /'
   metric_max_source cutout_fixture_adjacent_pair_blocks | sed 's/^/- /'
   metric_max_source cutout_fixture_adjacent_pair_block_id | sed 's/^/- /'
   metric_max_source cutout_fixture_adjacent_pair_same_material | sed 's/^/- /'
