@@ -111,6 +111,7 @@ require_token "$SERVER_SESSION_TEST" 'TestConfiguredClientWriteTimeoutParsesSupp
 require_token "$SERVER_SESSION_TEST" 'TestSendChunkToSessionSetsAndClearsWriteDeadline'
 require_token "$SERVER_SESSION_TEST" 'TestBroadcastDisconnectsFailedInterestedClient'
 require_token "$SLOW_READER_SMOKE_SCRIPT" 'server_slow_reader_smoke status=pass'
+require_token "$SLOW_READER_SMOKE_SCRIPT" 'packet_error_class=timeout'
 require_token "$RECONNECT_SMOKE_SCRIPT" 'client_reconnect_smoke status=pass'
 require_token "$RECONNECT_SOAK_SCRIPT" 'client_reconnect_soak status=pass'
 

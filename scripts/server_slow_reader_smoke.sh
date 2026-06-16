@@ -77,7 +77,7 @@ cleanup_server() {
 wait_for_slow_timeout_log() {
   tries=0
   while [ "$tries" -lt 30 ]; do
-    if grep -Eq 'Failed to handle initial client packet: .*i/o timeout|Failed to send initial chunks: .*i/o timeout' "$SERVER_LOG" 2>/dev/null; then
+    if grep -Eq 'Failed to (handle initial client packet|send initial chunks) packet_error_class=timeout: .*i/o timeout' "$SERVER_LOG" 2>/dev/null; then
       return 0
     fi
     tries=$((tries + 1))

@@ -120,7 +120,7 @@ This policy prevents old reader errors or same-frame disconnect packets from mut
 
 `scripts/server_slow_reader_smoke.sh` builds and starts the Go server on an isolated local smoke port and temporary RocksDB path, then runs `server/cmd/slow_reader_smoke` against it. The server is configured with RAW chunks, full bootstrap radius, high chunk batch size, and a short `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS` so the non-reading client creates real TCP write pressure.
 
-The live client opens a slow TCP session, sends an initial position, does not read from that session, then opens a separate fast client and verifies that the fast client receives chunk `0,0`. The wrapper also requires server-log evidence of an `i/o timeout` on the slow client's initial chunk stream.
+The live client opens a slow TCP session, sends an initial position, does not read from that session, then opens a separate fast client and verifies that the fast client receives chunk `0,0`. The wrapper also requires server-log evidence of `packet_error_class=timeout` and `i/o timeout` on the slow client's initial chunk stream.
 
 Use:
 
@@ -223,7 +223,7 @@ The gate checks that:
 - Rust network and reader-drain session tests pass.
 - The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
 - The reconnect smoke and repeated reconnect soak summaries are clean when current artifacts exist or the runs are explicitly requested.
-- The slow-reader smoke script exists, and the gate carries its status when a current slow-reader summary exists or the smoke is explicitly run.
+- The slow-reader smoke script exists, requires classified timeout log evidence, and the gate carries its status when a current slow-reader summary exists or the smoke is explicitly run.
 - The reconnect smoke script exists, and the gate carries its status when a current reconnect summary exists or the smoke is explicitly run.
 - Protocol schema/generated files are unchanged.
 
