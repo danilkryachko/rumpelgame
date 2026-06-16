@@ -88,10 +88,12 @@ done
 
 handoff_status="$(field_metric status "$HANDOFF_SUMMARY")"
 handoff_evidence_index="$(field_metric evidence_index "$HANDOFF_SUMMARY")"
+handoff_gpu_report_freshness="$(field_metric observability_gpu_report_freshness "$HANDOFF_SUMMARY")"
 
 awk \
   -v handoff_status="${handoff_status:-missing}" \
   -v handoff_evidence_index="${handoff_evidence_index:-missing}" \
+  -v handoff_gpu_report_freshness="${handoff_gpu_report_freshness:-missing}" \
   -v arch_doc="$ARCH_DOC" \
   -v design_doc="$DESIGN_DOC" \
   -v handoff_summary="$HANDOFF_SUMMARY" '
@@ -100,14 +102,14 @@ awk \
     reason = "ok"
     architecture_status = "refreshed"
     runtime_change = "none"
-    handoff_ok = handoff_status == "pass" && handoff_evidence_index == "present"
+    handoff_ok = handoff_status == "pass" && handoff_evidence_index == "present" && handoff_gpu_report_freshness == "guarded"
 
     if (!handoff_ok) {
       status = "fail"
       reason = "handoff_automation_not_clean"
     }
 
-    printf("architecture_documentation_refresh status=%s reason=%s architecture_status=%s runtime_change=%s handoff_status=%s handoff_evidence_index=%s arch_doc=%s design_doc=%s handoff_summary=%s\n", status, reason, architecture_status, runtime_change, handoff_status, handoff_evidence_index, arch_doc, design_doc, handoff_summary)
+    printf("architecture_documentation_refresh status=%s reason=%s architecture_status=%s runtime_change=%s handoff_status=%s handoff_evidence_index=%s handoff_gpu_report_freshness=%s arch_doc=%s design_doc=%s handoff_summary=%s\n", status, reason, architecture_status, runtime_change, handoff_status, handoff_evidence_index, handoff_gpu_report_freshness, arch_doc, design_doc, handoff_summary)
     if (status != "pass") {
       exit 1
     }

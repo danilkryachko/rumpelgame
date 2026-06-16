@@ -62,6 +62,8 @@ Checks:
 
 The current evidence index uses `logs/observability_logs_cleanup_current/observability-artifact-index.txt` when present. If the index is missing, the script falls back to listing `logs/*current/*summary.txt`.
 
+The gate also requires the current observability summary to carry `gpu_report_freshness=guarded` and `gpu_report_error_scan=clean`, so generated continuation snapshots cannot be accepted from a stale aggregate GPU terrain report.
+
 ## Quality Inputs
 
 The handoff snapshot records whether these files are present:
@@ -108,7 +110,7 @@ Use:
 sh scripts/automated_handoff_discipline_gate.sh logs/automated_handoff_discipline_current
 ```
 
-The expected current result is `status=pass`, `handoff_status=generated`, `quality_inputs=present`, `evidence_index=present`, and `observability_status=pass`.
+The expected current result is `status=pass`, `handoff_status=generated`, `quality_inputs=present`, `evidence_index=present`, `observability_status=pass`, and `observability_gpu_report_freshness=guarded`.
 
 The gate checks that:
 
@@ -117,6 +119,7 @@ The gate checks that:
 - `scripts/handoff.sh` is syntax-clean.
 - A generated handoff snapshot includes the required sections.
 - The Block 44 observability summary is clean.
+- The current observability summary reports guarded aggregate GPU terrain report freshness.
 
 ## Current Status
 

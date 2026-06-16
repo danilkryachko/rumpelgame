@@ -94,6 +94,8 @@ done
 
 observability_status="$(field_metric status "$OBSERVABILITY_SUMMARY")"
 observability_error_scan="$(field_metric error_scan "$OBSERVABILITY_SUMMARY")"
+observability_gpu_report_freshness="$(field_metric gpu_report_freshness "$OBSERVABILITY_SUMMARY")"
+observability_gpu_report_error_scan="$(field_metric gpu_report_error_scan "$OBSERVABILITY_SUMMARY")"
 index_count="$(awk 'END { print NR + 0 }' "$OBSERVABILITY_INDEX")"
 snapshot_bytes="$(wc -c < "$SNAPSHOT_PATH" | tr -d ' ')"
 
@@ -101,6 +103,8 @@ awk \
   -v handoff_status="$handoff_status" \
   -v observability_status="${observability_status:-missing}" \
   -v observability_error_scan="${observability_error_scan:-dirty}" \
+  -v observability_gpu_report_freshness="${observability_gpu_report_freshness:-missing}" \
+  -v observability_gpu_report_error_scan="${observability_gpu_report_error_scan:-dirty}" \
   -v index_count="$index_count" \
   -v snapshot_bytes="$snapshot_bytes" \
   -v snapshot_path="$SNAPSHOT_PATH" \
@@ -112,14 +116,15 @@ awk \
     quality_inputs = "present"
     evidence_index = index_count + 0 > 0 ? "present" : "missing"
 
-    observability_ok = observability_status == "pass" && observability_error_scan == "clean"
-
     if (handoff_status != "generated") {
       status = "fail"
       reason = "handoff_not_generated"
-    } else if (!observability_ok) {
+    } else if (!(observability_status == "pass" && observability_error_scan == "clean")) {
       status = "fail"
       reason = "observability_not_clean"
+    } else if (!(observability_gpu_report_freshness == "guarded" && observability_gpu_report_error_scan == "clean")) {
+      status = "fail"
+      reason = "gpu_report_freshness_not_guarded"
     } else if (evidence_index != "present") {
       status = "fail"
       reason = "evidence_index_missing"
@@ -128,7 +133,7 @@ awk \
       reason = "empty_snapshot"
     }
 
-    printf("automated_handoff_discipline status=%s reason=%s handoff_status=%s quality_inputs=%s evidence_index=%s evidence_index_rows=%d snapshot_bytes=%d observability_status=%s observability_error_scan=%s snapshot=%s observability_summary=%s observability_index=%s\n", status, reason, handoff_status, quality_inputs, evidence_index, index_count, snapshot_bytes, observability_status, observability_error_scan, snapshot_path, observability_summary, observability_index)
+    printf("automated_handoff_discipline status=%s reason=%s handoff_status=%s quality_inputs=%s evidence_index=%s evidence_index_rows=%d snapshot_bytes=%d observability_status=%s observability_error_scan=%s observability_gpu_report_freshness=%s observability_gpu_report_error_scan=%s snapshot=%s observability_summary=%s observability_index=%s\n", status, reason, handoff_status, quality_inputs, evidence_index, index_count, snapshot_bytes, observability_status, observability_error_scan, observability_gpu_report_freshness, observability_gpu_report_error_scan, snapshot_path, observability_summary, observability_index)
     if (status != "pass") {
       exit 1
     }

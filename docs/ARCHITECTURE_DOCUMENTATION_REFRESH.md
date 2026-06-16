@@ -84,7 +84,7 @@ Use:
 sh scripts/architecture_documentation_refresh_gate.sh logs/architecture_documentation_refresh_current
 ```
 
-The expected current result is `status=pass`, `architecture_status=refreshed`, `runtime_change=none`, and `handoff_status=pass`.
+The expected current result is `status=pass`, `architecture_status=refreshed`, `runtime_change=none`, `handoff_status=pass`, and `handoff_gpu_report_freshness=guarded`.
 
 The gate checks that:
 
@@ -92,6 +92,7 @@ The gate checks that:
 - Related protocol, storage, GPU, observability, and handoff docs are present.
 - Planned native-shadow and transparent paths are documented as inactive/deferred.
 - The Block 45 handoff automation summary is clean.
+- The handoff automation summary carries guarded aggregate GPU terrain report freshness from observability.
 
 ## Current Status
 
