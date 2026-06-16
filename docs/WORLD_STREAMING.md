@@ -199,11 +199,11 @@ Fresh check:
 
 ## Server Scalability
 
-Server scalability is now guarded by per-client sent-state tests, interested-client block-edit fanout tests, failed-broadcast cleanup, session write deadlines, opt-in max-client admission, a bounded live one-holder/one-rejected admission smoke, a two-client live fanout smoke, and a bounded six-client fanout/load smoke. CPU/memory profiling, load-tested admission sizing, adaptive overload policy, broad slow-reader/load harnesses, and disconnect counters remain future work.
+Server scalability is now guarded by per-client sent-state tests, interested-client block-edit fanout tests, failed-broadcast cleanup, session write deadlines, opt-in max-client admission, a bounded live one-holder/one-rejected admission smoke, bounded connection lifecycle log summaries, a two-client live fanout smoke, and a bounded six-client fanout/load smoke. CPU/memory profiling, load-tested admission sizing, adaptive overload policy, broad slow-reader/load harnesses, and production disconnect counters remain future work.
 
 Fresh check:
 
-- `logs/server_scalability_pass_current/server-scalability-pass-summary.txt` reported `status=pass`, `scalability_status=broader_live_guarded`, `admission_policy=live_guarded`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients=6`, `broader_live_initial_chunks=6`, `broader_live_fanout_updates=6`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, and `active_protocol_change=0`.
+- `logs/server_scalability_pass_current/server-scalability-pass-summary.txt` reported `status=pass`, `scalability_status=broader_live_guarded`, `admission_policy=live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients=6`, `broader_live_initial_chunks=6`, `broader_live_fanout_updates=6`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `active_protocol_change=0`.
 
 ## Networking Robustness
 

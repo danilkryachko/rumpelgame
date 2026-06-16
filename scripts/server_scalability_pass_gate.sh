@@ -15,14 +15,17 @@ SERVER_SOURCE="${RUMPELMC_SERVER_SCALABILITY_SOURCE:-"$ROOT_DIR/server/pkg/netwo
 SERVER_TEST="${RUMPELMC_SERVER_SCALABILITY_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
 LIVE_SMOKE_SCRIPT="${RUMPELMC_SERVER_SCALABILITY_LIVE_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_multi_client_smoke.sh"}"
 ADMISSION_LIMIT_SMOKE_SCRIPT="${RUMPELMC_SERVER_SCALABILITY_ADMISSION_LIMIT_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_admission_limit_smoke.sh"}"
+CONNECTION_LIFECYCLE_SUMMARY_SCRIPT="${RUMPELMC_SERVER_SCALABILITY_CONNECTION_LIFECYCLE_SUMMARY_SCRIPT:-"$ROOT_DIR/scripts/server_connection_lifecycle_summary.sh"}"
 LIVE_SMOKE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_LIVE_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_multi_client_smoke_current/server-multi-client-smoke-summary.txt"}"
 BROADER_LIVE_SMOKE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_BROADER_LIVE_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_multi_client_load_current/server-multi-client-smoke-summary.txt"}"
 ADMISSION_LIMIT_SMOKE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_ADMISSION_LIMIT_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_admission_limit_smoke_current/server-admission-limit-smoke-summary.txt"}"
+CONNECTION_LIFECYCLE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_CONNECTION_LIFECYCLE_SUMMARY:-"$ROOT_DIR/logs/server_connection_lifecycle_current/server-connection-lifecycle-summary.txt"}"
 WORLDGEN_QUALITY_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_WORLDGEN_QUALITY_SUMMARY:-"$ROOT_DIR/logs/world_generation_quality_current/world-generation-quality-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_SERVER_SCALABILITY_RUN_GO_TESTS:-1}"
 RUN_LIVE_SMOKE="${RUMPELMC_SERVER_SCALABILITY_RUN_LIVE_SMOKE:-0}"
 RUN_BROADER_LIVE_SMOKE="${RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE:-0}"
 RUN_ADMISSION_LIMIT_SMOKE="${RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE:-0}"
+RUN_CONNECTION_LIFECYCLE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_RUN_CONNECTION_LIFECYCLE_SUMMARY:-1}"
 BROADER_LIVE_SMOKE_CLIENTS="${RUMPELMC_SERVER_SCALABILITY_BROADER_LIVE_SMOKE_CLIENTS:-6}"
 
 mkdir -p "$OUT_DIR"
@@ -58,7 +61,18 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$LIVE_SMOKE_SCRIPT" "$ADMISSION_LIMIT_SMOKE_SCRIPT" "$WORLDGEN_QUALITY_SUMMARY"; do
+CONNECTION_LIFECYCLE_LOG_ARGS=""
+append_connection_lifecycle_log() {
+  summary_path="$1"
+  if [ -s "$summary_path" ]; then
+    log_path="$(field_metric server_log "$summary_path")"
+    if [ -n "$log_path" ] && [ -s "$log_path" ]; then
+      CONNECTION_LIFECYCLE_LOG_ARGS="$CONNECTION_LIFECYCLE_LOG_ARGS $log_path"
+    fi
+  fi
+}
+
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$LIVE_SMOKE_SCRIPT" "$ADMISSION_LIMIT_SMOKE_SCRIPT" "$CONNECTION_LIFECYCLE_SUMMARY_SCRIPT" "$WORLDGEN_QUALITY_SUMMARY"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -95,6 +109,7 @@ require_token "$SERVER_TEST" "TestHandleConnectionRejectsWhenMaxClientsReached"
 require_token "$LIVE_SMOKE_SCRIPT" "server_multi_client_smoke status=pass"
 require_token "$ADMISSION_LIMIT_SMOKE_SCRIPT" "server_admission_limit_smoke status=pass"
 require_token "$ADMISSION_LIMIT_SMOKE_SCRIPT" "admission_result=rejected"
+require_token "$CONNECTION_LIFECYCLE_SUMMARY_SCRIPT" "server_connection_lifecycle status="
 
 case "$RUN_LIVE_SMOKE" in
   0) ;;
@@ -169,6 +184,38 @@ if [ -s "$ADMISSION_LIMIT_SMOKE_SUMMARY" ]; then
   admission_limit_close_observed="$(field_metric rejected_close_observed "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
   admission_limit_rejection_log="$(field_metric admission_rejection_log "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
 fi
+case "$RUN_CONNECTION_LIFECYCLE_SUMMARY" in
+  0) ;;
+  1)
+    append_connection_lifecycle_log "$LIVE_SMOKE_SUMMARY"
+    append_connection_lifecycle_log "$BROADER_LIVE_SMOKE_SUMMARY"
+    append_connection_lifecycle_log "$ADMISSION_LIMIT_SMOKE_SUMMARY"
+    if [ -n "$CONNECTION_LIFECYCLE_LOG_ARGS" ]; then
+      connection_lifecycle_dir="$(dirname "$CONNECTION_LIFECYCLE_SUMMARY")"
+      "$CONNECTION_LIFECYCLE_SUMMARY_SCRIPT" "$connection_lifecycle_dir" $CONNECTION_LIFECYCLE_LOG_ARGS > "$OUT_DIR/connection-lifecycle-summary-run.txt" 2>&1 || {
+        cat "$OUT_DIR/connection-lifecycle-summary-run.txt" >&2 || true
+        fail "connection lifecycle summary failed"
+      }
+    fi
+    ;;
+  *)
+    fail "unsupported RUMPELMC_SERVER_SCALABILITY_RUN_CONNECTION_LIFECYCLE_SUMMARY=$RUN_CONNECTION_LIFECYCLE_SUMMARY"
+    ;;
+esac
+connection_lifecycle_status="deferred"
+connection_lifecycle_connected="0"
+connection_lifecycle_rejected="0"
+connection_lifecycle_disconnected="0"
+connection_lifecycle_close_failures="0"
+connection_lifecycle_accept_failures="0"
+if [ -s "$CONNECTION_LIFECYCLE_SUMMARY" ]; then
+  connection_lifecycle_status="$(field_metric status "$CONNECTION_LIFECYCLE_SUMMARY")"
+  connection_lifecycle_connected="$(field_metric connected_clients "$CONNECTION_LIFECYCLE_SUMMARY")"
+  connection_lifecycle_rejected="$(field_metric rejected_clients "$CONNECTION_LIFECYCLE_SUMMARY")"
+  connection_lifecycle_disconnected="$(field_metric disconnected_clients "$CONNECTION_LIFECYCLE_SUMMARY")"
+  connection_lifecycle_close_failures="$(field_metric close_failures "$CONNECTION_LIFECYCLE_SUMMARY")"
+  connection_lifecycle_accept_failures="$(field_metric accept_failures "$CONNECTION_LIFECYCLE_SUMMARY")"
+fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 network_tests="skipped"
@@ -201,11 +248,18 @@ awk \
   -v admission_limit_close_observed="${admission_limit_close_observed:-0}" \
   -v admission_limit_rejection_log="${admission_limit_rejection_log:-0}" \
   -v admission_limit_required="$RUN_ADMISSION_LIMIT_SMOKE" \
+  -v connection_lifecycle_status="${connection_lifecycle_status:-deferred}" \
+  -v connection_lifecycle_connected="${connection_lifecycle_connected:-0}" \
+  -v connection_lifecycle_rejected="${connection_lifecycle_rejected:-0}" \
+  -v connection_lifecycle_disconnected="${connection_lifecycle_disconnected:-0}" \
+  -v connection_lifecycle_close_failures="${connection_lifecycle_close_failures:-0}" \
+  -v connection_lifecycle_accept_failures="${connection_lifecycle_accept_failures:-0}" \
   -v network_tests="$network_tests" \
   -v design_doc="$DESIGN_DOC" \
   -v live_smoke_summary="$LIVE_SMOKE_SUMMARY" \
   -v broader_live_smoke_summary="$BROADER_LIVE_SMOKE_SUMMARY" \
   -v admission_limit_smoke_summary="$ADMISSION_LIMIT_SMOKE_SUMMARY" \
+  -v connection_lifecycle_summary="$CONNECTION_LIFECYCLE_SUMMARY" \
   -v worldgen_quality_summary="$WORLDGEN_QUALITY_SUMMARY" '
   BEGIN {
     status = "pass"
@@ -218,7 +272,12 @@ awk \
     multi_client_sent_state = "guarded"
     block_edit_fanout = "interested_clients_guarded"
     slow_client_write_timeout = "guarded"
-    disconnect_cleanup_status = "failed_broadcast_guarded"
+    connection_lifecycle_ok = connection_lifecycle_status == "pass" &&
+      connection_lifecycle_connected + 0 >= 1 &&
+      connection_lifecycle_disconnected + 0 >= 1 &&
+      connection_lifecycle_close_failures + 0 == 0 &&
+      connection_lifecycle_accept_failures + 0 == 0
+    disconnect_cleanup_status = connection_lifecycle_ok ? "lifecycle_summary_guarded" : "failed_broadcast_guarded"
     admission_limit_ok = admission_limit_status == "pass" &&
       admission_limit_max_clients + 0 == 1 &&
       admission_limit_attempted_clients + 0 == 2 &&
@@ -247,6 +306,9 @@ awk \
     } else if (!admission_required_ok) {
       status = "fail"
       reason = "admission_limit_smoke_failed"
+    } else if (connection_lifecycle_status != "deferred" && !connection_lifecycle_ok) {
+      status = "fail"
+      reason = "connection_lifecycle_summary_failed"
     } else if (!deps_ok) {
       status = "fail"
       reason = "worldgen_quality_gate_not_clean"
@@ -255,7 +317,7 @@ awk \
       reason = "network_tests_failed"
     }
 
-    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s admission_policy=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s broader_live_load_status=%s broader_live_clients=%d broader_live_initial_chunks=%d broader_live_fanout_updates=%d admission_limit_smoke_status=%s admission_limit_max_clients=%d admission_limit_attempted_clients=%d admission_limit_admitted_clients=%d admission_limit_rejected_clients=%d admission_limit_rejection_log=%d network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s broader_live_smoke_summary=%s admission_limit_smoke_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, admission_policy, active_protocol_change, disconnect_cleanup_status, live_load_status, broader_live_load_status, broader_live_clients, broader_live_initial_chunks, broader_live_fanout_updates, admission_limit_status, admission_limit_max_clients, admission_limit_attempted_clients, admission_limit_admitted_clients, admission_limit_rejected_clients, admission_limit_rejection_log, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, broader_live_smoke_summary, admission_limit_smoke_summary, worldgen_quality_summary)
+    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s admission_policy=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s broader_live_load_status=%s broader_live_clients=%d broader_live_initial_chunks=%d broader_live_fanout_updates=%d admission_limit_smoke_status=%s admission_limit_max_clients=%d admission_limit_attempted_clients=%d admission_limit_admitted_clients=%d admission_limit_rejected_clients=%d admission_limit_rejection_log=%d connection_lifecycle_status=%s connection_lifecycle_connected=%d connection_lifecycle_rejected=%d connection_lifecycle_disconnected=%d connection_lifecycle_close_failures=%d connection_lifecycle_accept_failures=%d network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s broader_live_smoke_summary=%s admission_limit_smoke_summary=%s connection_lifecycle_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, admission_policy, active_protocol_change, disconnect_cleanup_status, live_load_status, broader_live_load_status, broader_live_clients, broader_live_initial_chunks, broader_live_fanout_updates, admission_limit_status, admission_limit_max_clients, admission_limit_attempted_clients, admission_limit_admitted_clients, admission_limit_rejected_clients, admission_limit_rejection_log, connection_lifecycle_status, connection_lifecycle_connected, connection_lifecycle_rejected, connection_lifecycle_disconnected, connection_lifecycle_close_failures, connection_lifecycle_accept_failures, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, broader_live_smoke_summary, admission_limit_smoke_summary, connection_lifecycle_summary, worldgen_quality_summary)
     if (status != "pass") {
       exit 1
     }
