@@ -68,6 +68,19 @@ func TestChunksAroundOrdersNearestFirstAndAdvancesSentState(t *testing.T) {
 	})
 }
 
+func TestChunksAroundAllowsNilSentState(t *testing.T) {
+	w := NewWorld(nil)
+
+	chunks, err := w.ChunksAround(0, 0, 1, nil, 2)
+	if err != nil {
+		t.Fatalf("ChunksAround() error = %v", err)
+	}
+	assertSnapshotCoords(t, chunks, []ChunkCoord{
+		{X: 0, Z: 0},
+		{X: -1, Z: 0},
+	})
+}
+
 func TestChunksAroundOrderedKeepsCurrentChunkFirst(t *testing.T) {
 	w := NewWorld(nil)
 

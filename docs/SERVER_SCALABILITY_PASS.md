@@ -34,6 +34,7 @@ Scope:
 - Add a bounded live admission-limit smoke that validates accepted holder clients and one rejected excess TCP client.
 - Add a bounded admission-limit matrix that validates several max-client limits with one excess rejected client per limit.
 - Add a server connection lifecycle summary that counts connected, rejected, disconnected, close-failure, and accept-failure events from live smoke logs.
+- Guard nil world sent-state inputs as a safe empty one-shot state instead of panicking.
 - Define the next scalability evidence needed before broader runtime policy changes.
 
 Out of scope:
@@ -69,7 +70,7 @@ Checks:
 - `handleConnection` owns a registered `clientSession` with its own `clientChunkStreamState` and `sentChunks` map.
 - `defer conn.Close()` remains the normal connection cleanup; failed non-origin broadcast clients are also closed and unregistered immediately.
 - `sendChunksAroundWithRadiusOrdered` asks the shared `World` for chunks and mutates only the caller-provided sent map.
-- `World.ChunksAround` returns nearest chunks first, uses stable X/Z tie-breaks, respects the per-batch limit, and advances only the supplied sent-state map.
+- `World.ChunksAround` returns nearest chunks first, uses stable X/Z tie-breaks, respects the per-batch limit, advances only the supplied sent-state map, and treats nil sent-state inputs as empty one-shot state.
 - Valid `BlockAction_PLACE` edits are applied sequentially through `World.SetBlockGlobal`; when two clients edit the same block coordinate, the current server contract is last-write-wins and every interested client receives the latest authoritative chunk snapshot.
 - The current protocol has no multi-client session identity, global scheduler packet, or server broadcast packet.
 - Chunk stream metrics are per batch and log-only.
@@ -82,6 +83,8 @@ Checks:
 `TestSendChunksAroundKeepsPerClientSentStateIndependent` proves that two clients with independent `sentChunks` maps can both receive the current chunk, and that progress in one client's sent map does not mutate the other client's sent map.
 
 `TestChunksAroundOrdersNearestFirstAndAdvancesSentState` proves the world-owned chunk request ordering contract: nearest-first batches, stable same-distance X/Z tie-breaks, per-batch limits, and sent-state advancement across consecutive calls.
+
+`TestChunksAroundAllowsNilSentState` proves nil world sent-state inputs are treated as empty one-shot state instead of panicking.
 
 `TestConfiguredViewDistanceUsesEnvOverride` and `TestConfiguredViewDistanceIgnoresNonPositive` prove valid view-distance overrides are preserved while `0` and negative values cannot silently shrink the configured streaming radius.
 
@@ -239,7 +242,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result after collecting the broader live, repeated, admission-limit, and admission-matrix artifacts is `status=pass`, `scalability_status=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `conflict_semantics=last_write_wins_guarded`, `chunk_request_ordering=guarded`, `view_distance_config=guarded`, `slow_client_write_timeout=guarded`, `admission_policy=matrix_live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `repeat_smoke_status=pass`, `repeat_smoke_repeats=3`, `repeat_smoke_clients=6`, `repeat_smoke_initial_chunks=18`, `repeat_smoke_fanout_updates=18`, `repeat_smoke_detail_clients=18`, `repeat_smoke_resource_samples=9`, `admission_limit_smoke_status=pass`, `admission_matrix_status=pass`, `admission_matrix_limits_checked=3`, `admission_matrix_total_rejected=3`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, `network_tests=pass`, and `world_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live, repeated, admission-limit, and admission-matrix artifacts is `status=pass`, `scalability_status=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `conflict_semantics=last_write_wins_guarded`, `chunk_request_ordering=guarded`, `nil_sent_state_policy=empty_guarded`, `view_distance_config=guarded`, `slow_client_write_timeout=guarded`, `admission_policy=matrix_live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `repeat_smoke_status=pass`, `repeat_smoke_repeats=3`, `repeat_smoke_clients=6`, `repeat_smoke_initial_chunks=18`, `repeat_smoke_fanout_updates=18`, `repeat_smoke_detail_clients=18`, `repeat_smoke_resource_samples=9`, `admission_limit_smoke_status=pass`, `admission_matrix_status=pass`, `admission_matrix_limits_checked=3`, `admission_matrix_total_rejected=3`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, `network_tests=pass`, and `world_tests=pass`.
 
 To run the live smoke inside the gate:
 
@@ -297,10 +300,10 @@ The gate checks that:
 - The admission-limit smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE=1`.
 - The admission-limit matrix summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_MATRIX=1`.
 - The connection lifecycle summary script exists and records connected/rejected/disconnected counts with zero close and accept failures.
-- The multi-client sent-state, interested-client fanout, failed-broadcast cleanup, write-deadline, and max-client admission tests exist.
+- The multi-client sent-state, nil sent-state, interested-client fanout, failed-broadcast cleanup, write-deadline, and max-client admission tests exist.
 - `api/schema/packets.proto` is unchanged.
 - Focused network tests pass.
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with guarded world-owned chunk request ordering, guarded view-distance configuration, bounded live two-client and six-client fanout/resource/detail smokes, a bounded repeated six-client smoke, a bounded live opt-in max-client admission smoke, a bounded admission-limit matrix, and a bounded connection lifecycle log summary. Longer CPU/memory profiling, broad slow-reader/load harnesses, sustained admission sizing, adaptive overload policy, and production disconnect metrics remain future work.
+This block is complete as a unit-guard/checkpoint block with guarded world-owned chunk request ordering, nil sent-state handling, guarded view-distance configuration, bounded live two-client and six-client fanout/resource/detail smokes, a bounded repeated six-client smoke, a bounded live opt-in max-client admission smoke, a bounded admission-limit matrix, and a bounded connection lifecycle log summary. Longer CPU/memory profiling, broad slow-reader/load harnesses, sustained admission sizing, adaptive overload policy, and production disconnect metrics remain future work.

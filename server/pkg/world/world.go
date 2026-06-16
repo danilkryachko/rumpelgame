@@ -59,6 +59,9 @@ func (w *World) ChunksAroundOrdered(centerX, centerZ, radius int32, alreadySent 
 	if limit <= 0 {
 		return nil, nil
 	}
+	if alreadySent == nil {
+		alreadySent = make(map[ChunkCoord]bool)
+	}
 
 	coords := make([]ChunkCoord, 0, (radius*2+1)*(radius*2+1))
 	for x := centerX - radius; x <= centerX+radius; x++ {
