@@ -27,6 +27,7 @@ The current required GPU core rows are:
 - streaming priority audit
 - streaming scheduler prototype preflight
 - streaming scheduler workload matrix
+- streaming scheduler tie probe
 - streaming scheduler decision checkpoint
 - upload-failure fallback expected-failure artifact
 - strict load-scaling gate and its resident-set source summary
@@ -64,7 +65,7 @@ Fresh local evidence:
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt`
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index.txt`
 
-The current index passed with `30` rows, `20` required rows, `20` required passes, `9` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
+The current index passed with `31` rows, `21` required rows, `21` required passes, `9` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
 
 Current normalized maxima:
 
@@ -76,6 +77,7 @@ Current normalized maxima:
 - Runtime priority status: `pass`
 - Streaming scheduler prototype: `prototype_only`
 - Streaming scheduler workload matrix: `matrix_harness_status=partial`, `candidate_scheduler_status=defer_matrix_harness_unstable`, `scheduler_change_allowed=0`
+- Streaming scheduler tie probe: `runtime_signal=312`, `candidate_scheduler_status=stable_tie_probe_external_profiler_required`, `scheduler_change_allowed=0`
 - Streaming scheduler decision checkpoint: `decision_status=defer_matrix_harness_unstable`, `scheduler_change_allowed=0`
 - Upload fallback expected/injected failures: `1052` / `1052`
 - Upload fallback shadow path: `arraymesh`
@@ -100,6 +102,7 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming priority audit summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler prototype summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler workload matrix summary and case rows when present.
+- `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler tie probe summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler decision checkpoint summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces optional GPU streaming scheduler boundary matrix summary and case rows when present.
 - `scripts/gpu_terrain_report.sh` also surfaces the selected GPU buffer residency budget summary when present.
@@ -107,6 +110,7 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 - `scripts/test_strategy_gate.sh` requires the streaming priority audit summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler prototype summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler workload matrix summary before the index.
+- `scripts/test_strategy_gate.sh` requires the streaming scheduler tie probe summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler decision checkpoint summary before the index.
 - `scripts/test_strategy_gate.sh` requires the buffer residency budget summary before the index.
 - `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, streaming priority audit, streaming scheduler prototype, streaming scheduler workload matrix, streaming scheduler decision checkpoint, upload-failure fallback, and buffer residency budget visible as required rows.

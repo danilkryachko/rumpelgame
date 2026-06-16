@@ -257,7 +257,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 
 ### Weeks 61-70: World Interaction Performance
 
-61. Stabilize a boundary-backed or deterministic tie-heavy scheduler runtime harness before any scheduler profiler comparison.
+61. Done 2026-06-16: added `scripts/gpu_streaming_scheduler_tie_probe.sh` and `docs/GPU_STREAMING_SCHEDULER_TIE_PROBE.md` as a deterministic tie-heavy scheduler probe over the stable `chunk_fly_snap_back` matrix lanes, requiring runtime tie signal while preserving default `nearest`, scheduler-change lockout, and external macOS/Windows profiler blockers.
 62. Benchmark repeated edits.
 63. Benchmark border edits.
 64. Refresh dirty partial-upload edge cases.

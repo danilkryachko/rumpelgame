@@ -11,6 +11,7 @@ esac
 SUMMARY_PATH="$OUT_DIR/gpu-streaming-scheduler-decision-checkpoint-summary.txt"
 PROTOTYPE_SUMMARY="${RUMPELMC_STREAMING_SCHEDULER_DECISION_PROTOTYPE_SUMMARY:-"$ROOT_DIR/logs/gpu_streaming_scheduler_prototype_current/gpu-streaming-scheduler-prototype-summary.txt"}"
 WORKLOAD_MATRIX_SUMMARY="${RUMPELMC_STREAMING_SCHEDULER_DECISION_WORKLOAD_MATRIX_SUMMARY:-"$ROOT_DIR/logs/gpu_streaming_scheduler_workload_matrix_current/gpu-streaming-scheduler-workload-matrix-summary.txt"}"
+TIE_PROBE_SUMMARY="${RUMPELMC_STREAMING_SCHEDULER_DECISION_TIE_PROBE_SUMMARY:-"$ROOT_DIR/logs/gpu_streaming_scheduler_tie_probe_current/gpu-streaming-scheduler-tie-probe-summary.txt"}"
 CHUNK_BOUNDARY_SUMMARY="${RUMPELMC_STREAMING_SCHEDULER_DECISION_CHUNK_BOUNDARY_SUMMARY:-"$ROOT_DIR/logs/gpu_terrain_chunk_boundary_stress_current/chunk-boundary-stress-summary.txt"}"
 BUFFER_RESIDENCY_BUDGET_SUMMARY="${RUMPELMC_STREAMING_SCHEDULER_DECISION_BUFFER_RESIDENCY_BUDGET_SUMMARY:-"$ROOT_DIR/logs/gpu_buffer_residency_budget_current/gpu-buffer-residency-budget-summary.txt"}"
 BOUNDARY_MATRIX_SUMMARY="${RUMPELMC_STREAMING_SCHEDULER_DECISION_BOUNDARY_MATRIX_SUMMARY:-"$ROOT_DIR/logs/gpu_streaming_scheduler_boundary_matrix_current/gpu-streaming-scheduler-boundary-matrix-summary.txt"}"
@@ -83,12 +84,14 @@ require_field() {
 
 PROTOTYPE_SUMMARY="$(normalize_path "$PROTOTYPE_SUMMARY")"
 WORKLOAD_MATRIX_SUMMARY="$(normalize_path "$WORKLOAD_MATRIX_SUMMARY")"
+TIE_PROBE_SUMMARY="$(normalize_path "$TIE_PROBE_SUMMARY")"
 CHUNK_BOUNDARY_SUMMARY="$(normalize_path "$CHUNK_BOUNDARY_SUMMARY")"
 BUFFER_RESIDENCY_BUDGET_SUMMARY="$(normalize_path "$BUFFER_RESIDENCY_BUDGET_SUMMARY")"
 BOUNDARY_MATRIX_SUMMARY="$(normalize_path "$BOUNDARY_MATRIX_SUMMARY")"
 
 test -s "$PROTOTYPE_SUMMARY" || fail "missing scheduler prototype summary $PROTOTYPE_SUMMARY"
 test -s "$WORKLOAD_MATRIX_SUMMARY" || fail "missing scheduler workload matrix summary $WORKLOAD_MATRIX_SUMMARY"
+test -s "$TIE_PROBE_SUMMARY" || fail "missing scheduler tie probe summary $TIE_PROBE_SUMMARY"
 test -s "$CHUNK_BOUNDARY_SUMMARY" || fail "missing chunk-boundary summary $CHUNK_BOUNDARY_SUMMARY"
 test -s "$BUFFER_RESIDENCY_BUDGET_SUMMARY" || fail "missing buffer residency budget summary $BUFFER_RESIDENCY_BUDGET_SUMMARY"
 
@@ -102,6 +105,12 @@ workload_scheduler_change_allowed="$(require_field workload_matrix scheduler_cha
 workload_default_runtime_change_allowed="$(require_field workload_matrix default_runtime_change_allowed 0 "$WORKLOAD_MATRIX_SUMMARY")"
 workload_requires_profiler="$(require_field workload_matrix requires_external_profiler_before_default 1 "$WORKLOAD_MATRIX_SUMMARY")"
 workload_requires_validation="$(require_field workload_matrix requires_mac_windows_validation 1 "$WORKLOAD_MATRIX_SUMMARY")"
+
+tie_probe_status="$(require_field tie_probe status pass "$TIE_PROBE_SUMMARY")"
+tie_probe_scheduler_change_allowed="$(require_field tie_probe scheduler_change_allowed 0 "$TIE_PROBE_SUMMARY")"
+tie_probe_default_runtime_change_allowed="$(require_field tie_probe default_runtime_change_allowed 0 "$TIE_PROBE_SUMMARY")"
+tie_probe_requires_profiler="$(require_field tie_probe requires_external_profiler_before_default 1 "$TIE_PROBE_SUMMARY")"
+tie_probe_requires_validation="$(require_field tie_probe requires_mac_windows_validation 1 "$TIE_PROBE_SUMMARY")"
 
 chunk_boundary_status="$(require_field chunk_boundary status pass "$CHUNK_BOUNDARY_SUMMARY")"
 chunk_boundary_upload_fail="$(require_field chunk_boundary gpu_upload_fail 0 "$CHUNK_BOUNDARY_SUMMARY")"
@@ -130,6 +139,22 @@ workload_preview_mismatch_max="$(field_metric max_stream_scheduler_preview_misma
 workload_mesh_ties_max="$(field_metric max_mesh_scheduler_directional_ties "$WORKLOAD_MATRIX_SUMMARY")"
 workload_collision_ties_max="$(field_metric max_collision_scheduler_directional_ties "$WORKLOAD_MATRIX_SUMMARY")"
 workload_fifo_fallbacks_max="$(field_metric max_stream_scheduler_fifo_fallbacks "$WORKLOAD_MATRIX_SUMMARY")"
+
+tie_probe_motion="$(field_metric motion "$TIE_PROBE_SUMMARY")"
+tie_probe_candidate_status="$(field_metric candidate_scheduler_status "$TIE_PROBE_SUMMARY")"
+tie_probe_runtime_signal="$(field_metric runtime_signal "$TIE_PROBE_SUMMARY")"
+tie_probe_preview_mismatch_max="$(field_metric max_stream_scheduler_preview_mismatch "$TIE_PROBE_SUMMARY")"
+tie_probe_mesh_ties_max="$(field_metric max_mesh_scheduler_directional_ties "$TIE_PROBE_SUMMARY")"
+tie_probe_collision_ties_max="$(field_metric max_collision_scheduler_directional_ties "$TIE_PROBE_SUMMARY")"
+tie_probe_fifo_fallbacks_max="$(field_metric max_stream_scheduler_fifo_fallbacks "$TIE_PROBE_SUMMARY")"
+tie_probe_queue_max="$(field_metric max_terrain_queue_ms "$TIE_PROBE_SUMMARY")"
+tie_probe_process_max="$(field_metric max_process_wall_p95_ms "$TIE_PROBE_SUMMARY")"
+tie_probe_submit_max="$(field_metric max_gpu_compositor_submit_ms "$TIE_PROBE_SUMMARY")"
+tie_probe_packet_lag_max="$(field_metric max_packet_queue_lag_ms "$TIE_PROBE_SUMMARY")"
+case "$tie_probe_runtime_signal" in
+  ''|*[!0-9]*) fail "tie_probe runtime_signal=$tie_probe_runtime_signal is not a positive integer" ;;
+  0) fail "tie_probe runtime_signal=0, expected positive deterministic tie signal" ;;
+esac
 
 boundary_matrix_status="missing"
 boundary_harness_status="missing"
@@ -169,12 +194,15 @@ if [ "$boundary_matrix_status" = "fail" ] || [ "$boundary_harness_status" = "par
 fi
 
 {
-  printf 'gpu_streaming_scheduler_decision_checkpoint status=pass reason=ok prototype_status=%s prototype_default_scheduler=%s prototype_default_active=%s prototype_scheduler_change_allowed=%s workload_matrix_status=%s workload_matrix_harness_status=%s workload_candidate_scheduler_status=%s workload_failed_cases=%s workload_baseline_pass_cases=%s workload_preview_pass_cases=%s workload_active_pass_cases=%s workload_runtime_signal=%s workload_preview_mismatch_max=%s workload_mesh_directional_ties_max=%s workload_collision_directional_ties_max=%s workload_fifo_fallbacks_max=%s workload_max_terrain_queue_ms=%s workload_max_process_wall_p95_ms=%s workload_max_gpu_compositor_submit_ms=%s workload_max_packet_queue_lag_ms=%s chunk_boundary_status=%s chunk_boundary_upload_fail=%s chunk_boundary_ground_misses=%s chunk_boundary_unload_total=%s chunk_boundary_unload_neighbor_refreshes=%s chunk_boundary_render_not_ready_cases=%s chunk_boundary_collision_not_ready_cases=%s chunk_boundary_max_terrain_queue_ms=%s chunk_boundary_max_process_wall_p95_ms=%s chunk_boundary_max_gpu_compositor_submit_ms=%s chunk_boundary_max_packet_queue_lag_ms=%s residency_status=%s residency_pressure_class=%s residency_proof_status=%s allocator_evidence_status=%s configured_buffer_bytes=%s configured_buffer_budget_pct=%s active_face_bytes=%s active_face_budget_pct=%s boundary_matrix_status=%s boundary_harness_status=%s boundary_candidate_scheduler_status=%s boundary_runtime_signal=%s scheduler_change_allowed=0 default_runtime_change_allowed=0 decision_status=%s candidate_scheduler_status=%s external_profile_status=pending_external_profiler requires_external_profiler_before_default=1 requires_mac_windows_validation=1 workload_scheduler_change_allowed=%s workload_default_runtime_change_allowed=%s workload_requires_external_profiler_before_default=%s workload_requires_mac_windows_validation=%s residency_requires_external_profiler_before_default=%s residency_requires_mac_windows_validation=%s prototype_summary=%s workload_matrix_summary=%s chunk_boundary_summary=%s buffer_residency_budget_summary=%s boundary_matrix_summary=%s\n' \
+  printf 'gpu_streaming_scheduler_decision_checkpoint status=pass reason=ok prototype_status=%s prototype_default_scheduler=%s prototype_default_active=%s prototype_scheduler_change_allowed=%s workload_matrix_status=%s workload_matrix_harness_status=%s workload_candidate_scheduler_status=%s workload_failed_cases=%s workload_baseline_pass_cases=%s workload_preview_pass_cases=%s workload_active_pass_cases=%s workload_runtime_signal=%s workload_preview_mismatch_max=%s workload_mesh_directional_ties_max=%s workload_collision_directional_ties_max=%s workload_fifo_fallbacks_max=%s workload_max_terrain_queue_ms=%s workload_max_process_wall_p95_ms=%s workload_max_gpu_compositor_submit_ms=%s workload_max_packet_queue_lag_ms=%s tie_probe_status=%s tie_probe_motion=%s tie_probe_candidate_scheduler_status=%s tie_probe_runtime_signal=%s tie_probe_preview_mismatch_max=%s tie_probe_mesh_directional_ties_max=%s tie_probe_collision_directional_ties_max=%s tie_probe_fifo_fallbacks_max=%s tie_probe_max_terrain_queue_ms=%s tie_probe_max_process_wall_p95_ms=%s tie_probe_max_gpu_compositor_submit_ms=%s tie_probe_max_packet_queue_lag_ms=%s chunk_boundary_status=%s chunk_boundary_upload_fail=%s chunk_boundary_ground_misses=%s chunk_boundary_unload_total=%s chunk_boundary_unload_neighbor_refreshes=%s chunk_boundary_render_not_ready_cases=%s chunk_boundary_collision_not_ready_cases=%s chunk_boundary_max_terrain_queue_ms=%s chunk_boundary_max_process_wall_p95_ms=%s chunk_boundary_max_gpu_compositor_submit_ms=%s chunk_boundary_max_packet_queue_lag_ms=%s residency_status=%s residency_pressure_class=%s residency_proof_status=%s allocator_evidence_status=%s configured_buffer_bytes=%s configured_buffer_budget_pct=%s active_face_bytes=%s active_face_budget_pct=%s boundary_matrix_status=%s boundary_harness_status=%s boundary_candidate_scheduler_status=%s boundary_runtime_signal=%s scheduler_change_allowed=0 default_runtime_change_allowed=0 decision_status=%s candidate_scheduler_status=%s external_profile_status=pending_external_profiler requires_external_profiler_before_default=1 requires_mac_windows_validation=1 workload_scheduler_change_allowed=%s workload_default_runtime_change_allowed=%s workload_requires_external_profiler_before_default=%s workload_requires_mac_windows_validation=%s tie_probe_scheduler_change_allowed=%s tie_probe_default_runtime_change_allowed=%s tie_probe_requires_external_profiler_before_default=%s tie_probe_requires_mac_windows_validation=%s residency_requires_external_profiler_before_default=%s residency_requires_mac_windows_validation=%s prototype_summary=%s workload_matrix_summary=%s tie_probe_summary=%s chunk_boundary_summary=%s buffer_residency_budget_summary=%s boundary_matrix_summary=%s\n' \
     "$prototype_status" "$prototype_default_scheduler" "$prototype_default_active" "$prototype_scheduler_change_allowed" \
     "$workload_status" "$workload_harness_status" "$workload_candidate_status" "$workload_failed_cases" \
     "$workload_baseline_pass_cases" "$workload_preview_pass_cases" "$workload_active_pass_cases" "$workload_runtime_signal" \
     "$workload_preview_mismatch_max" "$workload_mesh_ties_max" "$workload_collision_ties_max" "$workload_fifo_fallbacks_max" \
     "$workload_queue_max" "$workload_process_max" "$workload_submit_max" "$workload_packet_lag_max" \
+    "$tie_probe_status" "$tie_probe_motion" "$tie_probe_candidate_status" "$tie_probe_runtime_signal" \
+    "$tie_probe_preview_mismatch_max" "$tie_probe_mesh_ties_max" "$tie_probe_collision_ties_max" "$tie_probe_fifo_fallbacks_max" \
+    "$tie_probe_queue_max" "$tie_probe_process_max" "$tie_probe_submit_max" "$tie_probe_packet_lag_max" \
     "$chunk_boundary_status" "$chunk_boundary_upload_fail" "$chunk_boundary_ground_misses" "$chunk_boundary_unload_total" \
     "$chunk_boundary_unload_refreshes" "$chunk_boundary_render_not_ready" "$chunk_boundary_collision_not_ready" \
     "$chunk_boundary_queue_max" "$chunk_boundary_process_max" "$chunk_boundary_submit_max" "$chunk_boundary_packet_lag_max" \
@@ -182,8 +210,9 @@ fi
     "$configured_buffer_bytes" "$configured_buffer_budget_pct" "$active_face_bytes" "$active_face_budget_pct" \
     "$boundary_matrix_status" "$boundary_harness_status" "$boundary_candidate_status" "$boundary_runtime_signal" \
     "$decision_status" "$decision_status" "$workload_scheduler_change_allowed" "$workload_default_runtime_change_allowed" \
-    "$workload_requires_profiler" "$workload_requires_validation" "$residency_requires_profiler" "$residency_requires_validation" \
-    "$(relative_path "$PROTOTYPE_SUMMARY")" "$(relative_path "$WORKLOAD_MATRIX_SUMMARY")" "$(relative_path "$CHUNK_BOUNDARY_SUMMARY")" \
+    "$workload_requires_profiler" "$workload_requires_validation" "$tie_probe_scheduler_change_allowed" "$tie_probe_default_runtime_change_allowed" \
+    "$tie_probe_requires_profiler" "$tie_probe_requires_validation" "$residency_requires_profiler" "$residency_requires_validation" \
+    "$(relative_path "$PROTOTYPE_SUMMARY")" "$(relative_path "$WORKLOAD_MATRIX_SUMMARY")" "$(relative_path "$TIE_PROBE_SUMMARY")" "$(relative_path "$CHUNK_BOUNDARY_SUMMARY")" \
     "$(relative_path "$BUFFER_RESIDENCY_BUDGET_SUMMARY")" "$boundary_matrix_path"
 } > "$SUMMARY_PATH"
 

@@ -2,7 +2,7 @@
 
 Date: 2026-06-16
 
-Scope: summary-only decision checkpoint for the default-off client streaming scheduler. This checkpoint composes the scheduler prototype, scheduler workload matrix, chunk-boundary baseline, and buffer residency budget evidence into one required artifact. It does not change default scheduler behavior, server chunk ordering, protocol, storage, world generation, chunk serialization, draw distance, lighting, shadows, texture quality, visible quality, unload policy, buffer repack/eviction policy, or collision-refresh backpressure.
+Scope: summary-only decision checkpoint for the default-off client streaming scheduler. This checkpoint composes the scheduler prototype, scheduler workload matrix, deterministic tie probe, chunk-boundary baseline, and buffer residency budget evidence into one required artifact. It does not change default scheduler behavior, server chunk ordering, protocol, storage, world generation, chunk serialization, draw distance, lighting, shadows, texture quality, visible quality, unload policy, buffer repack/eviction policy, or collision-refresh backpressure.
 
 ## Command
 
@@ -22,6 +22,7 @@ The checkpoint requires these summaries to pass:
 
 - `logs/gpu_streaming_scheduler_prototype_current/gpu-streaming-scheduler-prototype-summary.txt`
 - `logs/gpu_streaming_scheduler_workload_matrix_current/gpu-streaming-scheduler-workload-matrix-summary.txt`
+- `logs/gpu_streaming_scheduler_tie_probe_current/gpu-streaming-scheduler-tie-probe-summary.txt`
 - `logs/gpu_terrain_chunk_boundary_stress_current/chunk-boundary-stress-summary.txt`
 - `logs/gpu_buffer_residency_budget_current/gpu-buffer-residency-budget-summary.txt`
 
@@ -43,6 +44,9 @@ The current checkpoint passed with:
 - `workload_candidate_scheduler_status=defer_matrix_harness_unstable`
 - `workload_runtime_signal=683`
 - `workload_failed_cases=5`
+- `tie_probe_status=pass`
+- `tie_probe_runtime_signal=312`
+- `tie_probe_candidate_scheduler_status=stable_tie_probe_external_profiler_required`
 - `chunk_boundary_status=pass`
 - `chunk_boundary_upload_fail=0`
 - `chunk_boundary_ground_misses=0`
@@ -60,7 +64,7 @@ The current checkpoint passed with:
 - `requires_external_profiler_before_default=1`
 - `requires_mac_windows_validation=1`
 
-This is not rollout approval. It is the current decision record: the scheduler prototype has runtime signal, but standalone matrix instability, missing allocator/free-range evidence, and missing external macOS/Windows profiler rows block any default scheduler change.
+This is not rollout approval. It is the current decision record: the scheduler prototype has runtime signal and the tie-heavy subset is stable, but standalone matrix instability, missing allocator/free-range evidence, and missing external macOS/Windows profiler rows block any default scheduler change.
 
 ## Boundary Matrix Capture
 

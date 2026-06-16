@@ -850,6 +850,7 @@ error_scan() {
   print_optional_file "Selected GPU Streaming Scheduler Prototype Summary" "$(latest_file gpu-streaming-scheduler-prototype-summary.txt)"
   print_optional_file "Selected GPU Streaming Scheduler Workload Matrix Summary" "$(latest_file gpu-streaming-scheduler-workload-matrix-summary.txt)"
   print_optional_file "Selected GPU Streaming Scheduler Workload Matrix Cases" "$(latest_file gpu-streaming-scheduler-workload-matrix-cases.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Tie Probe Summary" "$(latest_file gpu-streaming-scheduler-tie-probe-summary.txt)"
   print_optional_file "Selected GPU Streaming Scheduler Decision Checkpoint Summary" "$(latest_file gpu-streaming-scheduler-decision-checkpoint-summary.txt)"
   print_optional_file "Selected GPU Streaming Scheduler Boundary Matrix Summary" "$(latest_file gpu-streaming-scheduler-boundary-matrix-summary.txt)"
   print_optional_file "Selected GPU Streaming Scheduler Boundary Matrix Cases" "$(latest_file gpu-streaming-scheduler-boundary-matrix-cases.txt)"

@@ -212,7 +212,15 @@ sh scripts/gpu_streaming_scheduler_workload_matrix.sh logs/gpu_streaming_schedul
 
 The gate writes `gpu-streaming-scheduler-workload-matrix-summary.txt` and `gpu-streaming-scheduler-workload-matrix-cases.txt`; see `docs/GPU_STREAMING_SCHEDULER_WORKLOAD_MATRIX.md`.
 
-Use the streaming scheduler decision checkpoint after refreshing scheduler/runtime/residency evidence. It composes the prototype, workload matrix, chunk-boundary baseline, and buffer residency budget into one rollout-status summary while keeping scheduler/default runtime changes blocked:
+Use the streaming scheduler tie probe after refreshing the workload matrix. It extracts the stable tie-heavy `chunk_fly_snap_back` lanes, requires runtime tie signal, and keeps default changes blocked:
+
+```sh
+sh scripts/gpu_streaming_scheduler_tie_probe.sh logs/gpu_streaming_scheduler_tie_probe_current
+```
+
+The gate writes `gpu-streaming-scheduler-tie-probe-summary.txt`; see `docs/GPU_STREAMING_SCHEDULER_TIE_PROBE.md`.
+
+Use the streaming scheduler decision checkpoint after refreshing scheduler/runtime/residency evidence. It composes the prototype, workload matrix, tie probe, chunk-boundary baseline, and buffer residency budget into one rollout-status summary while keeping scheduler/default runtime changes blocked:
 
 ```sh
 sh scripts/gpu_streaming_scheduler_decision_checkpoint.sh logs/gpu_streaming_scheduler_decision_checkpoint_current

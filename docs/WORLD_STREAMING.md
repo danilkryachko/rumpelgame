@@ -343,13 +343,22 @@ Fresh check:
 - The current matrix passed as a decision gate with `matrix_harness_status=partial`, `expected_cases=9`, `completed_cases=9`, `runtime_signal=683`, max preview mismatches `117`, mesh/collision directional ties `361/10`, fifo fallbacks `902`, max queue/process/submit `6.174/0.070/0.408ms`, max packet queue lag `67.578ms`, and `candidate_scheduler_status=defer_matrix_harness_unstable`.
 - The matrix always emits `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
 
-## GPU Streaming Scheduler Decision Checkpoint
+## GPU Streaming Scheduler Tie Probe
 
-The scheduler decision checkpoint is the required rollout-status summary. It composes the default-off scheduler prototype, the workload matrix, the current chunk-boundary baseline, and the buffer residency budget. It records the decision without changing runtime behavior.
+The scheduler tie probe extracts the stable `chunk_fly_snap_back` lanes from the workload matrix so the decision checkpoint has a deterministic tie-heavy runtime signal before any profiler comparison. It does not authorize a default scheduler change.
 
 Fresh check:
 
-- `logs/gpu_streaming_scheduler_decision_checkpoint_current/gpu-streaming-scheduler-decision-checkpoint-summary.txt` passed with `workload_matrix_harness_status=partial`, `workload_runtime_signal=683`, `chunk_boundary_status=pass`, `chunk_boundary_upload_fail=0`, `chunk_boundary_ground_misses=0`, `chunk_boundary_unload_total=0`, `residency_status=pass`, `residency_pressure_class=high`, and `decision_status=defer_matrix_harness_unstable`.
+- `logs/gpu_streaming_scheduler_tie_probe_current/gpu-streaming-scheduler-tie-probe-summary.txt` passed with `motion=chunk_fly_snap_back`, `expected_cases=3`, `completed_cases=3`, `runtime_signal=312`, preview mismatches `117`, mesh/collision directional ties `114/6`, fifo fallbacks `867`, max queue/process/submit `5.851/0.048/0.191ms`, max packet queue lag `42.019ms`, and `candidate_scheduler_status=stable_tie_probe_external_profiler_required`.
+- The probe emits `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
+
+## GPU Streaming Scheduler Decision Checkpoint
+
+The scheduler decision checkpoint is the required rollout-status summary. It composes the default-off scheduler prototype, the workload matrix, the deterministic tie probe, the current chunk-boundary baseline, and the buffer residency budget. It records the decision without changing runtime behavior.
+
+Fresh check:
+
+- `logs/gpu_streaming_scheduler_decision_checkpoint_current/gpu-streaming-scheduler-decision-checkpoint-summary.txt` passed with `workload_matrix_harness_status=partial`, `workload_runtime_signal=683`, `tie_probe_status=pass`, `tie_probe_runtime_signal=312`, `chunk_boundary_status=pass`, `chunk_boundary_upload_fail=0`, `chunk_boundary_ground_misses=0`, `chunk_boundary_unload_total=0`, `residency_status=pass`, `residency_pressure_class=high`, and `decision_status=defer_matrix_harness_unstable`.
 - The checkpoint emits `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
 - `scripts/gpu_streaming_scheduler_boundary_matrix.sh` is available as an optional boundary-backed scheduler capture tool. It is not a required default gate until the nested boundary lanes produce stable summaries.
 
