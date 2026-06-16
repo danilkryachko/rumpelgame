@@ -92,6 +92,7 @@ Checks:
 - Classified server packet-error labels are guarded through the networking gate as `packet_error_classification`.
 - Classified server packet-error aggregation is guarded through the networking gate as `packet_error_aggregation`.
 - Classified server packet-error alert thresholds, including current slow-reader matrix timeout evidence, are guarded through the networking gate as `packet_error_alerts`.
+- Focused deterministic packet/RLE property coverage is surfaced by the security gate as `deterministic_property_tests=guarded`.
 - Client reconnect/rebootstrap is guarded by live disconnect/server-restart smoke and a bounded repeated reconnect soak, with reader-session stale-packet filtering covered by Rust unit tests.
 - Block edit persistence is guarded at the world/storage boundary, the live server restart/reopen boundary, and the Godot visual/collision/GPU boundary.
 - These runtime guards do not add authentication, packet replay, adaptive admission, or new wire semantics.
@@ -131,14 +132,14 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records reviewed boundaries, MCP notes, deferred work, and compatibility rules.
 - Server/Rust sources still contain packet-size, exact-read, decode, and block-edit validation hooks.
 - Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
-- Focused deterministic packet/RLE property tests are present in Go and Rust test sources.
+- Focused deterministic packet/RLE property tests are present in Go and Rust test sources and surfaced in the summary as `deterministic_property_tests=guarded`.
 - Focused Go protocol/network/storage/world tests pass.
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean.
@@ -146,4 +147,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, deterministic packet/RLE property coverage, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and external fuzz campaigns remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit validation, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, conflict semantics, and external fuzz campaigns remain future work.
