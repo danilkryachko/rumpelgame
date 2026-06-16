@@ -137,6 +137,25 @@ security_conflict_semantics="$(field_metric conflict_semantics "$SECURITY_SUMMAR
 security_worldgen_biome_atlas_tile_identity="$(field_metric worldgen_biome_atlas_tile_identity "$SECURITY_SUMMARY")"
 security_worldgen_biome_atlas_block_texture_usage="$(field_metric worldgen_biome_atlas_block_texture_usage "$SECURITY_SUMMARY")"
 security_overload_status="$(field_metric overload_status "$SECURITY_SUMMARY")"
+security_runtime_reconnect="$(field_metric runtime_reconnect "$SECURITY_SUMMARY")"
+security_reconnect_smoke_status="$(field_metric reconnect_smoke_status "$SECURITY_SUMMARY")"
+security_reconnect_smoke_client_state="$(field_metric reconnect_smoke_client_state "$SECURITY_SUMMARY")"
+security_reconnect_smoke_reader_errors="$(field_metric reconnect_smoke_reader_errors "$SECURITY_SUMMARY")"
+security_reconnect_smoke_successes="$(field_metric reconnect_smoke_successes "$SECURITY_SUMMARY")"
+security_reconnect_soak_status="$(field_metric reconnect_soak_status "$SECURITY_SUMMARY")"
+security_reconnect_soak_cycles="$(field_metric reconnect_soak_cycles "$SECURITY_SUMMARY")"
+security_reconnect_soak_reader_errors="$(field_metric reconnect_soak_reader_errors "$SECURITY_SUMMARY")"
+security_reconnect_soak_successes="$(field_metric reconnect_soak_successes "$SECURITY_SUMMARY")"
+security_slow_client_status="$(field_metric slow_client_status "$SECURITY_SUMMARY")"
+security_slow_reader_smoke_status="$(field_metric slow_reader_smoke_status "$SECURITY_SUMMARY")"
+security_slow_reader_timeout_observed="$(field_metric slow_reader_timeout_observed "$SECURITY_SUMMARY")"
+security_slow_reader_timeout_class="$(field_metric slow_reader_timeout_class "$SECURITY_SUMMARY")"
+security_slow_reader_matrix_status="$(field_metric slow_reader_matrix_status "$SECURITY_SUMMARY")"
+security_slow_reader_matrix_counts_checked="$(field_metric slow_reader_matrix_counts_checked "$SECURITY_SUMMARY")"
+security_slow_reader_matrix_max_fast_clients="$(field_metric slow_reader_matrix_max_fast_clients "$SECURITY_SUMMARY")"
+security_slow_reader_matrix_total_fast_clients="$(field_metric slow_reader_matrix_total_fast_clients "$SECURITY_SUMMARY")"
+security_slow_reader_matrix_total_fast_bootstrap_chunks="$(field_metric slow_reader_matrix_total_fast_bootstrap_chunks "$SECURITY_SUMMARY")"
+security_slow_reader_matrix_total_slow_timeouts="$(field_metric slow_reader_matrix_total_slow_timeouts "$SECURITY_SUMMARY")"
 security_local_server_exposure="$(field_metric local_server_exposure "$SECURITY_SUMMARY")"
 security_smoke_bind_exposure="$(field_metric smoke_bind_exposure "$SECURITY_SUMMARY")"
 observability_error_scan="$(field_metric error_scan "$OBSERVABILITY_SUMMARY")"
@@ -238,6 +257,25 @@ awk \
   -v security_worldgen_biome_atlas_tile_identity="${security_worldgen_biome_atlas_tile_identity:-missing}" \
   -v security_worldgen_biome_atlas_block_texture_usage="${security_worldgen_biome_atlas_block_texture_usage:-missing}" \
   -v security_overload_status="${security_overload_status:-missing}" \
+  -v security_runtime_reconnect="${security_runtime_reconnect:-missing}" \
+  -v security_reconnect_smoke_status="${security_reconnect_smoke_status:-missing}" \
+  -v security_reconnect_smoke_client_state="${security_reconnect_smoke_client_state:-missing}" \
+  -v security_reconnect_smoke_reader_errors="${security_reconnect_smoke_reader_errors:-0}" \
+  -v security_reconnect_smoke_successes="${security_reconnect_smoke_successes:-0}" \
+  -v security_reconnect_soak_status="${security_reconnect_soak_status:-missing}" \
+  -v security_reconnect_soak_cycles="${security_reconnect_soak_cycles:-0}" \
+  -v security_reconnect_soak_reader_errors="${security_reconnect_soak_reader_errors:-0}" \
+  -v security_reconnect_soak_successes="${security_reconnect_soak_successes:-0}" \
+  -v security_slow_client_status="${security_slow_client_status:-missing}" \
+  -v security_slow_reader_smoke_status="${security_slow_reader_smoke_status:-missing}" \
+  -v security_slow_reader_timeout_observed="${security_slow_reader_timeout_observed:-0}" \
+  -v security_slow_reader_timeout_class="${security_slow_reader_timeout_class:-missing}" \
+  -v security_slow_reader_matrix_status="${security_slow_reader_matrix_status:-missing}" \
+  -v security_slow_reader_matrix_counts_checked="${security_slow_reader_matrix_counts_checked:-0}" \
+  -v security_slow_reader_matrix_max_fast_clients="${security_slow_reader_matrix_max_fast_clients:-0}" \
+  -v security_slow_reader_matrix_total_fast_clients="${security_slow_reader_matrix_total_fast_clients:-0}" \
+  -v security_slow_reader_matrix_total_fast_bootstrap_chunks="${security_slow_reader_matrix_total_fast_bootstrap_chunks:-0}" \
+  -v security_slow_reader_matrix_total_slow_timeouts="${security_slow_reader_matrix_total_slow_timeouts:-0}" \
   -v security_local_server_exposure="${security_local_server_exposure:-missing}" \
   -v security_smoke_bind_exposure="${security_smoke_bind_exposure:-missing}" \
   -v observability_error_scan="${observability_error_scan:-dirty}" \
@@ -287,6 +325,24 @@ awk \
     if (fast_check == "pass" && full_check == "pass" && diff_check == "pass" && diff_guard == "pass") {
       live_checks = "full"
     }
+    security_reconnect_ok = security_runtime_reconnect == "repeated_live_rebootstrap_guarded" &&
+      security_reconnect_smoke_status == "pass" &&
+      security_reconnect_smoke_client_state == "active" &&
+      security_reconnect_smoke_reader_errors + 0 >= 1 &&
+      security_reconnect_smoke_successes + 0 >= 1 &&
+      security_reconnect_soak_status == "pass" &&
+      security_reconnect_soak_cycles + 0 >= 2 &&
+      security_reconnect_soak_reader_errors + 0 >= security_reconnect_soak_cycles + 0 &&
+      security_reconnect_soak_successes + 0 >= security_reconnect_soak_cycles + 0
+    security_slow_reader_ok = security_slow_client_status == "load_matrix_guarded" &&
+      security_slow_reader_smoke_status == "pass" &&
+      security_slow_reader_timeout_observed + 0 == 1 &&
+      security_slow_reader_timeout_class == "timeout" &&
+      security_slow_reader_matrix_status == "pass" &&
+      security_slow_reader_matrix_counts_checked + 0 >= 2 &&
+      security_slow_reader_matrix_max_fast_clients + 0 >= 2 &&
+      security_slow_reader_matrix_total_fast_clients + 0 == security_slow_reader_matrix_total_fast_bootstrap_chunks + 0 &&
+      security_slow_reader_matrix_total_slow_timeouts + 0 == security_slow_reader_matrix_counts_checked + 0
 
     if (!summaries_ok) {
       status = "fail"
@@ -351,6 +407,12 @@ awk \
     } else if (security_overload_status != "admission_matrix_guarded") {
       status = "fail"
       reason = "security_overload_status_not_guarded"
+    } else if (!security_reconnect_ok) {
+      status = "fail"
+      reason = "security_runtime_reconnect_not_guarded"
+    } else if (!security_slow_reader_ok) {
+      status = "fail"
+      reason = "security_slow_reader_not_guarded"
     } else if (security_local_server_exposure != "loopback_enforced") {
       status = "fail"
       reason = "security_local_server_exposure_not_guarded"
@@ -377,7 +439,7 @@ awk \
       reason = "live_checks_required"
     }
 
-    printf("release_candidate_gate status=%s reason=%s rc_status=%s perf_matrix=%s visual_smoke=%s storage_protocol_compatibility=%s active_protocol_change=%d security_deterministic_property_tests=%s security_observability_gpu_report_freshness=%s security_packet_error_monitoring=%s security_server_session_monitoring=%s security_storage_package_smoke=%s security_storage_config=%s security_storage_backend_policy=%s security_block_edit_validation=%s security_block_edit_save_failure_rollback=%s security_unknown_packet_policy=%s security_nil_packet_policy=%s security_nil_position_policy=%s security_nil_block_action_policy=%s security_conflict_semantics=%s security_worldgen_biome_atlas_tile_identity=%s security_worldgen_biome_atlas_block_texture_usage=%s security_overload_status=%s security_local_server_exposure=%s security_smoke_bind_exposure=%s observability_error_scan=%s observability_summary_count=%d current_summary_count=%d arch_runtime_change=%s baseline_warning_status=%s shadow_active_native=%s transparent_active_fixture=%s lighting_ambient_status=%s live_checks=%s fast_check=%s full_check=%s diff_check=%s diff_guard=%s test_strategy_status=%s test_fast_command=%s test_full_command=%s test_gpu_report_freshness=%s security_status=%s observability_status=%s arch_status=%s baseline_status=%s shadow_status=%s transparent_status=%s lighting_status=%s test_strategy_summary=%s security_summary=%s observability_summary=%s arch_summary=%s baseline_summary=%s shadow_summary=%s transparent_summary=%s lighting_summary=%s\n", status, reason, rc_status, perf_matrix, visual_smoke, storage_protocol_compatibility, proto_diff_count, security_deterministic_property_tests, security_observability_gpu_report_freshness, security_packet_error_monitoring, security_server_session_monitoring, security_storage_package_smoke, security_storage_config, security_storage_backend_policy, security_block_edit_validation, security_block_edit_save_failure_rollback, security_unknown_packet_policy, security_nil_packet_policy, security_nil_position_policy, security_nil_block_action_policy, security_conflict_semantics, security_worldgen_biome_atlas_tile_identity, security_worldgen_biome_atlas_block_texture_usage, security_overload_status, security_local_server_exposure, security_smoke_bind_exposure, observability_error_scan, observability_summary_count, current_summary_count, arch_runtime_change, baseline_warning_status, shadow_active_native, transparent_active_fixture, lighting_ambient_status, live_checks, fast_check, full_check, diff_check, diff_guard, test_status, test_fast_command_status, test_full_command_status, test_gpu_report_freshness, security_status, observability_status, arch_status, baseline_status, shadow_status, transparent_status, lighting_status, test_strategy_summary, security_summary, observability_summary, arch_summary, baseline_summary, shadow_summary, transparent_summary, lighting_summary)
+    printf("release_candidate_gate status=%s reason=%s rc_status=%s perf_matrix=%s visual_smoke=%s storage_protocol_compatibility=%s active_protocol_change=%d security_deterministic_property_tests=%s security_observability_gpu_report_freshness=%s security_packet_error_monitoring=%s security_server_session_monitoring=%s security_storage_package_smoke=%s security_storage_config=%s security_storage_backend_policy=%s security_block_edit_validation=%s security_block_edit_save_failure_rollback=%s security_unknown_packet_policy=%s security_nil_packet_policy=%s security_nil_position_policy=%s security_nil_block_action_policy=%s security_conflict_semantics=%s security_worldgen_biome_atlas_tile_identity=%s security_worldgen_biome_atlas_block_texture_usage=%s security_overload_status=%s security_runtime_reconnect=%s security_reconnect_smoke_status=%s security_reconnect_smoke_client_state=%s security_reconnect_smoke_reader_errors=%d security_reconnect_smoke_successes=%d security_reconnect_soak_status=%s security_reconnect_soak_cycles=%d security_reconnect_soak_reader_errors=%d security_reconnect_soak_successes=%d security_slow_client_status=%s security_slow_reader_smoke_status=%s security_slow_reader_timeout_observed=%d security_slow_reader_timeout_class=%s security_slow_reader_matrix_status=%s security_slow_reader_matrix_counts_checked=%d security_slow_reader_matrix_max_fast_clients=%d security_slow_reader_matrix_total_fast_clients=%d security_slow_reader_matrix_total_fast_bootstrap_chunks=%d security_slow_reader_matrix_total_slow_timeouts=%d security_local_server_exposure=%s security_smoke_bind_exposure=%s observability_error_scan=%s observability_summary_count=%d current_summary_count=%d arch_runtime_change=%s baseline_warning_status=%s shadow_active_native=%s transparent_active_fixture=%s lighting_ambient_status=%s live_checks=%s fast_check=%s full_check=%s diff_check=%s diff_guard=%s test_strategy_status=%s test_fast_command=%s test_full_command=%s test_gpu_report_freshness=%s security_status=%s observability_status=%s arch_status=%s baseline_status=%s shadow_status=%s transparent_status=%s lighting_status=%s test_strategy_summary=%s security_summary=%s observability_summary=%s arch_summary=%s baseline_summary=%s shadow_summary=%s transparent_summary=%s lighting_summary=%s\n", status, reason, rc_status, perf_matrix, visual_smoke, storage_protocol_compatibility, proto_diff_count, security_deterministic_property_tests, security_observability_gpu_report_freshness, security_packet_error_monitoring, security_server_session_monitoring, security_storage_package_smoke, security_storage_config, security_storage_backend_policy, security_block_edit_validation, security_block_edit_save_failure_rollback, security_unknown_packet_policy, security_nil_packet_policy, security_nil_position_policy, security_nil_block_action_policy, security_conflict_semantics, security_worldgen_biome_atlas_tile_identity, security_worldgen_biome_atlas_block_texture_usage, security_overload_status, security_runtime_reconnect, security_reconnect_smoke_status, security_reconnect_smoke_client_state, security_reconnect_smoke_reader_errors, security_reconnect_smoke_successes, security_reconnect_soak_status, security_reconnect_soak_cycles, security_reconnect_soak_reader_errors, security_reconnect_soak_successes, security_slow_client_status, security_slow_reader_smoke_status, security_slow_reader_timeout_observed, security_slow_reader_timeout_class, security_slow_reader_matrix_status, security_slow_reader_matrix_counts_checked, security_slow_reader_matrix_max_fast_clients, security_slow_reader_matrix_total_fast_clients, security_slow_reader_matrix_total_fast_bootstrap_chunks, security_slow_reader_matrix_total_slow_timeouts, security_local_server_exposure, security_smoke_bind_exposure, observability_error_scan, observability_summary_count, current_summary_count, arch_runtime_change, baseline_warning_status, shadow_active_native, transparent_active_fixture, lighting_ambient_status, live_checks, fast_check, full_check, diff_check, diff_guard, test_status, test_fast_command_status, test_full_command_status, test_gpu_report_freshness, security_status, observability_status, arch_status, baseline_status, shadow_status, transparent_status, lighting_status, test_strategy_summary, security_summary, observability_summary, arch_summary, baseline_summary, shadow_summary, transparent_summary, lighting_summary)
     if (status != "pass") {
       exit 1
     }
