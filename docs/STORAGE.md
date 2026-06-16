@@ -20,5 +20,6 @@ Do not introduce, expand, or migrate to another database engine without explicit
 - RocksDB-backed chunk storage lives under `server/pkg/storage`.
 - RocksDB chunk keys use a `c` byte prefix followed by sortable big-endian signed `int32` `x` and `z` coordinates. Preserve this key format unless a migration is explicitly planned.
 - Persisted chunk payloads use the exact byte output of `world.Chunk.Serialize()` and must match the current serialized chunk size when loaded.
+- RocksDB open-path behavior is guarded: missing parent directories are created, and existing regular-file database paths are rejected.
 - PostgreSQL is approved for project storage, but its exact project role should be documented when implemented or changed.
 - Current RocksDB persistence foundation coverage is documented in `docs/STORAGE_PERSISTENCE_FOUNDATION.md`.

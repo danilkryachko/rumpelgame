@@ -1,6 +1,6 @@
 # Storage Persistence Foundation
 
-Date: 2026-06-15
+Date: 2026-06-16
 
 This note records the current approved persistence foundation for chunk storage.
 
@@ -13,6 +13,8 @@ This note records the current approved persistence foundation for chunk storage.
 - Missing chunks return `(nil, false, nil)`.
 - Corrupt persisted chunk bytes return an error and do not produce a loaded chunk.
 - Saving a chunk overwrites only that chunk key and must not alter neighboring chunk keys.
+- Opening a RocksDB store creates a missing parent directory for the configured path.
+- Opening a RocksDB store on an existing regular file fails and does not return a usable store.
 
 ## Guard
 
@@ -25,4 +27,4 @@ go test ./pkg/storage
 
 Fresh check:
 
-- `go test ./pkg/storage` passed on 2026-06-15 after adding missing-load, overwrite-isolation, and corrupt-payload coverage for the RocksDB chunk store.
+- `go test ./pkg/storage` passed on 2026-06-16 after adding missing-parent path and file-path rejection coverage for the RocksDB chunk store.

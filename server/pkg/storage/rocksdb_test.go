@@ -2,6 +2,8 @@ package storage
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"rumpelmc/server/pkg/world"
@@ -87,6 +89,46 @@ func TestRocksChunkStoreMissingChunkReturnsNotFound(t *testing.T) {
 	}
 	if loaded != nil {
 		t.Fatalf("LoadChunk() loaded = %v, want nil for missing chunk", loaded)
+	}
+}
+
+func TestOpenRocksChunkStoreCreatesMissingParentDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing-parent", "chunks.rocksdb")
+
+	store, err := OpenRocksChunkStore(path)
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	if info, err := os.Stat(filepath.Dir(path)); err != nil {
+		t.Fatalf("parent directory stat error = %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("parent path is not a directory")
+	}
+	if info, err := os.Stat(path); err != nil {
+		t.Fatalf("rocksdb path stat error = %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("rocksdb path is not a directory")
+	}
+}
+
+func TestOpenRocksChunkStoreRejectsFilePath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chunks.rocksdb")
+	if err := os.WriteFile(path, []byte("not a rocksdb directory"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	store, err := OpenRocksChunkStore(path)
+	if err == nil {
+		if store != nil {
+			store.Close()
+		}
+		t.Fatal("OpenRocksChunkStore() error = nil, want failure for file path")
+	}
+	if store != nil {
+		store.Close()
+		t.Fatalf("OpenRocksChunkStore() store = %v, want nil on failure", store)
 	}
 }
 

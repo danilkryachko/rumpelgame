@@ -77,7 +77,7 @@ Checks:
 ### Storage Integrity
 
 - RocksDB keys keep the stable chunk-coordinate key format.
-- RocksDB tests cover missing chunks, save/reopen round-trip, overwrite isolation, corrupt payload rejection, key format, and signed coordinate ordering.
+- RocksDB tests cover missing chunks, save/reopen round-trip, overwrite isolation, corrupt payload rejection, missing-parent path creation, regular-file path rejection, key format, and signed coordinate ordering.
 - `World.SetBlockGlobal` saves edited chunks through the configured `ChunkStore`.
 - The block edit reload guard proves place/destroy edits survive fresh `World(store)` instances.
 
@@ -154,6 +154,7 @@ The gate checks that:
 - Server source still contains stable packet-error classification and `packet_error_class` logging hooks.
 - Focused deterministic packet/RLE property tests are present in Go and Rust test sources and surfaced in the summary as `deterministic_property_tests=guarded`.
 - Focused Go protocol/network/storage/world tests pass.
+- Storage tests prove missing parent directories are created and existing regular-file RocksDB paths fail to open.
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean.
 - Networking summary reports `unknown_packet_policy=ignored_guarded`.
@@ -163,4 +164,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, enforced loopback-only local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity, block edit Y-bound validation, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, machine-readable deterministic packet/RLE property coverage, enforced loopback-only local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity including RocksDB open-path failure coverage, block edit Y-bound validation, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.

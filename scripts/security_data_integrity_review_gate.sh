@@ -15,6 +15,7 @@ SERVER_NETWORK_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_SOURCE:-"$ROOT_
 SERVER_WORLD_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
 SERVER_NETWORK_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_TEST:-"$ROOT_DIR/server/pkg/network/framing_test.go"}"
 SERVER_NETWORK_BEHAVIOR_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_BEHAVIOR_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
+SERVER_STORAGE_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_STORAGE_TEST:-"$ROOT_DIR/server/pkg/storage/rocksdb_test.go"}"
 SERVER_WORLD_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_TEST:-"$ROOT_DIR/server/pkg/world/chunk_encoding_test.go"}"
 SERVER_WORLD_BEHAVIOR_TEST="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_BEHAVIOR_TEST:-"$ROOT_DIR/server/pkg/world/world_test.go"}"
 CLIENT_MAIN_SOURCE="${RUMPELMC_SECURITY_REVIEW_CLIENT_MAIN_SOURCE:-"$ROOT_DIR/client/main.gd"}"
@@ -67,6 +68,7 @@ for path in \
   "$SERVER_WORLD_SOURCE" \
   "$SERVER_NETWORK_TEST" \
   "$SERVER_NETWORK_BEHAVIOR_TEST" \
+  "$SERVER_STORAGE_TEST" \
   "$SERVER_WORLD_TEST" \
   "$SERVER_WORLD_BEHAVIOR_TEST" \
   "$CLIENT_MAIN_SOURCE" \
@@ -142,6 +144,8 @@ done
 
 require_token "$SERVER_NETWORK_TEST" 'TestReceivePacketConsumesExactFrameBoundaries'
 require_token "$SERVER_NETWORK_BEHAVIOR_TEST" 'TestHandleClientPacketRejectsOutOfRangeBlockAction'
+require_token "$SERVER_STORAGE_TEST" 'TestOpenRocksChunkStoreCreatesMissingParentDirectory'
+require_token "$SERVER_STORAGE_TEST" 'TestOpenRocksChunkStoreRejectsFilePath'
 require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsRepresentativeRunPatterns'
 require_token "$SERVER_WORLD_BEHAVIOR_TEST" 'TestSetBlockGlobalRejectsOutOfRangeYWithoutSave'
 require_token "$CLIENT_RUNTIME_SOURCE" 'decode_serialized_chunk_rle_accepts_representative_runs'
