@@ -1,11 +1,14 @@
 package network
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,6 +185,32 @@ func TestReceiveInitialClientPacketReadsHandshakePosition(t *testing.T) {
 	}
 }
 
+func TestHandleConnectionLogsPacketErrorClassForMalformedInitialPacket(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+
+	var logs bytes.Buffer
+	originalWriter := log.Writer()
+	originalFlags := log.Flags()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	defer log.SetOutput(originalWriter)
+	defer log.SetFlags(originalFlags)
+
+	doneCh := make(chan struct{})
+	go func() {
+		NewServer(":0", world.NewWorld(nil)).handleConnection(serverConn)
+		close(doneCh)
+	}()
+
+	writeFrame(t, clientConn, []byte{0xff})
+	waitConnectionClosed(t, doneCh)
+
+	if got := logs.String(); !strings.Contains(got, "packet_error_class=malformed_protobuf") {
+		t.Fatalf("handleConnection() logs = %q, want packet_error_class=malformed_protobuf", got)
+	}
+}
+
 func TestNetworkErrorClassification(t *testing.T) {
 	tests := []struct {
 		name string
@@ -273,6 +302,16 @@ func waitReceivePacket(t *testing.T, resultCh <-chan receivePacketResult) receiv
 	case <-time.After(time.Second):
 		t.Fatal("receivePacket() did not return")
 		return receivePacketResult{}
+	}
+}
+
+func waitConnectionClosed(t *testing.T, doneCh <-chan struct{}) {
+	t.Helper()
+
+	select {
+	case <-doneCh:
+	case <-time.After(time.Second):
+		t.Fatal("handleConnection() did not return")
 	}
 }
 

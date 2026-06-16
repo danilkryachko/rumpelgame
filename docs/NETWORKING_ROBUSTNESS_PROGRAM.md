@@ -102,6 +102,7 @@ This policy prevents old reader errors or same-frame disconnect packets from mut
 - closed initial-client probe handling
 - initial position handshake read
 - stable packet error classification labels
+- connection-loop `packet_error_class` logging for malformed initial packets
 - zero-byte write classification as `short_write`
 
 `server/pkg/network/server_test.go` also covers:

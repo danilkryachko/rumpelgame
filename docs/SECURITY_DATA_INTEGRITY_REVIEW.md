@@ -61,7 +61,7 @@ Checks:
 - Server and Rust client both use exact reads for the length prefix and payload.
 - Malformed protobuf payloads return errors instead of partial packets.
 - Server receive/decode errors close the client connection through the existing connection loop.
-- Server receive, decode, timeout, encode, and short-write errors are logged with stable `packet_error_class` labels guarded by Go network tests and the networking robustness gate.
+- Server receive, decode, timeout, encode, and short-write errors are logged with stable `packet_error_class` labels guarded by Go network tests, including a connection-loop malformed-packet log test, and the networking robustness gate.
 
 ### Chunk Serialization
 
