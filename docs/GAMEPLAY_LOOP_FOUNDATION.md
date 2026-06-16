@@ -10,7 +10,7 @@ Continue the annual world streaming architecture plan in order and use MCP/OntoI
 
 Goal:
 
-Keep the existing mining/building loop stable, confirm that block edits still flow through persistence-capable server state, and add a small client inventory foundation without changing protocol or storage formats.
+Keep the existing mining/building loop stable, confirm that block edits still flow through persistence-capable server state, and guard the client/server creative inventory foundations without changing protocol or storage formats.
 
 Context inspected:
 
@@ -26,13 +26,15 @@ Context inspected:
 Scope:
 
 - Add a local hotbar inventory model with slot counts and placeability validation.
+- Add a server-owned session inventory placement boundary for the current creative block set.
 - Keep the current creative five-slot hotbar behavior over existing placeable block IDs.
 - Guard inventory slot rules with Rust unit tests.
+- Guard server session inventory rules with Go unit tests and a network handler test.
 - Define the minimum mining/building persistence contract before the dedicated Block Edit Persistence Track.
 
 Out of scope:
 
-- No inventory protocol, server-authoritative inventory, item stack persistence, crafting, drops, tools, durability, survival rules, new block IDs, new packet fields, new storage records, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
+- No inventory protocol, item stack persistence, crafting, drops, tools, durability, survival rules, new block IDs, new packet fields, new storage records, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
 
 Assumptions:
 
@@ -40,11 +42,13 @@ Assumptions:
 - Server `BlockAction` remains the only networked edit command.
 - Server `World.SetBlockGlobal` is the persistence-capable edit boundary because it calls `ChunkStore.SaveChunk` when a store is configured.
 - The current hotbar is creative-mode inventory, so counts are guard data and are not decremented by placement yet.
+- Server sessions use the same creative placement retention through `server/pkg/inventory`.
 - Full edit persistence verification is supplied by the completed Block 41 persisted visual evidence chain.
 
 Done when:
 
 - The player hotbar has an explicit inventory slot model, selected slot state, and tests.
+- The server session inventory gate reports `server_inventory_status=session_guarded`.
 - A gameplay foundation gate checks the client inventory tests, the existing server edit/persistence path, and the completed Block 41 persisted visual proof.
 
 Checks:
@@ -79,6 +83,19 @@ The client now has a local creative hotbar inventory model:
 
 This is intentionally client-local and behavior-preserving for the existing hotbar. It gives future survival/server-inventory work a small seam without adding protocol or persistence fields now.
 
+## Server Inventory Foundation
+
+The server now has a session-owned inventory foundation:
+
+- `server/pkg/inventory.Inventory` owns `{BlockID, Count}` slots.
+- `NewCreativeHotbar()` derives placeable slots from the server block registry.
+- `NewCounted()` supports counted stack consumption for server-side rules.
+- `clientSession` owns an inventory created by `NewCreativeHotbar()`.
+- `BlockAction_PLACE` keeps the existing `world.IsPlaceable(block)` check and requires `client.inventory.CanPlaceBlock(block)` before the world edit.
+- Counted placement is applied only after `World.SetBlockGlobal` succeeds.
+- Creative placement keeps counts retained, so current creative block placement behavior is unchanged.
+- Missing inventory entries reject placement before `World.SetBlockGlobal` and before chunk update broadcast.
+
 ## Persistence Boundary
 
 The gameplay foundation relies on the existing server boundary:
@@ -93,8 +110,8 @@ The gameplay foundation relies on the existing server boundary:
 
 Still needed before calling gameplay production-ready:
 
-- Server-authoritative inventory and item stack persistence.
 - Inventory packet/schema design and compatibility tests.
+- Item stack persistence.
 - Tool/durability/mining-time rules.
 - Drops and pickup flow.
 - Edit broadcast/fanout to other clients.
@@ -107,7 +124,7 @@ Still needed before calling gameplay production-ready:
 - Do not add storage records for item stacks without a storage migration task.
 - Do not bypass `World.SetBlockGlobal` for persistent block edits.
 - Do not allow client-only block IDs through `BlockAction`.
-- Do not decrement creative hotbar counts until server-authoritative inventory exists.
+- Do not decrement creative hotbar or server creative inventory counts in this checkpoint.
 - Do not change world generation or chunk serialization for gameplay foundation work.
 
 ## Block 40 Gate
@@ -118,12 +135,13 @@ Use:
 sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records mining/building flow, inventory foundation, persistence boundary, deferred work, and compatibility rules.
 - The player source contains the hotbar inventory model, selected slot state, selection helpers, and tests.
+- The server inventory foundation summary is present and clean.
 - Server block edits still flow through `World.SetBlockGlobal`.
 - `World.SetBlockGlobal` still calls `ChunkStore.SaveChunk`.
 - The Block 41 block-edit persistence summary is present and its persisted visual/collision/GPU matrix is clean.

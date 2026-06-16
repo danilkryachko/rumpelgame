@@ -15,6 +15,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"rumpelmc/server/pkg/api"
+	playerinventory "rumpelmc/server/pkg/inventory"
 	"rumpelmc/server/pkg/world"
 )
 
@@ -273,15 +274,18 @@ func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Pa
 		log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
 
 		block := world.Air
+		applyInventoryPlacement := false
+		placementInventory := playerinventory.NewCreativeHotbar()
 		switch action.Action {
 		case api.BlockAction_DESTROY:
 			block = world.Air
 		case api.BlockAction_PLACE:
 			block = world.BlockID(action.BlockId)
-			if !world.IsPlaceable(block) {
+			if !world.IsPlaceable(block) || !placementInventory.CanPlaceBlock(block) {
 				log.Printf("Ignored invalid place block id=%d", action.BlockId)
 				return nil
 			}
+			applyInventoryPlacement = true
 		default:
 			log.Printf("Ignored unknown block action=%v", action.Action)
 			return nil
@@ -290,6 +294,9 @@ func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Pa
 		snapshot, err := s.world.SetBlockGlobal(action.X, action.Y, action.Z, block)
 		if err != nil {
 			return fmt.Errorf("update block: %w", err)
+		}
+		if applyInventoryPlacement {
+			placementInventory.PlaceBlock(block)
 		}
 
 		if _, err := s.sendChunk(conn, snapshot); err != nil {
@@ -329,15 +336,17 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 		log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
 
 		block := world.Air
+		applyInventoryPlacement := false
 		switch action.Action {
 		case api.BlockAction_DESTROY:
 			block = world.Air
 		case api.BlockAction_PLACE:
 			block = world.BlockID(action.BlockId)
-			if !world.IsPlaceable(block) {
+			if !world.IsPlaceable(block) || !client.inventory.CanPlaceBlock(block) {
 				log.Printf("Ignored invalid place block id=%d", action.BlockId)
 				return nil
 			}
+			applyInventoryPlacement = true
 		default:
 			log.Printf("Ignored unknown block action=%v", action.Action)
 			return nil
@@ -346,6 +355,9 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 		snapshot, err := s.world.SetBlockGlobal(action.X, action.Y, action.Z, block)
 		if err != nil {
 			return fmt.Errorf("update block: %w", err)
+		}
+		if applyInventoryPlacement {
+			client.inventory.PlaceBlock(block)
 		}
 
 		if err := s.broadcastChunkUpdate(client, snapshot); err != nil {
@@ -363,6 +375,7 @@ type clientSession struct {
 	stateMu     sync.Mutex
 	writeMu     sync.Mutex
 	streamState clientChunkStreamState
+	inventory   playerinventory.Inventory
 }
 
 func newClientSession(conn net.Conn) *clientSession {
@@ -371,6 +384,7 @@ func newClientSession(conn net.Conn) *clientSession {
 		streamState: clientChunkStreamState{
 			sentChunks: make(map[world.ChunkCoord]bool),
 		},
+		inventory: playerinventory.NewCreativeHotbar(),
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"rumpelmc/server/pkg/api"
+	playerinventory "rumpelmc/server/pkg/inventory"
 	"rumpelmc/server/pkg/world"
 )
 
@@ -699,6 +700,81 @@ func TestHandleClientPacketIgnoresNilBlockAction(t *testing.T) {
 			t.Fatalf("watcher frames = %d, want 0", got)
 		}
 	})
+}
+
+func TestNewClientSessionStartsWithServerAuthoritativeCreativeInventory(t *testing.T) {
+	client := newClientSession(&recordingConn{})
+
+	if !client.inventory.CanPlaceBlock(world.Wood) {
+		t.Fatal("new client session cannot place Wood, want creative inventory available")
+	}
+	if client.inventory.CanPlaceBlock(world.Air) {
+		t.Fatal("new client session can place Air, want false")
+	}
+}
+
+func TestHandleClientPacketRejectsPlaceWhenSessionInventoryLacksBlock(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	origin := newClientSession(&recordingConn{})
+	origin.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 1},
+	})
+	watcher := newClientSession(&recordingConn{})
+	watcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
+
+	server.registerClient(watcher)
+	defer server.unregisterClient(watcher)
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       64,
+				Z:       1,
+				BlockId: uint32(world.Wood),
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(origin, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if got := len(recordedFrames(t, origin.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("origin frames = %d, want 0", got)
+	}
+	if got := len(recordedFrames(t, watcher.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("watcher frames = %d, want 0", got)
+	}
+}
+
+func TestHandleClientPacketDoesNotConsumeInventoryWhenBlockUpdateFails(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+
+	origin := newClientSession(&recordingConn{})
+	origin.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 1},
+	})
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       int32(world.ChunkHeight),
+				Z:       1,
+				BlockId: uint32(world.Stone),
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(origin, packet); err == nil {
+		t.Fatal("handleClientPacketForSession() error = nil, want block update error")
+	}
+	if !origin.inventory.CanPlaceBlock(world.Stone) {
+		t.Fatal("failed block update consumed inventory count")
+	}
 }
 
 func TestHandleClientPacketRejectsOutOfRangeBlockAction(t *testing.T) {

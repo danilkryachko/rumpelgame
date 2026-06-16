@@ -23,6 +23,7 @@
 
 - `world.World` is the authoritative in-memory world owner.
 - `World.ChunksAround` selects chunk coordinates, loads or generates chunks, and returns serialized snapshots for networking.
+- Server client sessions own the placement inventory boundary for `BlockAction_PLACE`.
 - `World.SetBlockGlobal` applies block edits and persists dirty chunks through the configured `ChunkStore`.
 - RocksDB chunk keys use the stable `c` prefix plus sortable signed big-endian chunk coordinates.
 - Persisted chunk payloads are the exact output of `world.Chunk.Serialize()`.
@@ -41,7 +42,7 @@
 - The client lifecycle model tracks connecting, waiting_chunks, spawning, active, reconnecting, and shutdown.
 - The packet reader feeds the main-thread packet queue; packet queue metrics are observational and do not implement backpressure or dropping.
 - Chunk replacements run through dirty-update detection. Partial dirty GPU upload is default-on; `RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD=0` is the full-rebuild rollback path.
-- Local creative hotbar state, including the selected slot and selected block ID, is client-side gameplay foundation. Server authority for block edits still flows through `BlockAction` and `World.SetBlockGlobal`.
+- Local creative hotbar state, including the selected slot and selected block ID, is client-side gameplay foundation. Server sessions own creative placement inventory for `BlockAction_PLACE`, and persistent block edits still flow through `World.SetBlockGlobal`.
 - Reconnect execution, slow-client policy, block-edit broadcast fanout, and opt-in max-client admission with bounded live rejection evidence are guarded; adaptive overload/backpressure behavior remains deferred policy work.
 
 ## GPU Terrain Contract
