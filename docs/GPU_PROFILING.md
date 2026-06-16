@@ -257,6 +257,14 @@ sh scripts/gpu_terrain_pressure_dirty_compare.sh logs/gpu_terrain_pressure_dirty
 
 The gate writes `gpu-terrain-pressure-dirty-compare-summary.txt`; see `docs/GPU_TERRAIN_LOAD_SCALING.md`.
 
+Use the repeated edit benchmark after changing dirty update scheduling, block-edit runtime handling, collision refresh, proxy refresh, or GPU dirty upload budget logic. It composes the single-edge and corner-edge dirty repeat summaries into one required evidence row while keeping default runtime and visible quality unchanged:
+
+```sh
+sh scripts/gpu_terrain_repeated_edit_benchmark.sh logs/gpu_terrain_repeated_edit_benchmark_current
+```
+
+The gate writes `gpu-terrain-repeated-edit-benchmark-summary.txt` and `gpu-terrain-repeated-edit-benchmark-cases.txt`; see `docs/GPU_TERRAIN_REPEATED_EDIT_BENCHMARK.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh

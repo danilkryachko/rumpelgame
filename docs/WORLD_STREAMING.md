@@ -243,6 +243,14 @@ Fresh check:
 
 - `logs/dirty_update_scalability_current/dirty-update-scalability-summary.txt` reported `status=pass`, `mass_dirty_unit=pass`, `dirty_tests=pass`, `edge_runtime_scripts=available`, `runtime_script_count=6`, `runtime_mass_edit=deferred`, and `active_protocol_change=0`.
 
+## GPU Terrain Repeated Edit Benchmark
+
+The repeated edit benchmark composes the single-edge and corner-edge dirty repeat runtime summaries into one GPU evidence artifact. It validates repeated dirty updates, collision/proxy refresh evidence, partial saved subchunks, zero upload failures, and CPU-side queue/process/submit budgets without changing visible quality or default runtime policy.
+
+Fresh check:
+
+- `logs/gpu_terrain_repeated_edit_benchmark_current/gpu-terrain-repeated-edit-benchmark-summary.txt` passed with `case_count=2`, `single_edge_runs=3`, `corner_edge_runs=3`, min edge-neighbor subchunks `4`, min partial saved subchunks `2`, max queue/process/submit `2.972/0.050/0.150ms`, `gpu_upload_fail=0`, and `visible_quality_change_allowed=0`.
+
 ## Storage Persistence Foundation
 
 The storage foundation slice keeps RocksDB as the implemented chunk persistence backend and does not add PostgreSQL behavior. It adds focused coverage for missing chunks, save/reopen round-trips, overwrite isolation between neighboring chunk keys, and corrupt persisted payload errors.

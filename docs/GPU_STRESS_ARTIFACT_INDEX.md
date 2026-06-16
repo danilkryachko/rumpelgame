@@ -24,6 +24,7 @@ The current required GPU core rows are:
 - rapid camera-turn gate and its movement source summary
 - chunk-boundary gate and its high-pressure suite source summary
 - chunk unload churn diagnosis
+- repeated edit benchmark
 - streaming priority audit
 - streaming scheduler prototype preflight
 - streaming scheduler workload matrix
@@ -65,7 +66,7 @@ Fresh local evidence:
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt`
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index.txt`
 
-The current index passed with `31` rows, `21` required rows, `21` required passes, `9` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
+The current index passed with `32` rows, `22` required rows, `22` required passes, `9` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
 
 Current normalized maxima:
 
@@ -75,6 +76,7 @@ Current normalized maxima:
 - Streaming priority proof: `partial`
 - Source priority contracts: `pass`
 - Runtime priority status: `pass`
+- Repeated edit benchmark: `case_count=2`, `single_edge_runs=3`, `corner_edge_runs=3`, `gpu_upload_fail=0`
 - Streaming scheduler prototype: `prototype_only`
 - Streaming scheduler workload matrix: `matrix_harness_status=partial`, `candidate_scheduler_status=defer_matrix_harness_unstable`, `scheduler_change_allowed=0`
 - Streaming scheduler tie probe: `runtime_signal=312`, `candidate_scheduler_status=stable_tie_probe_external_profiler_required`, `scheduler_change_allowed=0`
@@ -99,6 +101,7 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 ## Report And Strategy Wiring
 
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU stress artifact index summary and index rows.
+- `scripts/gpu_terrain_report.sh` surfaces the selected GPU terrain repeated edit benchmark summary and case rows when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming priority audit summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler prototype summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler workload matrix summary and case rows when present.
@@ -107,13 +110,14 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 - `scripts/gpu_terrain_report.sh` surfaces optional GPU streaming scheduler boundary matrix summary and case rows when present.
 - `scripts/gpu_terrain_report.sh` also surfaces the selected GPU buffer residency budget summary when present.
 - `scripts/test_strategy_gate.sh` requires the index summary and includes the index command in the nightly summary command.
+- `scripts/test_strategy_gate.sh` requires the repeated edit benchmark summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming priority audit summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler prototype summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler workload matrix summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler tie probe summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler decision checkpoint summary before the index.
 - `scripts/test_strategy_gate.sh` requires the buffer residency budget summary before the index.
-- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, streaming priority audit, streaming scheduler prototype, streaming scheduler workload matrix, streaming scheduler decision checkpoint, upload-failure fallback, and buffer residency budget visible as required rows.
+- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, repeated edit benchmark, streaming priority audit, streaming scheduler prototype, streaming scheduler workload matrix, streaming scheduler decision checkpoint, upload-failure fallback, and buffer residency budget visible as required rows.
 
 ## External Context
 

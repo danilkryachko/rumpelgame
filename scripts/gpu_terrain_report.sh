@@ -858,6 +858,8 @@ error_scan() {
   print_optional_file "Selected Rapid Camera-Turn Stress Summary" "$(latest_file rapid-camera-turn-stress-summary.txt)"
   print_optional_file "Selected Chunk Boundary Stress Summary" "$(latest_file chunk-boundary-stress-summary.txt)"
   print_optional_file "Selected GPU Chunk Unload Churn Diagnosis Summary" "$(latest_file gpu-chunk-unload-churn-diagnosis-summary.txt)"
+  print_optional_file "Selected GPU Terrain Repeated Edit Benchmark Summary" "$(latest_file gpu-terrain-repeated-edit-benchmark-summary.txt)"
+  print_optional_file "Selected GPU Terrain Repeated Edit Benchmark Cases" "$(latest_file gpu-terrain-repeated-edit-benchmark-cases.txt)"
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
   print_optional_file "Selected Workload Matrix Summary" "$(latest_file workload-matrix-summary.txt)"
   print_optional_file "Selected Perf Baseline Summary" "$(latest_file perf-baseline-summary.txt)"

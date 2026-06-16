@@ -91,8 +91,11 @@ Existing runtime wrappers remain the correct heavy checks:
 - `scripts/gpu_terrain_edge_dirty_repeat.sh`
 - `scripts/gpu_terrain_single_edge_dirty_compare.sh`
 - `scripts/gpu_terrain_single_edge_dirty_repeat.sh`
+- `scripts/gpu_terrain_repeated_edit_benchmark.sh`
 
 The gate does not run them by default because they require Godot runtime capture, a free local server port, and longer execution time. It does verify their shell syntax and required metric tokens.
+
+Fresh repeated-edit benchmark evidence now lives at `logs/gpu_terrain_repeated_edit_benchmark_current/gpu-terrain-repeated-edit-benchmark-summary.txt`. It composes three single-edge repeats and three corner-edge repeats, passed with max queue/process/submit `2.972/0.050/0.150ms`, zero GPU upload failures, and default/visible-quality changes blocked.
 
 ## Deferred Work
 
@@ -134,4 +137,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a unit-guarded dirty scalability checkpoint. Heavy runtime mass-edit scalability remains future work.
+This block is complete as a unit-guarded dirty scalability checkpoint plus repeated single-edge/corner runtime evidence. Heavy runtime mass-edit scalability remains future work.
