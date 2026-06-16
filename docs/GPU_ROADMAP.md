@@ -80,9 +80,9 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 ## Phase 6: Upload Robustness
 
 51. Done 2026-06-16: verified upload failure recovery keeps per-subchunk CPU ArrayMesh fallback until a GPU slot is confirmed, with targeted mesh-build/proxy-refresh unit coverage and `docs/GPU_UPLOAD_FAILURE_RECOVERY.md`.
-52. Keep visual fallback valid after upload failure.
-53. Keep shadow fallback valid after upload failure.
-54. Keep collision fallback valid after upload failure.
+52. Done 2026-06-16: added opt-in GPU upload failure injection plus `scripts/gpu_terrain_upload_failure_fallback_gate.sh` to keep visual CPU ArrayMesh fallback valid after forced upload failures.
+53. Done 2026-06-16: the upload failure fallback gate requires `shadow_path=arraymesh`, visible double-sided ArrayMesh shadow markers, and zero capacity/fragmentation failure causes under forced upload failure.
+54. Done 2026-06-16: the upload failure fallback gate requires current render/collision readiness, nonzero current chunk collision, zero ground misses, and non-sky terrain samples under forced upload failure.
 55. Reduce staging allocation churn.
 56. Done 2026-06-16: reused the packed-face upload scratch buffer where safe and added an isolated in-place upload gate for the opt-in same-face-count subchunk update path.
 57. Prototype an upload memory pool behind an env flag.

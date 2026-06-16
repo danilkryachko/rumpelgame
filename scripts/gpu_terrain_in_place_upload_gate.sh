@@ -166,6 +166,7 @@ write_summary() {
   gpu_upload_fail="$(metric gpu_upload_fail "$marker_path")"
   gpu_upload_fail_capacity="$(metric gpu_upload_fail_capacity "$marker_path")"
   gpu_upload_fail_fragmented="$(metric gpu_upload_fail_fragmented "$marker_path")"
+  gpu_upload_fail_injected="$(metric gpu_upload_fail_injected "$marker_path")"
   gpu_upload_retry_policy="$(text_metric gpu_upload_retry_policy "$marker_path")"
   gpu_upload_retry_attempts="$(metric gpu_upload_retry_attempts "$marker_path")"
   gpu_upload_retry_success="$(metric gpu_upload_retry_success "$marker_path")"
@@ -190,10 +191,10 @@ write_summary() {
   current_chunk_collision="$(metric current_chunk_collision "$marker_path")"
 
   {
-    printf 'gpu_in_place_upload status=pass action=%s x=%s y=%s z=%s block_id=%s expected_edges=%s expected_bounds=%s isolated_db=%s gpu_in_place_upload_enabled=%s gpu_in_place_uploads=%s gpu_in_place_upload_misses=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_upload_retry_policy=%s gpu_upload_retry_attempts=%s gpu_upload_retry_success=%s gpu_upload_retry_giveups=%s gpu_upload_backoff_active=%s gpu_upload_backoff_frames=%s gpu_upload_backoff_max_frames=%s gpu_upload_ms_max=%s gpu_upload_stage_ms_max=%s gpu_upload_update_ms_max=%s gpu_draw_patch_ms_max=%s terrain_queue_max_ms=%s terrain_queue_new_slot_uploads_max=%s terrain_queue_replace_slot_uploads_max=%s terrain_queue_new_slot_upload_kb_max=%s terrain_queue_replace_slot_upload_kb_max=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s dirty_partial_saved_subchunks=%s dirty_last_rebuild_subchunks=%s current_chunk_loaded=%s current_chunk_collision=%s marker=%s block_summary=%s run_log=%s\n' \
+    printf 'gpu_in_place_upload status=pass action=%s x=%s y=%s z=%s block_id=%s expected_edges=%s expected_bounds=%s isolated_db=%s gpu_in_place_upload_enabled=%s gpu_in_place_uploads=%s gpu_in_place_upload_misses=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_upload_fail_injected=%s gpu_upload_retry_policy=%s gpu_upload_retry_attempts=%s gpu_upload_retry_success=%s gpu_upload_retry_giveups=%s gpu_upload_backoff_active=%s gpu_upload_backoff_frames=%s gpu_upload_backoff_max_frames=%s gpu_upload_ms_max=%s gpu_upload_stage_ms_max=%s gpu_upload_update_ms_max=%s gpu_draw_patch_ms_max=%s terrain_queue_max_ms=%s terrain_queue_new_slot_uploads_max=%s terrain_queue_replace_slot_uploads_max=%s terrain_queue_new_slot_upload_kb_max=%s terrain_queue_replace_slot_upload_kb_max=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s dirty_partial_saved_subchunks=%s dirty_last_rebuild_subchunks=%s current_chunk_loaded=%s current_chunk_collision=%s marker=%s block_summary=%s run_log=%s\n' \
       "$ACTION" "$EDIT_X" "$EDIT_Y" "$EDIT_Z" "$EDIT_BLOCK_ID" "$EXPECTED_EDGES" "$EXPECTED_BOUNDS" "$DB_PATH" \
       "$gpu_in_place_upload_enabled" "$gpu_in_place_uploads" "$gpu_in_place_upload_misses" "$gpu_uploads" \
-      "$gpu_upload_fail" "$gpu_upload_fail_capacity" "$gpu_upload_fail_fragmented" \
+      "$gpu_upload_fail" "$gpu_upload_fail_capacity" "$gpu_upload_fail_fragmented" "$gpu_upload_fail_injected" \
       "$gpu_upload_retry_policy" "$gpu_upload_retry_attempts" "$gpu_upload_retry_success" "$gpu_upload_retry_giveups" \
       "$gpu_upload_backoff_active" "$gpu_upload_backoff_frames" "$gpu_upload_backoff_max_frames" \
       "$gpu_upload_ms_max" "$gpu_upload_stage_ms_max" "$gpu_upload_update_ms_max" "$gpu_draw_patch_ms_max" \
@@ -265,6 +266,7 @@ require_metric_ge "$marker_path" gpu_in_place_upload_misses "$MIN_IN_PLACE_MISSE
 require_metric_eq "$marker_path" gpu_upload_fail 0
 require_metric_eq "$marker_path" gpu_upload_fail_capacity 0
 require_metric_eq "$marker_path" gpu_upload_fail_fragmented 0
+require_metric_eq "$marker_path" gpu_upload_fail_injected 0
 grep -q "gpu_upload_retry_policy=none" "$marker_path" || fail "gpu_upload_retry_policy is not none in $marker_path"
 require_metric_eq "$marker_path" gpu_upload_retry_attempts 0
 require_metric_eq "$marker_path" gpu_upload_retry_success 0

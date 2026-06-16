@@ -1557,6 +1557,7 @@ pub struct GpuTerrainStats {
     pub upload_failures: u64,
     pub upload_capacity_failures: u64,
     pub upload_fragmentation_failures: u64,
+    pub upload_injected_failures: u64,
     pub upload_retry_policy: &'static str,
     pub upload_retry_attempts: u64,
     pub upload_retry_success: u64,
@@ -1880,6 +1881,7 @@ pub struct GpuTerrainBufferPool {
     upload_failures: u64,
     upload_capacity_failures: u64,
     upload_fragmentation_failures: u64,
+    upload_injected_failures: u64,
     upload_retry_backoff: GpuUploadRetryBackoffTelemetry,
     in_place_uploads: u64,
     in_place_upload_misses: u64,
@@ -1978,6 +1980,7 @@ impl GpuTerrainBufferPool {
             upload_failures: 0,
             upload_capacity_failures: 0,
             upload_fragmentation_failures: 0,
+            upload_injected_failures: 0,
             upload_retry_backoff: GpuUploadRetryBackoffTelemetry::default(),
             in_place_uploads: 0,
             in_place_upload_misses: 0,
@@ -2110,6 +2113,13 @@ impl GpuTerrainBufferPool {
         self.refresh_repack_upload_preview();
     }
 
+    pub fn record_injected_upload_failure(&mut self, key: GpuSubchunkKey) {
+        self.remove_subchunk_inner(key);
+        self.upload_failures += 1;
+        self.upload_injected_failures += 1;
+        self.refresh_repack_upload_preview();
+    }
+
     fn remove_subchunk_inner(&mut self, key: GpuSubchunkKey) {
         self.repack_sources.remove(&key);
         let Some(slot) = self.slots.remove(&key) else {
@@ -2180,6 +2190,7 @@ impl GpuTerrainBufferPool {
             upload_failures: self.upload_failures,
             upload_capacity_failures: self.upload_capacity_failures,
             upload_fragmentation_failures: self.upload_fragmentation_failures,
+            upload_injected_failures: self.upload_injected_failures,
             upload_retry_policy: self.upload_retry_backoff.policy_label(),
             upload_retry_attempts: self.upload_retry_backoff.retry_attempts,
             upload_retry_success: self.upload_retry_backoff.retry_success,

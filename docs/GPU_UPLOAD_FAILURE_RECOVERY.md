@@ -30,6 +30,7 @@ Fresh 2026-06-16 results:
 - `gpu_upload_failure_recovery_keeps_cpu_fallback_until_slot_exists`: passed.
 - `terrain_mesh_build_plan_preserves_gpu_proxy_and_fallback_paths`: passed.
 - The broader retry/backoff runtime evidence in `logs/gpu_upload_retry_backoff_movement_current`, `logs/gpu_upload_retry_backoff_in_place_current`, and `logs/gpu_upload_retry_backoff_budget_current` still reports zero upload failures and retry/backoff policy `none/0`.
+- Runtime fallback evidence now lives in `scripts/gpu_terrain_upload_failure_fallback_gate.sh` and `docs/GPU_UPLOAD_FAILURE_FALLBACK_GATE.md`. That gate intentionally injects upload failures and requires visual CPU ArrayMesh readiness, `shadow_path=arraymesh`, collision readiness, zero ground misses, and non-sky terrain samples.
 
 ## Guardrails
 

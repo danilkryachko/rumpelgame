@@ -400,6 +400,40 @@ print_optional_artifact() {
 error_scan() {
   test -s "$summary_index_path" || return 0
   grep -nE 'ERROR|SCRIPT ERROR|panic|ObjectDB|leaked|exceeds|gpu_upload_fail=[1-9]' "$summary_index_path" 2>/dev/null \
+    | awk '
+      function metric(line, key, pattern, value_len) {
+        pattern = key "=[0-9][0-9]*"
+        if (match(line, pattern) == 0) {
+          return ""
+        }
+        value_len = RLENGTH - length(key) - 1
+        return substr(line, RSTART + length(key) + 1, value_len)
+      }
+
+      function expected_injected_upload_failure_line(line, upload_fail, injected, capacity, fragmented) {
+        if (line !~ /gpu_upload_failure_fallback/ && line !~ /gpu_terrain_upload_failure_fallback/) {
+          return 0
+        }
+        if (line !~ /gpu_upload_fail=[1-9]/ || line !~ /gpu_upload_fail_injected=[1-9]/) {
+          return 0
+        }
+        if (line ~ /ERROR|SCRIPT ERROR|panic|ObjectDB|leaked|exceeds/) {
+          return 0
+        }
+
+        upload_fail = metric(line, "gpu_upload_fail")
+        injected = metric(line, "gpu_upload_fail_injected")
+        capacity = metric(line, "gpu_upload_fail_capacity")
+        fragmented = metric(line, "gpu_upload_fail_fragmented")
+        if (upload_fail == "" || injected == "" || capacity == "" || fragmented == "") {
+          return 0
+        }
+        return upload_fail + 0 == injected + 0 && capacity + 0 == 0 && fragmented + 0 == 0
+      }
+
+      expected_injected_upload_failure_line($0) { next }
+      { print }
+    ' \
     | sed -n '1,80p'
 }
 
@@ -439,6 +473,7 @@ error_scan() {
   printf -- '- sum `gpu_upload_fail`: `%s`\n' "$(metric_sum gpu_upload_fail)"
   printf -- '- sum `gpu_upload_fail_capacity`: `%s`\n' "$(metric_sum gpu_upload_fail_capacity)"
   printf -- '- sum `gpu_upload_fail_fragmented`: `%s`\n' "$(metric_sum gpu_upload_fail_fragmented)"
+  printf -- '- sum `gpu_upload_fail_injected`: `%s`\n' "$(metric_sum gpu_upload_fail_injected)"
   printf -- '- latest `gpu_upload_retry_policy`: `%s`\n' "$(metric_latest_text gpu_upload_retry_policy)"
   printf -- '- sum `gpu_upload_retry_attempts`: `%s`\n' "$(metric_sum gpu_upload_retry_attempts)"
   printf -- '- sum `gpu_upload_retry_success`: `%s`\n' "$(metric_sum gpu_upload_retry_success)"

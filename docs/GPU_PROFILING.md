@@ -12,6 +12,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 ## Trusted Local Signals
 
 - `gpu_upload_fail`: must stay `0` in normal stress runs.
+- `gpu_upload_fail_injected`: must stay `0` in normal stress runs. It may be nonzero only in the explicit upload failure fallback gate.
 - `gpu_upload_retry_policy`, `gpu_upload_retry_attempts`, `gpu_upload_retry_success`, `gpu_upload_retry_giveups`, `gpu_upload_backoff_active`, `gpu_upload_backoff_frames`, and `gpu_upload_backoff_max_frames`: currently define the no-retry/no-backoff upload policy and must stay `none` / `0` until an explicit recovery policy is implemented and rebaselined.
 - `terrain_queue_work_ms`: useful for Rust/Godot terrain queue CPU work.
 - `process_wall_p95_ms`: useful for client `_process` CPU pressure.
@@ -134,6 +135,16 @@ cargo test --manifest-path client/rust_ext/Cargo.toml terrain_mesh_build_plan_pr
 ```
 
 These tests lock the current fallback-first recovery contract; see `docs/GPU_UPLOAD_FAILURE_RECOVERY.md`.
+
+Use the upload failure fallback gate after touching GPU upload failure handling, per-subchunk GPU slot state, CPU fallback removal, shadow path decisions, or collision readiness:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+sh scripts/gpu_terrain_upload_failure_fallback_gate.sh logs/gpu_upload_failure_fallback_current
+```
+
+This gate intentionally injects upload failures and therefore expects `gpu_upload_fail` plus `gpu_upload_fail_injected` to be nonzero while capacity/fragmentation failures stay zero. Its terrain queue budget is report-only because the run intentionally forces CPU ArrayMesh fallback; see `docs/GPU_UPLOAD_FAILURE_FALLBACK_GATE.md`.
 
 Use the resource lifecycle audit after upload-pressure, renderer resource ownership, atlas/uniform, native-shadow, repack upload, or shutdown cleanup work. It refreshes a scoped GPU report and fails on dirty error scans, upload failures, unexpected scene-target replacement, missing default terrain resources, or native-shadow resource error counters:
 

@@ -766,7 +766,14 @@ impl GameClient {
             && let (Some(gpu_terrain), Some(packed_faces)) = (&mut self.gpu_terrain, packed_faces)
         {
             let upload_bytes = packed_faces.byte_len();
-            let uploaded = gpu_terrain.upload_subchunk(gpu_key, packed_faces).is_some();
+            let uploaded = if gpu_terrain_upload_failure_injection_enabled()
+                && packed_faces.face_count() > 0
+            {
+                gpu_terrain.record_injected_upload_failure(gpu_key);
+                false
+            } else {
+                gpu_terrain.upload_subchunk(gpu_key, packed_faces).is_some()
+            };
             state = TerrainGpuUploadState::from_upload_result(uploaded);
             if uploaded {
                 uploads = 1;
@@ -3173,6 +3180,8 @@ const GPU_TERRAIN_RENDER_DEFAULT_ENABLED: bool = false;
 const GPU_TERRAIN_STATS_ENV: &str = "RUMPELMC_GPU_TERRAIN_STATS";
 const GPU_TERRAIN_UPLOAD_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD";
 const GPU_TERRAIN_RENDER_ENV: &str = "RUMPELMC_GPU_TERRAIN_RENDER";
+const GPU_TERRAIN_UPLOAD_FAILURE_INJECTION_ENV: &str =
+    "RUMPELMC_GPU_TERRAIN_UPLOAD_FAILURE_INJECTION";
 const GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD_ENV: &str = "RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD";
 const GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD_DEFAULT_ENABLED: bool = true;
 const CPU_ARRAY_MESH_PACKED_FACES_ENV: &str = "RUMPELMC_CPU_ARRAY_MESH_PACKED_FACES";
@@ -3703,6 +3712,19 @@ fn gpu_terrain_upload_enabled() -> bool {
 
 fn gpu_terrain_upload_decision(upload_env_enabled: bool, render_enabled: bool) -> bool {
     GPU_TERRAIN_PROTOTYPE_UPLOAD || upload_env_enabled || render_enabled
+}
+
+fn gpu_terrain_upload_failure_injection_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_upload_failure_injection_decision(env_flag_state(
+            GPU_TERRAIN_UPLOAD_FAILURE_INJECTION_ENV,
+        ))
+    })
+}
+
+fn gpu_terrain_upload_failure_injection_decision(env_state: Option<bool>) -> bool {
+    env_state.unwrap_or(false)
 }
 
 fn gpu_terrain_render_decision(env_state: Option<bool>) -> bool {
@@ -5714,7 +5736,7 @@ impl GameClient {
                 let stats = pool.stats();
                 let rasterization = gpu_terrain::terrain_rasterization_labels();
                 format!(
-                    " gpu_subchunks={} gpu_draws={} gpu_effective_draws={} gpu_draw_repeat={} gpu_draw_cmd_bytes={} gpu_draw_cmd_capacity_bytes={} gpu_draw_cmd_stride={} gpu_cull={} gpu_front_face={} gpu_faces={} gpu_frames={} gpu_scene_target_create={} gpu_scene_target_reuse={} gpu_scene_target_replace={} gpu_uniform_set_create={} gpu_atlas_texture_create={} gpu_atlas_sampler_create={} gpu_push_constant_bytes={} gpu_push_constant_updates={} gpu_push_constant_total_bytes={} gpu_push_constant_avg_bytes={:.1} gpu_push_constant_camera_bytes={} gpu_push_constant_lighting_bytes={} gpu_push_constant_atlas_bytes={} gpu_light_dir={:.3}/{:.3}/{:.3} gpu_light_color={:.3}/{:.3}/{:.3} gpu_light_energy={:.3} gpu_light_ambient={:.3} gpu_mem={:.1}MB gpu_uploads={} gpu_upload_fail={} gpu_upload_fail_capacity={} gpu_upload_fail_fragmented={} gpu_upload_retry_policy={} gpu_upload_retry_attempts={} gpu_upload_retry_success={} gpu_upload_retry_giveups={} gpu_upload_backoff_active={} gpu_upload_backoff_frames={} gpu_upload_backoff_max_frames={} gpu_in_place_upload_enabled={} gpu_in_place_uploads={} gpu_in_place_upload_misses={} gpu_upload_mb={:.2} gpu_last_upload_kb={:.1} gpu_upload_ms={:.3}/{:.3}/{:.3} gpu_upload_encode_ms={:.3}/{:.3}/{:.3} gpu_upload_stage_ms={:.3}/{:.3}/{:.3} gpu_upload_update_ms={:.3}/{:.3}/{:.3} gpu_free_ranges={} gpu_free_faces={} gpu_largest_free={} gpu_fragmented_free_faces={} gpu_fragmentation_pct={:.1} gpu_repack_requested={} gpu_repack_active={} gpu_repack_attempts={} gpu_repack_success={} gpu_repack_abort={} gpu_repack_moved_subchunks={} gpu_repack_moved_faces={} gpu_repack_bytes={} gpu_repack_source_subchunks={} gpu_repack_source_bytes={} gpu_repack_source_missing={} gpu_repack_payload_ready={} gpu_repack_payload_bytes={} gpu_repack_upload_ready={} gpu_repack_upload_bytes={} gpu_repack_upload_ms={:.3} gpu_repack_bind_ready={} gpu_repack_bind_ms={:.3} gpu_repack_draw_ready={} gpu_repack_draw_bytes={} gpu_repack_stage_ready={} gpu_repack_stage_slots={} gpu_repack_stage_bytes={} gpu_repack_commit_ready={} gpu_repack_commit_steps={} gpu_repack_commit_tail_free={} gpu_repack_apply_ready={} gpu_repack_apply_steps={} gpu_repack_apply_slots={} gpu_repack_final_swap_ready={} gpu_repack_final_swap_blocked={} gpu_repack_final_swap_slots={} gpu_repack_ms={:.3} gpu_repack_fragmentation_before_pct={:.1} gpu_repack_fragmentation_after_pct={:.1} gpu_repack_largest_free_before={} gpu_repack_largest_free_after={} gpu_repack_failure_reason={} gpu_draw_rebuilds={} gpu_draw_rebuild_ms={:.3}/{:.3}/{:.3} gpu_draw_patches={} gpu_draw_patch_ms={:.3}/{:.3}/{:.3} gpu_compositor_submit={} gpu_compositor_submit_ms={:.3}/{:.3}/{:.3} gpu_compositor_submit_parts={:.3}/{:.3}/{:.3}/{:.3} gpu_compositor_submit_max_parts={:.3}/{:.3}/{:.3}/{:.3} gpu_compositor_gpu_samples={} gpu_compositor_gpu_ms={:.3}/{:.3}/{:.3} gpu_compositor_gpu_us={:.1}/{:.1}/{:.1}",
+                    " gpu_subchunks={} gpu_draws={} gpu_effective_draws={} gpu_draw_repeat={} gpu_draw_cmd_bytes={} gpu_draw_cmd_capacity_bytes={} gpu_draw_cmd_stride={} gpu_cull={} gpu_front_face={} gpu_faces={} gpu_frames={} gpu_scene_target_create={} gpu_scene_target_reuse={} gpu_scene_target_replace={} gpu_uniform_set_create={} gpu_atlas_texture_create={} gpu_atlas_sampler_create={} gpu_push_constant_bytes={} gpu_push_constant_updates={} gpu_push_constant_total_bytes={} gpu_push_constant_avg_bytes={:.1} gpu_push_constant_camera_bytes={} gpu_push_constant_lighting_bytes={} gpu_push_constant_atlas_bytes={} gpu_light_dir={:.3}/{:.3}/{:.3} gpu_light_color={:.3}/{:.3}/{:.3} gpu_light_energy={:.3} gpu_light_ambient={:.3} gpu_mem={:.1}MB gpu_uploads={} gpu_upload_fail={} gpu_upload_fail_capacity={} gpu_upload_fail_fragmented={} gpu_upload_fail_injected={} gpu_upload_retry_policy={} gpu_upload_retry_attempts={} gpu_upload_retry_success={} gpu_upload_retry_giveups={} gpu_upload_backoff_active={} gpu_upload_backoff_frames={} gpu_upload_backoff_max_frames={} gpu_in_place_upload_enabled={} gpu_in_place_uploads={} gpu_in_place_upload_misses={} gpu_upload_mb={:.2} gpu_last_upload_kb={:.1} gpu_upload_ms={:.3}/{:.3}/{:.3} gpu_upload_encode_ms={:.3}/{:.3}/{:.3} gpu_upload_stage_ms={:.3}/{:.3}/{:.3} gpu_upload_update_ms={:.3}/{:.3}/{:.3} gpu_free_ranges={} gpu_free_faces={} gpu_largest_free={} gpu_fragmented_free_faces={} gpu_fragmentation_pct={:.1} gpu_repack_requested={} gpu_repack_active={} gpu_repack_attempts={} gpu_repack_success={} gpu_repack_abort={} gpu_repack_moved_subchunks={} gpu_repack_moved_faces={} gpu_repack_bytes={} gpu_repack_source_subchunks={} gpu_repack_source_bytes={} gpu_repack_source_missing={} gpu_repack_payload_ready={} gpu_repack_payload_bytes={} gpu_repack_upload_ready={} gpu_repack_upload_bytes={} gpu_repack_upload_ms={:.3} gpu_repack_bind_ready={} gpu_repack_bind_ms={:.3} gpu_repack_draw_ready={} gpu_repack_draw_bytes={} gpu_repack_stage_ready={} gpu_repack_stage_slots={} gpu_repack_stage_bytes={} gpu_repack_commit_ready={} gpu_repack_commit_steps={} gpu_repack_commit_tail_free={} gpu_repack_apply_ready={} gpu_repack_apply_steps={} gpu_repack_apply_slots={} gpu_repack_final_swap_ready={} gpu_repack_final_swap_blocked={} gpu_repack_final_swap_slots={} gpu_repack_ms={:.3} gpu_repack_fragmentation_before_pct={:.1} gpu_repack_fragmentation_after_pct={:.1} gpu_repack_largest_free_before={} gpu_repack_largest_free_after={} gpu_repack_failure_reason={} gpu_draw_rebuilds={} gpu_draw_rebuild_ms={:.3}/{:.3}/{:.3} gpu_draw_patches={} gpu_draw_patch_ms={:.3}/{:.3}/{:.3} gpu_compositor_submit={} gpu_compositor_submit_ms={:.3}/{:.3}/{:.3} gpu_compositor_submit_parts={:.3}/{:.3}/{:.3}/{:.3} gpu_compositor_submit_max_parts={:.3}/{:.3}/{:.3}/{:.3} gpu_compositor_gpu_samples={} gpu_compositor_gpu_ms={:.3}/{:.3}/{:.3} gpu_compositor_gpu_us={:.1}/{:.1}/{:.1}",
                     stats.subchunks,
                     stats.draw_count,
                     stats.compositor_effective_draw_count,
@@ -5752,6 +5774,7 @@ impl GameClient {
                     stats.upload_failures,
                     stats.upload_capacity_failures,
                     stats.upload_fragmentation_failures,
+                    stats.upload_injected_failures,
                     stats.upload_retry_policy,
                     stats.upload_retry_attempts,
                     stats.upload_retry_success,
@@ -6709,6 +6732,13 @@ mod tests {
         assert!(gpu_terrain_upload_decision(true, false));
         assert!(gpu_terrain_upload_decision(false, true));
         assert!(gpu_terrain_upload_decision(true, true));
+    }
+
+    #[test]
+    fn gpu_terrain_upload_failure_injection_stays_default_off() {
+        assert!(!gpu_terrain_upload_failure_injection_decision(None));
+        assert!(gpu_terrain_upload_failure_injection_decision(Some(true)));
+        assert!(!gpu_terrain_upload_failure_injection_decision(Some(false)));
     }
 
     #[test]
