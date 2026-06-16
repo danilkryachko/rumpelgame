@@ -47,6 +47,8 @@ const GPU_TERRAIN_CULL_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_CULL_MODE";
 const GPU_TERRAIN_BUFFER_REPACK_ENV: &str = "RUMPELMC_GPU_TERRAIN_BUFFER_REPACK";
 const GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW";
+const GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD_ENV: &str =
+    "RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD";
 
 pub const FACE_LEFT: u32 = 0;
 pub const FACE_RIGHT: u32 = 1;
@@ -361,11 +363,19 @@ impl PackedFaceBatch {
             .min(MAX_CPU_ARRAY_MESH_VERTICES)
     }
 
+    #[cfg(test)]
     fn to_bytes_for_subchunk(&self, key: GpuSubchunkKey) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.byte_len());
+        self.write_bytes_for_subchunk(key, &mut bytes);
+        bytes
+    }
+
+    fn write_bytes_for_subchunk(&self, key: GpuSubchunkKey, bytes: &mut Vec<u8>) {
         let chunk_x_bits = pack_signed_i16(key.chunk_x) << 16;
         let chunk_z_bits = pack_signed_i16(key.chunk_z) << 16;
         let sub_y_bits = pack_signed_i16(key.sub_y);
-        let mut bytes = Vec::with_capacity(self.byte_len());
+        bytes.clear();
+        bytes.reserve(self.byte_len());
         for face in &self.faces {
             let block_flags = (face.block_flags & 0x0000_ffff) | chunk_x_bits;
             let extent = (face.extent & 0x0000_ffff) | chunk_z_bits;
@@ -374,7 +384,6 @@ impl PackedFaceBatch {
             bytes.extend_from_slice(&extent.to_le_bytes());
             bytes.extend_from_slice(&sub_y_bits.to_le_bytes());
         }
-        bytes
     }
 }
 
@@ -1435,10 +1444,16 @@ impl IndirectDrawCommand {
     }
 
     fn append_bytes(self, bytes: &mut Vec<u8>) {
-        bytes.extend_from_slice(&self.vertex_count.to_le_bytes());
-        bytes.extend_from_slice(&self.instance_count.to_le_bytes());
-        bytes.extend_from_slice(&self.first_vertex.to_le_bytes());
-        bytes.extend_from_slice(&self.first_instance.to_le_bytes());
+        bytes.extend_from_slice(&self.to_le_bytes());
+    }
+
+    fn to_le_bytes(self) -> [u8; INDIRECT_DRAW_BYTES] {
+        let mut bytes = [0u8; INDIRECT_DRAW_BYTES];
+        bytes[0..4].copy_from_slice(&self.vertex_count.to_le_bytes());
+        bytes[4..8].copy_from_slice(&self.instance_count.to_le_bytes());
+        bytes[8..12].copy_from_slice(&self.first_vertex.to_le_bytes());
+        bytes[12..16].copy_from_slice(&self.first_instance.to_le_bytes());
+        bytes
     }
 }
 
@@ -1485,6 +1500,18 @@ fn remove_draw_key(
     })
 }
 
+fn should_upload_subchunk_in_place(
+    enabled: bool,
+    existing_slot: Option<GpuTerrainSlot>,
+    face_count: usize,
+) -> bool {
+    enabled
+        && face_count > 0
+        && existing_slot
+            .map(|slot| slot.face_count == face_count)
+            .unwrap_or(false)
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GpuTerrainStats {
     pub subchunks: usize,
@@ -1529,6 +1556,9 @@ pub struct GpuTerrainStats {
     pub upload_failures: u64,
     pub upload_capacity_failures: u64,
     pub upload_fragmentation_failures: u64,
+    pub in_place_upload_enabled: u64,
+    pub in_place_uploads: u64,
+    pub in_place_upload_misses: u64,
     pub free_ranges: usize,
     pub free_faces: usize,
     pub largest_free_faces: usize,
@@ -1788,6 +1818,7 @@ pub struct GpuTerrainBufferPool {
     slots: HashMap<GpuSubchunkKey, GpuTerrainSlot>,
     draw_keys: Vec<GpuSubchunkKey>,
     draw_indices: HashMap<GpuSubchunkKey, usize>,
+    upload_scratch: Vec<u8>,
     repack_sources: HashMap<GpuSubchunkKey, Vec<u8>>,
     repack_upload_preview_sampled: bool,
     render_pipeline: Option<GpuTerrainRenderPipeline>,
@@ -1825,6 +1856,8 @@ pub struct GpuTerrainBufferPool {
     upload_failures: u64,
     upload_capacity_failures: u64,
     upload_fragmentation_failures: u64,
+    in_place_uploads: u64,
+    in_place_upload_misses: u64,
     repack_telemetry: GpuTerrainRepackTelemetry,
     draw_rebuild_count: u64,
     avg_draw_rebuild_ms: f64,
@@ -1882,6 +1915,7 @@ impl GpuTerrainBufferPool {
             slots: HashMap::new(),
             draw_keys: Vec::new(),
             draw_indices: HashMap::new(),
+            upload_scratch: Vec::new(),
             repack_sources: HashMap::new(),
             repack_upload_preview_sampled: false,
             render_pipeline,
@@ -1919,6 +1953,8 @@ impl GpuTerrainBufferPool {
             upload_failures: 0,
             upload_capacity_failures: 0,
             upload_fragmentation_failures: 0,
+            in_place_uploads: 0,
+            in_place_upload_misses: 0,
             repack_telemetry,
             draw_rebuild_count: 0,
             avg_draw_rebuild_ms: 0.0,
@@ -1947,29 +1983,59 @@ impl GpuTerrainBufferPool {
         key: GpuSubchunkKey,
         batch: &PackedFaceBatch,
     ) -> Option<GpuTerrainSlot> {
+        let face_count = batch.face_count();
+        let in_place_enabled = gpu_terrain_in_place_subchunk_upload_enabled();
+        let existing_slot = self.slots.get(&key).copied();
+        if should_upload_subchunk_in_place(in_place_enabled, existing_slot, face_count) {
+            let slot = existing_slot.expect("in-place upload requires an existing slot");
+            self.upload_batch_to_slot(key, batch, slot);
+            self.in_place_uploads += 1;
+            self.refresh_repack_upload_preview();
+            return Some(slot);
+        }
+        if in_place_enabled && existing_slot.is_some() && face_count > 0 {
+            self.in_place_upload_misses += 1;
+        }
+
         self.remove_subchunk_inner(key);
-        if batch.face_count() == 0 {
+        if face_count == 0 {
             self.refresh_repack_upload_preview();
             return None;
         }
 
-        let upload_start = Instant::now();
-        let Some(range) = self.allocator.allocate(batch.face_count()) else {
-            self.record_upload_failure(batch.face_count());
+        let Some(range) = self.allocator.allocate(face_count) else {
+            self.record_upload_failure(face_count);
             return None;
         };
-        let encode_start = Instant::now();
-        let bytes = batch.to_bytes_for_subchunk(key);
-        let repack_source = if self.repack_source_enabled() {
-            Some(bytes.clone())
-        } else {
-            None
+        let slot = GpuTerrainSlot {
+            start_face: range.start,
+            face_count: range.len,
         };
+        self.upload_batch_to_slot(key, batch, slot);
+        self.slots.insert(key, slot);
+        self.used_faces += range.len;
+        self.insert_draw_command(key, slot);
+        self.refresh_repack_upload_preview();
+        Some(slot)
+    }
+
+    fn upload_batch_to_slot(
+        &mut self,
+        key: GpuSubchunkKey,
+        batch: &PackedFaceBatch,
+        slot: GpuTerrainSlot,
+    ) {
+        let upload_start = Instant::now();
+        let encode_start = Instant::now();
+        batch.write_bytes_for_subchunk(key, &mut self.upload_scratch);
+        let repack_source = self
+            .repack_source_enabled()
+            .then(|| self.upload_scratch.clone());
         let upload_encode_ms = encode_start.elapsed().as_secs_f64() * 1000.0;
         let stage_start = Instant::now();
-        let pba = PackedByteArray::from(bytes.as_slice());
+        let pba = PackedByteArray::from(self.upload_scratch.as_slice());
         let upload_stage_ms = stage_start.elapsed().as_secs_f64() * 1000.0;
-        let offset = (range.start * PACKED_FACE_BYTES) as u32;
+        let offset = (slot.start_face * PACKED_FACE_BYTES) as u32;
         let update_start = Instant::now();
         self.rd
             .buffer_update(self.faces_buffer_rid, offset, pba.len() as u32, &pba);
@@ -1984,18 +2050,11 @@ impl GpuTerrainBufferPool {
             upload_update_ms,
         );
 
-        let slot = GpuTerrainSlot {
-            start_face: range.start,
-            face_count: range.len,
-        };
-        self.slots.insert(key, slot);
         if let Some(repack_source) = repack_source {
             self.repack_sources.insert(key, repack_source);
+        } else {
+            self.repack_sources.remove(&key);
         }
-        self.used_faces += range.len;
-        self.insert_draw_command(key, slot);
-        self.refresh_repack_upload_preview();
-        Some(slot)
     }
 
     fn record_upload_timing(
@@ -2095,6 +2154,9 @@ impl GpuTerrainBufferPool {
             upload_failures: self.upload_failures,
             upload_capacity_failures: self.upload_capacity_failures,
             upload_fragmentation_failures: self.upload_fragmentation_failures,
+            in_place_upload_enabled: u64::from(gpu_terrain_in_place_subchunk_upload_enabled()),
+            in_place_uploads: self.in_place_uploads,
+            in_place_upload_misses: self.in_place_upload_misses,
             free_ranges: allocator_stats.free_ranges,
             free_faces: allocator_stats.free_faces,
             largest_free_faces: allocator_stats.largest_free_faces,
@@ -2886,8 +2948,7 @@ impl GpuTerrainBufferPool {
 
     fn write_draw_command(&mut self, draw_index: usize, slot: GpuTerrainSlot) {
         let patch_start = Instant::now();
-        let mut indirect_bytes = Vec::with_capacity(INDIRECT_DRAW_BYTES);
-        IndirectDrawCommand::for_slot(slot).append_bytes(&mut indirect_bytes);
+        let indirect_bytes = IndirectDrawCommand::for_slot(slot).to_le_bytes();
         let indirect_pba = PackedByteArray::from(indirect_bytes.as_slice());
         self.rd.buffer_update(
             self.indirect_buffer_rid,
@@ -3538,6 +3599,15 @@ fn gpu_terrain_buffer_repack_upload_preview_enabled() -> bool {
     })
 }
 
+fn gpu_terrain_in_place_subchunk_upload_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(
+            std::env::var(GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD_ENV).ok(),
+        )
+    })
+}
+
 fn gpu_terrain_buffer_repack_from_env(value: Option<String>) -> bool {
     matches!(
         value
@@ -3864,6 +3934,20 @@ mod tests {
     }
 
     #[test]
+    fn in_place_subchunk_upload_requires_flag_and_same_nonzero_face_count() {
+        let slot = GpuTerrainSlot {
+            start_face: 32,
+            face_count: 8,
+        };
+
+        assert!(!should_upload_subchunk_in_place(false, Some(slot), 8));
+        assert!(!should_upload_subchunk_in_place(true, None, 8));
+        assert!(!should_upload_subchunk_in_place(true, Some(slot), 0));
+        assert!(!should_upload_subchunk_in_place(true, Some(slot), 7));
+        assert!(should_upload_subchunk_in_place(true, Some(slot), 8));
+    }
+
+    #[test]
     fn repack_marker_telemetry_is_default_off() {
         let telemetry = GpuTerrainRepackTelemetry::marker_only(false);
 
@@ -4011,6 +4095,31 @@ mod tests {
 
         assert_eq!(read_u32(&bytes, 8) & 0xffff, 5 | (6 << 6));
         assert_eq!(read_u32(&bytes, 8) >> 16, pack_signed_i16(-3));
+    }
+
+    #[test]
+    fn subchunk_byte_writer_reuses_caller_buffer() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::STONE)],
+        };
+        let mut bytes = Vec::with_capacity(128);
+        bytes.extend_from_slice(&[0xff; 32]);
+        let original_capacity = bytes.capacity();
+
+        batch.write_bytes_for_subchunk(
+            GpuSubchunkKey {
+                chunk_x: -4,
+                sub_y: 2,
+                chunk_z: 6,
+            },
+            &mut bytes,
+        );
+
+        assert_eq!(bytes.len(), batch.byte_len());
+        assert_eq!(bytes.capacity(), original_capacity);
+        assert_eq!(read_u32(&bytes, 4) >> 16, pack_signed_i16(-4));
+        assert_eq!(read_u32(&bytes, 8) >> 16, pack_signed_i16(6));
+        assert_eq!(read_u32(&bytes, 12), pack_signed_i16(2));
     }
 
     #[test]

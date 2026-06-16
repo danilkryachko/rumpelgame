@@ -4,7 +4,11 @@ This file is the current continuation state for Codex threads. Update it after n
 
 ## Latest Snapshot
 
-Date: 2026-06-15
+Date: 2026-06-16
+
+Fresh 2026-06-16 status:
+
+- Current `GPU` branch slice adds default-off same-face-count GPU subchunk in-place upload evidence. Runtime code now reuses the packed-face upload scratch buffer, writes indirect draw command patches from fixed stack bytes, exposes `gpu_in_place_upload_enabled`, `gpu_in_place_uploads`, and `gpu_in_place_upload_misses`, and gates the actual in-place update behind explicit `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1`; unset/`0` keeps the existing remove/allocate/insert path. New `scripts/gpu_terrain_in_place_upload_gate.sh` runs release block-edit stress against an isolated RocksDB path so persisted server state cannot turn validation into a no-op. Fresh evidence: `./scripts/gpu_terrain_in_place_upload_gate.sh logs/gpu_terrain_in_place_upload_gate_current` passed with `gpu_in_place_upload_enabled=1`, `gpu_in_place_uploads=1`, `gpu_in_place_upload_misses=3`, `gpu_uploads=699`, `gpu_upload_fail=0`, `gpu_upload_fail_capacity=0`, `gpu_upload_fail_fragmented=0`, `gpu_upload_ms_max=0.038`, `gpu_upload_stage_ms_max=0.013`, `gpu_upload_update_ms_max=0.034`, `gpu_draw_patch_ms_max=0.013`, `terrain_queue_max_ms=1.461`, `process_wall_p95_ms=0.043`, `gpu_compositor_submit_max_ms=0.157`, `dirty_partial_saved_subchunks=1`, and `dirty_last_rebuild_subchunks=2`. Docs updated: `docs/GPU_TRENDS.md`, `docs/GPU_PROFILING.md`, `docs/GPU_ROADMAP.md`, `docs/AGENT_MEMORY.md`, and this handoff. Checks passed: `sh -n scripts/gpu_terrain_in_place_upload_gate.sh`, `cargo test --manifest-path client/rust_ext/Cargo.toml` (170 tests), `./scripts/check.sh fast`, `git diff --check`, and `./scripts/diff_guard.sh`. No protocol, storage, worldgen, chunk serialization, default draw distance, lighting, shadows, texture quality, or visible quality changed. Caveat: this is still local macOS/Metal opt-in evidence; Windows/Vulkan/Direct3D profiler captures and broader upload-pressure/load-scaling gates remain separate work.
 
 Fresh 2026-06-15 status:
 

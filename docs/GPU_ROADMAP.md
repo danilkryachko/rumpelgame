@@ -84,7 +84,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 53. Keep shadow fallback valid after upload failure.
 54. Keep collision fallback valid after upload failure.
 55. Reduce staging allocation churn.
-56. Reuse staging buffers where safe.
+56. Done 2026-06-16: reused the packed-face upload scratch buffer where safe and added an isolated in-place upload gate for the opt-in same-face-count subchunk update path.
 57. Prototype an upload memory pool behind an env flag.
 58. Compare pooled and current upload paths.
 59. Keep the pool only with better metrics.
@@ -108,7 +108,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 71. Verify neighbor face refresh after edits.
 72. Verify collision refresh after edits.
 73. Verify shadow proxy refresh after edits.
-74. Verify GPU slot reuse after edits.
+74. Done 2026-06-16: verified opt-in GPU slot reuse after same-face-count dirty edits with `scripts/gpu_terrain_in_place_upload_gate.sh`; mismatched face counts still fall back to the existing remove/allocate/insert path.
 75. Compare dirty update against full rebuild.
 76. Add dirty update perf report.
 77. Make dirty update default only after stable parity.
