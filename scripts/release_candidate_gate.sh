@@ -118,6 +118,7 @@ else
   test_full_command_status="fail"
 fi
 
+test_gpu_report_freshness="$(field_metric gpu_report_freshness_status "$TEST_STRATEGY_SUMMARY")"
 security_protocol_change="$(field_metric active_protocol_change "$SECURITY_SUMMARY")"
 security_deterministic_property_tests="$(field_metric deterministic_property_tests "$SECURITY_SUMMARY")"
 security_packet_error_monitoring="$(field_metric packet_error_monitoring "$SECURITY_SUMMARY")"
@@ -215,6 +216,7 @@ awk \
   -v lighting_status="${lighting_status:-missing}" \
   -v test_fast_command_status="$test_fast_command_status" \
   -v test_full_command_status="$test_full_command_status" \
+  -v test_gpu_report_freshness="${test_gpu_report_freshness:-missing}" \
   -v security_protocol_change="${security_protocol_change:-1}" \
   -v security_deterministic_property_tests="${security_deterministic_property_tests:-missing}" \
   -v security_packet_error_monitoring="${security_packet_error_monitoring:-missing}" \
@@ -286,6 +288,9 @@ awk \
     } else if (test_fast_command_status != "pass" || test_full_command_status != "pass") {
       status = "fail"
       reason = "test_strategy_command_drift"
+    } else if (test_gpu_report_freshness != "guarded") {
+      status = "fail"
+      reason = "test_gpu_report_freshness_not_guarded"
     } else if (security_protocol_change + 0 != 0 || proto_diff_count + 0 != 0) {
       status = "fail"
       reason = "protocol_diff_present"
@@ -357,7 +362,7 @@ awk \
       reason = "live_checks_required"
     }
 
-    printf("release_candidate_gate status=%s reason=%s rc_status=%s perf_matrix=%s visual_smoke=%s storage_protocol_compatibility=%s active_protocol_change=%d security_deterministic_property_tests=%s security_packet_error_monitoring=%s security_server_session_monitoring=%s security_storage_package_smoke=%s security_storage_config=%s security_storage_backend_policy=%s security_block_edit_validation=%s security_block_edit_save_failure_rollback=%s security_unknown_packet_policy=%s security_nil_packet_policy=%s security_nil_position_policy=%s security_nil_block_action_policy=%s security_conflict_semantics=%s security_overload_status=%s security_local_server_exposure=%s security_smoke_bind_exposure=%s observability_error_scan=%s observability_summary_count=%d current_summary_count=%d arch_runtime_change=%s baseline_warning_status=%s shadow_active_native=%s transparent_active_fixture=%s lighting_ambient_status=%s live_checks=%s fast_check=%s full_check=%s diff_check=%s diff_guard=%s test_strategy_status=%s test_fast_command=%s test_full_command=%s security_status=%s observability_status=%s arch_status=%s baseline_status=%s shadow_status=%s transparent_status=%s lighting_status=%s test_strategy_summary=%s security_summary=%s observability_summary=%s arch_summary=%s baseline_summary=%s shadow_summary=%s transparent_summary=%s lighting_summary=%s\n", status, reason, rc_status, perf_matrix, visual_smoke, storage_protocol_compatibility, proto_diff_count, security_deterministic_property_tests, security_packet_error_monitoring, security_server_session_monitoring, security_storage_package_smoke, security_storage_config, security_storage_backend_policy, security_block_edit_validation, security_block_edit_save_failure_rollback, security_unknown_packet_policy, security_nil_packet_policy, security_nil_position_policy, security_nil_block_action_policy, security_conflict_semantics, security_overload_status, security_local_server_exposure, security_smoke_bind_exposure, observability_error_scan, observability_summary_count, current_summary_count, arch_runtime_change, baseline_warning_status, shadow_active_native, transparent_active_fixture, lighting_ambient_status, live_checks, fast_check, full_check, diff_check, diff_guard, test_status, test_fast_command_status, test_full_command_status, security_status, observability_status, arch_status, baseline_status, shadow_status, transparent_status, lighting_status, test_strategy_summary, security_summary, observability_summary, arch_summary, baseline_summary, shadow_summary, transparent_summary, lighting_summary)
+    printf("release_candidate_gate status=%s reason=%s rc_status=%s perf_matrix=%s visual_smoke=%s storage_protocol_compatibility=%s active_protocol_change=%d security_deterministic_property_tests=%s security_packet_error_monitoring=%s security_server_session_monitoring=%s security_storage_package_smoke=%s security_storage_config=%s security_storage_backend_policy=%s security_block_edit_validation=%s security_block_edit_save_failure_rollback=%s security_unknown_packet_policy=%s security_nil_packet_policy=%s security_nil_position_policy=%s security_nil_block_action_policy=%s security_conflict_semantics=%s security_overload_status=%s security_local_server_exposure=%s security_smoke_bind_exposure=%s observability_error_scan=%s observability_summary_count=%d current_summary_count=%d arch_runtime_change=%s baseline_warning_status=%s shadow_active_native=%s transparent_active_fixture=%s lighting_ambient_status=%s live_checks=%s fast_check=%s full_check=%s diff_check=%s diff_guard=%s test_strategy_status=%s test_fast_command=%s test_full_command=%s test_gpu_report_freshness=%s security_status=%s observability_status=%s arch_status=%s baseline_status=%s shadow_status=%s transparent_status=%s lighting_status=%s test_strategy_summary=%s security_summary=%s observability_summary=%s arch_summary=%s baseline_summary=%s shadow_summary=%s transparent_summary=%s lighting_summary=%s\n", status, reason, rc_status, perf_matrix, visual_smoke, storage_protocol_compatibility, proto_diff_count, security_deterministic_property_tests, security_packet_error_monitoring, security_server_session_monitoring, security_storage_package_smoke, security_storage_config, security_storage_backend_policy, security_block_edit_validation, security_block_edit_save_failure_rollback, security_unknown_packet_policy, security_nil_packet_policy, security_nil_position_policy, security_nil_block_action_policy, security_conflict_semantics, security_overload_status, security_local_server_exposure, security_smoke_bind_exposure, observability_error_scan, observability_summary_count, current_summary_count, arch_runtime_change, baseline_warning_status, shadow_active_native, transparent_active_fixture, lighting_ambient_status, live_checks, fast_check, full_check, diff_check, diff_guard, test_status, test_fast_command_status, test_full_command_status, test_gpu_report_freshness, security_status, observability_status, arch_status, baseline_status, shadow_status, transparent_status, lighting_status, test_strategy_summary, security_summary, observability_summary, arch_summary, baseline_summary, shadow_summary, transparent_summary, lighting_summary)
     if (status != "pass") {
       exit 1
     }
