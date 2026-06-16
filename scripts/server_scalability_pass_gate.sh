@@ -14,12 +14,15 @@ PROTOCOL_DOC="${RUMPELMC_SERVER_SCALABILITY_PROTOCOL_DOC:-"$ROOT_DIR/docs/PROTOC
 SERVER_SOURCE="${RUMPELMC_SERVER_SCALABILITY_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
 SERVER_TEST="${RUMPELMC_SERVER_SCALABILITY_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
 LIVE_SMOKE_SCRIPT="${RUMPELMC_SERVER_SCALABILITY_LIVE_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_multi_client_smoke.sh"}"
+ADMISSION_LIMIT_SMOKE_SCRIPT="${RUMPELMC_SERVER_SCALABILITY_ADMISSION_LIMIT_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/server_admission_limit_smoke.sh"}"
 LIVE_SMOKE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_LIVE_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_multi_client_smoke_current/server-multi-client-smoke-summary.txt"}"
 BROADER_LIVE_SMOKE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_BROADER_LIVE_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_multi_client_load_current/server-multi-client-smoke-summary.txt"}"
+ADMISSION_LIMIT_SMOKE_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_ADMISSION_LIMIT_SMOKE_SUMMARY:-"$ROOT_DIR/logs/server_admission_limit_smoke_current/server-admission-limit-smoke-summary.txt"}"
 WORLDGEN_QUALITY_SUMMARY="${RUMPELMC_SERVER_SCALABILITY_WORLDGEN_QUALITY_SUMMARY:-"$ROOT_DIR/logs/world_generation_quality_current/world-generation-quality-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_SERVER_SCALABILITY_RUN_GO_TESTS:-1}"
 RUN_LIVE_SMOKE="${RUMPELMC_SERVER_SCALABILITY_RUN_LIVE_SMOKE:-0}"
 RUN_BROADER_LIVE_SMOKE="${RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE:-0}"
+RUN_ADMISSION_LIMIT_SMOKE="${RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE:-0}"
 BROADER_LIVE_SMOKE_CLIENTS="${RUMPELMC_SERVER_SCALABILITY_BROADER_LIVE_SMOKE_CLIENTS:-6}"
 
 mkdir -p "$OUT_DIR"
@@ -55,7 +58,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$LIVE_SMOKE_SCRIPT" "$WORLDGEN_QUALITY_SUMMARY"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$SERVER_SOURCE" "$SERVER_TEST" "$LIVE_SMOKE_SCRIPT" "$ADMISSION_LIMIT_SMOKE_SCRIPT" "$WORLDGEN_QUALITY_SUMMARY"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -90,6 +93,8 @@ require_token "$SERVER_TEST" "TestConfiguredMaxClientsParsesSupportedValues"
 require_token "$SERVER_TEST" "TestTryRegisterClientHonorsMaxClients"
 require_token "$SERVER_TEST" "TestHandleConnectionRejectsWhenMaxClientsReached"
 require_token "$LIVE_SMOKE_SCRIPT" "server_multi_client_smoke status=pass"
+require_token "$ADMISSION_LIMIT_SMOKE_SCRIPT" "server_admission_limit_smoke status=pass"
+require_token "$ADMISSION_LIMIT_SMOKE_SCRIPT" "admission_result=rejected"
 
 case "$RUN_LIVE_SMOKE" in
   0) ;;
@@ -118,6 +123,19 @@ case "$RUN_BROADER_LIVE_SMOKE" in
     fail "unsupported RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=$RUN_BROADER_LIVE_SMOKE"
     ;;
 esac
+case "$RUN_ADMISSION_LIMIT_SMOKE" in
+  0) ;;
+  1)
+    admission_smoke_dir="$(dirname "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
+    "$ADMISSION_LIMIT_SMOKE_SCRIPT" "$admission_smoke_dir" > "$OUT_DIR/admission-limit-smoke-run.txt" 2>&1 || {
+      cat "$OUT_DIR/admission-limit-smoke-run.txt" >&2 || true
+      fail "admission-limit smoke failed"
+    }
+    ;;
+  *)
+    fail "unsupported RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE=$RUN_ADMISSION_LIMIT_SMOKE"
+    ;;
+esac
 
 worldgen_quality_status="$(field_metric status "$WORLDGEN_QUALITY_SUMMARY")"
 worldgen_runtime_quality="$(field_metric runtime_quality_pass "$WORLDGEN_QUALITY_SUMMARY")"
@@ -134,6 +152,22 @@ if [ -s "$BROADER_LIVE_SMOKE_SUMMARY" ]; then
   broader_live_clients="$(field_metric clients "$BROADER_LIVE_SMOKE_SUMMARY")"
   broader_live_initial_chunks="$(field_metric initial_chunks "$BROADER_LIVE_SMOKE_SUMMARY")"
   broader_live_fanout_updates="$(field_metric fanout_updates "$BROADER_LIVE_SMOKE_SUMMARY")"
+fi
+admission_limit_status="deferred"
+admission_limit_max_clients="0"
+admission_limit_attempted_clients="0"
+admission_limit_admitted_clients="0"
+admission_limit_rejected_clients="0"
+admission_limit_close_observed="0"
+admission_limit_rejection_log="0"
+if [ -s "$ADMISSION_LIMIT_SMOKE_SUMMARY" ]; then
+  admission_limit_status="$(field_metric status "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
+  admission_limit_max_clients="$(field_metric max_clients "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
+  admission_limit_attempted_clients="$(field_metric attempted_clients "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
+  admission_limit_admitted_clients="$(field_metric admitted_clients "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
+  admission_limit_rejected_clients="$(field_metric rejected_clients "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
+  admission_limit_close_observed="$(field_metric rejected_close_observed "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
+  admission_limit_rejection_log="$(field_metric admission_rejection_log "$ADMISSION_LIMIT_SMOKE_SUMMARY")"
 fi
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
@@ -159,10 +193,19 @@ awk \
   -v broader_live_fanout_updates="${broader_live_fanout_updates:-0}" \
   -v broader_live_required="$RUN_BROADER_LIVE_SMOKE" \
   -v broader_live_min_clients="$BROADER_LIVE_SMOKE_CLIENTS" \
+  -v admission_limit_status="${admission_limit_status:-deferred}" \
+  -v admission_limit_max_clients="${admission_limit_max_clients:-0}" \
+  -v admission_limit_attempted_clients="${admission_limit_attempted_clients:-0}" \
+  -v admission_limit_admitted_clients="${admission_limit_admitted_clients:-0}" \
+  -v admission_limit_rejected_clients="${admission_limit_rejected_clients:-0}" \
+  -v admission_limit_close_observed="${admission_limit_close_observed:-0}" \
+  -v admission_limit_rejection_log="${admission_limit_rejection_log:-0}" \
+  -v admission_limit_required="$RUN_ADMISSION_LIMIT_SMOKE" \
   -v network_tests="$network_tests" \
   -v design_doc="$DESIGN_DOC" \
   -v live_smoke_summary="$LIVE_SMOKE_SUMMARY" \
   -v broader_live_smoke_summary="$BROADER_LIVE_SMOKE_SUMMARY" \
+  -v admission_limit_smoke_summary="$ADMISSION_LIMIT_SMOKE_SUMMARY" \
   -v worldgen_quality_summary="$WORLDGEN_QUALITY_SUMMARY" '
   BEGIN {
     status = "pass"
@@ -176,13 +219,21 @@ awk \
     block_edit_fanout = "interested_clients_guarded"
     slow_client_write_timeout = "guarded"
     disconnect_cleanup_status = "failed_broadcast_guarded"
-    admission_policy = "unit_guarded"
+    admission_limit_ok = admission_limit_status == "pass" &&
+      admission_limit_max_clients + 0 == 1 &&
+      admission_limit_attempted_clients + 0 == 2 &&
+      admission_limit_admitted_clients + 0 == 1 &&
+      admission_limit_rejected_clients + 0 == 1 &&
+      admission_limit_close_observed + 0 == 1 &&
+      admission_limit_rejection_log + 0 == 1
+    admission_policy = admission_limit_ok ? "live_guarded" : "unit_guarded"
     active_protocol_change = proto_diff_count + 0
 
     deps_ok = worldgen_quality_status == "pass" && worldgen_runtime_quality == "deferred"
     tests_ok = network_tests == "pass" || network_tests == "skipped"
     live_ok = live_load_status == "pass" || live_required != "1"
     broader_required_ok = broader_live_ok || broader_live_required != "1"
+    admission_required_ok = admission_limit_ok || admission_limit_required != "1"
 
     if (active_protocol_change != 0) {
       status = "fail"
@@ -193,6 +244,9 @@ awk \
     } else if (!broader_required_ok) {
       status = "fail"
       reason = "broader_live_multi_client_smoke_failed"
+    } else if (!admission_required_ok) {
+      status = "fail"
+      reason = "admission_limit_smoke_failed"
     } else if (!deps_ok) {
       status = "fail"
       reason = "worldgen_quality_gate_not_clean"
@@ -201,7 +255,7 @@ awk \
       reason = "network_tests_failed"
     }
 
-    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s admission_policy=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s broader_live_load_status=%s broader_live_clients=%d broader_live_initial_chunks=%d broader_live_fanout_updates=%d network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s broader_live_smoke_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, admission_policy, active_protocol_change, disconnect_cleanup_status, live_load_status, broader_live_load_status, broader_live_clients, broader_live_initial_chunks, broader_live_fanout_updates, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, broader_live_smoke_summary, worldgen_quality_summary)
+    printf("server_scalability_pass status=%s reason=%s scalability_status=%s multi_client_sent_state=%s block_edit_fanout=%s slow_client_write_timeout=%s admission_policy=%s active_protocol_change=%d disconnect_cleanup_status=%s live_load_status=%s broader_live_load_status=%s broader_live_clients=%d broader_live_initial_chunks=%d broader_live_fanout_updates=%d admission_limit_smoke_status=%s admission_limit_max_clients=%d admission_limit_attempted_clients=%d admission_limit_admitted_clients=%d admission_limit_rejected_clients=%d admission_limit_rejection_log=%d network_tests=%s worldgen_quality_status=%s worldgen_runtime_quality=%s design_doc=%s live_smoke_summary=%s broader_live_smoke_summary=%s admission_limit_smoke_summary=%s worldgen_quality_summary=%s\n", status, reason, scalability_status, multi_client_sent_state, block_edit_fanout, slow_client_write_timeout, admission_policy, active_protocol_change, disconnect_cleanup_status, live_load_status, broader_live_load_status, broader_live_clients, broader_live_initial_chunks, broader_live_fanout_updates, admission_limit_status, admission_limit_max_clients, admission_limit_attempted_clients, admission_limit_admitted_clients, admission_limit_rejected_clients, admission_limit_rejection_log, network_tests, worldgen_quality_status, worldgen_runtime_quality, design_doc, live_smoke_summary, broader_live_smoke_summary, admission_limit_smoke_summary, worldgen_quality_summary)
     if (status != "pass") {
       exit 1
     }

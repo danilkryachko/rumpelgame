@@ -199,19 +199,19 @@ Fresh check:
 
 ## Server Scalability
 
-Server scalability is now guarded by per-client sent-state tests, interested-client block-edit fanout tests, failed-broadcast cleanup, session write deadlines, opt-in max-client admission, a two-client live fanout smoke, and a bounded six-client fanout/load smoke. CPU/memory profiling, load-tested admission sizing, adaptive overload policy, broad slow-reader/load harnesses, and disconnect counters remain future work.
+Server scalability is now guarded by per-client sent-state tests, interested-client block-edit fanout tests, failed-broadcast cleanup, session write deadlines, opt-in max-client admission, a bounded live one-holder/one-rejected admission smoke, a two-client live fanout smoke, and a bounded six-client fanout/load smoke. CPU/memory profiling, load-tested admission sizing, adaptive overload policy, broad slow-reader/load harnesses, and disconnect counters remain future work.
 
 Fresh check:
 
-- `logs/server_scalability_pass_current/server-scalability-pass-summary.txt` reported `status=pass`, `scalability_status=broader_live_guarded`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients=6`, `broader_live_initial_chunks=6`, `broader_live_fanout_updates=6`, and `active_protocol_change=0`.
+- `logs/server_scalability_pass_current/server-scalability-pass-summary.txt` reported `status=pass`, `scalability_status=broader_live_guarded`, `admission_policy=live_guarded`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients=6`, `broader_live_initial_chunks=6`, `broader_live_fanout_updates=6`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, and `active_protocol_change=0`.
 
 ## Networking Robustness
 
-The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, closed initial probes, opt-in max-client admission, bounded slow-reader timeout evidence, bounded repeated live disconnect/server-restart/rebootstrap recovery back to `client_state=active`, and unit-guarded reader-session stale-packet handling. Adaptive overload, packet replay, broad reconnect state reset, and backpressure policy remain deferred.
+The networking robustness gate is packet-boundary focused. It keeps the current TCP frame contract unchanged while guarding server and Rust client behavior for short length prefixes, short payloads, oversized lengths, malformed protobuf payloads, closed initial probes, opt-in max-client admission with bounded live rejection evidence, bounded slow-reader timeout evidence, bounded repeated live disconnect/server-restart/rebootstrap recovery back to `client_state=active`, and unit-guarded reader-session stale-packet handling. Adaptive overload, packet replay, broad reconnect state reset, and backpressure policy remain deferred.
 
 Fresh check:
 
-- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `reconnect_status=repeated_live_rebootstrap_guarded`, `slow_client_status=live_guarded`, `multi_client_live_status=pass`, `overload_status=admission_unit_guarded`, and `active_protocol_change=0`.
+- `logs/networking_robustness_current/networking-robustness-summary.txt` reported `status=pass`, `server_boundary_tests=pass`, `client_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `reconnect_status=repeated_live_rebootstrap_guarded`, `slow_client_status=live_guarded`, `multi_client_live_status=pass`, `overload_status=admission_live_guarded`, and `active_protocol_change=0`.
 
 ## Client State Machine
 
@@ -350,7 +350,7 @@ Fresh check:
 - Client collision radius remains `1` by default; `RUMPELMC_CLIENT_COLLISION_CHUNK_DISTANCE=0` is an opt-in lazy-collision experiment only.
 - Worldgen determinism is covered by focused `server/pkg/world` tests; generation behavior, chunk dimensions, serialization order, protocol, and storage remain unchanged.
 - Chunk serialization compatibility is guarded by focused `server/pkg/api`, `server/pkg/world`, and `server/pkg/network` tests for field numbers, enum values, raw defaults, RLE wire vectors, and protobuf unknown fields.
-- Networking robustness is guarded by focused Go and Rust packet-boundary tests plus opt-in max-client admission; adaptive overload and backpressure policy remain deferred and must not change the wire contract without a protocol task.
+- Networking robustness is guarded by focused Go and Rust packet-boundary tests plus opt-in max-client admission with bounded live rejection evidence; adaptive overload and backpressure policy remain deferred and must not change the wire contract without a protocol task.
 - Client lifecycle state is modeled as connecting, waiting chunks, spawning, active, reconnecting, and shutdown; bounded repeated reconnect/rebootstrap execution and state telemetry are guarded, while stale packet and reset behavior remain deferred.
 - Gameplay foundation keeps mining/building on `BlockAction` and `World.SetBlockGlobal`; local hotbar inventory is client-only and full edit reload persistence is deferred to the block-edit persistence gate.
 - Block edit persistence has a world-level save/reload guard for place and destroy edits; runtime persisted-reload visual/collision/GPU smoke is still a heavier deferred check.

@@ -313,7 +313,7 @@ awk \
     slow_reader_ok = slow_reader_smoke_status == "pass" && slow_reader_timeout_observed + 0 == 1 && slow_reader_timeout_class == "timeout"
     slow_client_status = slow_reader_ok ? "live_guarded" : (server_scalability_slow_client == "guarded" ? "unit_guarded" : "deferred")
     multi_client_live_status = server_scalability_live_load
-    overload_status = server_scalability_admission_policy == "unit_guarded" ? "admission_unit_guarded" : "deferred"
+    overload_status = server_scalability_admission_policy == "live_guarded" ? "admission_live_guarded" : (server_scalability_admission_policy == "unit_guarded" ? "admission_unit_guarded" : "deferred")
     active_protocol_change = proto_diff_count + 0
 
     scalability_ok = server_scalability_status == "pass" && server_scalability_protocol_change + 0 == 0

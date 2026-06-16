@@ -29,6 +29,7 @@ Scope:
 - Add an opt-in max-client admission cap with a default unlimited rollback/control.
 - Add a bounded live two-client smoke that validates real TCP chunk bootstrap and block-edit fanout.
 - Add a bounded broader live smoke that validates bootstrap and block-edit fanout across more than two clients.
+- Add a bounded live admission-limit smoke that validates one accepted holder and one rejected excess TCP client.
 - Define the next scalability evidence needed before broader runtime policy changes.
 
 Out of scope:
@@ -49,6 +50,7 @@ Done when:
 - Failed interested-client broadcast closes and unregisters that client.
 - Session writes set and clear a write deadline.
 - The scalability gate runs the focused network tests and can run or consume the live two-client and broader multi-client smoke summaries.
+- The scalability gate can run or consume a live max-client admission-limit smoke summary.
 
 Checks:
 
@@ -115,6 +117,24 @@ server_multi_client_smoke status=pass clients=6 initial_chunks=6 fanout_updates=
 
 This proves a single live server can bootstrap and fan out one block edit to more than two interested clients. It does not claim throughput capacity, memory headroom, admission behavior, slow-reader fairness, or overload policy.
 
+## Live Admission Limit Smoke
+
+`scripts/server_admission_limit_smoke.sh` builds and starts the Go server on an isolated local smoke port and temporary RocksDB path with `RUMPELMC_SERVER_MAX_CLIENTS=1`. It then runs `server/cmd/admission_limit_smoke`, which opens one holder client, verifies that client receives chunk `0,0`, opens a second TCP client, and requires that second client to observe a server-side close. The wrapper also requires server-log evidence of `admission_result=rejected`, `active_clients=1`, and `max_clients=1`.
+
+Use:
+
+```sh
+sh scripts/server_admission_limit_smoke.sh logs/server_admission_limit_smoke_current
+```
+
+Expected summary:
+
+```text
+server_admission_limit_smoke status=pass max_clients=1 attempted_clients=2 admitted_clients=1 rejected_clients=1 holder_initial_chunk=1 rejected_close_observed=1 admission_rejection_log=1 protocol_change=0
+```
+
+This proves the opt-in cap works against a live TCP server. It is not production concurrency sizing, adaptive overload control, queue backpressure, or a load-test result.
+
 ## Scalability Gaps
 
 Still needed before claiming full live multi-client scalability:
@@ -123,7 +143,7 @@ Still needed before claiming full live multi-client scalability:
 - Longer multi-client load evidence that records per-client chunks sent, elapsed time, disconnect behavior, and server errors.
 - Broader slow-client handling evidence under more clients and broadcast load; the networking robustness block now owns the bounded two-client slow-reader smoke.
 - Disconnect cleanup counters or log summaries.
-- Load-tested max-client sizing for representative hardware and gameplay workloads.
+- Load-tested max-client sizing for representative hardware and gameplay workloads beyond the bounded one-holder/one-rejected smoke.
 - Fair scheduling or backpressure design if one client can monopolize generation/send work.
 
 ## Compatibility Rules
@@ -142,7 +162,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result after collecting the broader live artifact is `status=pass`, `scalability_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=unit_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, and `network_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live and admission-limit artifacts is `status=pass`, `scalability_status=broader_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=live_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, and `network_tests=pass`.
 
 To run the live smoke inside the gate:
 
@@ -160,17 +180,27 @@ RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1 sh scripts/server_scalabili
 
 With the broader smoke enabled, the expected result includes `broader_live_load_status=pass`.
 
+To run the live admission-limit smoke inside the gate:
+
+```sh
+RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE=1 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
+```
+
+With the admission-limit smoke enabled, the expected result includes `admission_policy=live_guarded` and `admission_limit_smoke_status=pass`.
+
 The gate checks that:
 
 - This document records current server behavior, added unit guards, live scalability gaps, and compatibility rules.
 - `server.go` still has per-session `clientChunkStreamState`, connection close cleanup, block-edit fanout, and write deadlines.
 - `server.go` still has the opt-in max-client admission cap and rejected-connection log marker.
 - The live smoke script exists and records `server_multi_client_smoke status=pass`.
+- The admission-limit smoke script exists and records `server_admission_limit_smoke status=pass`.
 - The broader live smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1`.
+- The admission-limit smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE=1`.
 - The multi-client sent-state, interested-client fanout, failed-broadcast cleanup, write-deadline, and max-client admission tests exist.
 - `api/schema/packets.proto` is unchanged.
 - Focused network tests pass.
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout smokes plus an opt-in max-client admission cap. CPU/memory profiling, broad slow-reader/load harnesses, load-tested admission sizing, adaptive overload policy, and disconnect metrics remain future work.
+This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout smokes plus a bounded live opt-in max-client admission smoke. CPU/memory profiling, broad slow-reader/load harnesses, load-tested admission sizing, adaptive overload policy, and disconnect metrics remain future work.
