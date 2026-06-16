@@ -126,6 +126,15 @@ sh scripts/gpu_terrain_upload_budget.sh logs/gpu_terrain_upload_budget_current
 
 The gate writes `gpu-terrain-upload-budget-summary.txt`; see `docs/GPU_TERRAIN_UPLOAD_BUDGETING.md` and `docs/GPU_UPLOAD_RETRY_BACKOFF_TELEMETRY.md`.
 
+Use the upload failure recovery unit guards after touching mesh-build planning, proxy refresh reuse, GPU slot state, or CPU fallback removal:
+
+```sh
+cargo test --manifest-path client/rust_ext/Cargo.toml gpu_upload_failure_recovery_keeps_cpu_fallback_until_slot_exists
+cargo test --manifest-path client/rust_ext/Cargo.toml terrain_mesh_build_plan_preserves_gpu_proxy_and_fallback_paths
+```
+
+These tests lock the current fallback-first recovery contract; see `docs/GPU_UPLOAD_FAILURE_RECOVERY.md`.
+
 Use the resource lifecycle audit after upload-pressure, renderer resource ownership, atlas/uniform, native-shadow, repack upload, or shutdown cleanup work. It refreshes a scoped GPU report and fails on dirty error scans, upload failures, unexpected scene-target replacement, missing default terrain resources, or native-shadow resource error counters:
 
 ```sh

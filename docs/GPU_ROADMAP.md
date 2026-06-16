@@ -79,7 +79,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 
 ## Phase 6: Upload Robustness
 
-51. Verify upload failure recovery.
+51. Done 2026-06-16: verified upload failure recovery keeps per-subchunk CPU ArrayMesh fallback until a GPU slot is confirmed, with targeted mesh-build/proxy-refresh unit coverage and `docs/GPU_UPLOAD_FAILURE_RECOVERY.md`.
 52. Keep visual fallback valid after upload failure.
 53. Keep shadow fallback valid after upload failure.
 54. Keep collision fallback valid after upload failure.

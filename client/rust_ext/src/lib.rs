@@ -8037,8 +8037,50 @@ mod tests {
             TerrainMeshBuildPlan::FullArrayMesh
         );
         assert_eq!(
+            terrain_mesh_build_plan(TerrainGpuUploadState::Failed, true, false, true),
+            TerrainMeshBuildPlan::FullArrayMesh
+        );
+        assert_eq!(
+            terrain_mesh_build_plan(TerrainGpuUploadState::Failed, true, false, false),
+            TerrainMeshBuildPlan::FullArrayMesh
+        );
+        assert_eq!(
             terrain_mesh_build_plan(TerrainGpuUploadState::NotRequested, true, false, true),
             TerrainMeshBuildPlan::FullArrayMesh
+        );
+    }
+
+    #[test]
+    fn gpu_upload_failure_recovery_keeps_cpu_fallback_until_slot_exists() {
+        assert_eq!(
+            proxy_refresh_queue_action(
+                true,
+                false,
+                false,
+                None,
+                TerrainCpuProxyMeshPayload::default(),
+            ),
+            ProxyRefreshQueueAction::BuildMesh
+        );
+        assert_eq!(
+            proxy_refresh_queue_action(
+                true,
+                false,
+                true,
+                Some(TerrainCpuProxyMeshPayload::default()),
+                TerrainCpuProxyMeshPayload::default(),
+            ),
+            ProxyRefreshQueueAction::BuildMesh
+        );
+        assert_eq!(
+            proxy_refresh_queue_action(
+                true,
+                true,
+                false,
+                Some(TerrainCpuProxyMeshPayload::default()),
+                TerrainCpuProxyMeshPayload::default(),
+            ),
+            ProxyRefreshQueueAction::RemoveCpuNode
         );
     }
 
