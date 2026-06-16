@@ -96,6 +96,32 @@ Risk:
 
 - It may preserve visual behavior faster, but it adds CPU/Godot mesh work and needs measurement before becoming more than a compatibility fallback.
 
+## Prototype Shape Decision
+
+Current decision, 2026-06-16: use `cutout_only_first` as the first transparent-family prototype shape.
+
+This is a planning/runtime-readiness decision, not an active render path. `scripts/transparent_prototype_shape_decision_gate.sh` must pass with `active_prototype_allowed=0` and `default_runtime_change_allowed=0` while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
+
+Rationale:
+
+- Cutout/alpha-test blocks keep opaque-depth behavior and avoid the full blended-transparency sorting problem for the first prototype.
+- Split transparent buffers and blended alpha remain deferred until there is nonzero transparent workload, sorting/depth evidence, and external profiler evidence.
+- Godot material fallback remains a compatibility fallback only until its CPU/Godot mesh cost is measured.
+
+External references checked for this decision:
+
+- Godot 3D rendering limitations: transparent geometry is drawn after opaque geometry and sorted back-to-front by `Node3D` position, so complex overlap can sort incorrectly.
+- Godot StandardMaterial3D: alpha scissor/cutout is faster than alpha blending, avoids sorting issues, and can still cast shadows.
+- Khronos Vulkan tutorial: alpha-cut transparency is a common discard-based technique that avoids complex blending/sorting for cutout materials.
+
+Use:
+
+```sh
+sh scripts/transparent_prototype_shape_decision_gate.sh logs/transparent_prototype_shape_decision_current
+```
+
+The gate consumes active-path preflight, sorting/depth, fixture acceptance, and block-material metadata summaries. It rejects unexpected nonzero transparent workload or active implementation changes before another reviewed prototype slice.
+
 ## Required Telemetry
 
 A future implementation should emit these marker fields before any default-on decision:

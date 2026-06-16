@@ -161,8 +161,8 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 112. Design GPU-native terrain shadow path. See `docs/GPU_SHADOW_PATH.md`.
 113. Prototype shadow proxy reduction without disabling shadows.
 114. Add shadow correctness smoke.
-115. Design transparent block GPU path. See `docs/GPU_TRANSPARENT_PATH.md`.
-116. Split opaque and transparent pass design.
+115. Done 2026-06-16: transparent block GPU path design is recorded in `docs/GPU_TRANSPARENT_PATH.md`, with opaque rollback, material/collision separation, fixture gates, and external-profiler requirements.
+116. Done 2026-06-16: added `scripts/transparent_prototype_shape_decision_gate.sh` to choose `cutout_only_first` as the first prototype shape while keeping split buffers and full blended alpha deferred until active workload, sorting/depth, and profiler evidence exist.
 117. Prototype transparent terrain behind an env flag.
 118. In progress 2026-06-16: shader profiler capture pack now emits macOS Metal and Windows GPU capture rows, and `scripts/gpu_shader_profiler_results_check.sh` validates captured rows for the current render shader hot path; full cross-platform validation still needs real external profiler artifacts.
 119. Keep a trend log for important GPU metrics.
@@ -207,7 +207,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 25. Checkpoint the shadow path; keep native shadow work behind a rollback flag.
 26. Build the first transparent fixture scene harness without enabling transparent rendering.
 27. Add transparent workload telemetry fields for blocks, faces, draws, and subchunks.
-28. Decide the first transparent prototype shape: split buffers, cutout-only, or Godot fallback.
+28. Done 2026-06-16: first transparent prototype shape decision is `cutout_only_first`; active/default runtime changes remain disallowed while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
 29. Build the first transparent prototype behind an explicit rollback flag.
 30. Checkpoint transparent fixture/prototype evidence and choose the next bottleneck.
 

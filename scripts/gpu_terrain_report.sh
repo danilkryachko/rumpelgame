@@ -798,6 +798,7 @@ error_scan() {
   print_optional_file "Selected Shadow Proxy Cost Decision Summary" "$(latest_file shadow-proxy-cost-decision-summary.txt)"
   print_optional_file "Selected Shadow Profiler Results Summary" "$(latest_file shadow-radius-profiler-results-summary.txt)"
   print_optional_artifact "Selected Shadow Profiler Capture Pack" "$(latest_file shadow-radius-profiler-capture-pack.txt)"
+  print_optional_file "Selected Transparent Prototype Shape Decision Summary" "$(latest_file transparent-prototype-shape-decision-summary.txt)"
   print_optional_artifact "Selected Transparent Fixture Plan" "$(latest_file transparent-fixture-plan.txt)"
   print_optional_artifact "Selected Transparent Fixture Harness" "$(latest_file transparent-fixture-harness.txt)"
   print_optional_artifact "Selected Transparent Fixture Check" "$(latest_file transparent-fixture-check.txt)"

@@ -431,6 +431,14 @@ sh scripts/transparent_fixture_acceptance_suite.sh logs/transparent_fixture_acce
 
 The gate writes `transparent-fixture-acceptance-suite-summary.txt`; see `docs/TRANSPARENT_FIXTURE_ACCEPTANCE_SUITE.md`.
 
+Use transparent prototype shape decision before building the first active prototype behind an env flag. The current expected decision is `cutout_only_first`, with active/default runtime changes still disallowed while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`:
+
+```sh
+sh scripts/transparent_prototype_shape_decision_gate.sh logs/transparent_prototype_shape_decision_current
+```
+
+The gate writes `transparent-prototype-shape-decision-summary.txt`; see `docs/GPU_TRANSPARENT_PATH.md`.
+
 Use the external profiling campaign gate before citing cross-platform GPU profiler state:
 
 ```sh
