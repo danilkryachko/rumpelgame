@@ -55,6 +55,7 @@ Checks:
 - Current maximum referenced tile is `TILE_LEAVES = 9`.
 - `MAX_TEXTURE_TILE` points at `TILE_LEAVES`, so the current atlas exactly covers tile IDs `0..9`.
 - Current code-owned tile identity rows are guarded by `texture_atlas_tile_identity_rows_are_stable`.
+- Current block texture references are guarded by `block_material_textures_reference_guarded_atlas_tiles`.
 - `GpuTerrainAtlasLayout::from_image_size` rejects images whose dimensions are not divisible by tile size or whose capacity cannot contain `MAX_TEXTURE_TILE`.
 - The GPU terrain shader extracts tile IDs from `PackedFace.pos_face_tile` with `(>> 21) & 2047`, so the current packed layout allows up to `2048` tile IDs before a layout migration is needed.
 - Atlas layout push constants are four floats: inverse columns, inverse rows, columns, rows.
@@ -124,12 +125,13 @@ Use:
 sh scripts/texture_atlas_evolution_gate.sh logs/texture_atlas_evolution_current
 ```
 
-The expected current result is `status=pass`, `atlas_metadata_status=designed`, `atlas_tile_identity=guarded`, `active_asset_change=0`, `shader_layout_change=0`, `tile_size_px=64`, `columns=10`, `rows=1`, `tile_capacity=10`, `max_texture_tile=9`, and `packed_tile_capacity=2048`.
+The expected current result is `status=pass`, `atlas_metadata_status=designed`, `atlas_tile_identity=guarded`, `block_texture_usage=guarded`, `active_asset_change=0`, `shader_layout_change=0`, `tile_size_px=64`, `columns=10`, `rows=1`, `tile_capacity=10`, `max_texture_tile=9`, and `packed_tile_capacity=2048`.
 
 The gate checks that:
 
 - This design includes atlas metadata, compatibility limits, sampler policy, alpha policy, and rollout rules.
 - The Rust block atlas constants include a stable current tile identity test.
+- Current block material texture references use only guarded atlas tiles within capacity.
 - The current PNG dimensions still match the code-owned tile layout.
 - Runtime atlas validation still rejects incompatible image sizes or insufficient capacity.
 - The shader still extracts an 11-bit tile index from `PackedFace.pos_face_tile`.

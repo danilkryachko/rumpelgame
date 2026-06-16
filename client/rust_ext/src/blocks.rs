@@ -695,6 +695,63 @@ mod tests {
     }
 
     #[test]
+    fn block_material_textures_reference_guarded_atlas_tiles() {
+        let guarded_tiles = [
+            TILE_GRASS_TOP,
+            TILE_GRASS_SIDE,
+            TILE_SOIL,
+            TILE_STONE,
+            TILE_WOOD_SIDE,
+            TILE_WOOD_TOP,
+            TILE_LEAVES,
+        ];
+        let tile_capacity = TEXTURE_ATLAS_COLUMNS * TEXTURE_ATLAS_ROWS;
+
+        assert!(guarded_tiles.contains(&FALLBACK_TEXTURE_TILE));
+
+        for block in definitions() {
+            for (slot, tile) in [
+                ("top", block.textures.top),
+                ("side", block.textures.side),
+                ("bottom", block.textures.bottom),
+            ] {
+                assert!(
+                    guarded_tiles.contains(&tile),
+                    "block {} {} texture tile {} is not guarded",
+                    block.name,
+                    slot,
+                    tile
+                );
+                assert!(
+                    tile <= MAX_TEXTURE_TILE,
+                    "block {} {} texture tile {} exceeds MAX_TEXTURE_TILE {}",
+                    block.name,
+                    slot,
+                    tile,
+                    MAX_TEXTURE_TILE
+                );
+                assert!(
+                    tile < tile_capacity,
+                    "block {} {} texture tile {} exceeds atlas capacity {}",
+                    block.name,
+                    slot,
+                    tile,
+                    tile_capacity
+                );
+            }
+        }
+
+        for tile in guarded_tiles {
+            let (min_u, min_v) = texture_atlas_uv((0.0, 0.0), tile);
+            let (max_u, max_v) = texture_atlas_uv((1.0, 1.0), tile);
+            assert!(min_u >= 0.0 && min_v >= 0.0);
+            assert!(max_u <= 1.0 && max_v <= 1.0);
+            assert!(min_u < max_u);
+            assert!(min_v < max_v);
+        }
+    }
+
+    #[test]
     fn block_material_current_networked_blocks_preserve_opaque_contract() {
         let air = definition(AIR).expect("air definition");
         assert_eq!(air.render_class, RenderClass::Air);
