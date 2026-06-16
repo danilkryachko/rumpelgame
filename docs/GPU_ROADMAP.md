@@ -157,7 +157,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 
 ## Phase 12: Larger GPU Directions
 
-111. Measure shadow proxy cost.
+111. Done 2026-06-16: added `scripts/shadow_proxy_cost_decision_gate.sh` to consolidate shadow quality, radius-matrix proxy counters, pending capture-pack state, and optional validated external profiler results into an explicit shadow-cost decision. Current no-results decision is `defer_runtime_change`.
 112. Design GPU-native terrain shadow path. See `docs/GPU_SHADOW_PATH.md`.
 113. Prototype shadow proxy reduction without disabling shadows.
 114. Add shadow correctness smoke.
@@ -203,7 +203,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 21. Clean up binding/frame data only where measured churn justifies it.
 22. Done 2026-06-16: prepared `scripts/gpu_shader_profiler_capture_pack.sh` for the current branchless shader path. It validates the latest movement summary, source-level shader contracts, and emits pending macOS Metal plus Windows GPU profiler rows without treating the checklist as profiler evidence.
 23. Integrate validated external profiler results into reports when available.
-24. Decide the next shadow proxy optimization from measured cost.
+24. Done 2026-06-16: shadow proxy cost decisions now go through `scripts/shadow_proxy_cost_decision_gate.sh`; without validated external profiler rows the required decision is `defer_runtime_change`.
 25. Checkpoint the shadow path; keep native shadow work behind a rollback flag.
 26. Build the first transparent fixture scene harness without enabling transparent rendering.
 27. Add transparent workload telemetry fields for blocks, faces, draws, and subchunks.

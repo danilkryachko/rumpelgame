@@ -384,6 +384,12 @@ sh scripts/gpu_terrain_shadow_profiler_results_check.sh \
 
 `scripts/gpu_terrain_report.sh` surfaces the latest `shadow-radius-profiler-results-summary.txt` under the log directory when one exists, and also surfaces the latest `shadow-radius-profiler-capture-pack.txt` as pending external-profiler handoff state. Only the validated results summary is profiler evidence; the capture pack remains a checklist until real captured rows are recorded and checked.
 
+Use the shadow proxy cost decision gate before choosing the next shadow optimization. It consumes the shadow quality summary, radius matrix, pending capture pack, and optional validated profiler results summary. Without validated external rows it should pass with `decision=defer_runtime_change`; with captured rows it may only allow a prototype candidate, never a default runtime change:
+
+```sh
+sh scripts/shadow_proxy_cost_decision_gate.sh logs/shadow_proxy_cost_decision_current
+```
+
 ## Shadow Path Design
 
 The current production GPU terrain shadow path is still Godot CPU shadow proxies. `docs/GPU_SHADOW_PATH.md` records the Phase 12 design for a future GPU-native terrain shadow path. Treat `scene_shadows_disabled` and `diagnostic_no_shadow_proxy` as diagnostic controls only; they cannot justify production shadow reductions. A future native path must be behind an explicit rollback flag, flip `native_shadow_implemented` only with a real implementation, report its own `shadow_path`, preserve the existing Godot proxy fallback, and pass visual parity plus an external profiler comparison before becoming default. For marker/lifecycle-only changes that do not alter shader, visual path, scene setup, or parity case definitions, prefer targeted Rust tests plus env-on movement smoke, validate-only over a fresh compatible parity artifact, aggregate report, `./scripts/check.sh fast`, and `./scripts/diff_guard.sh`; reserve full parity recaptures for visual-path, shader, or parity-validator changes.
