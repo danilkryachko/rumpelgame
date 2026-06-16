@@ -165,11 +165,31 @@ sh scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh logs/gpu_terrain_cut
 
 The pressure gate runs the existing load-scaling stack with `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`, a `pressure` workload, the `chunk_disc` terrain pressure fixture, and leaf block ID `5`. It requires the load-scaling prerequisite to pass, `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, high nonzero transparent workload, `gpu_upload_fail=0`, queue/process/submit budgets under `6.667ms`, and aggregate report surfacing. The cutout pressure thresholds are deliberately separate from opaque stone pressure: leaf/cutout faces occupy less of the indirect command buffer in this fixture, so the current gate requires at least `1800` GPU subchunks/draws, `3000` faces, and `22.0%` draw-command occupancy instead of treating the older `25.0%` opaque-pressure floor as a cutout invariant.
 
+Use a fixed cutout fixture scene smoke for active depth/collision evidence:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_TIMEOUT_SEC=240 \
+GODOT_QUIT_AFTER_FRAMES=24000 \
+sh scripts/gpu_terrain_cutout_fixture_scene_smoke.sh logs/gpu_transparent_cutout_fixture_scene_smoke_current
+```
+
+Promote that scene smoke into a report-backed acceptance artifact with:
+
+```sh
+sh scripts/gpu_terrain_cutout_fixture_acceptance_gate.sh logs/gpu_transparent_cutout_fixture_scene_smoke_current
+```
+
+The scene smoke uses an isolated RocksDB path, the existing local server, `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`, and `RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE=roles` without enabling `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1`. It places four leaf/cutout roles plus one opaque occluder, waits for dirty GPU terrain update and collision queue drain, then records per-role collision rays plus an opaque occlusion probe. The occlusion probe is a physics depth/collision guard for this cutout slice; it is not blended transparency, per-pixel sorting, or full transparent-pass evidence.
+
 Fresh local evidence, 2026-06-16:
 
 - `logs/gpu_transparent_cutout_prototype_current/block-edit-stress-summary.txt` placed block ID `5` (`LEAVES`) in release mode with the cutout prototype enabled.
 - `logs/gpu_transparent_cutout_prototype_current/transparent-cutout-prototype-acceptance-summary.txt` passed the acceptance/report gate and links the runtime smoke to `logs/gpu_transparent_cutout_prototype_current/gpu-terrain-cutout-prototype-report.txt`.
 - `logs/gpu_terrain_cutout_pressure_load_scaling_current/gpu-terrain-cutout-pressure-load-scaling-summary.txt` passed the high resident-set cutout pressure gate with `terrain_pressure_fixture=chunk_disc`, `terrain_pressure_fixture_block_id=5`, `max_gpu_subchunks=1880`, `max_gpu_draws=1880`, `max_gpu_faces=3838`, `gpu_draw_cmd_occupancy_pct=22.949`, `transparent_blocks=709`, `transparent_faces=1716`, `transparent_draws=286`, `transparent_subchunks=286`, `max_terrain_queue_ms=2.349`, `max_process_wall_p95_ms=0.003`, `max_gpu_compositor_submit_ms=0.149`, and `gpu_upload_fail=0`.
+- `logs/gpu_transparent_cutout_fixture_scene_smoke_current/transparent-cutout-fixture-scene-smoke-summary.txt` passed the fixed cutout fixture scene smoke with `cutout_fixture=roles`, `cutout_fixture_roles=5`, `cutout_fixture_leaf_blocks=4`, `cutout_fixture_opaque_blocks=1`, `cutout_fixture_dirty_observed=1`, `cutout_fixture_collision_hits=5`, `cutout_fixture_collision_misses=0`, `cutout_fixture_occlusion_probe_hit=1`, `cutout_fixture_queue_drained=1`, `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=4`, `transparent_faces=17`, `transparent_draws=2`, `transparent_subchunks=2`, and `gpu_upload_fail=0`.
+- `logs/gpu_transparent_cutout_fixture_scene_smoke_current/transparent-cutout-fixture-acceptance-summary.txt` passed the report-backed fixture gate and links the scene smoke to `logs/gpu_transparent_cutout_fixture_scene_smoke_current/gpu-terrain-cutout-fixture-report.txt`.
 - `logs/transparent_fixture_acceptance_suite_current/transparent-fixture-acceptance-suite-summary.txt` passed after refreshing the fixture scene smoke and deferred active/sorting preflight summaries; the legacy full-transparent fixture remains requested-but-fallback while cutout stays the only active prototype path.
 - The runtime smoke passed with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=1`, `transparent_faces=5`, `transparent_draws=1`, `transparent_subchunks=1`, `gpu_upload_fail=0`, `terrain_samples=384` from the movement marker, and `ground_misses=0` from the movement summary.
 - This is local macOS/Metal cutout-only evidence, not blended transparency, sorting, default-on, Windows validation, or external profiler evidence.

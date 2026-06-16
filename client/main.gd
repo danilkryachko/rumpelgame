@@ -34,6 +34,10 @@ const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID_ENV = "RUMPELMC_VISUAL_SMOK
 const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC"
 const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC"
 const VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE_ENV = "RUMPELMC_VISUAL_SMOKE_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE"
+const VISUAL_SMOKE_CUTOUT_FIXTURE_ENV = "RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE"
+const VISUAL_SMOKE_CUTOUT_FIXTURE_WAIT_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE_WAIT_SEC"
+const VISUAL_SMOKE_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC"
+const VISUAL_SMOKE_CUTOUT_FIXTURE_MAX_QUEUE_ENV = "RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE_MAX_QUEUE"
 const VISUAL_SMOKE_FRAME_SAMPLE_SEC_ENV = "RUMPELMC_VISUAL_SMOKE_FRAME_SAMPLE_SEC"
 const VISUAL_SMOKE_FORCE_UNCAPPED_ENV = "RUMPELMC_VISUAL_SMOKE_FORCE_UNCAPPED"
 const VISUAL_SMOKE_MAX_FPS_ENV = "RUMPELMC_VISUAL_SMOKE_MAX_FPS"
@@ -58,6 +62,11 @@ const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_BLOCK_ID = 1
 const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_WAIT_SEC = 20.0
 const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_QUEUE_SETTLE_SEC = 30.0
 const VISUAL_SMOKE_DEFAULT_TERRAIN_PRESSURE_FIXTURE_MAX_QUEUE = 16
+const VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_WAIT_SEC = 5.0
+const VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC = 8.0
+const VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_MAX_QUEUE = 4
+const VISUAL_SMOKE_CUTOUT_FIXTURE_LEAF_BLOCK_ID = 5
+const VISUAL_SMOKE_CUTOUT_FIXTURE_OPAQUE_BLOCK_ID = 1
 const VISUAL_SMOKE_SKY_COLOR = Color(0.34, 0.43, 0.54)
 const VISUAL_SMOKE_SKY_DISTANCE_THRESHOLD = 0.08
 const VISUAL_SMOKE_MIN_TERRAIN_SAMPLES = 12
@@ -87,6 +96,16 @@ var visual_smoke_block_edit_dirty_observed: int = 0
 var visual_smoke_terrain_pressure_fixture_name: String = "none"
 var visual_smoke_terrain_pressure_fixture_blocks: int = 0
 var visual_smoke_terrain_pressure_fixture_dirty_observed: int = 0
+var visual_smoke_cutout_fixture_name: String = "none"
+var visual_smoke_cutout_fixture_roles: int = 0
+var visual_smoke_cutout_fixture_blocks: int = 0
+var visual_smoke_cutout_fixture_leaf_blocks: int = 0
+var visual_smoke_cutout_fixture_opaque_blocks: int = 0
+var visual_smoke_cutout_fixture_dirty_observed: int = 0
+var visual_smoke_cutout_fixture_collision_samples: int = 0
+var visual_smoke_cutout_fixture_collision_hits: int = 0
+var visual_smoke_cutout_fixture_occlusion_probe_hit: int = 0
+var visual_smoke_cutout_fixture_queue_drained: int = 0
 var visual_smoke_lighting_variant: String = VISUAL_SMOKE_DEFAULT_LIGHTING_VARIANT
 
 func _ready():
@@ -303,6 +322,7 @@ func capture_visual_smoke(screenshot_path: String):
 	])
 	await run_visual_smoke_terrain_pressure_fixture()
 	await run_visual_smoke_block_edit()
+	await run_visual_smoke_cutout_fixture()
 	if visual_smoke_terrain_pressure_fixture_name == "none":
 		apply_visual_smoke_pose(pose_name)
 	else:
@@ -348,7 +368,7 @@ func capture_visual_smoke(screenshot_path: String):
 	var frame_metrics = visual_smoke_frame_metrics()
 	var process_metrics = visual_smoke_process_wall_metrics()
 	var runtime_metrics = visual_smoke_runtime_metrics()
-	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" lighting_variant=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d terrain_pressure_fixture=\"%s\" terrain_pressure_fixture_blocks=%d terrain_pressure_fixture_dirty_observed=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f ground_samples=%d ground_hits=%d ground_misses=%d ground_max_distance=%.3f ground_min_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
+	var summary = "Visual smoke screenshot saved path=%s pose=\"%s\" lighting_variant=\"%s\" motion=\"%s\" motion_steps=%d motion_chunks=%d block_edit=\"%s\" block_edit_dirty_observed=%d terrain_pressure_fixture=\"%s\" terrain_pressure_fixture_blocks=%d terrain_pressure_fixture_dirty_observed=%d cutout_fixture=\"%s\" cutout_fixture_roles=%d cutout_fixture_blocks=%d cutout_fixture_leaf_blocks=%d cutout_fixture_opaque_blocks=%d cutout_fixture_dirty_observed=%d cutout_fixture_collision_samples=%d cutout_fixture_collision_hits=%d cutout_fixture_collision_misses=%d cutout_fixture_occlusion_probe_hit=%d cutout_fixture_queue_drained=%d size=%dx%d avg_luma=%.4f lit_samples=%d terrain_samples=%d terrain_top_samples=%d terrain_mid_samples=%d terrain_bottom_samples=%d terrain_left_samples=%d terrain_right_samples=%d terrain_color_buckets=%d terrain_chroma_samples=%d terrain_luma_min=%.4f terrain_luma_max=%.4f terrain_luma_range=%.4f samples=%d save_err=%d smoke_err=%d frame_samples=%d frame_avg_ms=%.3f frame_p50_ms=%.3f frame_p95_ms=%.3f frame_p99_ms=%.3f frame_max_ms=%.3f fps_avg=%.1f fps_p05=%.1f fps_min=%.1f process_wall_samples=%d process_wall_avg_ms=%.3f process_wall_p95_ms=%.3f process_wall_max_ms=%.3f post_draw_wait_ms=%.3f image_read_ms=%.3f image_save_ms=%.3f image_metrics_ms=%.3f engine_max_fps=%d vsync_mode=%d screen_refresh_hz=%.3f texture_stand=%d current_chunk_loaded=%d current_chunk_submeshes=%d current_chunk_collision=%d ground_hit=%d ground_distance=%.3f ground_y=%.3f ground_samples=%d ground_hits=%d ground_misses=%d ground_max_distance=%.3f ground_min_y=%.3f perf=\"%s\" chunks=\"%s\" current_chunk=\"%s\"" % [
 		output_path,
 		pose_name,
 		visual_smoke_lighting_variant,
@@ -360,6 +380,17 @@ func capture_visual_smoke(screenshot_path: String):
 		visual_smoke_terrain_pressure_fixture_name,
 		visual_smoke_terrain_pressure_fixture_blocks,
 		visual_smoke_terrain_pressure_fixture_dirty_observed,
+		visual_smoke_cutout_fixture_name,
+		visual_smoke_cutout_fixture_roles,
+		visual_smoke_cutout_fixture_blocks,
+		visual_smoke_cutout_fixture_leaf_blocks,
+		visual_smoke_cutout_fixture_opaque_blocks,
+		visual_smoke_cutout_fixture_dirty_observed,
+		visual_smoke_cutout_fixture_collision_samples,
+		visual_smoke_cutout_fixture_collision_hits,
+		visual_smoke_cutout_fixture_collision_samples - visual_smoke_cutout_fixture_collision_hits,
+		visual_smoke_cutout_fixture_occlusion_probe_hit,
+		visual_smoke_cutout_fixture_queue_drained,
 		image.get_width(),
 		image.get_height(),
 		metrics["avg_luma"],
@@ -659,6 +690,8 @@ func apply_visual_smoke_pose(pose_name: String):
 			apply_visual_smoke_look_at(player, camera, Vector3(7.0, 78.0, 25.0), Vector3(25.0, 61.0, 5.0))
 		"transparent_fixture":
 			apply_visual_smoke_look_at(player, camera, Vector3(24.0, 78.0, 40.0), Vector3(32.0, 63.0, 18.0))
+		"cutout_fixture":
+			apply_visual_smoke_look_at(player, camera, Vector3(24.0, 78.0, 40.0), Vector3(32.0, 64.0, 17.0))
 		"texture_stand":
 			var player_position = Vector3(16.0, 74.0, 24.0)
 			apply_visual_smoke_look_at(player, camera, player_position, player_position + Vector3(6.3, 0.5, -5.0))
@@ -925,6 +958,124 @@ func run_visual_smoke_terrain_pressure_fixture():
 		1 if queue_drained else 0,
 		visual_smoke_perf_int("queue", 0)
 	])
+
+func run_visual_smoke_cutout_fixture():
+	visual_smoke_cutout_fixture_name = OS.get_environment(VISUAL_SMOKE_CUTOUT_FIXTURE_ENV).strip_edges().to_lower()
+	visual_smoke_cutout_fixture_roles = 0
+	visual_smoke_cutout_fixture_blocks = 0
+	visual_smoke_cutout_fixture_leaf_blocks = 0
+	visual_smoke_cutout_fixture_opaque_blocks = 0
+	visual_smoke_cutout_fixture_dirty_observed = 0
+	visual_smoke_cutout_fixture_collision_samples = 0
+	visual_smoke_cutout_fixture_collision_hits = 0
+	visual_smoke_cutout_fixture_occlusion_probe_hit = 0
+	visual_smoke_cutout_fixture_queue_drained = 0
+	if visual_smoke_cutout_fixture_name.is_empty() or visual_smoke_cutout_fixture_name == "none":
+		visual_smoke_cutout_fixture_name = "none"
+		return
+	if visual_smoke_cutout_fixture_name != "roles" and visual_smoke_cutout_fixture_name != "depth_collision":
+		log_event("Unknown visual smoke cutout fixture: %s" % visual_smoke_cutout_fixture_name)
+		visual_smoke_cutout_fixture_name = "unknown"
+		return
+
+	var client = get_node_or_null("GameClient")
+	if not client or not client.has_method("on_block_placed"):
+		log_event("Visual smoke cutout fixture skipped: missing GameClient block place method")
+		return
+
+	var wait_sec = max(env_float(VISUAL_SMOKE_CUTOUT_FIXTURE_WAIT_SEC_ENV, VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_WAIT_SEC), 0.1)
+	var queue_settle_sec = max(env_float(VISUAL_SMOKE_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC_ENV, VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_QUEUE_SETTLE_SEC), 0.0)
+	var max_queue = max(env_int(VISUAL_SMOKE_CUTOUT_FIXTURE_MAX_QUEUE_ENV, VISUAL_SMOKE_DEFAULT_CUTOUT_FIXTURE_MAX_QUEUE), 0)
+	var roles = visual_smoke_cutout_fixture_roles_definition()
+	var before_dirty = visual_smoke_perf_int("dirty_blocks", 0)
+	for role in roles:
+		var block_id = int(role["block_id"])
+		client.call("on_block_placed", int(role["x"]), int(role["y"]), int(role["z"]), block_id)
+		visual_smoke_cutout_fixture_blocks += 1
+		if block_id == VISUAL_SMOKE_CUTOUT_FIXTURE_LEAF_BLOCK_ID:
+			visual_smoke_cutout_fixture_leaf_blocks += 1
+		if block_id == VISUAL_SMOKE_CUTOUT_FIXTURE_OPAQUE_BLOCK_ID:
+			visual_smoke_cutout_fixture_opaque_blocks += 1
+		await get_tree().process_frame
+
+	visual_smoke_cutout_fixture_roles = roles.size()
+	var exact_dirty_seen = await wait_for_visual_smoke_dirty_update_delta(before_dirty, roles.size(), wait_sec)
+	var dirty_seen = exact_dirty_seen or visual_smoke_perf_int("dirty_blocks", before_dirty) > before_dirty
+	visual_smoke_cutout_fixture_dirty_observed = 1 if dirty_seen else 0
+	var terrain_queue_drained = await wait_for_visual_smoke_perf_int_at_most("queue", max_queue, queue_settle_sec)
+	var collision_queue_drained = await wait_for_visual_smoke_perf_int_at_most("collision_q", 0, queue_settle_sec)
+	visual_smoke_cutout_fixture_queue_drained = 1 if terrain_queue_drained and collision_queue_drained else 0
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	for role in roles:
+		visual_smoke_cutout_fixture_collision_samples += 1
+		if visual_smoke_cutout_fixture_block_collision_hit(role):
+			visual_smoke_cutout_fixture_collision_hits += 1
+	visual_smoke_cutout_fixture_occlusion_probe_hit = 1 if visual_smoke_cutout_fixture_occlusion_probe_hits(roles) else 0
+	log_event("Visual smoke cutout fixture complete name=%s roles=%d blocks=%d leaf_blocks=%d opaque_blocks=%d dirty_observed=%d collision_hits=%d occlusion_probe_hit=%d queue_drained=%d queue=%d collision_q=%d" % [
+		visual_smoke_cutout_fixture_name,
+		visual_smoke_cutout_fixture_roles,
+		visual_smoke_cutout_fixture_blocks,
+		visual_smoke_cutout_fixture_leaf_blocks,
+		visual_smoke_cutout_fixture_opaque_blocks,
+		visual_smoke_cutout_fixture_dirty_observed,
+		visual_smoke_cutout_fixture_collision_hits,
+		visual_smoke_cutout_fixture_occlusion_probe_hit,
+		visual_smoke_cutout_fixture_queue_drained,
+		visual_smoke_perf_int("queue", 0),
+		visual_smoke_perf_int("collision_q", 0)
+	])
+
+func visual_smoke_cutout_fixture_roles_definition() -> Array:
+	return [
+		{"name": "front_cutout", "x": 28, "y": 64, "z": 20, "block_id": VISUAL_SMOKE_CUTOUT_FIXTURE_LEAF_BLOCK_ID},
+		{"name": "behind_opaque_cutout", "x": 32, "y": 64, "z": 14, "block_id": VISUAL_SMOKE_CUTOUT_FIXTURE_LEAF_BLOCK_ID},
+		{"name": "opaque_occluder", "x": 32, "y": 64, "z": 17, "block_id": VISUAL_SMOKE_CUTOUT_FIXTURE_OPAQUE_BLOCK_ID},
+		{"name": "adjacent_cutout_a", "x": 35, "y": 64, "z": 20, "block_id": VISUAL_SMOKE_CUTOUT_FIXTURE_LEAF_BLOCK_ID},
+		{"name": "adjacent_cutout_b", "x": 36, "y": 64, "z": 20, "block_id": VISUAL_SMOKE_CUTOUT_FIXTURE_LEAF_BLOCK_ID}
+	]
+
+func visual_smoke_cutout_fixture_role_center(role: Dictionary) -> Vector3:
+	return Vector3(float(int(role["x"])) + 0.5, float(int(role["y"])) + 0.5, float(int(role["z"])) + 0.5)
+
+func visual_smoke_cutout_fixture_block_collision_hit(role: Dictionary) -> bool:
+	var player = get_tree().root.find_child("Player", true, false) as Node3D
+	if not player:
+		return false
+	var center = visual_smoke_cutout_fixture_role_center(role)
+	var origin = Vector3(center.x, float(int(role["y"])) + 1.75, center.z)
+	var target = Vector3(center.x, float(int(role["y"])) + 0.15, center.z)
+	var query = PhysicsRayQueryParameters3D.create(origin, target)
+	if player.has_method("get_rid"):
+		query.exclude = [player.get_rid()]
+	var result = player.get_world_3d().direct_space_state.intersect_ray(query)
+	if result.is_empty():
+		return false
+	var hit_position: Vector3 = result["position"]
+	return hit_position.y >= float(int(role["y"])) - 0.05 and hit_position.y <= float(int(role["y"])) + 1.25
+
+func visual_smoke_cutout_fixture_occlusion_probe_hits(roles: Array) -> bool:
+	var player = get_tree().root.find_child("Player", true, false) as Node3D
+	if not player:
+		return false
+	var target = Vector3.ZERO
+	var found_target = false
+	for role in roles:
+		if String(role["name"]) == "behind_opaque_cutout":
+			target = visual_smoke_cutout_fixture_role_center(role)
+			found_target = true
+			break
+	if not found_target:
+		return false
+	var origin = Vector3(32.5, 64.5, 22.5)
+	var query = PhysicsRayQueryParameters3D.create(origin, target)
+	if player.has_method("get_rid"):
+		query.exclude = [player.get_rid()]
+	var result = player.get_world_3d().direct_space_state.intersect_ray(query)
+	if result.is_empty():
+		return false
+	var hit_position: Vector3 = result["position"]
+	return origin.distance_to(hit_position) + 0.1 < origin.distance_to(target)
 
 func wait_for_visual_smoke_dirty_update(before_dirty: int, wait_sec: float) -> bool:
 	return await wait_for_visual_smoke_dirty_update_delta(before_dirty, 1, wait_sec)

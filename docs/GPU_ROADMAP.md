@@ -166,9 +166,10 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 117. Done 2026-06-16: added the default-off `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1` leaf cutout alpha-test prototype behind the existing GPU terrain opaque pass. Fresh release block-edit smoke placed block ID `5` and passed with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=1`, `transparent_faces=5`, `transparent_draws=1`, `transparent_subchunks=1`, and `gpu_upload_fail=0`. Full blended transparency, split transparent buffers, sorting, and any default-on behavior remain deferred until parity/depth, external profiler, and Windows validation evidence are captured.
 118. Done 2026-06-16: added `scripts/gpu_terrain_cutout_prototype_acceptance_gate.sh` and aggregate report surfacing for `transparent-cutout-prototype-acceptance-summary.txt`, so the default-off leaf cutout runtime smoke is accepted only when block ID `5`, active cutout workload, zero fallback, zero upload failures, `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, and no blended/sorted/default-on claim all hold.
 119. Done 2026-06-16: added `scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh` and workload/resident/load-scaling summary propagation for cutout fixture block IDs plus transparent workload maxima. Fresh default-off cutout pressure evidence used `chunk_disc` with block ID `5` and passed with `1880` GPU subchunks/draws, `3838` faces, `22.949%` draw-command occupancy, `709` transparent blocks, `1716` transparent faces, `286` transparent draws/subchunks, zero upload failures, and queue/process/submit budgets below `6.667ms`; default-on remains blocked pending external profiler plus Windows validation.
-120. In progress 2026-06-16: shader profiler capture pack now emits macOS Metal and Windows GPU capture rows, and `scripts/gpu_shader_profiler_results_check.sh` validates captured rows for the current render shader hot path; full cross-platform validation still needs real external profiler artifacts.
-121. Keep a trend log for important GPU metrics.
-122. Checkpoint the roadmap and choose the next bottleneck from data.
+120. Done 2026-06-16: added `scripts/gpu_terrain_cutout_fixture_scene_smoke.sh` plus `scripts/gpu_terrain_cutout_fixture_acceptance_gate.sh` for active cutout fixture-scene evidence. Fresh default-off cutout fixture smoke placed four leaf/cutout roles plus one opaque occluder and passed with `cutout_fixture_roles=5`, `cutout_fixture_leaf_blocks=4`, `cutout_fixture_opaque_blocks=1`, `cutout_fixture_dirty_observed=1`, `cutout_fixture_collision_hits=5`, `cutout_fixture_collision_misses=0`, `cutout_fixture_occlusion_probe_hit=1`, `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=4`, `transparent_faces=17`, `transparent_draws=2`, `transparent_subchunks=2`, and `gpu_upload_fail=0`. This is local macOS/Metal cutout depth/collision evidence only; blended transparency, split transparent buffers, sorting, default-on, external profiler, and Windows validation remain deferred.
+121. In progress 2026-06-16: shader profiler capture pack now emits macOS Metal and Windows GPU capture rows, and `scripts/gpu_shader_profiler_results_check.sh` validates captured rows for the current render shader hot path; full cross-platform validation still needs real external profiler artifacts.
+122. Keep a trend log for important GPU metrics.
+123. Checkpoint the roadmap and choose the next bottleneck from data.
 
 ## 100-Week Long Horizon Plan
 
@@ -216,9 +217,9 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 ### Weeks 31-40: Transparent Terrain Hardening
 
 31. Refresh opaque parity with transparent features disabled.
-32. Add transparent fixture visual smoke.
-33. Add opaque-depth occlusion gates for transparent fixtures.
-34. Add collision-by-solidity gates.
+32. Done 2026-06-16: added active cutout fixture visual smoke plus report-backed acceptance for default-off leaf/cutout roles.
+33. Done 2026-06-16: added an opaque occlusion probe for the cutout fixture smoke; per-pixel blended transparency sorting remains future work.
+34. Done 2026-06-16: added collision-by-solidity fixture evidence with five cutout/opaque role ray checks.
 35. Add same-material transparent seam or culling gates.
 36. Add transparent upload metrics.
 37. Add transparent sort/build cost metrics.
