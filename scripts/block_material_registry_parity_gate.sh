@@ -78,6 +78,7 @@ server_status="$(field_metric status "$server_summary")"
 client_status="$(field_metric status "$client_summary")"
 server_material_registry_status="$(field_metric material_registry_status "$server_summary")"
 client_material_registry_status="$(field_metric client_material_registry_status "$client_summary")"
+client_registry_identity="$(field_metric client_registry_identity "$client_summary")"
 client_server_material_registry_status="$(field_metric server_material_registry_status "$client_summary")"
 server_block_count="$(field_metric block_count "$server_summary")"
 client_block_count="$(field_metric client_block_count "$client_summary")"
@@ -100,6 +101,7 @@ awk \
   -v client_status="${client_status:-missing}" \
   -v server_material_registry_status="${server_material_registry_status:-missing}" \
   -v client_material_registry_status="${client_material_registry_status:-missing}" \
+  -v client_registry_identity="${client_registry_identity:-missing}" \
   -v client_server_material_registry_status="${client_server_material_registry_status:-missing}" \
   -v server_block_count="${server_block_count:-0}" \
   -v client_block_count="${client_block_count:-0}" \
@@ -128,6 +130,7 @@ awk \
       client_status == "pass" &&
       server_material_registry_status == "guarded" &&
       client_material_registry_status == "guarded" &&
+      client_registry_identity == "guarded" &&
       client_server_material_registry_status == "guarded"
     counts_match = server_block_count + 0 == client_block_count + 0 &&
       server_opaque_solid_blocks + 0 == client_opaque_solid_blocks + 0 &&
@@ -150,7 +153,7 @@ awk \
       reason = "protocol_storage_or_renderer_code_diff_present"
     }
 
-    printf("block_material_registry_parity status=%s reason=%s parity_status=%s current_runtime_contract=%s metadata_scope=%s server_status=%s client_status=%s server_block_count=%d client_block_count=%d server_opaque_solid_blocks=%d client_opaque_solid_blocks=%d server_placeable_blocks=%d client_placeable_blocks=%d server_air_blocks=%d client_air_blocks=%d server_emissive_blocks=%d client_emissive_blocks=%d server_liquid_blocks=%d client_liquid_blocks=%d active_protocol_change=%d active_storage_change=%d renderer_code_change=%d server_summary=%s client_summary=%s\n", status, reason, parity_status, current_runtime_contract, metadata_scope, server_status, client_status, server_block_count, client_block_count, server_opaque_solid_blocks, client_opaque_solid_blocks, server_placeable_blocks, client_placeable_blocks, server_air_blocks, client_air_blocks, server_emissive_blocks, client_emissive_blocks, server_liquid_blocks, client_liquid_blocks, protocol_diff_count, storage_diff_count, renderer_code_diff_count, server_summary, client_summary)
+    printf("block_material_registry_parity status=%s reason=%s parity_status=%s current_runtime_contract=%s metadata_scope=%s server_status=%s client_status=%s client_registry_identity=%s server_block_count=%d client_block_count=%d server_opaque_solid_blocks=%d client_opaque_solid_blocks=%d server_placeable_blocks=%d client_placeable_blocks=%d server_air_blocks=%d client_air_blocks=%d server_emissive_blocks=%d client_emissive_blocks=%d server_liquid_blocks=%d client_liquid_blocks=%d active_protocol_change=%d active_storage_change=%d renderer_code_change=%d server_summary=%s client_summary=%s\n", status, reason, parity_status, current_runtime_contract, metadata_scope, server_status, client_status, client_registry_identity, server_block_count, client_block_count, server_opaque_solid_blocks, client_opaque_solid_blocks, server_placeable_blocks, client_placeable_blocks, server_air_blocks, client_air_blocks, server_emissive_blocks, client_emissive_blocks, server_liquid_blocks, client_liquid_blocks, protocol_diff_count, storage_diff_count, renderer_code_diff_count, server_summary, client_summary)
     if (status != "pass") {
       exit 1
     }

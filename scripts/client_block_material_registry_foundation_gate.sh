@@ -65,6 +65,7 @@ require_token "$CLIENT_BLOCKS" "pub fn is_opaque"
 require_token "$CLIENT_BLOCKS" "fn block_material_current_networked_blocks_preserve_opaque_contract"
 require_token "$CLIENT_BLOCKS" "fn block_material_unknown_blocks_are_conservative"
 require_token "$CLIENT_BLOCKS" "fn block_material_policy_variant_sets_are_explicit"
+require_token "$CLIENT_BLOCKS" "fn block_material_identity_rows_are_stable"
 require_token "$GPU_TERRAIN" ".filter(|block| blocks::is_opaque_solid(block.id))"
 require_token "$DESIGN_DOC" "client material registry foundation"
 require_token "$DESIGN_DOC" 'Do not add material fields to `ChunkData.blocks`'
@@ -149,6 +150,7 @@ awk \
     status = "pass"
     reason = "ok"
     client_material_registry_status = "guarded"
+    client_registry_identity = "guarded"
     current_runtime_contract = "opaque_only"
     metadata_scope = "existing_block_ids"
     counts_ok = client_block_count + 0 == 6 &&
@@ -177,7 +179,7 @@ awk \
       reason = "protocol_storage_or_renderer_code_diff_present"
     }
 
-    printf("client_block_material_registry_foundation status=%s reason=%s client_material_registry_status=%s server_material_registry_status=%s current_runtime_contract=%s metadata_scope=%s client_block_count=%d client_opaque_solid_blocks=%d client_placeable_blocks=%d client_air_blocks=%d client_emissive_blocks=%d client_liquid_blocks=%d active_protocol_change=%d active_storage_change=%d renderer_code_change=%d rust_tests=%s server_registry_hash=%s server_summary=%s\n", status, reason, client_material_registry_status, server_registry_status, current_runtime_contract, metadata_scope, client_block_count, client_opaque_solid_blocks, client_placeable_blocks, client_air_blocks, client_emissive_blocks, client_liquid_blocks, protocol_diff_count, storage_diff_count, renderer_code_diff_count, rust_tests, server_registry_hash, server_summary)
+    printf("client_block_material_registry_foundation status=%s reason=%s client_material_registry_status=%s client_registry_identity=%s server_material_registry_status=%s current_runtime_contract=%s metadata_scope=%s client_block_count=%d client_opaque_solid_blocks=%d client_placeable_blocks=%d client_air_blocks=%d client_emissive_blocks=%d client_liquid_blocks=%d active_protocol_change=%d active_storage_change=%d renderer_code_change=%d rust_tests=%s server_registry_hash=%s server_summary=%s\n", status, reason, client_material_registry_status, client_registry_identity, server_registry_status, current_runtime_contract, metadata_scope, client_block_count, client_opaque_solid_blocks, client_placeable_blocks, client_air_blocks, client_emissive_blocks, client_liquid_blocks, protocol_diff_count, storage_diff_count, renderer_code_diff_count, rust_tests, server_registry_hash, server_summary)
     if (status != "pass") {
       exit 1
     }

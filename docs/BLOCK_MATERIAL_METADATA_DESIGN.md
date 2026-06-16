@@ -153,7 +153,7 @@ sh scripts/block_material_registry_parity_gate.sh logs/block_material_registry_p
 
 The expected current design result is `status=pass`, `production_metadata_status=server_registry_guarded`, `server_material_metadata=guarded`, `client_material_metadata=guarded`, `client_server_parity_gate=present`, `active_schema_change=0`, and `current_runtime_contract=opaque_only`.
 
-The expected current parity result is `status=pass`, `parity_status=guarded`, matching server/client counts for existing block IDs, `active_protocol_change=0`, `active_storage_change=0`, `renderer_code_change=0`, and `current_runtime_contract=opaque_only`.
+The expected current parity result is `status=pass`, `parity_status=guarded`, `client_registry_identity=guarded`, matching server/client counts for existing block IDs, `active_protocol_change=0`, `active_storage_change=0`, `renderer_code_change=0`, and `current_runtime_contract=opaque_only`.
 
 The gate checks that:
 
@@ -165,7 +165,7 @@ The gate checks that:
 - Server block definitions remain the existing `uint16` block registry and expose explicit material metadata for existing block IDs only.
 - `scripts/block_material_registry_foundation_gate.sh` guards the server registry signature for current networked opaque-only blocks.
 - `scripts/client_block_material_registry_foundation_gate.sh` guards the client registry signature for current networked opaque-only blocks and consumes the server registry gate.
-- `scripts/block_material_registry_parity_gate.sh` runs both registry foundation gates and compares server/client block counts, opaque-solid counts, placeable counts, air counts, emissive counts, and liquid counts for the current existing-ID contract.
+- `scripts/block_material_registry_parity_gate.sh` runs both registry foundation gates, requires the guarded client registry identity table, and compares server/client block counts, opaque-solid counts, placeable counts, air counts, emissive counts, and liquid counts for the current existing-ID contract.
 - Transparent fixture acceptance is clean while active transparent rendering remains deferred.
 
 ## Current Status
