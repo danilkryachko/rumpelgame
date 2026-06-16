@@ -12,12 +12,14 @@ Scope:
 
 - Add `server/pkg/inventory` as the authoritative domain model for placeable block stacks.
 - Give each `clientSession` a server-owned creative hotbar inventory.
+- Add an explicit server inventory mode switch for finite counted hotbar sessions.
 - Keep `BlockAction PLACE` on the existing packet shape and require the session inventory before applying the edit.
 - Keep selected hotbar slot state on the server session and validate selected-slot actions against the session inventory.
 - Load and save local-player inventory slots plus selected slot when a client sends a valid `ClientPosition.player_id`.
 - Guard creative and counted stack behavior with Go unit tests.
 - Guard the session placement and selected-slot boundaries with network handler tests.
 - Guard RocksDB player inventory key separation and record round-trip with storage tests.
+- Guard counted runtime placement, count decrement, server restart, and persisted count reload with `scripts/player_inventory_counted_smoke.sh`.
 - Guard the local-player reconnect/restart runtime path through `scripts/player_inventory_reconnect_smoke.sh` as part of the gameplay loop foundation.
 
 Out of scope:
@@ -29,8 +31,10 @@ Out of scope:
 - `server/pkg/inventory.Inventory` owns inventory slots as `{BlockID, Count}`.
 - `NewCreativeHotbar()` derives its slots from the current server block registry and includes only placeable block IDs.
 - `CreativeStackCount = 999` matches the current creative gameplay count convention.
+- `CountedHotbarStackCount = 8` is the finite count used by the server counted hotbar mode.
 - `PlacementPolicyRetain` keeps creative stacks unchanged after placement.
 - `NewCounted()` creates a counted inventory where successful placement decrements the matching stack.
+- `NewCountedHotbar()` derives the same placeable hotbar slots as creative mode, with `PlacementPolicyConsume` and finite stack counts.
 - `CanPlaceBlock()` and `PlaceBlock()` reject air, unknown block IDs, empty slots, and non-placeable registry entries.
 - `CanSelectSlot()`, `PlaceableBlockAtSlot()`, and `FirstPlaceableSlot()` reject unavailable slots and expose slot selection without giving callers mutable inventory state.
 - `Slots()` returns a copy so callers cannot mutate inventory internals without going through the domain methods.
@@ -39,6 +43,7 @@ Out of scope:
 ## Session Placement Boundary
 
 - `newClientSession()` creates a server-owned creative hotbar inventory.
+- `Server.newClientSession()` creates the configured session inventory; default mode remains creative, and `RUMPELMC_SERVER_INVENTORY_MODE=counted` creates a finite counted hotbar.
 - `newClientSession()` initializes `selectedInventorySlot` from the first available placeable slot.
 - Connected sessions receive a server-to-client `InventorySnapshot` for the current inventory slots and selected slot after admission.
 - `InventoryAction SELECT_SLOT` updates the selected slot only when the requested slot is available in the session inventory, then sends a fresh snapshot.
@@ -48,6 +53,7 @@ Out of scope:
 - After successful counted placement, the server normalizes the selected slot if the selected stack becomes unavailable and sends a fresh snapshot after the chunk update.
 - If a connected client sends a valid `ClientPosition.player_id`, the session binds once to that player id, loads the persisted inventory state when present, and saves the current creative hotbar state when no record exists.
 - Accepted selected-slot changes and successful counted placements save the bound player inventory state through the configured store before sending the refreshed snapshot.
+- In counted mode, the first persisted player inventory record stores `PlacementPolicyConsume` and the finite hotbar counts, so later reconnects keep the counted state.
 - Invalid or missing `player_id` values keep session-local inventory behavior and do not touch player inventory storage.
 - `BlockAction DESTROY` still maps to `world.Air` and does not require an inventory slot.
 - The legacy state handler keeps behavior-preserving creative inventory validation for tests that bypass `clientSession`.
@@ -62,24 +68,27 @@ Out of scope:
 - Do not bypass `World.SetBlockGlobal` after inventory validation passes.
 - Do not change block ID numeric values or block registry placeability semantics from this checkpoint.
 - Keep creative placement count retention unless a counted/survival gameplay gate explicitly owns the behavior change.
+- Keep counted mode behind `RUMPELMC_SERVER_INVENTORY_MODE=counted` until the broader survival loop owns default gameplay rules.
 
 ## Gate
 
 Use:
 
 ```sh
+sh scripts/player_inventory_counted_smoke.sh logs/player_inventory_counted_smoke_current
 sh scripts/server_inventory_foundation_gate.sh logs/server_inventory_foundation_current
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected current result is `status=pass`, `server_inventory_status=session_guarded`, `creative_inventory=unit_guarded`, `counted_inventory=unit_guarded`, `block_action_inventory=session_guarded`, `player_inventory_persistence=rocksdb_guarded`, `active_protocol_change=0`, `active_storage_change=0`, and `go_tests=pass`.
+The expected current result is `status=pass`, `server_inventory_status=session_guarded`, `creative_inventory=unit_guarded`, `counted_inventory=unit_guarded`, `counted_inventory_runtime=live_server_guarded`, `counted_inventory_runtime_status=pass`, `counted_inventory_restarts>=1`, `block_action_inventory=session_guarded`, `player_inventory_persistence=rocksdb_guarded`, `active_protocol_change=0`, `active_storage_change=0`, and `go_tests=pass`.
 
 The gate checks that:
 
 - This document records the current contract, session placement boundary, and compatibility rules.
 - `server/pkg/inventory` exposes the slot model, creative inventory, counted inventory, placement methods, selected-slot methods, and copy-out slots.
-- Inventory tests cover creative placeable blocks, retained creative counts, counted stack consumption, selected-slot validation, empty-slot rejection, air/unknown rejection, and copied slots.
-- Network tests cover session creative inventory, selected-slot action handling, player inventory load/save binding from `ClientPosition.player_id`, rejected placement when the session inventory lacks the requested block, retained counted inventory after a failed world edit, and snapshot refresh after counted placement.
+- Inventory tests cover creative placeable blocks, retained creative counts, counted hotbar stacks, counted stack consumption, selected-slot validation, empty-slot rejection, air/unknown rejection, and copied slots.
+- Network tests cover session creative inventory, counted inventory mode, selected-slot action handling, player inventory load/save binding from `ClientPosition.player_id`, rejected placement when the session inventory lacks the requested block, retained counted inventory after a failed world edit, and snapshot refresh after counted placement.
+- The counted smoke summary proves a real counted-mode server decrements a placed stack and reloads the decremented count after restart.
 - `server/pkg/network/server.go` keeps the existing block registry placeability check, adds the session inventory placement check, and validates `InventoryAction SELECT_SLOT` through session inventory.
 - Storage tests cover player inventory record round-trip, key separation from chunk records, corrupt record rejection, and empty id rejection.
 - The gameplay loop foundation consumes the live player-inventory reconnect smoke and reports `player_inventory_reconnect=live_server_guarded`.
@@ -87,4 +96,4 @@ The gate checks that:
 
 ## Current Status
 
-This checkpoint is complete when the gate reports `server_inventory_status=session_guarded` and `player_inventory_persistence=rocksdb_guarded`. The gameplay foundation additionally proves the runtime reconnect/restart path with `player_inventory_reconnect=live_server_guarded`. The server now owns the placement inventory boundary for connected sessions and persists local-player inventory state while current creative placement behavior, chunk serialization, world generation, and renderer behavior remain unchanged.
+This checkpoint is complete when the gate reports `server_inventory_status=session_guarded`, `player_inventory_persistence=rocksdb_guarded`, and `counted_inventory_runtime=live_server_guarded`. The gameplay foundation additionally proves the runtime reconnect/restart path with `player_inventory_reconnect=live_server_guarded`. The server now owns the placement inventory boundary for connected sessions, persists local-player inventory state, and has a live guarded counted mode while current default creative placement behavior, chunk serialization, world generation, and renderer behavior remain unchanged.

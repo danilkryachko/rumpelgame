@@ -52,6 +52,34 @@ func TestCreativeHotbarPlaceBlockRetainsCounts(t *testing.T) {
 	}
 }
 
+func TestCountedHotbarConsumesCurrentPlaceableBlocks(t *testing.T) {
+	inv := NewCountedHotbar()
+	slots := inv.Slots()
+	placeableBlocks := placeableBlockIDs(t)
+
+	if len(slots) != len(placeableBlocks) {
+		t.Fatalf("counted hotbar slots = %d, want %d", len(slots), len(placeableBlocks))
+	}
+
+	for index, blockID := range placeableBlocks {
+		if slots[index].BlockID != blockID {
+			t.Fatalf("slot %d block = %v, want %v", index, slots[index].BlockID, blockID)
+		}
+		if slots[index].Count != CountedHotbarStackCount {
+			t.Fatalf("slot %d count = %d, want %d", index, slots[index].Count, CountedHotbarStackCount)
+		}
+		if !inv.PlaceBlock(blockID) {
+			t.Fatalf("PlaceBlock(%v) = false, want true", blockID)
+		}
+	}
+
+	for _, slot := range inv.Slots() {
+		if slot.Count != CountedHotbarStackCount-1 {
+			t.Fatalf("post-place count for block %v = %d, want %d", slot.BlockID, slot.Count, CountedHotbarStackCount-1)
+		}
+	}
+}
+
 func TestCountedInventoryConsumesStacksAndRejectsEmptySlots(t *testing.T) {
 	inv := NewCounted([]Slot{
 		{BlockID: world.Stone, Count: 2},

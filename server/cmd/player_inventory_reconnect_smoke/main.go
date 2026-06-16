@@ -18,8 +18,9 @@ const maxPacketSize = 16 * 1024 * 1024
 type smokeAction string
 
 const (
-	actionSelect smokeAction = "select"
-	actionExpect smokeAction = "expect"
+	actionSelect      smokeAction = "select"
+	actionExpect      smokeAction = "expect"
+	actionPlaceExpect smokeAction = "place-expect"
 )
 
 type smokeClient struct {
@@ -28,6 +29,7 @@ type smokeClient struct {
 
 type inventoryObservation struct {
 	selectedSlot uint32
+	slotCount    uint32
 	snapshots    int
 	chunks       int
 }
@@ -35,18 +37,20 @@ type inventoryObservation struct {
 func main() {
 	addr := flag.String("addr", "127.0.0.1:25565", "server TCP address")
 	timeout := flag.Duration("timeout", 3*time.Second, "per-read/write timeout")
-	action := flag.String("action", string(actionExpect), "smoke action: select or expect")
+	action := flag.String("action", string(actionExpect), "smoke action: select, expect, or place-expect")
 	playerID := flag.String("player-id", "local_player", "player id to send in ClientPosition")
 	slot := flag.Uint("slot", 1, "selected inventory slot to persist or expect")
+	blockID := flag.Uint("block-id", 1, "block id to place for place-expect")
+	expectCount := flag.Int("expect-count", -1, "expected selected slot count; negative disables count check")
 	flag.Parse()
 
-	if err := run(*addr, *timeout, smokeAction(*action), *playerID, uint32(*slot)); err != nil {
+	if err := run(*addr, *timeout, smokeAction(*action), *playerID, uint32(*slot), uint32(*blockID), *expectCount); err != nil {
 		fmt.Fprintf(os.Stderr, "player_inventory_reconnect_smoke status=fail action=%s player_id=%q slot=%d error=%q\n", *action, *playerID, *slot, err)
 		os.Exit(1)
 	}
 }
 
-func run(addr string, timeout time.Duration, action smokeAction, playerID string, slot uint32) error {
+func run(addr string, timeout time.Duration, action smokeAction, playerID string, slot uint32, blockID uint32, expectCount int) error {
 	client, err := dialClient(addr, timeout)
 	if err != nil {
 		return err
@@ -63,19 +67,24 @@ func run(addr string, timeout time.Duration, action smokeAction, playerID string
 			return err
 		}
 	case actionExpect:
+	case actionPlaceExpect:
+		if err := client.sendBlockPlace(blockID, timeout); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unsupported action %q", action)
 	}
 
-	observation, err := client.readInventorySnapshot(slot, timeout)
+	observation, err := client.readInventorySnapshot(slot, expectCount, timeout)
 	if err != nil {
 		return err
 	}
 	fmt.Printf(
-		"player_inventory_reconnect_smoke status=pass action=%s player_id=%s selected_slot=%d snapshots=%d chunks=%d protocol_change=0\n",
+		"player_inventory_reconnect_smoke status=pass action=%s player_id=%s selected_slot=%d slot_count=%d snapshots=%d chunks=%d protocol_change=0\n",
 		action,
 		playerID,
 		observation.selectedSlot,
+		observation.slotCount,
 		observation.snapshots,
 		observation.chunks,
 	)
@@ -109,6 +118,20 @@ func (c *smokeClient) sendInventorySelect(slot uint32, timeout time.Duration) er
 			InventoryAction: &api.InventoryAction{
 				Action: api.InventoryAction_SELECT_SLOT,
 				Slot:   slot,
+			},
+		},
+	}, timeout)
+}
+
+func (c *smokeClient) sendBlockPlace(blockID uint32, timeout time.Duration) error {
+	return c.writePacket(&api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       64,
+				Z:       1,
+				BlockId: blockID,
 			},
 		},
 	}, timeout)
@@ -155,7 +178,7 @@ func writeFull(writer io.Writer, data []byte) error {
 	return nil
 }
 
-func (c *smokeClient) readInventorySnapshot(wantSlot uint32, timeout time.Duration) (inventoryObservation, error) {
+func (c *smokeClient) readInventorySnapshot(wantSlot uint32, wantCount int, timeout time.Duration) (inventoryObservation, error) {
 	deadline := time.Now().Add(timeout)
 	observation := inventoryObservation{}
 	for {
@@ -186,6 +209,10 @@ func (c *smokeClient) readInventorySnapshot(wantSlot uint32, timeout time.Durati
 		slot := snapshot.GetSlots()[wantSlot]
 		if slot.GetBlockId() == 0 || slot.GetCount() == 0 {
 			return observation, fmt.Errorf("selected slot %d is not placeable in snapshot: block_id=%d count=%d", wantSlot, slot.GetBlockId(), slot.GetCount())
+		}
+		observation.slotCount = slot.GetCount()
+		if wantCount >= 0 && slot.GetCount() != uint32(wantCount) {
+			continue
 		}
 		return observation, nil
 	}

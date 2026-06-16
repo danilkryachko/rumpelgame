@@ -265,6 +265,34 @@ func TestConfiguredMaxClientsParsesSupportedValues(t *testing.T) {
 	}
 }
 
+func TestConfiguredInventoryModeUsesCreativeDefault(t *testing.T) {
+	t.Setenv(inventoryModeEnv, "")
+
+	if got := configuredInventoryMode(); got != inventoryModeCreative {
+		t.Fatalf("configuredInventoryMode() = %q, want %q", got, inventoryModeCreative)
+	}
+}
+
+func TestConfiguredInventoryModeUsesCountedEnv(t *testing.T) {
+	for _, value := range []string{"counted", "survival", " COUNTED "} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(inventoryModeEnv, value)
+
+			if got := configuredInventoryMode(); got != inventoryModeCounted {
+				t.Fatalf("configuredInventoryMode() = %q, want %q", got, inventoryModeCounted)
+			}
+		})
+	}
+}
+
+func TestConfiguredInventoryModeIgnoresInvalidEnv(t *testing.T) {
+	t.Setenv(inventoryModeEnv, "invalid")
+
+	if got := configuredInventoryMode(); got != inventoryModeCreative {
+		t.Fatalf("configuredInventoryMode() = %q, want %q", got, inventoryModeCreative)
+	}
+}
+
 func TestTryRegisterClientHonorsMaxClients(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.maxClients = 1
@@ -749,6 +777,49 @@ func TestNewClientSessionStartsWithServerAuthoritativeCreativeInventory(t *testi
 	}
 }
 
+func TestServerCountedInventoryModeStartsSessionWithCountedHotbar(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.inventoryMode = inventoryModeCounted
+	client := server.newClientSession(&recordingConn{})
+
+	if !client.inventory.CanPlaceBlock(world.Stone) {
+		t.Fatal("counted session cannot place Stone, want finite counted inventory available")
+	}
+	if !client.inventory.PlaceBlock(world.Stone) {
+		t.Fatal("counted session first PlaceBlock(Stone) = false, want true")
+	}
+
+	slots := client.inventory.Slots()
+	if len(slots) == 0 {
+		t.Fatal("counted session slots empty")
+	}
+	if got := slots[0].Count; got != playerinventory.CountedHotbarStackCount-1 {
+		t.Fatalf("counted session stone count = %d, want %d", got, playerinventory.CountedHotbarStackCount-1)
+	}
+}
+
+func TestSendInventorySnapshotToSessionUsesCountedInventoryMode(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.inventoryMode = inventoryModeCounted
+	client := server.newClientSession(&recordingConn{})
+
+	if err := server.sendInventorySnapshotToSession(client); err != nil {
+		t.Fatalf("sendInventorySnapshotToSession() error = %v", err)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames = %d, want 1", got)
+	}
+	snapshot := decodedPacket(t, frames[0]).GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("decoded inventory snapshot = nil")
+	}
+	if got := snapshot.GetSlots()[0].GetCount(); got != playerinventory.CountedHotbarStackCount {
+		t.Fatalf("snapshot slot 0 count = %d, want %d", got, playerinventory.CountedHotbarStackCount)
+	}
+}
+
 func TestHandleClientPacketRejectsPlaceWhenSessionInventoryLacksBlock(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
@@ -1009,6 +1080,37 @@ func TestHandleClientPacketPositionCreatesPlayerInventoryRecord(t *testing.T) {
 	}
 	if len(saved.Slots) == 0 {
 		t.Fatal("saved slots empty")
+	}
+}
+
+func TestHandleClientPacketPositionCreatesCountedPlayerInventoryRecord(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	server.inventoryMode = inventoryModeCounted
+	client := server.newClientSession(&recordingConn{})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_Position{
+			Position: &api.ClientPosition{X: 1, Y: 68, Z: 1, PlayerId: "local_player"},
+		},
+	}
+
+	if err := server.handleInitialClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleInitialClientPacketForSession() error = %v", err)
+	}
+	if got := store.saveCount; got != 1 {
+		t.Fatalf("save count = %d, want initial counted player inventory record", got)
+	}
+	saved := store.states["local_player"]
+	if saved.PlacementPolicy != playerinventory.PlacementPolicyConsume {
+		t.Fatalf("saved placement policy = %q, want consume", saved.PlacementPolicy)
+	}
+	if len(saved.Slots) == 0 {
+		t.Fatal("saved slots empty")
+	}
+	if got := saved.Slots[0].Count; got != playerinventory.CountedHotbarStackCount {
+		t.Fatalf("saved slot 0 count = %d, want %d", got, playerinventory.CountedHotbarStackCount)
 	}
 }
 

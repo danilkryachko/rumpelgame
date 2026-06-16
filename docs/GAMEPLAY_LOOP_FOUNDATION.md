@@ -99,6 +99,7 @@ The server now has a session-owned inventory foundation:
 - `server/pkg/inventory.Inventory` owns `{BlockID, Count}` slots.
 - `NewCreativeHotbar()` derives placeable slots from the server block registry.
 - `NewCounted()` supports counted stack consumption for server-side rules.
+- `NewCountedHotbar()` and `RUMPELMC_SERVER_INVENTORY_MODE=counted` provide a guarded finite-count runtime mode over the same inventory snapshot/action protocol.
 - `clientSession` owns an inventory created by `NewCreativeHotbar()`.
 - `clientSession` owns `selectedInventorySlot`, initializes it from the first placeable slot, and validates `InventoryAction SELECT_SLOT` against session inventory.
 - `BlockAction_PLACE` keeps the existing `world.IsPlaceable(block)` check and requires `client.inventory.CanPlaceBlock(block)` before the world edit.
@@ -108,6 +109,7 @@ The server now has a session-owned inventory foundation:
 - Missing inventory records create the current creative hotbar record; existing records restore slots and selected slot.
 - Selected-slot changes and successful counted placements save the bound inventory state.
 - Creative placement keeps counts retained, so current creative block placement behavior is unchanged.
+- Counted runtime placement is guarded by a live server smoke that decrements a placed stack and reloads the decremented count after restart.
 - Missing inventory entries reject placement before `World.SetBlockGlobal` and before chunk update broadcast.
 
 ## Persistence Boundary

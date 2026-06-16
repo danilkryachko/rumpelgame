@@ -3,6 +3,7 @@ package inventory
 import "rumpelmc/server/pkg/world"
 
 const CreativeStackCount uint32 = 999
+const CountedHotbarStackCount uint32 = 8
 
 type PlacementPolicy string
 
@@ -46,17 +47,25 @@ func NewFromState(state State) Inventory {
 }
 
 func NewCreativeHotbar() Inventory {
+	return New(hotbarSlots(CreativeStackCount), PlacementPolicyRetain)
+}
+
+func NewCountedHotbar() Inventory {
+	return New(hotbarSlots(CountedHotbarStackCount), PlacementPolicyConsume)
+}
+
+func hotbarSlots(count uint32) []Slot {
 	definitions := world.BlockDefinitions()
 	slots := make([]Slot, 0, len(definitions))
 	for _, block := range definitions {
 		if block.Placeable {
 			slots = append(slots, Slot{
 				BlockID: block.ID,
-				Count:   CreativeStackCount,
+				Count:   count,
 			})
 		}
 	}
-	return New(slots, PlacementPolicyRetain)
+	return slots
 }
 
 func (i *Inventory) CanPlaceBlock(blockID world.BlockID) bool {

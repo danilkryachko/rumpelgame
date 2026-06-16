@@ -35,6 +35,7 @@ const chunkEncodingEnv = "RUMPELMC_SERVER_CHUNK_ENCODING"
 const chunkOrderEnv = "RUMPELMC_SERVER_CHUNK_ORDER"
 const clientWriteTimeoutEnv = "RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS"
 const maxClientsEnv = "RUMPELMC_SERVER_MAX_CLIENTS"
+const inventoryModeEnv = "RUMPELMC_SERVER_INVENTORY_MODE"
 const initialClientPacketTimeout = 250 * time.Millisecond
 const maxPlayerIDLength = 64
 
@@ -70,6 +71,13 @@ const (
 	chunkOrderDirectional chunkOrderMode = "directional"
 )
 
+type inventoryMode string
+
+const (
+	inventoryModeCreative inventoryMode = "creative"
+	inventoryModeCounted  inventoryMode = "counted"
+)
+
 type Server struct {
 	address         string
 	world           *world.World
@@ -80,6 +88,7 @@ type Server struct {
 	chunkOrderMode  chunkOrderMode
 	writeTimeout    time.Duration
 	maxClients      int
+	inventoryMode   inventoryMode
 	inventoryStore  playerInventoryStore
 	clientsMu       sync.Mutex
 	clients         map[*clientSession]struct{}
@@ -97,6 +106,7 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		chunkOrderMode:  configuredChunkOrderMode(),
 		writeTimeout:    configuredClientWriteTimeout(),
 		maxClients:      configuredMaxClients(),
+		inventoryMode:   configuredInventoryMode(),
 		clients:         make(map[*clientSession]struct{}),
 	}
 }
@@ -130,7 +140,7 @@ func (s *Server) Start() error {
 func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	client := newClientSession(conn)
+	client := s.newClientSession(conn)
 	activeClients, admitted := s.tryRegisterClient(client)
 	if !admitted {
 		log.Printf("Client rejected by admission limit admission_result=rejected active_clients=%d max_clients=%d address=%s", activeClients, s.maxClients, conn.RemoteAddr())
@@ -529,8 +539,24 @@ type clientSession struct {
 	playerID              string
 }
 
+func (s *Server) newClientSession(conn net.Conn) *clientSession {
+	return newClientSessionWithInventory(conn, s.newSessionInventory())
+}
+
+func (s *Server) newSessionInventory() playerinventory.Inventory {
+	switch s.inventoryMode {
+	case inventoryModeCounted:
+		return playerinventory.NewCountedHotbar()
+	default:
+		return playerinventory.NewCreativeHotbar()
+	}
+}
+
 func newClientSession(conn net.Conn) *clientSession {
-	inventory := playerinventory.NewCreativeHotbar()
+	return newClientSessionWithInventory(conn, playerinventory.NewCreativeHotbar())
+}
+
+func newClientSessionWithInventory(conn net.Conn, inventory playerinventory.Inventory) *clientSession {
 	selectedSlot, _ := inventory.FirstPlaceableSlot()
 
 	return &clientSession{
@@ -916,6 +942,19 @@ func configuredMaxClients() int {
 		return defaultMaxClients
 	}
 	return parsed
+}
+
+func configuredInventoryMode() inventoryMode {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(inventoryModeEnv)))
+	switch value {
+	case "", string(inventoryModeCreative):
+		return inventoryModeCreative
+	case string(inventoryModeCounted), "survival":
+		return inventoryModeCounted
+	default:
+		log.Printf("Ignoring invalid %s=%q; using %s", inventoryModeEnv, value, inventoryModeCreative)
+		return inventoryModeCreative
+	}
 }
 
 type chunkSendStats struct {
