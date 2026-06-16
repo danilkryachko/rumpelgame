@@ -288,6 +288,25 @@ networking_conflict_semantics="$(field_metric conflict_semantics "$NETWORKING_SU
 networking_worldgen_biome_atlas_tile_identity="$(field_metric worldgen_biome_atlas_tile_identity "$NETWORKING_SUMMARY")"
 networking_worldgen_biome_atlas_block_texture_usage="$(field_metric worldgen_biome_atlas_block_texture_usage "$NETWORKING_SUMMARY")"
 networking_overload_status="$(field_metric overload_status "$NETWORKING_SUMMARY")"
+networking_reconnect_status="$(field_metric reconnect_status "$NETWORKING_SUMMARY")"
+networking_reconnect_smoke_status="$(field_metric reconnect_smoke_status "$NETWORKING_SUMMARY")"
+networking_reconnect_smoke_client_state="$(field_metric reconnect_smoke_client_state "$NETWORKING_SUMMARY")"
+networking_reconnect_smoke_reader_errors="$(field_metric reconnect_smoke_reader_errors "$NETWORKING_SUMMARY")"
+networking_reconnect_smoke_successes="$(field_metric reconnect_smoke_successes "$NETWORKING_SUMMARY")"
+networking_reconnect_soak_status="$(field_metric reconnect_soak_status "$NETWORKING_SUMMARY")"
+networking_reconnect_soak_cycles="$(field_metric reconnect_soak_cycles "$NETWORKING_SUMMARY")"
+networking_reconnect_soak_reader_errors="$(field_metric reconnect_soak_reader_errors "$NETWORKING_SUMMARY")"
+networking_reconnect_soak_successes="$(field_metric reconnect_soak_successes "$NETWORKING_SUMMARY")"
+networking_slow_client_status="$(field_metric slow_client_status "$NETWORKING_SUMMARY")"
+networking_slow_reader_smoke_status="$(field_metric slow_reader_smoke_status "$NETWORKING_SUMMARY")"
+networking_slow_reader_timeout_observed="$(field_metric slow_reader_timeout_observed "$NETWORKING_SUMMARY")"
+networking_slow_reader_timeout_class="$(field_metric slow_reader_timeout_class "$NETWORKING_SUMMARY")"
+networking_slow_reader_matrix_status="$(field_metric slow_reader_matrix_status "$NETWORKING_SUMMARY")"
+networking_slow_reader_matrix_counts_checked="$(field_metric slow_reader_matrix_counts_checked "$NETWORKING_SUMMARY")"
+networking_slow_reader_matrix_max_fast_clients="$(field_metric slow_reader_matrix_max_fast_clients "$NETWORKING_SUMMARY")"
+networking_slow_reader_matrix_total_fast_clients="$(field_metric slow_reader_matrix_total_fast_clients "$NETWORKING_SUMMARY")"
+networking_slow_reader_matrix_total_fast_bootstrap_chunks="$(field_metric slow_reader_matrix_total_fast_bootstrap_chunks "$NETWORKING_SUMMARY")"
+networking_slow_reader_matrix_total_slow_timeouts="$(field_metric slow_reader_matrix_total_slow_timeouts "$NETWORKING_SUMMARY")"
 persistence_status="$(field_metric status "$PERSISTENCE_SUMMARY")"
 persistence_protocol_change="$(field_metric active_protocol_change "$PERSISTENCE_SUMMARY")"
 persistence_save_failure_rollback="$(field_metric save_failure_rollback "$PERSISTENCE_SUMMARY")"
@@ -359,6 +378,25 @@ awk \
   -v networking_worldgen_biome_atlas_tile_identity="${networking_worldgen_biome_atlas_tile_identity:-missing}" \
   -v networking_worldgen_biome_atlas_block_texture_usage="${networking_worldgen_biome_atlas_block_texture_usage:-missing}" \
   -v networking_overload_status="${networking_overload_status:-missing}" \
+  -v networking_reconnect_status="${networking_reconnect_status:-missing}" \
+  -v networking_reconnect_smoke_status="${networking_reconnect_smoke_status:-missing}" \
+  -v networking_reconnect_smoke_client_state="${networking_reconnect_smoke_client_state:-missing}" \
+  -v networking_reconnect_smoke_reader_errors="${networking_reconnect_smoke_reader_errors:-0}" \
+  -v networking_reconnect_smoke_successes="${networking_reconnect_smoke_successes:-0}" \
+  -v networking_reconnect_soak_status="${networking_reconnect_soak_status:-missing}" \
+  -v networking_reconnect_soak_cycles="${networking_reconnect_soak_cycles:-0}" \
+  -v networking_reconnect_soak_reader_errors="${networking_reconnect_soak_reader_errors:-0}" \
+  -v networking_reconnect_soak_successes="${networking_reconnect_soak_successes:-0}" \
+  -v networking_slow_client_status="${networking_slow_client_status:-missing}" \
+  -v networking_slow_reader_smoke_status="${networking_slow_reader_smoke_status:-missing}" \
+  -v networking_slow_reader_timeout_observed="${networking_slow_reader_timeout_observed:-0}" \
+  -v networking_slow_reader_timeout_class="${networking_slow_reader_timeout_class:-missing}" \
+  -v networking_slow_reader_matrix_status="${networking_slow_reader_matrix_status:-missing}" \
+  -v networking_slow_reader_matrix_counts_checked="${networking_slow_reader_matrix_counts_checked:-0}" \
+  -v networking_slow_reader_matrix_max_fast_clients="${networking_slow_reader_matrix_max_fast_clients:-0}" \
+  -v networking_slow_reader_matrix_total_fast_clients="${networking_slow_reader_matrix_total_fast_clients:-0}" \
+  -v networking_slow_reader_matrix_total_fast_bootstrap_chunks="${networking_slow_reader_matrix_total_fast_bootstrap_chunks:-0}" \
+  -v networking_slow_reader_matrix_total_slow_timeouts="${networking_slow_reader_matrix_total_slow_timeouts:-0}" \
   -v persistence_status="${persistence_status:-missing}" \
   -v persistence_protocol_change="${persistence_protocol_change:-1}" \
   -v persistence_save_failure_rollback="${persistence_save_failure_rollback:-missing}" \
@@ -423,10 +461,30 @@ awk \
     worldgen_biome_atlas_tile_identity = networking_worldgen_biome_atlas_tile_identity
     worldgen_biome_atlas_block_texture_usage = networking_worldgen_biome_atlas_block_texture_usage
     overload_status = networking_overload_status
+    runtime_reconnect = networking_reconnect_status
+    slow_client_status = networking_slow_client_status
     local_server_exposure = "loopback_enforced"
     smoke_bind_exposure = "loopback_guarded"
     active_protocol_change = proto_diff_count + 0
 
+    reconnect_runtime_ok = networking_reconnect_status == "repeated_live_rebootstrap_guarded" &&
+      networking_reconnect_smoke_status == "pass" &&
+      networking_reconnect_smoke_client_state == "active" &&
+      networking_reconnect_smoke_reader_errors + 0 >= 1 &&
+      networking_reconnect_smoke_successes + 0 >= 1 &&
+      networking_reconnect_soak_status == "pass" &&
+      networking_reconnect_soak_cycles + 0 >= 2 &&
+      networking_reconnect_soak_reader_errors + 0 >= networking_reconnect_soak_cycles + 0 &&
+      networking_reconnect_soak_successes + 0 >= networking_reconnect_soak_cycles + 0
+    slow_reader_runtime_ok = networking_slow_client_status == "load_matrix_guarded" &&
+      networking_slow_reader_smoke_status == "pass" &&
+      networking_slow_reader_timeout_observed + 0 == 1 &&
+      networking_slow_reader_timeout_class == "timeout" &&
+      networking_slow_reader_matrix_status == "pass" &&
+      networking_slow_reader_matrix_counts_checked + 0 >= 2 &&
+      networking_slow_reader_matrix_max_fast_clients + 0 >= 2 &&
+      networking_slow_reader_matrix_total_fast_clients + 0 == networking_slow_reader_matrix_total_fast_bootstrap_chunks + 0 &&
+      networking_slow_reader_matrix_total_slow_timeouts + 0 == networking_slow_reader_matrix_counts_checked + 0
     prereqs_ok = networking_status == "pass" && networking_protocol_change + 0 == 0 &&
       (networking_packet_error_classification == "unit_guarded" || networking_packet_error_classification == "source_guarded") &&
       networking_packet_error_aggregation == "parser_guarded" &&
@@ -439,6 +497,8 @@ awk \
       networking_worldgen_biome_atlas_tile_identity == "guarded" &&
       networking_worldgen_biome_atlas_block_texture_usage == "guarded" &&
       networking_overload_status == "admission_matrix_guarded" &&
+      reconnect_runtime_ok &&
+      slow_reader_runtime_ok &&
       persistence_status == "pass" && persistence_protocol_change + 0 == 0 &&
       persistence_save_failure_rollback == "guarded" &&
       arch_status == "pass" && arch_runtime_change == "none" &&
@@ -476,7 +536,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s packet_error_monitoring=%s server_session_monitoring=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_package_smoke=%s storage_config=%s storage_backend_policy=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s worldgen_biome_atlas_tile_identity=%s worldgen_biome_atlas_block_texture_usage=%s overload_status=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s observability_gpu_report_freshness=%s observability_gpu_report_error_scan=%s storage_smoke_status=%s storage_smoke_external_secret_required=%d storage_smoke_database_env_policy=%s storage_smoke_approved_databases=%s packet_error_monitoring_status=%s packet_error_monitoring_unknown_classes=%d packet_error_monitoring_protocol_errors=%d packet_error_monitoring_write_errors=%d server_session_monitoring_status=%s server_session_monitoring_close_failures=%d server_session_monitoring_accept_failures=%d server_session_monitoring_missing_active_client_fields=%d networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s storage_smoke_summary=%s packet_error_monitoring_summary=%s server_session_monitoring_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, packet_error_monitoring, server_session_monitoring, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_package_smoke, storage_config, storage_backend_policy, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, worldgen_biome_atlas_tile_identity, worldgen_biome_atlas_block_texture_usage, overload_status, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, observability_gpu_report_freshness, observability_gpu_report_error_scan, storage_smoke_status, storage_smoke_external_secret_required, storage_smoke_database_env_policy, storage_smoke_approved_databases, packet_error_monitoring_status, packet_error_monitoring_unknown_classes, packet_error_monitoring_protocol_errors, packet_error_monitoring_write_errors, server_session_monitoring_status, server_session_monitoring_close_failures, server_session_monitoring_accept_failures, server_session_monitoring_missing_active_client_fields, networking_summary, persistence_summary, arch_summary, observability_summary, storage_smoke_summary, packet_error_monitoring_summary, server_session_monitoring_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s packet_error_monitoring=%s server_session_monitoring=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_package_smoke=%s storage_config=%s storage_backend_policy=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s worldgen_biome_atlas_tile_identity=%s worldgen_biome_atlas_block_texture_usage=%s overload_status=%s runtime_reconnect=%s reconnect_smoke_status=%s reconnect_smoke_client_state=%s reconnect_smoke_reader_errors=%d reconnect_smoke_successes=%d reconnect_soak_status=%s reconnect_soak_cycles=%d reconnect_soak_reader_errors=%d reconnect_soak_successes=%d slow_client_status=%s slow_reader_smoke_status=%s slow_reader_timeout_observed=%d slow_reader_timeout_class=%s slow_reader_matrix_status=%s slow_reader_matrix_counts_checked=%d slow_reader_matrix_max_fast_clients=%d slow_reader_matrix_total_fast_clients=%d slow_reader_matrix_total_fast_bootstrap_chunks=%d slow_reader_matrix_total_slow_timeouts=%d local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s observability_gpu_report_freshness=%s observability_gpu_report_error_scan=%s storage_smoke_status=%s storage_smoke_external_secret_required=%d storage_smoke_database_env_policy=%s storage_smoke_approved_databases=%s packet_error_monitoring_status=%s packet_error_monitoring_unknown_classes=%d packet_error_monitoring_protocol_errors=%d packet_error_monitoring_write_errors=%d server_session_monitoring_status=%s server_session_monitoring_close_failures=%d server_session_monitoring_accept_failures=%d server_session_monitoring_missing_active_client_fields=%d networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s storage_smoke_summary=%s packet_error_monitoring_summary=%s server_session_monitoring_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, packet_error_monitoring, server_session_monitoring, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_package_smoke, storage_config, storage_backend_policy, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, worldgen_biome_atlas_tile_identity, worldgen_biome_atlas_block_texture_usage, overload_status, runtime_reconnect, networking_reconnect_smoke_status, networking_reconnect_smoke_client_state, networking_reconnect_smoke_reader_errors, networking_reconnect_smoke_successes, networking_reconnect_soak_status, networking_reconnect_soak_cycles, networking_reconnect_soak_reader_errors, networking_reconnect_soak_successes, slow_client_status, networking_slow_reader_smoke_status, networking_slow_reader_timeout_observed, networking_slow_reader_timeout_class, networking_slow_reader_matrix_status, networking_slow_reader_matrix_counts_checked, networking_slow_reader_matrix_max_fast_clients, networking_slow_reader_matrix_total_fast_clients, networking_slow_reader_matrix_total_fast_bootstrap_chunks, networking_slow_reader_matrix_total_slow_timeouts, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, observability_gpu_report_freshness, observability_gpu_report_error_scan, storage_smoke_status, storage_smoke_external_secret_required, storage_smoke_database_env_policy, storage_smoke_approved_databases, packet_error_monitoring_status, packet_error_monitoring_unknown_classes, packet_error_monitoring_protocol_errors, packet_error_monitoring_write_errors, server_session_monitoring_status, server_session_monitoring_close_failures, server_session_monitoring_accept_failures, server_session_monitoring_missing_active_client_fields, networking_summary, persistence_summary, arch_summary, observability_summary, storage_smoke_summary, packet_error_monitoring_summary, server_session_monitoring_summary)
     if (status != "pass") {
       exit 1
     }
