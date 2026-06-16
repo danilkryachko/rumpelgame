@@ -95,6 +95,7 @@ Checks:
 - Classified server packet-error labels are guarded through the networking gate as `packet_error_classification`.
 - Classified server packet-error aggregation is guarded through the networking gate as `packet_error_aggregation`.
 - Classified server packet-error alert thresholds, including current slow-reader matrix timeout evidence, are guarded through the networking gate as `packet_error_alerts`.
+- Empty or unsupported packet payloads are guarded through the networking gate and surfaced by the security gate as `unknown_packet_policy=ignored_guarded`.
 - Focused deterministic packet/RLE property coverage is surfaced by the security gate as `deterministic_property_tests=guarded`.
 - Valid multi-client block edits at the same coordinate are guarded as sequential last-write-wins snapshots through the server scalability and networking gates, then surfaced by the security gate as `conflict_semantics=last_write_wins_guarded`.
 - Out-of-height block edits are guarded at the world boundary and network handler as `block_edit_validation=y_bounds_guarded`.
@@ -143,7 +144,7 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `storage_integrity=guarded`, `block_edit_validation=y_bounds_guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `unknown_packet_policy=ignored_guarded`, `storage_integrity=guarded`, `block_edit_validation=y_bounds_guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -155,6 +156,7 @@ The gate checks that:
 - Focused Go protocol/network/storage/world tests pass.
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean.
+- Networking summary reports `unknown_packet_policy=ignored_guarded`.
 - Networking summary reports `conflict_semantics=last_write_wins_guarded`.
 - Server world/network tests prove out-of-range block-edit `Y` is rejected without a save or chunk broadcast.
 - Protocol schema/generated files are unchanged.

@@ -35,6 +35,7 @@
 - `Packet.chunk = 1`: server-to-client `ChunkData`.
 - `Packet.position = 2`: client-to-server `ClientPosition`.
 - `Packet.block_action = 3`: client-to-server `BlockAction`.
+- Packets with no active payload or an unsupported payload shape are ignored by current handlers and must not emit chunk updates.
 
 ## Chunk Data
 

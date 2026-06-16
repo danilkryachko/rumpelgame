@@ -503,6 +503,27 @@ func TestHandleClientPacketIgnoresUnknownBlockAction(t *testing.T) {
 	}
 }
 
+func TestHandleClientPacketIgnoresEmptyPayload(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+
+	origin := newClientSession(&recordingConn{})
+	watcher := newClientSession(&recordingConn{})
+	watcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
+
+	server.registerClient(watcher)
+	defer server.unregisterClient(watcher)
+
+	if err := server.handleClientPacketForSession(origin, &api.Packet{}); err != nil {
+		t.Fatalf("handleClientPacketForSession(empty payload) error = %v", err)
+	}
+	if got := len(recordedFrames(t, origin.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("origin frames = %d, want 0", got)
+	}
+	if got := len(recordedFrames(t, watcher.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("watcher frames = %d, want 0", got)
+	}
+}
+
 func TestHandleClientPacketRejectsOutOfRangeBlockAction(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW

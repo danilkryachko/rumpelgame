@@ -143,6 +143,7 @@ rc_visual_smoke="$(field_metric visual_smoke "$RC_SUMMARY")"
 rc_perf_matrix="$(field_metric perf_matrix "$RC_SUMMARY")"
 rc_security_deterministic_property_tests="$(field_metric security_deterministic_property_tests "$RC_SUMMARY")"
 rc_security_block_edit_validation="$(field_metric security_block_edit_validation "$RC_SUMMARY")"
+rc_security_unknown_packet_policy="$(field_metric security_unknown_packet_policy "$RC_SUMMARY")"
 rc_security_conflict_semantics="$(field_metric security_conflict_semantics "$RC_SUMMARY")"
 rc_security_local_server_exposure="$(field_metric security_local_server_exposure "$RC_SUMMARY")"
 rc_security_smoke_bind_exposure="$(field_metric security_smoke_bind_exposure "$RC_SUMMARY")"
@@ -250,11 +251,12 @@ fi
 
 {
   printf 'external_profiling_results_intake status=prepared capture_readiness=%s\n' "$capture_readiness"
-  printf 'rc_input status=%s live_checks=%s security_deterministic_property_tests=%s security_block_edit_validation=%s security_conflict_semantics=%s security_local_server_exposure=%s security_smoke_bind_exposure=%s summary=%s\n' \
+  printf 'rc_input status=%s live_checks=%s security_deterministic_property_tests=%s security_block_edit_validation=%s security_unknown_packet_policy=%s security_conflict_semantics=%s security_local_server_exposure=%s security_smoke_bind_exposure=%s summary=%s\n' \
     "$rc_status" \
     "$rc_live_checks" \
     "$rc_security_deterministic_property_tests" \
     "$rc_security_block_edit_validation" \
+    "$rc_security_unknown_packet_policy" \
     "$rc_security_conflict_semantics" \
     "$rc_security_local_server_exposure" \
     "$rc_security_smoke_bind_exposure" \
@@ -311,6 +313,7 @@ awk \
   -v rc_live_checks="${rc_live_checks:-missing}" \
   -v rc_security_deterministic_property_tests="${rc_security_deterministic_property_tests:-missing}" \
   -v rc_security_block_edit_validation="${rc_security_block_edit_validation:-missing}" \
+  -v rc_security_unknown_packet_policy="${rc_security_unknown_packet_policy:-missing}" \
   -v rc_security_conflict_semantics="${rc_security_conflict_semantics:-missing}" \
   -v rc_security_local_server_exposure="${rc_security_local_server_exposure:-missing}" \
   -v rc_security_smoke_bind_exposure="${rc_security_smoke_bind_exposure:-missing}" \
@@ -355,7 +358,7 @@ awk \
     if (!(shadow_status == "pass" && shadow_profiler_status == "pending_external_profiler" && shadow_profiler_rows + 0 >= 4)) {
       status = "fail"
       reason = "shadow_profiler_plan_not_pending"
-    } else if (!(rc_status == "pass" && rc_visual_smoke == "summary_ready" && rc_perf_matrix == "summary_ready" && rc_live_checks == "full" && rc_security_deterministic_property_tests == "guarded" && rc_security_block_edit_validation == "y_bounds_guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_local_server_exposure == "loopback_enforced" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
+    } else if (!(rc_status == "pass" && rc_visual_smoke == "summary_ready" && rc_perf_matrix == "summary_ready" && rc_live_checks == "full" && rc_security_deterministic_property_tests == "guarded" && rc_security_block_edit_validation == "y_bounds_guarded" && rc_security_unknown_packet_policy == "ignored_guarded" && rc_security_conflict_semantics == "last_write_wins_guarded" && rc_security_local_server_exposure == "loopback_enforced" && rc_security_smoke_bind_exposure == "loopback_guarded")) {
       status = "fail"
       reason = "release_candidate_evidence_not_clean"
     } else if (!(capture_pack_status == "pending_external_profiler" && capture_pack_rows + 0 >= 4)) {
@@ -377,7 +380,7 @@ awk \
       macos_metal_status = "captured"
     }
 
-    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s capture_readiness=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d capture_pack_results_file_status=%s results_file_status=%s results_template_status=%s results_check_status=%s xctrace_review_capture_status=%s xctrace_review_packet_status=%s xctrace_review_packet_check_status=%s xctrace_overhead_status=%s xctrace_overhead_check_status=%s xctrace_overhead_estimate_p50_ms=%s xctrace_overhead_candidate_status=%s xctrace_overhead_candidate_label=%s xctrace_overhead_candidate_p50_ms=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s rc_live_checks=%s rc_security_deterministic_property_tests=%s rc_security_block_edit_validation=%s rc_security_conflict_semantics=%s rc_security_local_server_exposure=%s rc_security_smoke_bind_exposure=%s plan=%s intake=%s capture_pack=%s results_template=%s results=%s results_summary=%s xctrace_review_packet=%s xctrace_overhead_summary=%s xctrace_overhead_candidates=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, capture_readiness, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, capture_pack_results_file_status, results_file_status, results_template_status, results_check_status, xctrace_review_capture_status, xctrace_review_packet_status, xctrace_review_packet_check_status, xctrace_overhead_status, xctrace_overhead_check_status, xctrace_overhead_estimate_p50_ms, xctrace_overhead_candidate_status, xctrace_overhead_candidate_label, xctrace_overhead_candidate_p50_ms, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, rc_live_checks, rc_security_deterministic_property_tests, rc_security_block_edit_validation, rc_security_conflict_semantics, rc_security_local_server_exposure, rc_security_smoke_bind_exposure, plan_path, intake_path, capture_pack, results_template, results_path, results_summary, xctrace_review_packet, xctrace_overhead_summary, xctrace_overhead_candidates, shadow_summary, rc_summary)
+    printf("external_profiling_campaign status=%s reason=%s campaign_status=%s capture_readiness=%s external_profile_status=%s macos_metal_status=%s windows_gpu_status=%s linux_vulkan_status=%s capture_pack_status=%s capture_pack_rows=%d capture_pack_results_file_status=%s results_file_status=%s results_template_status=%s results_check_status=%s xctrace_review_capture_status=%s xctrace_review_packet_status=%s xctrace_review_packet_check_status=%s xctrace_overhead_status=%s xctrace_overhead_check_status=%s xctrace_overhead_estimate_p50_ms=%s xctrace_overhead_candidate_status=%s xctrace_overhead_candidate_label=%s xctrace_overhead_candidate_p50_ms=%s captured_rows=%d missing_rows=%d shadow_status=%s shadow_profiler_status=%s rc_status=%s rc_visual_smoke=%s rc_perf_matrix=%s rc_live_checks=%s rc_security_deterministic_property_tests=%s rc_security_block_edit_validation=%s rc_security_unknown_packet_policy=%s rc_security_conflict_semantics=%s rc_security_local_server_exposure=%s rc_security_smoke_bind_exposure=%s plan=%s intake=%s capture_pack=%s results_template=%s results=%s results_summary=%s xctrace_review_packet=%s xctrace_overhead_summary=%s xctrace_overhead_candidates=%s shadow_summary=%s rc_summary=%s\n", status, reason, campaign_status, capture_readiness, external_profile_status, macos_metal_status, windows_gpu_status, linux_vulkan_status, capture_pack_status, capture_pack_rows, capture_pack_results_file_status, results_file_status, results_template_status, results_check_status, xctrace_review_capture_status, xctrace_review_packet_status, xctrace_review_packet_check_status, xctrace_overhead_status, xctrace_overhead_check_status, xctrace_overhead_estimate_p50_ms, xctrace_overhead_candidate_status, xctrace_overhead_candidate_label, xctrace_overhead_candidate_p50_ms, captured_rows, missing_rows, shadow_status, shadow_profiler_status, rc_status, rc_visual_smoke, rc_perf_matrix, rc_live_checks, rc_security_deterministic_property_tests, rc_security_block_edit_validation, rc_security_unknown_packet_policy, rc_security_conflict_semantics, rc_security_local_server_exposure, rc_security_smoke_bind_exposure, plan_path, intake_path, capture_pack, results_template, results_path, results_summary, xctrace_review_packet, xctrace_overhead_summary, xctrace_overhead_candidates, shadow_summary, rc_summary)
     if (status != "pass") {
       exit 1
     }
