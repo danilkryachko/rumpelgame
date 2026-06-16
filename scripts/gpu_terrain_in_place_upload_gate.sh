@@ -174,6 +174,11 @@ write_summary() {
   gpu_upload_backoff_active="$(metric gpu_upload_backoff_active "$marker_path")"
   gpu_upload_backoff_frames="$(metric gpu_upload_backoff_frames "$marker_path")"
   gpu_upload_backoff_max_frames="$(metric gpu_upload_backoff_max_frames "$marker_path")"
+  gpu_upload_stage_pool_enabled="$(metric gpu_upload_stage_pool_enabled "$marker_path")"
+  gpu_upload_stage_pool_entries="$(metric gpu_upload_stage_pool_entries "$marker_path")"
+  gpu_upload_stage_pool_bytes="$(metric gpu_upload_stage_pool_bytes "$marker_path")"
+  gpu_upload_stage_pba_creates="$(metric gpu_upload_stage_pba_creates "$marker_path")"
+  gpu_upload_stage_pba_reuses="$(metric gpu_upload_stage_pba_reuses "$marker_path")"
   gpu_upload_ms_max="$(default_float "$(perf_triplet_value gpu_upload_ms "$marker_path" 3)")"
   gpu_upload_stage_ms_max="$(default_float "$(perf_triplet_value gpu_upload_stage_ms "$marker_path" 3)")"
   gpu_upload_update_ms_max="$(default_float "$(perf_triplet_value gpu_upload_update_ms "$marker_path" 3)")"
@@ -191,12 +196,14 @@ write_summary() {
   current_chunk_collision="$(metric current_chunk_collision "$marker_path")"
 
   {
-    printf 'gpu_in_place_upload status=pass action=%s x=%s y=%s z=%s block_id=%s expected_edges=%s expected_bounds=%s isolated_db=%s gpu_in_place_upload_enabled=%s gpu_in_place_uploads=%s gpu_in_place_upload_misses=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_upload_fail_injected=%s gpu_upload_retry_policy=%s gpu_upload_retry_attempts=%s gpu_upload_retry_success=%s gpu_upload_retry_giveups=%s gpu_upload_backoff_active=%s gpu_upload_backoff_frames=%s gpu_upload_backoff_max_frames=%s gpu_upload_ms_max=%s gpu_upload_stage_ms_max=%s gpu_upload_update_ms_max=%s gpu_draw_patch_ms_max=%s terrain_queue_max_ms=%s terrain_queue_new_slot_uploads_max=%s terrain_queue_replace_slot_uploads_max=%s terrain_queue_new_slot_upload_kb_max=%s terrain_queue_replace_slot_upload_kb_max=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s dirty_partial_saved_subchunks=%s dirty_last_rebuild_subchunks=%s current_chunk_loaded=%s current_chunk_collision=%s marker=%s block_summary=%s run_log=%s\n' \
+    printf 'gpu_in_place_upload status=pass action=%s x=%s y=%s z=%s block_id=%s expected_edges=%s expected_bounds=%s isolated_db=%s gpu_in_place_upload_enabled=%s gpu_in_place_uploads=%s gpu_in_place_upload_misses=%s gpu_uploads=%s gpu_upload_fail=%s gpu_upload_fail_capacity=%s gpu_upload_fail_fragmented=%s gpu_upload_fail_injected=%s gpu_upload_retry_policy=%s gpu_upload_retry_attempts=%s gpu_upload_retry_success=%s gpu_upload_retry_giveups=%s gpu_upload_backoff_active=%s gpu_upload_backoff_frames=%s gpu_upload_backoff_max_frames=%s gpu_upload_stage_pool_enabled=%s gpu_upload_stage_pool_entries=%s gpu_upload_stage_pool_bytes=%s gpu_upload_stage_pba_creates=%s gpu_upload_stage_pba_reuses=%s gpu_upload_ms_max=%s gpu_upload_stage_ms_max=%s gpu_upload_update_ms_max=%s gpu_draw_patch_ms_max=%s terrain_queue_max_ms=%s terrain_queue_new_slot_uploads_max=%s terrain_queue_replace_slot_uploads_max=%s terrain_queue_new_slot_upload_kb_max=%s terrain_queue_replace_slot_upload_kb_max=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s dirty_partial_saved_subchunks=%s dirty_last_rebuild_subchunks=%s current_chunk_loaded=%s current_chunk_collision=%s marker=%s block_summary=%s run_log=%s\n' \
       "$ACTION" "$EDIT_X" "$EDIT_Y" "$EDIT_Z" "$EDIT_BLOCK_ID" "$EXPECTED_EDGES" "$EXPECTED_BOUNDS" "$DB_PATH" \
       "$gpu_in_place_upload_enabled" "$gpu_in_place_uploads" "$gpu_in_place_upload_misses" "$gpu_uploads" \
       "$gpu_upload_fail" "$gpu_upload_fail_capacity" "$gpu_upload_fail_fragmented" "$gpu_upload_fail_injected" \
       "$gpu_upload_retry_policy" "$gpu_upload_retry_attempts" "$gpu_upload_retry_success" "$gpu_upload_retry_giveups" \
       "$gpu_upload_backoff_active" "$gpu_upload_backoff_frames" "$gpu_upload_backoff_max_frames" \
+      "$gpu_upload_stage_pool_enabled" "$gpu_upload_stage_pool_entries" "$gpu_upload_stage_pool_bytes" \
+      "$gpu_upload_stage_pba_creates" "$gpu_upload_stage_pba_reuses" \
       "$gpu_upload_ms_max" "$gpu_upload_stage_ms_max" "$gpu_upload_update_ms_max" "$gpu_draw_patch_ms_max" \
       "$terrain_queue_max_ms" "$terrain_queue_new_slot_uploads_max" "$terrain_queue_replace_slot_uploads_max" \
       "$terrain_queue_new_slot_upload_kb_max" "$terrain_queue_replace_slot_upload_kb_max" \
@@ -274,6 +281,11 @@ require_metric_eq "$marker_path" gpu_upload_retry_giveups 0
 require_metric_eq "$marker_path" gpu_upload_backoff_active 0
 require_metric_eq "$marker_path" gpu_upload_backoff_frames 0
 require_metric_eq "$marker_path" gpu_upload_backoff_max_frames 0
+test -n "$(metric gpu_upload_stage_pool_enabled "$marker_path")" || fail "missing gpu_upload_stage_pool_enabled in $marker_path"
+test -n "$(metric gpu_upload_stage_pool_entries "$marker_path")" || fail "missing gpu_upload_stage_pool_entries in $marker_path"
+test -n "$(metric gpu_upload_stage_pool_bytes "$marker_path")" || fail "missing gpu_upload_stage_pool_bytes in $marker_path"
+test -n "$(metric gpu_upload_stage_pba_creates "$marker_path")" || fail "missing gpu_upload_stage_pba_creates in $marker_path"
+test -n "$(metric gpu_upload_stage_pba_reuses "$marker_path")" || fail "missing gpu_upload_stage_pba_reuses in $marker_path"
 require_metric_eq "$marker_path" block_edit_dirty_observed 1
 require_metric_ge "$marker_path" dirty_partial_saved_subchunks 1
 require_metric_ge "$marker_path" dirty_last_rebuild_subchunks 1

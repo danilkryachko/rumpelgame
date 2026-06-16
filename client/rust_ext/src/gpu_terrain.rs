@@ -11,7 +11,7 @@ use godot::classes::{
     RenderSceneBuffersRd, RenderingDevice, RenderingServer, ResourceLoader, Texture2D,
 };
 use godot::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -49,6 +49,7 @@ const GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW";
 const GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD";
+const GPU_TERRAIN_UPLOAD_STAGE_POOL_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL";
 const GPU_TERRAIN_UPLOAD_RETRY_POLICY_NONE: &str = "none";
 
 pub const FACE_LEFT: u32 = 0;
@@ -1554,6 +1555,11 @@ pub struct GpuTerrainStats {
     pub last_upload_update_ms: f64,
     pub avg_upload_update_ms: f64,
     pub max_upload_update_ms: f64,
+    pub upload_stage_pool_enabled: u64,
+    pub upload_stage_pool_entries: usize,
+    pub upload_stage_pool_bytes: usize,
+    pub upload_stage_pba_creates: u64,
+    pub upload_stage_pba_reuses: u64,
     pub upload_failures: u64,
     pub upload_capacity_failures: u64,
     pub upload_fragmentation_failures: u64,
@@ -1652,6 +1658,51 @@ struct GpuUploadRetryBackoffTelemetry {
 impl GpuUploadRetryBackoffTelemetry {
     fn policy_label(self) -> &'static str {
         GPU_TERRAIN_UPLOAD_RETRY_POLICY_NONE
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct GpuUploadStagePoolStats {
+    entries: usize,
+    bytes: usize,
+    creates: u64,
+    reuses: u64,
+}
+
+#[derive(Debug, Default)]
+struct GpuUploadStagePool {
+    arrays: HashMap<usize, PackedByteArray>,
+    creates: u64,
+    reuses: u64,
+}
+
+impl GpuUploadStagePool {
+    fn stage_bytes(&mut self, bytes: &[u8]) -> &PackedByteArray {
+        let len = bytes.len();
+        match self.arrays.entry(len) {
+            Entry::Occupied(entry) => {
+                let array = entry.into_mut();
+                array.as_mut_slice().copy_from_slice(bytes);
+                self.reuses += 1;
+                array
+            }
+            Entry::Vacant(entry) => {
+                let mut array = PackedByteArray::new();
+                array.resize(len);
+                array.as_mut_slice().copy_from_slice(bytes);
+                self.creates += 1;
+                entry.insert(array)
+            }
+        }
+    }
+
+    fn stats(&self) -> GpuUploadStagePoolStats {
+        GpuUploadStagePoolStats {
+            entries: self.arrays.len(),
+            bytes: self.arrays.keys().copied().sum(),
+            creates: self.creates,
+            reuses: self.reuses,
+        }
     }
 }
 
@@ -1844,6 +1895,7 @@ pub struct GpuTerrainBufferPool {
     draw_keys: Vec<GpuSubchunkKey>,
     draw_indices: HashMap<GpuSubchunkKey, usize>,
     upload_scratch: Vec<u8>,
+    upload_stage_pool: GpuUploadStagePool,
     repack_sources: HashMap<GpuSubchunkKey, Vec<u8>>,
     repack_upload_preview_sampled: bool,
     render_pipeline: Option<GpuTerrainRenderPipeline>,
@@ -1943,6 +1995,7 @@ impl GpuTerrainBufferPool {
             draw_keys: Vec::new(),
             draw_indices: HashMap::new(),
             upload_scratch: Vec::new(),
+            upload_stage_pool: GpuUploadStagePool::default(),
             repack_sources: HashMap::new(),
             repack_upload_preview_sampled: false,
             render_pipeline,
@@ -2062,16 +2115,30 @@ impl GpuTerrainBufferPool {
             .then(|| self.upload_scratch.clone());
         let upload_encode_ms = encode_start.elapsed().as_secs_f64() * 1000.0;
         let stage_start = Instant::now();
-        let pba = PackedByteArray::from(self.upload_scratch.as_slice());
-        let upload_stage_ms = stage_start.elapsed().as_secs_f64() * 1000.0;
         let offset = (slot.start_face * PACKED_FACE_BYTES) as u32;
-        let update_start = Instant::now();
-        self.rd
-            .buffer_update(self.faces_buffer_rid, offset, pba.len() as u32, &pba);
-        let upload_update_ms = update_start.elapsed().as_secs_f64() * 1000.0;
+        let (upload_len, upload_stage_ms, upload_update_ms) =
+            if gpu_terrain_upload_stage_pool_enabled() {
+                let pba = self
+                    .upload_stage_pool
+                    .stage_bytes(self.upload_scratch.as_slice());
+                let upload_stage_ms = stage_start.elapsed().as_secs_f64() * 1000.0;
+                let update_start = Instant::now();
+                self.rd
+                    .buffer_update(self.faces_buffer_rid, offset, pba.len() as u32, pba);
+                let upload_update_ms = update_start.elapsed().as_secs_f64() * 1000.0;
+                (pba.len(), upload_stage_ms, upload_update_ms)
+            } else {
+                let pba = PackedByteArray::from(self.upload_scratch.as_slice());
+                let upload_stage_ms = stage_start.elapsed().as_secs_f64() * 1000.0;
+                let update_start = Instant::now();
+                self.rd
+                    .buffer_update(self.faces_buffer_rid, offset, pba.len() as u32, &pba);
+                let upload_update_ms = update_start.elapsed().as_secs_f64() * 1000.0;
+                (pba.len(), upload_stage_ms, upload_update_ms)
+            };
         self.upload_count += 1;
-        self.upload_bytes += pba.len();
-        self.last_upload_bytes = pba.len();
+        self.upload_bytes += upload_len;
+        self.last_upload_bytes = upload_len;
         self.record_upload_timing(
             upload_start.elapsed().as_secs_f64() * 1000.0,
             upload_encode_ms,
@@ -2141,6 +2208,7 @@ impl GpuTerrainBufferPool {
     pub fn stats(&self) -> GpuTerrainStats {
         let allocator_stats = self.allocator.stats();
         let repack_telemetry = self.repack_telemetry(allocator_stats);
+        let upload_stage_pool_stats = self.upload_stage_pool.stats();
         GpuTerrainStats {
             subchunks: self.slots.len(),
             faces: self.used_faces,
@@ -2187,6 +2255,11 @@ impl GpuTerrainBufferPool {
             last_upload_update_ms: self.last_upload_update_ms,
             avg_upload_update_ms: self.avg_upload_update_ms,
             max_upload_update_ms: self.max_upload_update_ms,
+            upload_stage_pool_enabled: u64::from(gpu_terrain_upload_stage_pool_enabled()),
+            upload_stage_pool_entries: upload_stage_pool_stats.entries,
+            upload_stage_pool_bytes: upload_stage_pool_stats.bytes,
+            upload_stage_pba_creates: upload_stage_pool_stats.creates,
+            upload_stage_pba_reuses: upload_stage_pool_stats.reuses,
             upload_failures: self.upload_failures,
             upload_capacity_failures: self.upload_capacity_failures,
             upload_fragmentation_failures: self.upload_fragmentation_failures,
@@ -3652,6 +3725,13 @@ fn gpu_terrain_in_place_subchunk_upload_enabled() -> bool {
     })
 }
 
+fn gpu_terrain_upload_stage_pool_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(std::env::var(GPU_TERRAIN_UPLOAD_STAGE_POOL_ENV).ok())
+    })
+}
+
 fn gpu_terrain_buffer_repack_from_env(value: Option<String>) -> bool {
     matches!(
         value
@@ -3975,6 +4055,13 @@ mod tests {
         assert!(gpu_terrain_buffer_repack_from_env(Some(
             "enabled".to_string()
         )));
+    }
+
+    #[test]
+    fn upload_stage_pool_flag_stays_default_off() {
+        assert!(!gpu_terrain_buffer_repack_from_env(None));
+        assert!(!gpu_terrain_buffer_repack_from_env(Some("0".to_string())));
+        assert!(gpu_terrain_buffer_repack_from_env(Some("1".to_string())));
     }
 
     #[test]

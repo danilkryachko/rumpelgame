@@ -83,10 +83,10 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 52. Done 2026-06-16: added opt-in GPU upload failure injection plus `scripts/gpu_terrain_upload_failure_fallback_gate.sh` to keep visual CPU ArrayMesh fallback valid after forced upload failures.
 53. Done 2026-06-16: the upload failure fallback gate requires `shadow_path=arraymesh`, visible double-sided ArrayMesh shadow markers, and zero capacity/fragmentation failure causes under forced upload failure.
 54. Done 2026-06-16: the upload failure fallback gate requires current render/collision readiness, nonzero current chunk collision, zero ground misses, and non-sky terrain samples under forced upload failure.
-55. Reduce staging allocation churn.
+55. Done 2026-06-16: reduced GPU upload staging allocation churn with a default-off exact-size `PackedByteArray` stage pool and marker telemetry.
 56. Done 2026-06-16: reused the packed-face upload scratch buffer where safe and added an isolated in-place upload gate for the opt-in same-face-count subchunk update path.
-57. Prototype an upload memory pool behind an env flag.
-58. Compare pooled and current upload paths.
+57. Done 2026-06-16: prototyped the upload stage pool behind `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=1` without changing default upload behavior.
+58. Done 2026-06-16: compared pooled and current upload paths with `scripts/gpu_terrain_upload_stage_pool_gate.sh`; fresh release evidence had baseline `850` uploads with pool creates/reuses `0/0`, pooled `850` uploads with `8` creates and `842` reuses, and upload failures `0`.
 59. Keep the pool only with better metrics.
 60. Record upload invariants in agent memory if they become stable.
 

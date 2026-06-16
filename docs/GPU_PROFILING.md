@@ -20,6 +20,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 - `gpu_compositor_submit_max_parts`: useful to separate setup, target, constants, and draw submission cost.
 - `terrain_queue_gpu_upload_new_slots` / `terrain_queue_gpu_upload_new_slot_kb`: useful to separate initial GPU-resident world load pressure from later dirty/update replacement work.
 - `terrain_queue_gpu_upload_replace_slots` / `terrain_queue_gpu_upload_replace_slot_kb`: useful to isolate GPU slot replacement pressure from ordinary new-slot streaming.
+- `gpu_upload_stage_pool_enabled`, `gpu_upload_stage_pool_entries`, `gpu_upload_stage_pool_bytes`, `gpu_upload_stage_pba_creates`, and `gpu_upload_stage_pba_reuses`: useful to compare the default upload staging path against the opt-in exact-size `PackedByteArray` stage pool without treating it as a default policy.
 - `gpu_draws`, `gpu_effective_draws`, `gpu_faces`, `gpu_subchunks`: useful for workload size.
 - `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and `compact_shadow_normals_saved`: useful local signals for shadow proxy load and compact proxy savings.
 - `smoke_err`, `terrain_samples`, color buckets, and marker generation: useful for visual correctness gates.
@@ -126,6 +127,18 @@ sh scripts/gpu_terrain_upload_budget.sh logs/gpu_terrain_upload_budget_current
 ```
 
 The gate writes `gpu-terrain-upload-budget-summary.txt`; see `docs/GPU_TERRAIN_UPLOAD_BUDGETING.md` and `docs/GPU_UPLOAD_RETRY_BACKOFF_TELEMETRY.md`.
+
+Use the upload stage pool gate after changing CPU-side GPU upload staging, `PackedByteArray` creation/reuse, or `RenderingDevice::buffer_update` handoff code. It runs baseline and pooled movement captures against isolated RocksDB paths and fails unless the baseline stays pool-disabled, the pooled run creates fewer stage arrays than total uploads, and upload failure/retry/backoff counters remain clean:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=30000 \
+GODOT_TIMEOUT_SEC=240 \
+sh scripts/gpu_terrain_upload_stage_pool_gate.sh logs/gpu_terrain_upload_stage_pool_current
+```
+
+The gate writes `gpu-terrain-upload-stage-pool-summary.txt`; see `docs/GPU_UPLOAD_STAGE_POOL.md`.
 
 Use the upload failure recovery unit guards after touching mesh-build planning, proxy refresh reuse, GPU slot state, or CPU fallback removal:
 
