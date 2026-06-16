@@ -139,16 +139,17 @@ Use:
 sh scripts/world_generation_quality_gate.sh logs/world_generation_quality_current
 ```
 
-The expected current result is `status=pass`, `quality_pass_status=designed`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=deferred`, `coordinate_mapping=guarded`, and `world_tests=pass`.
+The expected current result is `status=pass`, `quality_pass_status=designed`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=deferred`, `coordinate_mapping=guarded`, `origin_chunk=guarded`, and `world_tests=pass`.
 
 The gate checks that:
 
 - This design includes the future generation layer order and determinism rules.
 - Biome foundation is clean and still deferred at runtime.
 - Current `GenerateFlat()` and serialization source remain unchanged.
+- The origin chunk snapshot is stable and matches the current flat strata contract.
 - Global block-to-chunk coordinate tests cover positive, negative, and high positive boundary mapping.
 - Current world tests pass.
 
 ## Current Status
 
-This block is complete as a design/checkpoint block. Runtime worldgen quality improvements remain future work and must start with explicit seed/version inputs plus deterministic tests before any generated chunk bytes change. Current global block-to-chunk coordinate mapping is guarded across positive, negative, and high positive chunk boundaries.
+This block is complete as a design/checkpoint block. Runtime worldgen quality improvements remain future work and must start with explicit seed/version inputs plus deterministic tests before any generated chunk bytes change. Current origin chunk flat strata and global block-to-chunk coordinate mapping are guarded across positive, negative, and high positive chunk boundaries.

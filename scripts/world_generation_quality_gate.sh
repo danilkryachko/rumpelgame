@@ -72,6 +72,7 @@ require_token "$CHUNK_SOURCE" "if y == 63"
 require_token "$CHUNK_SOURCE" "else if y > 60"
 require_token "$CHUNK_SOURCE" "binary.LittleEndian.PutUint16"
 require_token "$WORLD_SOURCE" "chunk.GenerateFlat()"
+require_token "$WORLD_TEST" "TestOriginChunkSnapshotUsesFlatGenerationContract"
 require_token "$WORLD_TEST" "TestGlobalToChunkLocalHandlesNegativeBoundaries"
 require_token "$WORLD_TEST" "TestGlobalToChunkLocalHandlesLargePositiveBoundaries"
 require_token "$WORLD_TEST" "TestChunkCoordForPositionUsesFloorAtNegativeBoundaries"
@@ -110,6 +111,7 @@ awk \
     active_chunk_byte_change = chunk_source_diff_count + 0
     runtime_quality_pass = "deferred"
     coordinate_mapping = "guarded"
+    origin_chunk = "guarded"
 
     biome_ok = biome_status == "pass" &&
       biome_runtime == "deferred" &&
@@ -128,7 +130,7 @@ awk \
       reason = "world_tests_failed"
     }
 
-    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s world_tests=%s biome_status=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d design_doc=%s biome_summary=%s\n", status, reason, quality_pass_status, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, world_tests, biome_status, biome_runtime, biome_worldgen_change, biome_serialization_change, design_doc, biome_summary)
+    printf("world_generation_quality status=%s reason=%s quality_pass_status=%s active_generator_change=%d active_chunk_byte_change=%d runtime_quality_pass=%s coordinate_mapping=%s origin_chunk=%s world_tests=%s biome_status=%s biome_runtime=%s biome_active_worldgen_change=%d biome_active_serialization_change=%d design_doc=%s biome_summary=%s\n", status, reason, quality_pass_status, active_generator_change, active_chunk_byte_change, runtime_quality_pass, coordinate_mapping, origin_chunk, world_tests, biome_status, biome_runtime, biome_worldgen_change, biome_serialization_change, design_doc, biome_summary)
     if (status != "pass") {
       exit 1
     }

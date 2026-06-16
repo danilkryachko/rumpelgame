@@ -94,6 +94,50 @@ func TestChunkSnapshotIsDeterministicAcrossWorldInstances(t *testing.T) {
 	}
 }
 
+func TestOriginChunkSnapshotUsesFlatGenerationContract(t *testing.T) {
+	w := NewWorld(nil)
+
+	first, err := w.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot(0,0) error = %v", err)
+	}
+	if first.X != 0 || first.Z != 0 {
+		t.Fatalf("origin snapshot coordinates = (%d, %d), want (0, 0)", first.X, first.Z)
+	}
+
+	again, err := w.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("repeat ChunkSnapshot(0,0) error = %v", err)
+	}
+	if !bytes.Equal(first.Blocks, again.Blocks) {
+		t.Fatal("origin ChunkSnapshot() bytes changed between repeated snapshots")
+	}
+
+	chunk, err := DeserializeChunk(first.X, first.Z, first.Blocks)
+	if err != nil {
+		t.Fatalf("DeserializeChunk(origin snapshot) error = %v", err)
+	}
+	for _, want := range []struct {
+		name  string
+		x     int
+		y     int
+		z     int
+		block BlockID
+	}{
+		{name: "bottom stone", x: 0, y: 0, z: 0, block: Stone},
+		{name: "upper stone", x: ChunkWidth - 1, y: 60, z: ChunkDepth - 1, block: Stone},
+		{name: "dirt layer", x: 1, y: 61, z: 1, block: Dirt},
+		{name: "grass surface", x: 2, y: 63, z: 2, block: Grass},
+		{name: "air above surface", x: 3, y: 64, z: 3, block: Air},
+	} {
+		t.Run(want.name, func(t *testing.T) {
+			if got := chunk.GetBlock(want.x, want.y, want.z); got != want.block {
+				t.Fatalf("origin block at (%d, %d, %d) = %v, want %v", want.x, want.y, want.z, got, want.block)
+			}
+		})
+	}
+}
+
 func TestGlobalToChunkLocalHandlesNegativeBoundaries(t *testing.T) {
 	tests := []struct {
 		name      string
