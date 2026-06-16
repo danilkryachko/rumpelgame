@@ -12,6 +12,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 ## Trusted Local Signals
 
 - `gpu_upload_fail`: must stay `0` in normal stress runs.
+- `gpu_upload_retry_policy`, `gpu_upload_retry_attempts`, `gpu_upload_retry_success`, `gpu_upload_retry_giveups`, `gpu_upload_backoff_active`, `gpu_upload_backoff_frames`, and `gpu_upload_backoff_max_frames`: currently define the no-retry/no-backoff upload policy and must stay `none` / `0` until an explicit recovery policy is implemented and rebaselined.
 - `terrain_queue_work_ms`: useful for Rust/Godot terrain queue CPU work.
 - `process_wall_p95_ms`: useful for client `_process` CPU pressure.
 - `gpu_compositor_submit_ms`: useful for CPU-side compositor submission overhead.
@@ -107,7 +108,7 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 
 The wrapper writes `gpu-upload-pressure-summary.txt`; see `docs/GPU_UPLOAD_PRESSURE.md`.
 
-Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures and nonzero new-slot plus replacement-slot terrain queue upload markers:
+Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
@@ -117,13 +118,13 @@ RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 
 The gate writes `gpu-in-place-upload-summary.txt`.
 
-Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, and on any upload failure counters in the consumed artifacts:
+Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh
 sh scripts/gpu_terrain_upload_budget.sh logs/gpu_terrain_upload_budget_current
 ```
 
-The gate writes `gpu-terrain-upload-budget-summary.txt`; see `docs/GPU_TERRAIN_UPLOAD_BUDGETING.md`.
+The gate writes `gpu-terrain-upload-budget-summary.txt`; see `docs/GPU_TERRAIN_UPLOAD_BUDGETING.md` and `docs/GPU_UPLOAD_RETRY_BACKOFF_TELEMETRY.md`.
 
 Use the resource lifecycle audit after upload-pressure, renderer resource ownership, atlas/uniform, native-shadow, repack upload, or shutdown cleanup work. It refreshes a scoped GPU report and fails on dirty error scans, upload failures, unexpected scene-target replacement, missing default terrain resources, or native-shadow resource error counters:
 

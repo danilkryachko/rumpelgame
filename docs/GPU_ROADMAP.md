@@ -75,7 +75,7 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 47. Done 2026-06-16: added `scripts/gpu_terrain_upload_budget.sh` and `docs/GPU_TERRAIN_UPLOAD_BUDGETING.md` as a summary-only per-frame total/new-slot/replacement-slot upload count and KiB budget gate.
 48. Done 2026-06-16: validated the upload budget gate against current movement/in-place artifacts and a negative tight-budget check (`reason=movement_upload_kb_budget`).
 49. Done 2026-06-16: added `scripts/gpu_terrain_mass_chunk_load_gate.sh` and `docs/GPU_TERRAIN_MASS_CHUNK_LOAD.md` to combine high resident-set load-scaling evidence with the current per-frame upload budget.
-50. Add upload retry/backoff telemetry.
+50. Done 2026-06-16: added explicit GPU upload retry/backoff telemetry (`gpu_upload_retry_policy=none` plus zero retry/backoff counters) to runtime markers, movement/in-place summaries, aggregate report, and upload budget gate.
 
 ## Phase 6: Upload Robustness
 

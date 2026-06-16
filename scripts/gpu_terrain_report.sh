@@ -439,6 +439,13 @@ error_scan() {
   printf -- '- sum `gpu_upload_fail`: `%s`\n' "$(metric_sum gpu_upload_fail)"
   printf -- '- sum `gpu_upload_fail_capacity`: `%s`\n' "$(metric_sum gpu_upload_fail_capacity)"
   printf -- '- sum `gpu_upload_fail_fragmented`: `%s`\n' "$(metric_sum gpu_upload_fail_fragmented)"
+  printf -- '- latest `gpu_upload_retry_policy`: `%s`\n' "$(metric_latest_text gpu_upload_retry_policy)"
+  printf -- '- sum `gpu_upload_retry_attempts`: `%s`\n' "$(metric_sum gpu_upload_retry_attempts)"
+  printf -- '- sum `gpu_upload_retry_success`: `%s`\n' "$(metric_sum gpu_upload_retry_success)"
+  printf -- '- sum `gpu_upload_retry_giveups`: `%s`\n' "$(metric_sum gpu_upload_retry_giveups)"
+  printf -- '- max `gpu_upload_backoff_active`: `%s`\n' "$(metric_max gpu_upload_backoff_active)"
+  printf -- '- sum `gpu_upload_backoff_frames`: `%s`\n' "$(metric_sum gpu_upload_backoff_frames)"
+  printf -- '- max `gpu_upload_backoff_max_frames`: `%s`\n' "$(metric_max gpu_upload_backoff_max_frames)"
   printf -- '- max `gpu_upload_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_ms)"
   printf -- '- max `gpu_upload_encode_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_encode_ms)"
   printf -- '- max `gpu_upload_stage_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_stage_ms)"
@@ -625,6 +632,8 @@ error_scan() {
   metric_max_source gpu_faces | sed 's/^/- /'
   metric_max_source gpu_upload_fail_capacity | sed 's/^/- /'
   metric_max_source gpu_upload_fail_fragmented | sed 's/^/- /'
+  metric_max_source gpu_upload_retry_attempts | sed 's/^/- /'
+  metric_max_source gpu_upload_backoff_max_frames | sed 's/^/- /'
   metric_max_source dirty_blocks | sed 's/^/- /'
   metric_max_source dirty_last_blocks | sed 's/^/- /'
   metric_max_source dirty_edge_neighbor_subchunks | sed 's/^/- /'

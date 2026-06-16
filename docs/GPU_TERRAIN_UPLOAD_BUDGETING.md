@@ -6,7 +6,7 @@ Scope: Phase 5 upload pipeline budgeting. This introduces a summary-only per-fra
 
 ## Current Decision
 
-Use a conservative budget gate before changing GPU upload pooling, retry, allocator, or scheduling behavior. Current movement and in-place dirty-update evidence stays within the initial budget, so this slice only records the budget and blocks future regressions.
+Use a conservative budget gate before changing GPU upload pooling, retry, allocator, or scheduling behavior. Current movement and in-place dirty-update evidence stays within the initial budget, and the current retry/backoff policy is explicitly `none` with zero retry/backoff counters, so this gate records the budget and blocks future regressions.
 
 ## Budget Gate
 
@@ -31,6 +31,8 @@ Default budgets:
 - new-slot upload payload: `2.0 KiB`;
 - replacement-slot upload payload: `2.0 KiB`;
 - upload failures, capacity failures, and fragmentation failures: `0`.
+- current retry/backoff policy: `none`;
+- retry attempts, retry successes, retry giveups, active backoff, backoff frames, and max backoff frames: `0`.
 
 Set the `RUMPELMC_GPU_UPLOAD_BUDGET_*` environment variables in `scripts/gpu_terrain_upload_budget.sh` only for explicit experiments or negative validation. Tightening a budget should be supported by fresh movement, dirty-update, and high-resident evidence.
 
@@ -46,6 +48,8 @@ Fresh local evidence:
 - Movement new-slot / replacement-slot upload max: `1 / 1`
 - In-place new-slot / replacement-slot upload max: `1 / 1`
 - Movement and in-place upload failures: `0`
+- Movement and in-place retry/backoff policy: `none`
+- Movement and in-place retry/backoff counters: `0`
 
 Negative validation:
 
@@ -62,6 +66,7 @@ The expected result is failure with `reason=movement_upload_kb_budget`.
 - Do not reduce draw distance, lighting, shadows, texture quality, or visible quality to pass this gate.
 - Do not use a passing budget alone to justify upload pool, allocator, or repack activation.
 - Keep new-slot and replacement-slot lanes separate when evaluating world-load pressure versus dirty-update pressure.
+- Keep retry/backoff telemetry separate from upload failure telemetry; a future non-`none` policy must be rebaselined deliberately.
 - Rebaseline deliberately when representative larger worlds, transparent terrain, native shadows, or mass-edit workloads create a stable higher upload envelope.
 
 ## External References

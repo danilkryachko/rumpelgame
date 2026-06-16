@@ -49,6 +49,7 @@ const GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW";
 const GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD";
+const GPU_TERRAIN_UPLOAD_RETRY_POLICY_NONE: &str = "none";
 
 pub const FACE_LEFT: u32 = 0;
 pub const FACE_RIGHT: u32 = 1;
@@ -1556,6 +1557,13 @@ pub struct GpuTerrainStats {
     pub upload_failures: u64,
     pub upload_capacity_failures: u64,
     pub upload_fragmentation_failures: u64,
+    pub upload_retry_policy: &'static str,
+    pub upload_retry_attempts: u64,
+    pub upload_retry_success: u64,
+    pub upload_retry_giveups: u64,
+    pub upload_backoff_active: u64,
+    pub upload_backoff_frames: u64,
+    pub upload_backoff_max_frames: u64,
     pub in_place_upload_enabled: u64,
     pub in_place_uploads: u64,
     pub in_place_upload_misses: u64,
@@ -1628,6 +1636,22 @@ pub struct GpuCompositorSubmitBreakdown {
     pub target_ms: f64,
     pub constants_ms: f64,
     pub draw_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct GpuUploadRetryBackoffTelemetry {
+    retry_attempts: u64,
+    retry_success: u64,
+    retry_giveups: u64,
+    backoff_active: u64,
+    backoff_frames: u64,
+    backoff_max_frames: u64,
+}
+
+impl GpuUploadRetryBackoffTelemetry {
+    fn policy_label(self) -> &'static str {
+        GPU_TERRAIN_UPLOAD_RETRY_POLICY_NONE
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1856,6 +1880,7 @@ pub struct GpuTerrainBufferPool {
     upload_failures: u64,
     upload_capacity_failures: u64,
     upload_fragmentation_failures: u64,
+    upload_retry_backoff: GpuUploadRetryBackoffTelemetry,
     in_place_uploads: u64,
     in_place_upload_misses: u64,
     repack_telemetry: GpuTerrainRepackTelemetry,
@@ -1953,6 +1978,7 @@ impl GpuTerrainBufferPool {
             upload_failures: 0,
             upload_capacity_failures: 0,
             upload_fragmentation_failures: 0,
+            upload_retry_backoff: GpuUploadRetryBackoffTelemetry::default(),
             in_place_uploads: 0,
             in_place_upload_misses: 0,
             repack_telemetry,
@@ -2154,6 +2180,13 @@ impl GpuTerrainBufferPool {
             upload_failures: self.upload_failures,
             upload_capacity_failures: self.upload_capacity_failures,
             upload_fragmentation_failures: self.upload_fragmentation_failures,
+            upload_retry_policy: self.upload_retry_backoff.policy_label(),
+            upload_retry_attempts: self.upload_retry_backoff.retry_attempts,
+            upload_retry_success: self.upload_retry_backoff.retry_success,
+            upload_retry_giveups: self.upload_retry_backoff.retry_giveups,
+            upload_backoff_active: self.upload_retry_backoff.backoff_active,
+            upload_backoff_frames: self.upload_retry_backoff.backoff_frames,
+            upload_backoff_max_frames: self.upload_retry_backoff.backoff_max_frames,
             in_place_upload_enabled: u64::from(gpu_terrain_in_place_subchunk_upload_enabled()),
             in_place_uploads: self.in_place_uploads,
             in_place_upload_misses: self.in_place_upload_misses,
@@ -4951,6 +4984,19 @@ mod tests {
             upload_failure_kind(exhausted, 8),
             UploadFailureKind::Capacity
         );
+    }
+
+    #[test]
+    fn upload_retry_backoff_telemetry_defaults_to_disabled_policy() {
+        let telemetry = GpuUploadRetryBackoffTelemetry::default();
+
+        assert_eq!(telemetry.policy_label(), "none");
+        assert_eq!(telemetry.retry_attempts, 0);
+        assert_eq!(telemetry.retry_success, 0);
+        assert_eq!(telemetry.retry_giveups, 0);
+        assert_eq!(telemetry.backoff_active, 0);
+        assert_eq!(telemetry.backoff_frames, 0);
+        assert_eq!(telemetry.backoff_max_frames, 0);
     }
 
     #[test]
