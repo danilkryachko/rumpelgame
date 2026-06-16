@@ -105,6 +105,7 @@ The server now has a session-owned inventory foundation:
 - `clientSession` owns `selectedInventorySlot`, initializes it from the first placeable slot, and validates `InventoryAction SELECT_SLOT` against session inventory.
 - `BlockAction_PLACE` keeps the existing `world.IsPlaceable(block)` check and requires `client.inventory.CanPlaceBlock(block)` before the world edit.
 - Connected-session block edits require a recorded `ClientPosition` and a target block within the server reach envelope before the world edit.
+- Connected-session `BlockAction_PLACE` rejects target blocks that intersect the last recorded player body AABB before world mutation or inventory consumption.
 - Counted placement is applied only after `World.SetBlockGlobal` succeeds.
 - Successful counted placement sends a fresh inventory snapshot after the chunk update and normalizes the selected slot if the selected stack is depleted.
 - Connected-session `BlockAction_DESTROY` uses `World.ReplaceBlockGlobal`, maps the block to `Air`, and adds one placeable previous block back into matching counted inventory slots after the world edit succeeds.
@@ -182,4 +183,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, counted break-drop insertion is guarded through a real server restart, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, counted break-drop insertion is guarded through a real server restart, server-side placement rejects blocks that intersect the player body, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.

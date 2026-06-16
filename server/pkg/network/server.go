@@ -40,6 +40,8 @@ const initialClientPacketTimeout = 250 * time.Millisecond
 const maxPlayerIDLength = 64
 const serverBlockActionReach = 7.0
 const serverBlockActionReachSquared = serverBlockActionReach * serverBlockActionReach
+const serverPlayerCollisionHalfWidth = 0.4
+const serverPlayerCollisionHeight = 1.8
 
 type networkErrorClass string
 
@@ -409,8 +411,13 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			log.Printf("Ignored unknown block action=%v", action.Action)
 			return nil
 		}
-		if !client.blockActionInReach(action) {
+		position := client.recordedPosition()
+		if !blockActionWithinReach(position, action) {
 			log.Printf("Ignored out-of-reach block action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
+			return nil
+		}
+		if action.Action == api.BlockAction_PLACE && blockActionIntersectsPlayer(position, action) {
+			log.Printf("Ignored player-intersecting block placement x=%d, y=%d, z=%d", action.X, action.Y, action.Z)
 			return nil
 		}
 
@@ -630,11 +637,15 @@ func (c *clientSession) blockActionInReach(action *api.BlockAction) bool {
 		return false
 	}
 
+	return blockActionWithinReach(c.recordedPosition(), action)
+}
+
+func (c *clientSession) recordedPosition() clientPositionState {
 	c.stateMu.Lock()
 	position := c.lastPosition
 	c.stateMu.Unlock()
 
-	return blockActionWithinReach(position, action)
+	return position
 }
 
 func blockActionWithinReach(position clientPositionState, action *api.BlockAction) bool {
@@ -649,6 +660,36 @@ func blockActionWithinReach(position clientPositionState, action *api.BlockActio
 	dy := blockCenterY - position.y
 	dz := blockCenterZ - position.z
 	return dx*dx+dy*dy+dz*dz <= serverBlockActionReachSquared
+}
+
+func blockActionIntersectsPlayer(position clientPositionState, action *api.BlockAction) bool {
+	if !position.ok || action == nil {
+		return false
+	}
+	if action.GetY() < 0 || action.GetY() >= int32(world.ChunkHeight) {
+		return false
+	}
+
+	playerMinX := position.x - serverPlayerCollisionHalfWidth
+	playerMaxX := position.x + serverPlayerCollisionHalfWidth
+	playerMinY := position.y
+	playerMaxY := position.y + serverPlayerCollisionHeight
+	playerMinZ := position.z - serverPlayerCollisionHalfWidth
+	playerMaxZ := position.z + serverPlayerCollisionHalfWidth
+
+	blockMinX := float64(action.GetX())
+	blockMaxX := blockMinX + 1
+	blockMinY := float64(action.GetY())
+	blockMaxY := blockMinY + 1
+	blockMinZ := float64(action.GetZ())
+	blockMaxZ := blockMinZ + 1
+
+	return playerMinX < blockMaxX &&
+		playerMaxX > blockMinX &&
+		playerMinY < blockMaxY &&
+		playerMaxY > blockMinY &&
+		playerMinZ < blockMaxZ &&
+		playerMaxZ > blockMinZ
 }
 
 func (c *clientSession) hasSentChunk(coord world.ChunkCoord) bool {

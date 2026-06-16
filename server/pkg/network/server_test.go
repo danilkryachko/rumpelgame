@@ -972,6 +972,58 @@ func TestHandleClientPacketRejectsOutOfReachBlockAction(t *testing.T) {
 	}
 }
 
+func TestHandleClientPacketRejectsPlaceInsidePlayer(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	origin := newClientSession(&recordingConn{})
+	origin.recordPosition(&api.ClientPosition{X: 1.5, Y: 64, Z: 1.5})
+	origin.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 1},
+	})
+	watcher := newClientSession(&recordingConn{})
+	watcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
+
+	server.registerClient(watcher)
+	defer server.unregisterClient(watcher)
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action:  api.BlockAction_PLACE,
+				X:       1,
+				Y:       64,
+				Z:       1,
+				BlockId: uint32(world.Stone),
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(origin, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if !origin.inventory.CanPlaceBlock(world.Stone) {
+		t.Fatal("player-intersecting placement consumed inventory count")
+	}
+	if got := len(recordedFrames(t, origin.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("origin frames = %d, want 0", got)
+	}
+	if got := len(recordedFrames(t, watcher.conn.(*recordingConn))); got != 0 {
+		t.Fatalf("watcher frames = %d, want 0", got)
+	}
+	snapshot, err := server.world.ChunkSnapshot(0, 0)
+	if err != nil {
+		t.Fatalf("ChunkSnapshot() error = %v", err)
+	}
+	chunk, err := world.DeserializeChunk(snapshot.X, snapshot.Z, snapshot.Blocks)
+	if err != nil {
+		t.Fatalf("DeserializeChunk() error = %v", err)
+	}
+	if got := chunk.GetBlock(1, 64, 1); got != world.Air {
+		t.Fatalf("block after player-intersecting placement = %v, want Air", got)
+	}
+}
+
 func TestBlockActionWithinReachRequiresPositionAndBoundedDistance(t *testing.T) {
 	position := clientPositionState{x: 1.5, y: 68, z: 1.5, ok: true}
 	nearAction := &api.BlockAction{X: 1, Y: 64, Z: 1}
@@ -988,6 +1040,26 @@ func TestBlockActionWithinReachRequiresPositionAndBoundedDistance(t *testing.T) 
 	}
 	if blockActionWithinReach(position, nil) {
 		t.Fatal("nil block action accepted")
+	}
+}
+
+func TestBlockActionIntersectsPlayerMatchesClientAABB(t *testing.T) {
+	position := clientPositionState{x: 1.5, y: 64, z: 1.5, ok: true}
+
+	if !blockActionIntersectsPlayer(position, &api.BlockAction{X: 1, Y: 64, Z: 1}) {
+		t.Fatal("block overlapping player body was not detected")
+	}
+	if blockActionIntersectsPlayer(position, &api.BlockAction{X: 2, Y: 64, Z: 1}) {
+		t.Fatal("x-separated block detected as overlapping player body")
+	}
+	if blockActionIntersectsPlayer(position, &api.BlockAction{X: 1, Y: 66, Z: 1}) {
+		t.Fatal("y-separated block detected as overlapping player body")
+	}
+	if blockActionIntersectsPlayer(clientPositionState{}, &api.BlockAction{X: 1, Y: 64, Z: 1}) {
+		t.Fatal("block action without recorded position intersected player")
+	}
+	if blockActionIntersectsPlayer(position, nil) {
+		t.Fatal("nil block action intersected player")
 	}
 }
 
