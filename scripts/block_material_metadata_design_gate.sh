@@ -50,6 +50,13 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
+require_pattern() {
+  path="$1"
+  pattern="$2"
+  test -s "$path" || fail "missing file $path"
+  grep -Eq "$pattern" "$path" || fail "missing pattern '$pattern' in $path"
+}
+
 for path in "$DESIGN_DOC" "$TRANSPARENT_DOC" "$PROTOCOL_DOC" "$CLIENT_BLOCKS" "$GPU_TERRAIN" "$SERVER_BLOCKS" "$TRANSPARENT_ACCEPTANCE"; do
   test -s "$path" || fail "missing required input $path"
 done
@@ -63,7 +70,7 @@ for token in \
   'storage_policy' \
   '`block_id` remains the only wire/storage identity' \
   'Do not add material fields to `ChunkData.blocks`' \
-  'No runtime metadata fields'; do
+  'No new block IDs'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
@@ -87,8 +94,12 @@ require_token "$GPU_TERRAIN" "frag_color = vec4(texel.rgb * lighting_in, 1.0);"
 require_token "$GPU_TERRAIN" "solid_gpu_terrain_fragment_forces_opaque_alpha"
 require_token "$SERVER_BLOCKS" "type BlockID uint16"
 require_token "$SERVER_BLOCKS" "type BlockDefinition struct"
-require_token "$SERVER_BLOCKS" "Solid     bool"
-require_token "$SERVER_BLOCKS" "Placeable bool"
+require_pattern "$SERVER_BLOCKS" '^[[:space:]]+Solid[[:space:]]+bool$'
+require_pattern "$SERVER_BLOCKS" '^[[:space:]]+Opaque[[:space:]]+bool$'
+require_pattern "$SERVER_BLOCKS" '^[[:space:]]+Placeable[[:space:]]+bool$'
+require_token "$SERVER_BLOCKS" "RenderClass"
+require_token "$SERVER_BLOCKS" "CollisionClass"
+require_token "$SERVER_BLOCKS" "StoragePolicy"
 
 transparent_status="$(field_metric status "$TRANSPARENT_ACCEPTANCE")"
 transparent_active_acceptance="$(field_metric active_fixture_acceptance "$TRANSPARENT_ACCEPTANCE")"
@@ -99,7 +110,7 @@ transparent_subchunks="$(field_metric transparent_subchunks "$TRANSPARENT_ACCEPT
 transparent_upload_fail="$(field_metric gpu_upload_fail "$TRANSPARENT_ACCEPTANCE")"
 
 client_block_count="$(awk '/^pub const [A-Z_]+: BlockId =/ { count++ } END { print count + 0 }' "$CLIENT_BLOCKS")"
-server_block_count="$(awk '/^[[:space:]]*(Air|Stone|Dirt|Grass|Wood|Leaves):/ { count++ } END { print count + 0 }' "$SERVER_BLOCKS")"
+server_block_count="$(awk '/^[[:space:]]*ID:[[:space:]]*(Air|Stone|Dirt|Grass|Wood|Leaves),/ { count++ } END { print count + 0 }' "$SERVER_BLOCKS")"
 
 awk \
   -v transparent_status="${transparent_status:-missing}" \
@@ -116,13 +127,14 @@ awk \
   BEGIN {
     status = "pass"
     reason = "ok"
-    production_metadata_status = "designed"
+    production_metadata_status = "server_registry_guarded"
+    server_material_metadata = "guarded"
     active_schema_change = 0
     current_runtime_contract = "opaque_only"
     migration_gate = "required"
     wire_identity = "block_id_u16"
     client_flags = "solid_opaque_placeable_textures"
-    server_flags = "solid_placeable_textures"
+    server_flags = "solid_opaque_placeable_material_policies_textures"
 
     transparent_ok = transparent_status == "pass" &&
       transparent_active_acceptance == "deferred" &&
@@ -141,7 +153,7 @@ awk \
       reason = "transparent_acceptance_not_at_fallback_gate"
     }
 
-    printf("block_material_metadata_design status=%s reason=%s production_metadata_status=%s active_schema_change=%d current_runtime_contract=%s migration_gate=%s wire_identity=%s client_flags=%s server_flags=%s client_block_count=%d server_block_count=%d transparent_fixture_status=%s transparent_active_acceptance=%s transparent_blocks=%d transparent_faces=%d transparent_draws=%d transparent_subchunks=%d gpu_upload_fail=%d render_classes=air,opaque,cutout,transparent,liquid collision_classes=none,solid,fluid,custom emissive_policy=light_emission_inert_until_lighting_gate design_doc=%s transparent_acceptance=%s\n", status, reason, production_metadata_status, active_schema_change, current_runtime_contract, migration_gate, wire_identity, client_flags, server_flags, client_block_count, server_block_count, transparent_status, transparent_active_acceptance, transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks, transparent_upload_fail, design_doc, transparent_acceptance)
+    printf("block_material_metadata_design status=%s reason=%s production_metadata_status=%s server_material_metadata=%s active_schema_change=%d current_runtime_contract=%s migration_gate=%s wire_identity=%s client_flags=%s server_flags=%s client_block_count=%d server_block_count=%d transparent_fixture_status=%s transparent_active_acceptance=%s transparent_blocks=%d transparent_faces=%d transparent_draws=%d transparent_subchunks=%d gpu_upload_fail=%d render_classes=air,opaque,cutout,transparent,liquid collision_classes=none,solid,fluid,custom emissive_policy=light_emission_inert_until_lighting_gate design_doc=%s transparent_acceptance=%s\n", status, reason, production_metadata_status, server_material_metadata, active_schema_change, current_runtime_contract, migration_gate, wire_identity, client_flags, server_flags, client_block_count, server_block_count, transparent_status, transparent_active_acceptance, transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks, transparent_upload_fail, design_doc, transparent_acceptance)
     if (status != "pass") {
       exit 1
     }

@@ -17,74 +17,240 @@ type BlockTextures struct {
 	Bottom string
 }
 
+type RenderClass string
+
+const (
+	RenderClassAir         RenderClass = "air"
+	RenderClassOpaque      RenderClass = "opaque"
+	RenderClassCutout      RenderClass = "cutout"
+	RenderClassTransparent RenderClass = "transparent"
+	RenderClassLiquid      RenderClass = "liquid"
+)
+
+type CollisionClass string
+
+const (
+	CollisionClassNone   CollisionClass = "none"
+	CollisionClassSolid  CollisionClass = "solid"
+	CollisionClassFluid  CollisionClass = "fluid"
+	CollisionClassCustom CollisionClass = "custom"
+)
+
+type OcclusionClass string
+
+const (
+	OcclusionClassNone             OcclusionClass = "none"
+	OcclusionClassOpaque           OcclusionClass = "opaque"
+	OcclusionClassSameMaterialOnly OcclusionClass = "same_material_only"
+	OcclusionClassMaterialPolicy   OcclusionClass = "material_policy"
+)
+
+type ShadowPolicy string
+
+const (
+	ShadowPolicyNone        ShadowPolicy = "no_shadow"
+	ShadowPolicyOpaque      ShadowPolicy = "opaque_shadow"
+	ShadowPolicyTransparent ShadowPolicy = "transparent_shadow"
+	ShadowPolicyMaterial    ShadowPolicy = "material_policy"
+)
+
+type DepthPolicy string
+
+const (
+	DepthPolicyNone             DepthPolicy = "no_draw"
+	DepthPolicyOpaqueWrite      DepthPolicy = "opaque_depth_write"
+	DepthPolicyDepthTestNoWrite DepthPolicy = "depth_test_no_write"
+	DepthPolicyMaterial         DepthPolicy = "material_policy"
+)
+
+type StoragePolicy string
+
+const (
+	StoragePolicyNetworked         StoragePolicy = "networked"
+	StoragePolicyClientFixtureOnly StoragePolicy = "client_fixture_only"
+	StoragePolicyGeneratedOnly     StoragePolicy = "generated_only"
+)
+
+type LiquidPolicy string
+
+const (
+	LiquidPolicyNone        LiquidPolicy = "none"
+	LiquidPolicyStillLiquid LiquidPolicy = "still_liquid"
+	LiquidPolicyFlowing     LiquidPolicy = "flowing_liquid"
+)
+
+type SortPolicy string
+
+const (
+	SortPolicyNone              SortPolicy = "none"
+	SortPolicyChunkSubchunkBack SortPolicy = "chunk_subchunk_back_to_front"
+	SortPolicyFuturePrecise     SortPolicy = "future_precise"
+)
+
 type BlockDefinition struct {
-	ID        BlockID
-	Name      string
-	Solid     bool
-	Placeable bool
-	Textures  BlockTextures
+	ID             BlockID
+	Name           string
+	Solid          bool
+	Opaque         bool
+	Placeable      bool
+	RenderClass    RenderClass
+	CollisionClass CollisionClass
+	OcclusionClass OcclusionClass
+	ShadowPolicy   ShadowPolicy
+	DepthPolicy    DepthPolicy
+	StoragePolicy  StoragePolicy
+	LiquidPolicy   LiquidPolicy
+	SortPolicy     SortPolicy
+	LightEmission  uint8
+	Textures       BlockTextures
 }
 
-var blockRegistry = map[BlockID]BlockDefinition{
-	Air: {
-		ID:        Air,
-		Name:      "Air",
-		Solid:     false,
-		Placeable: false,
-		Textures:  BlockTextures{},
+var blockDefinitions = []BlockDefinition{
+	{
+		ID:             Air,
+		Name:           "Air",
+		Solid:          false,
+		Opaque:         false,
+		Placeable:      false,
+		RenderClass:    RenderClassAir,
+		CollisionClass: CollisionClassNone,
+		OcclusionClass: OcclusionClassNone,
+		ShadowPolicy:   ShadowPolicyNone,
+		DepthPolicy:    DepthPolicyNone,
+		StoragePolicy:  StoragePolicyNetworked,
+		LiquidPolicy:   LiquidPolicyNone,
+		SortPolicy:     SortPolicyNone,
+		LightEmission:  0,
+		Textures:       BlockTextures{},
 	},
-	Stone: {
-		ID:        Stone,
-		Name:      "Stone",
-		Solid:     true,
-		Placeable: true,
-		Textures:  sameTexture("stone"),
+	{
+		ID:             Stone,
+		Name:           "Stone",
+		Solid:          true,
+		Opaque:         true,
+		Placeable:      true,
+		RenderClass:    RenderClassOpaque,
+		CollisionClass: CollisionClassSolid,
+		OcclusionClass: OcclusionClassOpaque,
+		ShadowPolicy:   ShadowPolicyOpaque,
+		DepthPolicy:    DepthPolicyOpaqueWrite,
+		StoragePolicy:  StoragePolicyNetworked,
+		LiquidPolicy:   LiquidPolicyNone,
+		SortPolicy:     SortPolicyNone,
+		LightEmission:  0,
+		Textures:       sameTexture("stone"),
 	},
-	Dirt: {
-		ID:        Dirt,
-		Name:      "Dirt",
-		Solid:     true,
-		Placeable: true,
-		Textures:  sameTexture("soil"),
+	{
+		ID:             Dirt,
+		Name:           "Dirt",
+		Solid:          true,
+		Opaque:         true,
+		Placeable:      true,
+		RenderClass:    RenderClassOpaque,
+		CollisionClass: CollisionClassSolid,
+		OcclusionClass: OcclusionClassOpaque,
+		ShadowPolicy:   ShadowPolicyOpaque,
+		DepthPolicy:    DepthPolicyOpaqueWrite,
+		StoragePolicy:  StoragePolicyNetworked,
+		LiquidPolicy:   LiquidPolicyNone,
+		SortPolicy:     SortPolicyNone,
+		LightEmission:  0,
+		Textures:       sameTexture("soil"),
 	},
-	Grass: {
-		ID:        Grass,
-		Name:      "Grass",
-		Solid:     true,
-		Placeable: true,
+	{
+		ID:             Grass,
+		Name:           "Grass",
+		Solid:          true,
+		Opaque:         true,
+		Placeable:      true,
+		RenderClass:    RenderClassOpaque,
+		CollisionClass: CollisionClassSolid,
+		OcclusionClass: OcclusionClassOpaque,
+		ShadowPolicy:   ShadowPolicyOpaque,
+		DepthPolicy:    DepthPolicyOpaqueWrite,
+		StoragePolicy:  StoragePolicyNetworked,
+		LiquidPolicy:   LiquidPolicyNone,
+		SortPolicy:     SortPolicyNone,
+		LightEmission:  0,
 		Textures: BlockTextures{
 			Top:    "grass_top",
 			Side:   "grass_side",
 			Bottom: "soil",
 		},
 	},
-	Wood: {
-		ID:        Wood,
-		Name:      "Wood",
-		Solid:     true,
-		Placeable: true,
+	{
+		ID:             Wood,
+		Name:           "Wood",
+		Solid:          true,
+		Opaque:         true,
+		Placeable:      true,
+		RenderClass:    RenderClassOpaque,
+		CollisionClass: CollisionClassSolid,
+		OcclusionClass: OcclusionClassOpaque,
+		ShadowPolicy:   ShadowPolicyOpaque,
+		DepthPolicy:    DepthPolicyOpaqueWrite,
+		StoragePolicy:  StoragePolicyNetworked,
+		LiquidPolicy:   LiquidPolicyNone,
+		SortPolicy:     SortPolicyNone,
+		LightEmission:  0,
 		Textures: BlockTextures{
 			Top:    "wood_top",
 			Side:   "wood_side",
 			Bottom: "wood_top",
 		},
 	},
-	Leaves: {
-		ID:        Leaves,
-		Name:      "Leaves",
-		Solid:     true,
-		Placeable: true,
-		Textures:  sameTexture("leaves"),
+	{
+		ID:             Leaves,
+		Name:           "Leaves",
+		Solid:          true,
+		Opaque:         true,
+		Placeable:      true,
+		RenderClass:    RenderClassOpaque,
+		CollisionClass: CollisionClassSolid,
+		OcclusionClass: OcclusionClassOpaque,
+		ShadowPolicy:   ShadowPolicyOpaque,
+		DepthPolicy:    DepthPolicyOpaqueWrite,
+		StoragePolicy:  StoragePolicyNetworked,
+		LiquidPolicy:   LiquidPolicyNone,
+		SortPolicy:     SortPolicyNone,
+		LightEmission:  0,
+		Textures:       sameTexture("leaves"),
 	},
+}
+
+var blockRegistry = blockRegistryByID(blockDefinitions)
+
+func blockRegistryByID(definitions []BlockDefinition) map[BlockID]BlockDefinition {
+	registry := make(map[BlockID]BlockDefinition, len(definitions))
+	for _, block := range definitions {
+		registry[block.ID] = block
+	}
+	return registry
 }
 
 func sameTexture(name string) BlockTextures {
 	return BlockTextures{Top: name, Side: name, Bottom: name}
 }
 
+func BlockDefinitions() []BlockDefinition {
+	definitions := make([]BlockDefinition, len(blockDefinitions))
+	copy(definitions, blockDefinitions)
+	return definitions
+}
+
 func BlockByID(id BlockID) (BlockDefinition, bool) {
 	block, ok := blockRegistry[id]
 	return block, ok
+}
+
+func IsOpaque(id BlockID) bool {
+	block, ok := BlockByID(id)
+	return ok && block.Opaque
+}
+
+func IsOpaqueSolid(id BlockID) bool {
+	block, ok := BlockByID(id)
+	return ok && block.Solid && block.Opaque
 }
 
 func IsSolid(id BlockID) bool {

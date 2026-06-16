@@ -27,7 +27,7 @@ Scope:
 
 Out of scope:
 
-- No runtime metadata fields, block IDs, protocol fields, storage records, worldgen rules, atlas assets, shader alpha path, transparent pass, liquid simulation, emissive lighting, or default render behavior changes.
+- No new block IDs, protocol fields, storage records, worldgen rules, atlas assets, shader alpha path, transparent pass, liquid simulation, emissive lighting, or default render behavior changes.
 
 Assumptions:
 
@@ -53,7 +53,7 @@ Checks:
 - `BlockAction.block_id` is a `uint32` protocol field, but the server casts it to `world.BlockID` and validates placeability through the server registry.
 - The Rust client receives `u16` block IDs from chunk bytes and stores them in wider local types for renderer work.
 - Rust `BlockDefinition` currently has `solid`, `opaque`, `placeable`, and texture fields.
-- Go `BlockDefinition` currently has `Solid`, `Placeable`, and texture fields.
+- Go `BlockDefinition` now has a server material registry foundation for existing block IDs: `Solid`, `Opaque`, `Placeable`, render/collision/occlusion/shadow/depth/storage/liquid/sort policies, bounded light emission, and texture fields.
 - The GPU compute mesher only emits faces for blocks that are both solid and opaque.
 - `PackedBlockLookup::from_definitions` only includes `blocks::is_opaque_solid` definitions.
 - The GPU terrain fragment shader writes alpha `1.0`; it does not consume atlas alpha.
@@ -135,8 +135,8 @@ Emissive path:
 ## Rollout Order
 
 1. Keep this design gate active while the current renderer is opaque-only.
-2. Add explicit metadata fields to both client and server registries for existing block IDs only; preserve current opaque-solid semantics.
-3. Add client/server tests that compare stable block IDs, names, placeability, render class, collision class, and texture identity for existing networked IDs.
+2. Keep the server material registry foundation guarded for existing block IDs only; preserve current opaque-solid semantics.
+3. Add or update client/server tests that compare stable block IDs, names, placeability, render class, collision class, and texture identity for existing networked IDs before any new production block IDs are introduced.
 4. Keep transparent fixture overlay client-only until the active transparent path gate passes.
 5. Add one production transparent/cutout/liquid block ID only after protocol, storage, worldgen, atlas, render, collision, and fixture gates are explicitly approved.
 6. Add render-pass implementation behind a rollback flag.
@@ -150,7 +150,7 @@ Use:
 sh scripts/block_material_metadata_design_gate.sh logs/block_material_metadata_design_current
 ```
 
-The expected current result is `status=pass`, `production_metadata_status=designed`, `active_schema_change=0`, and `current_runtime_contract=opaque_only`.
+The expected current result is `status=pass`, `production_metadata_status=server_registry_guarded`, `server_material_metadata=guarded`, `active_schema_change=0`, and `current_runtime_contract=opaque_only`.
 
 The gate checks that:
 
@@ -159,11 +159,12 @@ The gate checks that:
 - Rust block definitions still expose the current `solid` and `opaque` contract.
 - The compute mesher and packed GPU lookup still filter through opaque-solid block definitions.
 - The GPU terrain fragment shader remains opaque alpha-only.
-- Server block definitions remain the existing `uint16` block registry.
+- Server block definitions remain the existing `uint16` block registry and expose explicit material metadata for existing block IDs only.
+- `scripts/block_material_registry_foundation_gate.sh` guards the server registry signature for current networked opaque-only blocks.
 - Transparent fixture acceptance is clean while active transparent rendering remains deferred.
 
 ## Current Status
 
-This block is complete as a design/checkpoint block. Runtime production material metadata remains future work and should start with registry fields for existing block IDs only, not with a new protocol shape or renderer behavior change.
+This block is complete as a design/checkpoint block plus server material registry foundation. Runtime production material metadata is guarded for existing server block IDs only; new production block IDs, protocol shape, storage behavior, renderer behavior, and atlas behavior remain unchanged.
 
 Texture atlas metadata expansion is tracked separately in `docs/TEXTURE_ATLAS_EVOLUTION_TRACK.md`; material metadata may reference atlas tile identities, but it must not repack current tile IDs or consume alpha metadata without a dedicated render gate.
