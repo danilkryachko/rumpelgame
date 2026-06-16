@@ -15,6 +15,7 @@ PROTOCOL_DOC="${RUMPELMC_BLOCK_MATERIAL_PROTOCOL_DOC:-"$ROOT_DIR/docs/PROTOCOL.m
 CLIENT_BLOCKS="${RUMPELMC_BLOCK_MATERIAL_CLIENT_BLOCKS:-"$ROOT_DIR/client/rust_ext/src/blocks.rs"}"
 GPU_TERRAIN="${RUMPELMC_BLOCK_MATERIAL_GPU_TERRAIN:-"$ROOT_DIR/client/rust_ext/src/gpu_terrain.rs"}"
 SERVER_BLOCKS="${RUMPELMC_BLOCK_MATERIAL_SERVER_BLOCKS:-"$ROOT_DIR/server/pkg/world/blocks.go"}"
+PARITY_GATE="${RUMPELMC_BLOCK_MATERIAL_PARITY_GATE:-"$ROOT_DIR/scripts/block_material_registry_parity_gate.sh"}"
 TRANSPARENT_ACCEPTANCE="${RUMPELMC_BLOCK_MATERIAL_TRANSPARENT_ACCEPTANCE:-"$ROOT_DIR/logs/transparent_fixture_acceptance_suite_current/transparent-fixture-acceptance-suite-summary.txt"}"
 
 mkdir -p "$OUT_DIR"
@@ -57,7 +58,7 @@ require_pattern() {
   grep -Eq "$pattern" "$path" || fail "missing pattern '$pattern' in $path"
 }
 
-for path in "$DESIGN_DOC" "$TRANSPARENT_DOC" "$PROTOCOL_DOC" "$CLIENT_BLOCKS" "$GPU_TERRAIN" "$SERVER_BLOCKS" "$TRANSPARENT_ACCEPTANCE"; do
+for path in "$DESIGN_DOC" "$TRANSPARENT_DOC" "$PROTOCOL_DOC" "$CLIENT_BLOCKS" "$GPU_TERRAIN" "$SERVER_BLOCKS" "$PARITY_GATE" "$TRANSPARENT_ACCEPTANCE"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -106,6 +107,8 @@ require_pattern "$SERVER_BLOCKS" '^[[:space:]]+Placeable[[:space:]]+bool$'
 require_token "$SERVER_BLOCKS" "RenderClass"
 require_token "$SERVER_BLOCKS" "CollisionClass"
 require_token "$SERVER_BLOCKS" "StoragePolicy"
+require_token "$PARITY_GATE" "client/server material parity gate"
+require_token "$PARITY_GATE" "client_server_counts_mismatch"
 
 transparent_status="$(field_metric status "$TRANSPARENT_ACCEPTANCE")"
 transparent_active_acceptance="$(field_metric active_fixture_acceptance "$TRANSPARENT_ACCEPTANCE")"
@@ -136,6 +139,7 @@ awk \
     production_metadata_status = "server_registry_guarded"
     server_material_metadata = "guarded"
     client_material_metadata = "guarded"
+    client_server_parity_gate = "present"
     active_schema_change = 0
     current_runtime_contract = "opaque_only"
     migration_gate = "required"
@@ -160,7 +164,7 @@ awk \
       reason = "transparent_acceptance_not_at_fallback_gate"
     }
 
-    printf("block_material_metadata_design status=%s reason=%s production_metadata_status=%s server_material_metadata=%s client_material_metadata=%s active_schema_change=%d current_runtime_contract=%s migration_gate=%s wire_identity=%s client_flags=%s server_flags=%s client_block_count=%d server_block_count=%d transparent_fixture_status=%s transparent_active_acceptance=%s transparent_blocks=%d transparent_faces=%d transparent_draws=%d transparent_subchunks=%d gpu_upload_fail=%d render_classes=air,opaque,cutout,transparent,liquid collision_classes=none,solid,fluid,custom emissive_policy=light_emission_inert_until_lighting_gate design_doc=%s transparent_acceptance=%s\n", status, reason, production_metadata_status, server_material_metadata, client_material_metadata, active_schema_change, current_runtime_contract, migration_gate, wire_identity, client_flags, server_flags, client_block_count, server_block_count, transparent_status, transparent_active_acceptance, transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks, transparent_upload_fail, design_doc, transparent_acceptance)
+    printf("block_material_metadata_design status=%s reason=%s production_metadata_status=%s server_material_metadata=%s client_material_metadata=%s client_server_parity_gate=%s active_schema_change=%d current_runtime_contract=%s migration_gate=%s wire_identity=%s client_flags=%s server_flags=%s client_block_count=%d server_block_count=%d transparent_fixture_status=%s transparent_active_acceptance=%s transparent_blocks=%d transparent_faces=%d transparent_draws=%d transparent_subchunks=%d gpu_upload_fail=%d render_classes=air,opaque,cutout,transparent,liquid collision_classes=none,solid,fluid,custom emissive_policy=light_emission_inert_until_lighting_gate design_doc=%s transparent_acceptance=%s\n", status, reason, production_metadata_status, server_material_metadata, client_material_metadata, client_server_parity_gate, active_schema_change, current_runtime_contract, migration_gate, wire_identity, client_flags, server_flags, client_block_count, server_block_count, transparent_status, transparent_active_acceptance, transparent_blocks, transparent_faces, transparent_draws, transparent_subchunks, transparent_upload_fail, design_doc, transparent_acceptance)
     if (status != "pass") {
       exit 1
     }

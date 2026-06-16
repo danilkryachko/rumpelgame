@@ -136,7 +136,7 @@ Emissive path:
 
 1. Keep this design gate active while the current renderer is opaque-only.
 2. Keep the server and client material registry foundations guarded for existing block IDs only; preserve current opaque-solid semantics.
-3. Keep client/server parity tests comparing stable block IDs, names, placeability, render class, collision class, and texture identity for existing networked IDs before any new production block IDs are introduced.
+3. Keep `scripts/block_material_registry_parity_gate.sh` as the client/server material parity gate for existing networked IDs before any new production block IDs are introduced.
 4. Keep transparent fixture overlay client-only until the active transparent path gate passes.
 5. Add one production transparent/cutout/liquid block ID only after protocol, storage, worldgen, atlas, render, collision, and fixture gates are explicitly approved.
 6. Add render-pass implementation behind a rollback flag.
@@ -148,9 +148,12 @@ Use:
 
 ```sh
 sh scripts/block_material_metadata_design_gate.sh logs/block_material_metadata_design_current
+sh scripts/block_material_registry_parity_gate.sh logs/block_material_registry_parity_current
 ```
 
-The expected current result is `status=pass`, `production_metadata_status=server_registry_guarded`, `server_material_metadata=guarded`, `client_material_metadata=guarded`, `active_schema_change=0`, and `current_runtime_contract=opaque_only`.
+The expected current design result is `status=pass`, `production_metadata_status=server_registry_guarded`, `server_material_metadata=guarded`, `client_material_metadata=guarded`, `client_server_parity_gate=present`, `active_schema_change=0`, and `current_runtime_contract=opaque_only`.
+
+The expected current parity result is `status=pass`, `parity_status=guarded`, matching server/client counts for existing block IDs, `active_protocol_change=0`, `active_storage_change=0`, `renderer_code_change=0`, and `current_runtime_contract=opaque_only`.
 
 The gate checks that:
 
@@ -162,10 +165,11 @@ The gate checks that:
 - Server block definitions remain the existing `uint16` block registry and expose explicit material metadata for existing block IDs only.
 - `scripts/block_material_registry_foundation_gate.sh` guards the server registry signature for current networked opaque-only blocks.
 - `scripts/client_block_material_registry_foundation_gate.sh` guards the client registry signature for current networked opaque-only blocks and consumes the server registry gate.
+- `scripts/block_material_registry_parity_gate.sh` runs both registry foundation gates and compares server/client block counts, opaque-solid counts, placeable counts, air counts, emissive counts, and liquid counts for the current existing-ID contract.
 - Transparent fixture acceptance is clean while active transparent rendering remains deferred.
 
 ## Current Status
 
-This block is complete as a design/checkpoint block plus server and client material registry foundations. Runtime production material metadata is guarded for existing block IDs only; new production block IDs, protocol shape, storage behavior, renderer behavior, and atlas behavior remain unchanged.
+This block is complete as a design/checkpoint block plus server, client, and client/server parity material registry foundations. Runtime production material metadata is guarded for existing block IDs only; new production block IDs, protocol shape, storage behavior, renderer behavior, and atlas behavior remain unchanged.
 
 Texture atlas metadata expansion is tracked separately in `docs/TEXTURE_ATLAS_EVOLUTION_TRACK.md`; material metadata may reference atlas tile identities, but it must not repack current tile IDs or consume alpha metadata without a dedicated render gate.
