@@ -248,6 +248,7 @@ networking_nil_packet_policy="$(field_metric nil_packet_policy "$NETWORKING_SUMM
 networking_nil_position_policy="$(field_metric nil_position_policy "$NETWORKING_SUMMARY")"
 networking_nil_block_action_policy="$(field_metric nil_block_action_policy "$NETWORKING_SUMMARY")"
 networking_conflict_semantics="$(field_metric conflict_semantics "$NETWORKING_SUMMARY")"
+networking_overload_status="$(field_metric overload_status "$NETWORKING_SUMMARY")"
 persistence_status="$(field_metric status "$PERSISTENCE_SUMMARY")"
 persistence_protocol_change="$(field_metric active_protocol_change "$PERSISTENCE_SUMMARY")"
 persistence_save_failure_rollback="$(field_metric save_failure_rollback "$PERSISTENCE_SUMMARY")"
@@ -302,6 +303,7 @@ awk \
   -v networking_nil_position_policy="${networking_nil_position_policy:-missing}" \
   -v networking_nil_block_action_policy="${networking_nil_block_action_policy:-missing}" \
   -v networking_conflict_semantics="${networking_conflict_semantics:-missing}" \
+  -v networking_overload_status="${networking_overload_status:-missing}" \
   -v persistence_status="${persistence_status:-missing}" \
   -v persistence_protocol_change="${persistence_protocol_change:-1}" \
   -v persistence_save_failure_rollback="${persistence_save_failure_rollback:-missing}" \
@@ -345,6 +347,7 @@ awk \
     nil_position_policy = networking_nil_position_policy
     nil_block_action_policy = networking_nil_block_action_policy
     conflict_semantics = networking_conflict_semantics
+    overload_status = networking_overload_status
     local_server_exposure = "loopback_enforced"
     smoke_bind_exposure = "loopback_guarded"
     active_protocol_change = proto_diff_count + 0
@@ -358,6 +361,7 @@ awk \
       networking_nil_position_policy == "ignored_guarded" &&
       networking_nil_block_action_policy == "ignored_guarded" &&
       networking_conflict_semantics == "last_write_wins_guarded" &&
+      networking_overload_status == "admission_matrix_guarded" &&
       persistence_status == "pass" && persistence_protocol_change + 0 == 0 &&
       persistence_save_failure_rollback == "guarded" &&
       arch_status == "pass" && arch_runtime_change == "none" &&
@@ -382,7 +386,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_package_smoke=%s storage_config=%s storage_backend_policy=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s storage_smoke_status=%s storage_smoke_external_secret_required=%d storage_smoke_database_env_policy=%s storage_smoke_approved_databases=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s storage_smoke_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_package_smoke, storage_config, storage_backend_policy, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, storage_smoke_status, storage_smoke_external_secret_required, storage_smoke_database_env_policy, storage_smoke_approved_databases, networking_summary, persistence_summary, arch_summary, observability_summary, storage_smoke_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s nil_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_package_smoke=%s storage_config=%s storage_backend_policy=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s overload_status=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s storage_smoke_status=%s storage_smoke_external_secret_required=%d storage_smoke_database_env_policy=%s storage_smoke_approved_databases=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s storage_smoke_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, nil_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_package_smoke, storage_config, storage_backend_policy, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, overload_status, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, storage_smoke_status, storage_smoke_external_secret_required, storage_smoke_database_env_policy, storage_smoke_approved_databases, networking_summary, persistence_summary, arch_summary, observability_summary, storage_smoke_summary)
     if (status != "pass") {
       exit 1
     }
