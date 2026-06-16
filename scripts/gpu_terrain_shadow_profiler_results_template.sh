@@ -62,7 +62,7 @@ grep '^priority=' "$PLAN_PATH" > "$tmp_rows" || fail "plan has no priority rows:
 {
   printf 'GPU terrain shadow profiler results template\n'
   printf 'plan=%s\n' "$(relative_path "$PLAN_PATH")"
-  printf 'note=rows are commented so the validator rejects this file until real external profiler values replace TODO\n'
+  printf 'note=rows are commented so the validator rejects this file until real external profiler values replace operator_required fields\n'
   printf 'note=remove the leading "# " from a row only after replacing profiler_tool, profiler_artifact, and gpu_shadow_pass_ms\n'
   printf 'note=normal_total_decision=do_not_cite remains do_not_cite even after external capture\n'
 } > "$tmp_template"
@@ -79,7 +79,7 @@ while IFS= read -r line; do
   test "$status" = "pending" || fail "plan rows must be pending before a results template is generated"
   row_count=$((row_count + 1))
 
-  printf '# external_profile_status=captured priority=%s radius=%s role=%s artifact=%s profiler_tool=TODO profiler_artifact=TODO gpu_shadow_pass_ms=TODO normal_total_decision=%s\n' \
+  printf '# external_profile_status=captured priority=%s radius=%s role=%s artifact=%s profiler_tool=operator_required profiler_artifact=operator_required gpu_shadow_pass_ms=operator_required normal_total_decision=%s\n' \
     "$priority" \
     "$radius" \
     "$role" \
@@ -87,7 +87,7 @@ while IFS= read -r line; do
     "$normal_decision" >> "$tmp_template"
 done < "$tmp_rows"
 
-printf 'summary rows=%s template_status=todo\n' "$row_count" >> "$tmp_template"
+printf 'summary rows=%s template_status=operator_intake_template\n' "$row_count" >> "$tmp_template"
 
 test "$row_count" -gt 0 || fail "plan has no profiler rows: $PLAN_PATH"
 mv "$tmp_template" "$OUT_PATH"

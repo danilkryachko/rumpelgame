@@ -134,4 +134,4 @@ The best next feature lane is still external profiling:
 - Capture real Xcode/Metal rows for `logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-capture-pack.txt`.
 - Write only real captured rows to `logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-results.txt`.
 - Validate with `scripts/gpu_terrain_shadow_profiler_results_check.sh`.
-- Do not cite pending capture packs or TODO templates as GPU timing evidence.
+- Do not cite pending capture packs or operator-intake templates as GPU timing evidence.

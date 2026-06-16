@@ -237,7 +237,7 @@ sh scripts/gpu_terrain_shadow_profiler_plan.sh \
   logs/gpu_shadow_radius_matrix_wide/shadow-radius-profiler-plan.txt
 ```
 
-Generate a fillable results template from the pending plan before recording external profiler data. The template rows are commented and contain `TODO` fields, so they are not accepted as evidence until the leading `# ` is removed and real `profiler_tool`, `profiler_artifact`, and positive `gpu_shadow_pass_ms` values are recorded:
+Generate a fillable results template from the pending plan before recording external profiler data. The template rows are commented and contain `operator_required` fields, so they are not accepted as evidence until the leading `# ` is removed and real `profiler_tool`, `profiler_artifact`, and positive `gpu_shadow_pass_ms` values are recorded:
 
 ```sh
 sh scripts/gpu_terrain_shadow_profiler_results_template.sh \

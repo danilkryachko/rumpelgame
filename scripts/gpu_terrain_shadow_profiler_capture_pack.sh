@@ -88,7 +88,7 @@ fi
   printf 'results_summary=%s\n' "$(relative_path "$SUMMARY_PATH")"
   printf 'results_file_status=%s\n' "$results_status"
   printf 'note=plan rows remain external_profile_status=pending until a real Metal/Xcode profiler artifact is recorded\n'
-  printf 'note=template rows are commented TODO examples and must not be cited as evidence\n'
+  printf 'note=template rows are commented operator-intake examples and must not be cited as evidence\n'
   printf 'note=after capture, write captured rows to results and validate before running the aggregate report\n'
   printf 'command_generate_pack=sh scripts/gpu_terrain_shadow_profiler_capture_pack.sh %s %s\n' \
     "$(relative_path "$MANIFEST_PATH")" \

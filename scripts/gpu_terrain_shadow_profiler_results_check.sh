@@ -71,7 +71,10 @@ validate_nonempty_evidence() {
   key="$1"
   value="$2"
   case "$value" in
-    ''|pending|todo|TODO|n/a|unknown)
+    ''|pending|operator_required|n/a|unknown)
+      fail "$key must identify recorded external evidence, not $value"
+      ;;
+    *[Tt][Oo][Dd][Oo]*)
       fail "$key must identify recorded external evidence, not $value"
       ;;
   esac

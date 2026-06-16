@@ -324,7 +324,7 @@ fi
     "$(relative_path "$PLAN_INPUT")" \
     "$(relative_path "$RESULTS_PATH")" \
     "$(relative_path "$RESULTS_SUMMARY")"
-  printf 'operator_steps=copy_template_replace_TODO_remove_comment_prefix_run_validate_results_then_campaign_gate\n'
+  printf 'operator_steps=copy_intake_template_record_real_profiler_artifact_remove_comment_prefix_run_validate_results_then_campaign_gate\n'
 } > "$INTAKE_PATH"
 
 awk \
@@ -400,9 +400,9 @@ awk \
     } else if (!(capture_pack_status == "pending_external_profiler" && capture_pack_rows + 0 >= 4)) {
       status = "fail"
       reason = "capture_pack_not_pending"
-    } else if (!(results_template_status == "todo")) {
+    } else if (!(results_template_status == "operator_intake_template")) {
       status = "fail"
-      reason = "results_template_not_todo"
+      reason = "results_template_not_operator_intake"
     } else if (results_check_status == "fail") {
       status = "fail"
       reason = "profiler_results_invalid"
