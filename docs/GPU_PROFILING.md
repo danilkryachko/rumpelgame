@@ -201,6 +201,17 @@ sh scripts/gpu_streaming_scheduler_prototype.sh logs/gpu_streaming_scheduler_pro
 
 The gate writes `gpu-streaming-scheduler-prototype-summary.txt`; see `docs/GPU_STREAMING_SCHEDULER_PROTOTYPE.md`.
 
+Use the streaming scheduler workload matrix after changing client streaming queue ordering or before considering a scheduler rollout. It compares `nearest`, `directional_tie_preview`, and `directional_tie` on the same movement workloads, validates scheduler markers and readiness, and keeps default changes blocked:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+RUMPELMC_STREAMING_SCHEDULER_MATRIX_RUN_WORKLOADS=1 \
+sh scripts/gpu_streaming_scheduler_workload_matrix.sh logs/gpu_streaming_scheduler_workload_matrix_current
+```
+
+The gate writes `gpu-streaming-scheduler-workload-matrix-summary.txt` and `gpu-streaming-scheduler-workload-matrix-cases.txt`; see `docs/GPU_STREAMING_SCHEDULER_WORKLOAD_MATRIX.md`.
+
 Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
 
 ```sh

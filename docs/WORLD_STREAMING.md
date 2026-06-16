@@ -332,6 +332,17 @@ Fresh check:
 - `logs/gpu_streaming_scheduler_prototype_current/gpu-streaming-scheduler-prototype-summary.txt` passed with `source_contracts_present=21`, `priority_audit_status=pass`, `priority_scheduler_change_allowed=0`, `default_scheduler_mode=nearest`, `stream_scheduler_active_default=0`, `collision_backpressure_preserved=1`, `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, and `candidate_scheduler_status=prototype_only`.
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt` passed with `27` indexed rows, `18` required passes, zero upload-failure/ground-miss/default-runtime/scheduler-change violations, and explicit external profiler plus macOS/Windows validation blockers.
 
+## GPU Streaming Scheduler Workload Matrix
+
+The streaming scheduler workload matrix compares `nearest`, `directional_tie_preview`, and `directional_tie` against the same movement workloads. It validates scheduler mode/active markers, current render/collision readiness, zero ground misses, zero normal and injected upload failures, zero unload churn, and baseline-relative queue/process/compositor budgets. It does not authorize a default scheduler change.
+
+Fresh check:
+
+- `logs/gpu_streaming_scheduler_workload_matrix_current/gpu-streaming-scheduler-workload-matrix-summary.txt` is the required matrix summary.
+- `logs/gpu_streaming_scheduler_workload_matrix_current/gpu-streaming-scheduler-workload-matrix-cases.txt` records each mode/motion lane.
+- The current matrix passed as a decision gate with `matrix_harness_status=partial`, `expected_cases=9`, `completed_cases=9`, `runtime_signal=683`, max preview mismatches `117`, mesh/collision directional ties `361/10`, fifo fallbacks `902`, max queue/process/submit `6.174/0.070/0.408ms`, max packet queue lag `67.578ms`, and `candidate_scheduler_status=defer_matrix_harness_unstable`.
+- The matrix always emits `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
+
 ## GPU Report System V2
 
 The V2 report wrapper keeps the existing aggregate report but explicitly separates fresh scoped metrics, fail gates, historical aggregate maxima, and warning-only local signals.

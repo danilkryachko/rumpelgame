@@ -848,6 +848,8 @@ error_scan() {
   print_optional_file "Selected GPU Stress Artifact Index" "$(latest_file gpu-stress-artifact-index.txt)"
   print_optional_file "Selected GPU Streaming Priority Audit Summary" "$(latest_file gpu-streaming-priority-audit-summary.txt)"
   print_optional_file "Selected GPU Streaming Scheduler Prototype Summary" "$(latest_file gpu-streaming-scheduler-prototype-summary.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Workload Matrix Summary" "$(latest_file gpu-streaming-scheduler-workload-matrix-summary.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Workload Matrix Cases" "$(latest_file gpu-streaming-scheduler-workload-matrix-cases.txt)"
   print_optional_file "Selected GPU Buffer Residency Budget Summary" "$(latest_file gpu-buffer-residency-budget-summary.txt)"
   print_optional_file "Selected Rapid Camera-Turn Stress Summary" "$(latest_file rapid-camera-turn-stress-summary.txt)"
   print_optional_file "Selected Chunk Boundary Stress Summary" "$(latest_file chunk-boundary-stress-summary.txt)"
