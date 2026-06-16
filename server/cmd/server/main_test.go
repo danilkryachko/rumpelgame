@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestConfiguredServerAddressDefaultsToLoopback(t *testing.T) {
 	t.Setenv("RUMPELMC_SERVER_ADDRESS", "")
@@ -51,5 +55,29 @@ func TestConfiguredServerAddressRejectsNonLoopbackOverrides(t *testing.T) {
 				t.Fatalf("configuredServerAddress() = %q, want error", got)
 			}
 		})
+	}
+}
+
+func TestDefaultRocksDBPathUsesExplicitOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.rocksdb")
+	t.Setenv("RUMPELMC_SERVER_ROCKSDB_PATH", path)
+
+	if got := defaultRocksDBPath(); got != path {
+		t.Fatalf("defaultRocksDBPath() = %q, want %q", got, path)
+	}
+}
+
+func TestDefaultRocksDBPathIgnoresPostgreSQLEnvironment(t *testing.T) {
+	t.Setenv("RUMPELMC_SERVER_ROCKSDB_PATH", "")
+	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost/rumpelmc")
+	t.Setenv("PGHOST", "localhost")
+	t.Setenv("PGDATABASE", "rumpelmc")
+
+	want := filepath.Join("data", "rocksdb")
+	if exe, err := os.Executable(); err == nil {
+		want = filepath.Join(filepath.Dir(exe), "data", "rocksdb")
+	}
+	if got := defaultRocksDBPath(); got != want {
+		t.Fatalf("defaultRocksDBPath() = %q, want %q", got, want)
 	}
 }

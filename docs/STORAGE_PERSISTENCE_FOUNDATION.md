@@ -8,6 +8,7 @@ This note records the current approved persistence foundation for chunk storage.
 
 - RocksDB is the implemented chunk persistence backend.
 - PostgreSQL remains approved by project policy, but no PostgreSQL chunk persistence path is implemented in this slice.
+- `RUMPELMC_SERVER_ROCKSDB_PATH` is the only current runtime chunk-store path override; PostgreSQL environment variables do not select a chunk backend.
 - RocksDB chunk keys keep the existing `c` prefix plus sortable big-endian signed `int32` `x` and `z` coordinates.
 - RocksDB chunk values are the exact bytes from `world.Chunk.Serialize()`.
 - Missing chunks return `(nil, false, nil)`.

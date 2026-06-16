@@ -10,6 +10,7 @@ esac
 
 SUMMARY_PATH="$OUT_DIR/security-data-integrity-review-summary.txt"
 DESIGN_DOC="${RUMPELMC_SECURITY_REVIEW_DOC:-"$ROOT_DIR/docs/SECURITY_DATA_INTEGRITY_REVIEW.md"}"
+STORAGE_DOC="${RUMPELMC_SECURITY_REVIEW_STORAGE_DOC:-"$ROOT_DIR/docs/STORAGE.md"}"
 SERVER_CMD_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_CMD_SOURCE:-"$ROOT_DIR/server/cmd/server/main.go"}"
 SERVER_NETWORK_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_NETWORK_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
 SERVER_WORLD_SOURCE="${RUMPELMC_SECURITY_REVIEW_SERVER_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
@@ -63,6 +64,7 @@ require_token() {
 
 for path in \
   "$DESIGN_DOC" \
+  "$STORAGE_DOC" \
   "$SERVER_CMD_SOURCE" \
   "$SERVER_NETWORK_SOURCE" \
   "$SERVER_WORLD_SOURCE" \
@@ -95,12 +97,29 @@ for token in \
 done
 
 for token in \
+  'Ownership Boundary' \
+  'RocksDB owns current server chunk persistence' \
+  'RUMPELMC_SERVER_ROCKSDB_PATH' \
+  'no PostgreSQL runtime chunk persistence path' \
+  'Adding PostgreSQL-backed persistence requires a separate storage design'; do
+  require_token "$STORAGE_DOC" "$token"
+done
+
+for token in \
   'func configuredServerAddress' \
   'func isLoopbackAddress' \
   'RUMPELMC_SERVER_ADDRESS' \
   'net.SplitHostPort' \
   'IsLoopback' \
   'return "127.0.0.1:25565"'; do
+  require_token "$SERVER_CMD_SOURCE" "$token"
+done
+
+for token in \
+  'func defaultRocksDBPath' \
+  'RUMPELMC_SERVER_ROCKSDB_PATH' \
+  'dbPath := defaultRocksDBPath()' \
+  'storage.OpenRocksChunkStore(dbPath)'; do
   require_token "$SERVER_CMD_SOURCE" "$token"
 done
 
@@ -150,6 +169,8 @@ require_token "$SERVER_WORLD_TEST" 'TestEncodeSerializedChunkRLERoundTripsRepres
 require_token "$SERVER_WORLD_BEHAVIOR_TEST" 'TestSetBlockGlobalRejectsOutOfRangeYWithoutSave'
 require_token "$CLIENT_RUNTIME_SOURCE" 'decode_serialized_chunk_rle_accepts_representative_runs'
 require_token "$ROOT_DIR/server/cmd/server/main_test.go" 'TestConfiguredServerAddressRejectsNonLoopbackOverrides'
+require_token "$ROOT_DIR/server/cmd/server/main_test.go" 'TestDefaultRocksDBPathUsesExplicitOverride'
+require_token "$ROOT_DIR/server/cmd/server/main_test.go" 'TestDefaultRocksDBPathIgnoresPostgreSQLEnvironment'
 
 networking_status="$(field_metric status "$NETWORKING_SUMMARY")"
 networking_protocol_change="$(field_metric active_protocol_change "$NETWORKING_SUMMARY")"
@@ -223,6 +244,7 @@ awk \
     security_status = "reviewed"
     packet_boundary = "guarded"
     storage_integrity = "guarded"
+    storage_backend_ownership = "guarded"
     block_edit_validation = "y_bounds_guarded"
     chunk_decode = "guarded"
     deterministic_property_tests = "guarded"
@@ -256,7 +278,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s storage_integrity=%s block_edit_validation=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, storage_integrity, block_edit_validation, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s storage_integrity=%s storage_backend_ownership=%s block_edit_validation=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, storage_integrity, storage_backend_ownership, block_edit_validation, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
     if (status != "pass") {
       exit 1
     }

@@ -23,3 +23,11 @@ Do not introduce, expand, or migrate to another database engine without explicit
 - RocksDB open-path behavior is guarded: missing parent directories are created, and existing regular-file database paths are rejected.
 - PostgreSQL is approved for project storage, but its exact project role should be documented when implemented or changed.
 - Current RocksDB persistence foundation coverage is documented in `docs/STORAGE_PERSISTENCE_FOUNDATION.md`.
+
+## Ownership Boundary
+
+- RocksDB owns current server chunk persistence.
+- `server/cmd/server/main.go` opens `storage.OpenRocksChunkStore(defaultRocksDBPath())` and passes that store to `world.NewWorld`.
+- `RUMPELMC_SERVER_ROCKSDB_PATH` is the only current runtime chunk-store path override.
+- PostgreSQL is approved by project policy, but no PostgreSQL runtime chunk persistence path, connection string, schema, migration, or fallback exists yet.
+- Adding PostgreSQL-backed persistence requires a separate storage design, migration/compatibility plan, and tests before any runtime backend switch.
