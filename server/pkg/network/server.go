@@ -242,6 +242,10 @@ func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Pa
 
 	case *api.Packet_BlockAction:
 		action := p.BlockAction
+		if action == nil {
+			log.Printf("Ignored nil block action")
+			return nil
+		}
 		log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
 
 		block := world.Air
@@ -286,6 +290,10 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 
 	case *api.Packet_BlockAction:
 		action := p.BlockAction
+		if action == nil {
+			log.Printf("Ignored nil block action")
+			return nil
+		}
 		log.Printf("Received BlockAction: action=%v, x=%d, y=%d, z=%d", action.Action, action.X, action.Y, action.Z)
 
 		block := world.Air

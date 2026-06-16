@@ -544,6 +544,40 @@ func TestHandleClientPacketIgnoresEmptyPayload(t *testing.T) {
 	}
 }
 
+func TestHandleClientPacketIgnoresNilBlockAction(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	packet := &api.Packet{Payload: &api.Packet_BlockAction{}}
+
+	t.Run("legacy state handler", func(t *testing.T) {
+		conn := &recordingConn{}
+		if err := server.handleClientPacket(conn, packet, map[world.ChunkCoord]bool{}); err != nil {
+			t.Fatalf("handleClientPacket() error = %v", err)
+		}
+		if got := len(recordedFrames(t, conn)); got != 0 {
+			t.Fatalf("legacy handler frames = %d, want 0", got)
+		}
+	})
+
+	t.Run("session handler", func(t *testing.T) {
+		origin := newClientSession(&recordingConn{})
+		watcher := newClientSession(&recordingConn{})
+		watcher.streamState.sentChunks[world.ChunkCoord{X: 0, Z: 0}] = true
+
+		server.registerClient(watcher)
+		defer server.unregisterClient(watcher)
+
+		if err := server.handleClientPacketForSession(origin, packet); err != nil {
+			t.Fatalf("handleClientPacketForSession() error = %v", err)
+		}
+		if got := len(recordedFrames(t, origin.conn.(*recordingConn))); got != 0 {
+			t.Fatalf("origin frames = %d, want 0", got)
+		}
+		if got := len(recordedFrames(t, watcher.conn.(*recordingConn))); got != 0 {
+			t.Fatalf("watcher frames = %d, want 0", got)
+		}
+	})
+}
+
 func TestHandleClientPacketRejectsOutOfRangeBlockAction(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
