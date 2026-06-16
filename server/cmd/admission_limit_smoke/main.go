@@ -24,30 +24,42 @@ type smokeClient struct {
 func main() {
 	addr := flag.String("addr", "127.0.0.1:25565", "server TCP address")
 	timeout := flag.Duration("timeout", 3*time.Second, "per-read/write timeout")
+	maxClients := flag.Int("max-clients", 1, "number of clients expected to be admitted before rejection")
 	flag.Parse()
 
-	if err := run(*addr, *timeout); err != nil {
+	if err := run(*addr, *timeout, *maxClients); err != nil {
 		fmt.Fprintf(os.Stderr, "server_admission_limit_smoke status=fail error=%q\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(addr string, timeout time.Duration) error {
-	holder, err := dialClient("holder", addr, timeout)
-	if err != nil {
-		return err
+func run(addr string, timeout time.Duration, maxClients int) error {
+	if maxClients < 1 {
+		return fmt.Errorf("max clients must be at least 1, got %d", maxClients)
 	}
-	defer holder.conn.Close()
 
-	if err := holder.sendPosition(0, 68, 0, timeout); err != nil {
-		return err
+	holders := make([]*smokeClient, 0, maxClients)
+	for i := 0; i < maxClients; i++ {
+		holder, err := dialClient(fmt.Sprintf("holder-%d", i+1), addr, timeout)
+		if err != nil {
+			closeClients(holders)
+			return err
+		}
+		holders = append(holders, holder)
 	}
-	holderChunk, err := holder.readChunk(timeout)
-	if err != nil {
-		return err
-	}
-	if holderChunk.GetX() != 0 || holderChunk.GetZ() != 0 {
-		return fmt.Errorf("holder initial chunk = %d,%d, want 0,0", holderChunk.GetX(), holderChunk.GetZ())
+	defer closeClients(holders)
+
+	for i, holder := range holders {
+		if err := holder.sendPosition(float32(i*32), 68, 0, timeout); err != nil {
+			return err
+		}
+		holderChunk, err := holder.readChunk(timeout)
+		if err != nil {
+			return err
+		}
+		if holderChunk.GetX() != int32(i) || holderChunk.GetZ() != 0 {
+			return fmt.Errorf("%s initial chunk = %d,%d, want %d,0", holder.name, holderChunk.GetX(), holderChunk.GetZ(), i)
+		}
 	}
 
 	rejected, err := dialClient("rejected", addr, timeout)
@@ -59,8 +71,14 @@ func run(addr string, timeout time.Duration) error {
 		return err
 	}
 
-	fmt.Println("server_admission_limit_smoke status=pass max_clients=1 attempted_clients=2 admitted_clients=1 rejected_clients=1 holder_initial_chunk=1 rejected_close_observed=1 protocol_change=0")
+	fmt.Printf("server_admission_limit_smoke status=pass max_clients=%d attempted_clients=%d admitted_clients=%d rejected_clients=1 holder_initial_chunks=%d rejected_close_observed=1 protocol_change=0\n", maxClients, maxClients+1, maxClients, maxClients)
 	return nil
+}
+
+func closeClients(clients []*smokeClient) {
+	for _, client := range clients {
+		_ = client.conn.Close()
+	}
 }
 
 func dialClient(name, addr string, timeout time.Duration) (*smokeClient, error) {

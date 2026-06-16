@@ -30,7 +30,8 @@ Scope:
 - Add a bounded live two-client smoke that validates real TCP chunk bootstrap, block-edit fanout, and server RSS/CPU sampling.
 - Add a bounded broader live smoke that validates bootstrap, block-edit fanout, and server RSS/CPU sampling across more than two clients.
 - Add a bounded repeated six-client smoke that validates several consecutive live runs and aggregates detail/resource evidence.
-- Add a bounded live admission-limit smoke that validates one accepted holder and one rejected excess TCP client.
+- Add a bounded live admission-limit smoke that validates accepted holder clients and one rejected excess TCP client.
+- Add a bounded admission-limit matrix that validates several max-client limits with one excess rejected client per limit.
 - Add a server connection lifecycle summary that counts connected, rejected, disconnected, close-failure, and accept-failure events from live smoke logs.
 - Define the next scalability evidence needed before broader runtime policy changes.
 
@@ -53,7 +54,7 @@ Done when:
 - Session writes set and clear a write deadline.
 - The scalability gate runs the focused network tests and can run or consume the live two-client and broader multi-client smoke summaries with server resource samples.
 - The scalability gate can run or consume repeated multi-client smoke evidence.
-- The scalability gate can run or consume a live max-client admission-limit smoke summary.
+- The scalability gate can run or consume a live max-client admission-limit smoke summary and a bounded admission-limit matrix summary.
 - The scalability gate can generate and consume a connection lifecycle summary from available smoke server logs.
 
 Checks:
@@ -152,7 +153,7 @@ This is bounded repeated runtime evidence for fanout, per-client delivery detail
 
 ## Live Admission Limit Smoke
 
-`scripts/server_admission_limit_smoke.sh` builds and starts the Go server on an isolated local smoke port and temporary RocksDB path with `RUMPELMC_SERVER_MAX_CLIENTS=1`. It then runs `server/cmd/admission_limit_smoke`, which opens one holder client, verifies that client receives chunk `0,0`, opens a second TCP client, and requires that second client to observe a server-side close. The wrapper also requires server-log evidence of `admission_result=rejected`, `active_clients=1`, and `max_clients=1`.
+`scripts/server_admission_limit_smoke.sh` builds and starts the Go server on an isolated local smoke port and temporary RocksDB path with `RUMPELMC_SERVER_MAX_CLIENTS=<n>`. It then runs `server/cmd/admission_limit_smoke`, which opens `n` holder clients, verifies each holder receives its initial chunk, opens one excess TCP client, and requires that excess client to observe a server-side close. The wrapper also requires server-log evidence of `admission_result=rejected`, `active_clients=<n>`, and `max_clients=<n>`.
 
 Use:
 
@@ -163,10 +164,28 @@ sh scripts/server_admission_limit_smoke.sh logs/server_admission_limit_smoke_cur
 Expected summary:
 
 ```text
-server_admission_limit_smoke status=pass max_clients=1 attempted_clients=2 admitted_clients=1 rejected_clients=1 holder_initial_chunk=1 rejected_close_observed=1 admission_rejection_log=1 protocol_change=0
+server_admission_limit_smoke status=pass max_clients=1 attempted_clients=2 admitted_clients=1 rejected_clients=1 holder_initial_chunks=1 rejected_close_observed=1 admission_rejection_log=1 protocol_change=0
 ```
 
-This proves the opt-in cap works against a live TCP server. It is not production concurrency sizing, adaptive overload control, queue backpressure, or a load-test result.
+This proves the opt-in cap works against a live TCP server. It is not adaptive overload control, queue backpressure, or broad production capacity evidence.
+
+## Admission Limit Matrix
+
+`scripts/server_admission_limit_matrix_smoke.sh` runs the admission-limit smoke across several configured limits, defaulting to `1 2 3`, with one excess rejected client for each limit. It aggregates admitted/rejected counts, holder bootstrap counts, rejection-log counts, and protocol-change evidence.
+
+Use:
+
+```sh
+sh scripts/server_admission_limit_matrix_smoke.sh logs/server_admission_limit_matrix_current
+```
+
+Expected summary:
+
+```text
+server_admission_limit_matrix status=pass limits_checked=3 passed_limits=3 max_limit=3 total_attempted_clients=9 total_admitted_clients=6 total_rejected_clients=3 total_holder_initial_chunks=6 total_rejection_logs=3 protocol_change=0
+```
+
+When this matrix is present and clean, the scalability gate reports `admission_policy=matrix_live_guarded`. This is bounded local admission sizing evidence, not adaptive overload policy or a production hardware capacity claim.
 
 ## Connection Lifecycle Summary
 
@@ -190,7 +209,7 @@ Still needed before claiming full live multi-client scalability:
 - Longer multi-client load evidence beyond the bounded repeated three-run smoke.
 - Broader slow-client handling evidence under more clients and broadcast load; the networking robustness block now owns the bounded two-client slow-reader smoke.
 - Longer disconnect cleanup counters or production metric summaries beyond the bounded smoke-log lifecycle parser.
-- Load-tested max-client sizing for representative hardware and gameplay workloads beyond the bounded one-holder/one-rejected smoke.
+- Sustained max-client sizing for representative hardware and gameplay workloads beyond the bounded admission matrix.
 - Fair scheduling or backpressure design if one client can monopolize generation/send work.
 
 ## Compatibility Rules
@@ -209,7 +228,7 @@ Use:
 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
 ```
 
-For the fast default gate, the expected current result after collecting the broader live, repeated, and admission-limit artifacts is `status=pass`, `scalability_status=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `repeat_smoke_status=pass`, `repeat_smoke_repeats=3`, `repeat_smoke_clients=6`, `repeat_smoke_initial_chunks=18`, `repeat_smoke_fanout_updates=18`, `repeat_smoke_detail_clients=18`, `repeat_smoke_resource_samples=9`, `admission_limit_smoke_status=pass`, `admission_limit_rejected_clients=1`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
+For the fast default gate, the expected current result after collecting the broader live, repeated, admission-limit, and admission-matrix artifacts is `status=pass`, `scalability_status=repeat_live_guarded`, `resource_profile_status=repeat_live_guarded`, `multi_client_sent_state=guarded`, `block_edit_fanout=interested_clients_guarded`, `slow_client_write_timeout=guarded`, `admission_policy=matrix_live_guarded`, `disconnect_cleanup_status=lifecycle_summary_guarded`, `active_protocol_change=0`, `live_load_status=pass`, `live_detail_status=pass`, `live_detail_clients=2`, `broader_live_load_status=pass`, `broader_live_clients>=6`, `broader_live_initial_chunks=broader_live_clients`, `broader_live_fanout_updates=broader_live_clients`, `broader_live_detail_status=pass`, `broader_live_detail_clients=broader_live_clients`, `broader_live_resource_samples>=1`, `broader_live_resource_rss_kb_max>0`, `repeat_smoke_status=pass`, `repeat_smoke_repeats=3`, `repeat_smoke_clients=6`, `repeat_smoke_initial_chunks=18`, `repeat_smoke_fanout_updates=18`, `repeat_smoke_detail_clients=18`, `repeat_smoke_resource_samples=9`, `admission_limit_smoke_status=pass`, `admission_matrix_status=pass`, `admission_matrix_limits_checked=3`, `admission_matrix_total_rejected=3`, `connection_lifecycle_status=pass`, `connection_lifecycle_close_failures=0`, and `network_tests=pass`.
 
 To run the live smoke inside the gate:
 
@@ -243,6 +262,14 @@ RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE=1 sh scripts/server_scalab
 
 With the admission-limit smoke enabled, the expected result includes `admission_policy=live_guarded` and `admission_limit_smoke_status=pass`.
 
+To run the admission-limit matrix inside the gate:
+
+```sh
+RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_MATRIX=1 sh scripts/server_scalability_pass_gate.sh logs/server_scalability_pass_current
+```
+
+With the admission-limit matrix enabled, the expected result includes `admission_policy=matrix_live_guarded` and `admission_matrix_status=pass`.
+
 The gate checks that:
 
 - This document records current server behavior, added unit guards, live scalability gaps, and compatibility rules.
@@ -252,10 +279,12 @@ The gate checks that:
 - The live smoke script records per-client detail fields in its summary.
 - The live smoke script records server resource sample fields in its summary.
 - The admission-limit smoke script exists and records `server_admission_limit_smoke status=pass`.
+- The admission-limit matrix script exists and records `server_admission_limit_matrix status=pass`.
 - The repeated multi-client smoke script exists and records `server_multi_client_repeat_smoke status=pass`.
 - The broader live smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_BROADER_LIVE_SMOKE=1`.
 - The repeated multi-client smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_REPEAT_SMOKE=1`.
 - The admission-limit smoke summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_SMOKE=1`.
+- The admission-limit matrix summary is consumed when present, or generated when `RUMPELMC_SERVER_SCALABILITY_RUN_ADMISSION_LIMIT_MATRIX=1`.
 - The connection lifecycle summary script exists and records connected/rejected/disconnected counts with zero close and accept failures.
 - The multi-client sent-state, interested-client fanout, failed-broadcast cleanup, write-deadline, and max-client admission tests exist.
 - `api/schema/packets.proto` is unchanged.
@@ -263,4 +292,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout/resource/detail smokes, a bounded repeated six-client smoke, a bounded live opt-in max-client admission smoke, and a bounded connection lifecycle log summary. Longer CPU/memory profiling, broad slow-reader/load harnesses, load-tested admission sizing, adaptive overload policy, and production disconnect metrics remain future work.
+This block is complete as a unit-guard/checkpoint block with bounded live two-client and six-client fanout/resource/detail smokes, a bounded repeated six-client smoke, a bounded live opt-in max-client admission smoke, a bounded admission-limit matrix, and a bounded connection lifecycle log summary. Longer CPU/memory profiling, broad slow-reader/load harnesses, sustained admission sizing, adaptive overload policy, and production disconnect metrics remain future work.

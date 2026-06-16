@@ -77,7 +77,7 @@ cleanup_server() {
 wait_for_rejection_log() {
   tries=0
   while [ "$tries" -lt 30 ]; do
-    if grep -Eq 'admission_result=rejected .*active_clients=1 max_clients=1' "$SERVER_LOG" 2>/dev/null; then
+    if grep -Eq "admission_result=rejected .*active_clients=$MAX_CLIENTS max_clients=$MAX_CLIENTS" "$SERVER_LOG" 2>/dev/null; then
       return 0
     fi
     tries=$((tries + 1))
@@ -127,7 +127,7 @@ wait_for_server
 set +e
 (
   cd "$SERVER_DIR"
-  go run ./cmd/admission_limit_smoke -addr "$SMOKE_ADDR" -timeout 3s
+  go run ./cmd/admission_limit_smoke -addr "$SMOKE_ADDR" -timeout 3s -max-clients "$MAX_CLIENTS"
 ) > "$CLIENT_LOG" 2>&1
 rc=$?
 set -e
