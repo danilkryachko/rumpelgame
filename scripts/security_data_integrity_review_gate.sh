@@ -201,6 +201,7 @@ networking_packet_error_classification="$(field_metric packet_error_classificati
 networking_packet_error_aggregation="$(field_metric packet_error_aggregation "$NETWORKING_SUMMARY")"
 networking_packet_error_alerts="$(field_metric packet_error_alerts "$NETWORKING_SUMMARY")"
 networking_unknown_packet_policy="$(field_metric unknown_packet_policy "$NETWORKING_SUMMARY")"
+networking_nil_position_policy="$(field_metric nil_position_policy "$NETWORKING_SUMMARY")"
 networking_nil_block_action_policy="$(field_metric nil_block_action_policy "$NETWORKING_SUMMARY")"
 networking_conflict_semantics="$(field_metric conflict_semantics "$NETWORKING_SUMMARY")"
 persistence_status="$(field_metric status "$PERSISTENCE_SUMMARY")"
@@ -248,6 +249,7 @@ awk \
   -v networking_packet_error_aggregation="${networking_packet_error_aggregation:-missing}" \
   -v networking_packet_error_alerts="${networking_packet_error_alerts:-missing}" \
   -v networking_unknown_packet_policy="${networking_unknown_packet_policy:-missing}" \
+  -v networking_nil_position_policy="${networking_nil_position_policy:-missing}" \
   -v networking_nil_block_action_policy="${networking_nil_block_action_policy:-missing}" \
   -v networking_conflict_semantics="${networking_conflict_semantics:-missing}" \
   -v persistence_status="${persistence_status:-missing}" \
@@ -280,6 +282,7 @@ awk \
     chunk_decode = "guarded"
     deterministic_property_tests = "guarded"
     unknown_packet_policy = networking_unknown_packet_policy
+    nil_position_policy = networking_nil_position_policy
     nil_block_action_policy = networking_nil_block_action_policy
     conflict_semantics = networking_conflict_semantics
     local_server_exposure = "loopback_enforced"
@@ -291,6 +294,7 @@ awk \
       networking_packet_error_aggregation == "parser_guarded" &&
       networking_packet_error_alerts == "threshold_guarded" &&
       networking_unknown_packet_policy == "ignored_guarded" &&
+      networking_nil_position_policy == "ignored_guarded" &&
       networking_nil_block_action_policy == "ignored_guarded" &&
       networking_conflict_semantics == "last_write_wins_guarded" &&
       persistence_status == "pass" && persistence_protocol_change + 0 == 0 &&
@@ -312,7 +316,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, nil_block_action_policy, storage_integrity, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s packet_error_alerts=%s unknown_packet_policy=%s nil_position_policy=%s nil_block_action_policy=%s storage_integrity=%s storage_backend_ownership=%s storage_concurrency=%s storage_errors=%s storage_lifecycle=%s block_edit_validation=%s block_edit_save_failure_rollback=%s chunk_decode=%s deterministic_property_tests=%s conflict_semantics=%s local_server_exposure=%s smoke_bind_exposure=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, networking_packet_error_alerts, unknown_packet_policy, nil_position_policy, nil_block_action_policy, storage_integrity, storage_backend_ownership, storage_concurrency, storage_errors, storage_lifecycle, block_edit_validation, block_edit_save_failure_rollback, chunk_decode, deterministic_property_tests, conflict_semantics, local_server_exposure, smoke_bind_exposure, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
     if (status != "pass") {
       exit 1
     }

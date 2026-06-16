@@ -31,6 +31,7 @@ Scope:
 - Consume the server scalability opt-in max-client admission cap, bounded live admission-limit smoke, and bounded admission-limit matrix as the current overload/admission checkpoint.
 - Consume the server scalability live two-client fanout smoke as networking runtime evidence when available.
 - Consume the server scalability conflict-semantics guard as the current block-edit concurrency policy checkpoint.
+- Guard nil `ClientPosition` payload bodies as ignored unsupported packet shapes instead of panicking or emitting chunk updates.
 - Guard nil `BlockAction` payload bodies as ignored unsupported packet shapes instead of panicking or emitting chunk updates.
 - Add a bounded live slow-reader smoke and load matrix that prove a non-reading TCP client hits the session write timeout while fast clients still receive bootstrap chunk data.
 - Consume a bounded client reconnect smoke that proves a live TCP disconnect, server restart, client reconnect, and rebootstrap back to `client_state=active`.
@@ -75,7 +76,7 @@ Checks:
 - The server scalability live smoke validates two real TCP clients receiving bootstrap chunk data and the same block-edit update through the existing frame/protobuf path.
 - The server scalability gate reports `conflict_semantics=last_write_wins_guarded` for valid sequential block edits at the same coordinate, proving interested clients receive the latest authoritative snapshot.
 - The server scalability gate unit-guards the opt-in `RUMPELMC_SERVER_MAX_CLIENTS` admission cap and consumes bounded live admission-limit smoke plus matrix evidence without changing packet framing.
-- Empty, unsupported, or nil `BlockAction` packet payloads are ignored by the server handler without sending chunk updates.
+- Empty, unsupported, nil `ClientPosition`, or nil `BlockAction` packet payloads are ignored by the server handler without sending chunk updates.
 - The slow-reader smoke validates a real non-reading TCP client timing out during a large RAW bootstrap stream while fast clients still receive bootstrap chunks.
 - The client reconnect smoke validates a real Godot client detecting a server-side TCP disconnect, retrying after server restart, and exposing `client_state=active`, `reconnect_events`, `reconnect_successes`, and `network_reader_errors` in the perf marker.
 - The repeated reconnect soak validates multiple server-side TCP disconnect/restart/rebootstrap cycles in one Godot session with the client ending in `active`.
@@ -121,6 +122,7 @@ This policy prevents old reader errors or same-frame disconnect packets from mut
 
 `server/pkg/network/server_test.go` also covers:
 
+- nil `ClientPosition` payload bodies ignored on initial and normal packet paths without chunk frames
 - client write-timeout configuration parsing
 - session write deadline set/clear behavior
 - interested-client block-update fanout
@@ -265,7 +267,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `unknown_packet_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `empty_payload_frame=decode_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `conflict_semantics=last_write_wins_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=load_matrix_guarded` when a current slow-reader matrix summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `slow_reader_matrix_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_matrix_guarded` when current admission-limit matrix evidence exists.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `unknown_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `empty_payload_frame=decode_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `conflict_semantics=last_write_wins_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=load_matrix_guarded` when a current slow-reader matrix summary exists, `slow_reader_smoke_status=deferred` or `pass`, `slow_reader_timeout_class=missing` or `timeout`, `slow_reader_matrix_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=admission_matrix_guarded` when current admission-limit matrix evidence exists.
 
 To run the slow-reader smoke inside the gate:
 
@@ -294,6 +296,7 @@ The gate checks that:
 - The packet-error alert threshold gate reports `packet_error_alert_threshold status=pass` over current live server smoke logs.
 - Go server framing/network tests pass.
 - Go server session tests prove empty payload packets are ignored without sending chunk frames.
+- Go server session tests prove nil `ClientPosition` payload bodies are ignored without sending chunk frames.
 - Go server session tests prove nil `BlockAction` payload bodies are ignored without sending chunk frames.
 - Go server framing tests prove zero-length payload frames decode to empty packets before the session-level ignore policy applies.
 - Rust network and reader-drain session tests pass.
@@ -305,4 +308,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a packet-boundary, zero-length frame decode, empty/unknown/nil-block-action payload ignore policy, classified packet-error, parser-guarded classified-error aggregation, local classified-error alert threshold, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection and admission-matrix evidence, two-client live fanout, bounded slow-reader load matrix, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broadcast/backpressure policy, broad reconnect state reset, packet replay, and production monitoring integration remain future work.
+This block is complete as a packet-boundary, zero-length frame decode, empty/unknown/nil-position/nil-block-action payload ignore policy, classified packet-error, parser-guarded classified-error aggregation, local classified-error alert threshold, unit-guarded write-timeout, opt-in max-client admission with bounded live rejection and admission-matrix evidence, two-client live fanout, bounded slow-reader load matrix, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Adaptive overload handling, broadcast/backpressure policy, broad reconnect state reset, packet replay, and production monitoring integration remain future work.

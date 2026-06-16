@@ -198,6 +198,10 @@ func (s *Server) handleInitialClientPacket(conn net.Conn, clientPacket *api.Pack
 func (s *Server) handleInitialClientPacketWithState(conn net.Conn, clientPacket *api.Packet, streamState *clientChunkStreamState) error {
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
+		if p.Position == nil {
+			log.Printf("Ignored nil client position")
+			return nil
+		}
 		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
 		forgetFarSentChunks(streamState.sentChunks, center.X, center.Z, s.viewDistance+1)
 		if err := s.sendChunksAroundWithRadius(conn, center.X, center.Z, s.bootstrapRadius, streamState.sentChunks); err != nil {
@@ -213,6 +217,10 @@ func (s *Server) handleInitialClientPacketWithState(conn net.Conn, clientPacket 
 func (s *Server) handleInitialClientPacketForSession(client *clientSession, clientPacket *api.Packet) error {
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
+		if p.Position == nil {
+			log.Printf("Ignored nil client position")
+			return nil
+		}
 		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
 		if err := s.sendChunksAroundWithRadiusForSession(client, center.X, center.Z, s.bootstrapRadius, world.ChunkOrder{}); err != nil {
 			return fmt.Errorf("send bootstrap chunks around %d,%d: %w", center.X, center.Z, err)
@@ -232,6 +240,10 @@ func (s *Server) handleClientPacket(conn net.Conn, clientPacket *api.Packet, sen
 func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Packet, streamState *clientChunkStreamState) error {
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
+		if p.Position == nil {
+			log.Printf("Ignored nil client position")
+			return nil
+		}
 		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
 		order := streamState.chunkOrderForCenter(center, s.chunkOrderMode)
 		forgetFarSentChunks(streamState.sentChunks, center.X, center.Z, s.viewDistance+1)
@@ -281,6 +293,10 @@ func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Pa
 func (s *Server) handleClientPacketForSession(client *clientSession, clientPacket *api.Packet) error {
 	switch p := clientPacket.Payload.(type) {
 	case *api.Packet_Position:
+		if p.Position == nil {
+			log.Printf("Ignored nil client position")
+			return nil
+		}
 		center := world.ChunkCoordForPosition(p.Position.X, p.Position.Z)
 		order := client.chunkOrderForCenter(center, s.chunkOrderMode)
 		if err := s.sendChunksAroundForSession(client, center.X, center.Z, order); err != nil {

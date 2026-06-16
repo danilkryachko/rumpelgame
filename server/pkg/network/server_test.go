@@ -500,6 +500,35 @@ func TestHandleInitialClientPacketUsesBootstrapRadius(t *testing.T) {
 	}
 }
 
+func TestHandleInitialClientPacketIgnoresNilPosition(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	packet := &api.Packet{Payload: &api.Packet_Position{}}
+
+	t.Run("legacy state handler", func(t *testing.T) {
+		conn := &recordingConn{}
+		sentChunks := map[world.ChunkCoord]bool{}
+		if err := server.handleInitialClientPacket(conn, packet, sentChunks); err != nil {
+			t.Fatalf("handleInitialClientPacket() error = %v", err)
+		}
+		if len(sentChunks) != 0 {
+			t.Fatalf("sent chunks = %+v, want none", sentChunks)
+		}
+		if got := len(recordedFrames(t, conn)); got != 0 {
+			t.Fatalf("legacy initial handler frames = %d, want 0", got)
+		}
+	})
+
+	t.Run("session handler", func(t *testing.T) {
+		client := newClientSession(&recordingConn{})
+		if err := server.handleInitialClientPacketForSession(client, packet); err != nil {
+			t.Fatalf("handleInitialClientPacketForSession() error = %v", err)
+		}
+		if got := len(recordedFrames(t, client.conn.(*recordingConn))); got != 0 {
+			t.Fatalf("session initial handler frames = %d, want 0", got)
+		}
+	})
+}
+
 func TestHandleClientPacketIgnoresUnknownBlockAction(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	conn := &recordingConn{}
@@ -521,6 +550,35 @@ func TestHandleClientPacketIgnoresUnknownBlockAction(t *testing.T) {
 	if conn.written != 0 {
 		t.Fatalf("unknown block action wrote %d bytes, want 0", conn.written)
 	}
+}
+
+func TestHandleClientPacketIgnoresNilPosition(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	packet := &api.Packet{Payload: &api.Packet_Position{}}
+
+	t.Run("legacy state handler", func(t *testing.T) {
+		conn := &recordingConn{}
+		sentChunks := map[world.ChunkCoord]bool{}
+		if err := server.handleClientPacket(conn, packet, sentChunks); err != nil {
+			t.Fatalf("handleClientPacket() error = %v", err)
+		}
+		if len(sentChunks) != 0 {
+			t.Fatalf("sent chunks = %+v, want none", sentChunks)
+		}
+		if got := len(recordedFrames(t, conn)); got != 0 {
+			t.Fatalf("legacy handler frames = %d, want 0", got)
+		}
+	})
+
+	t.Run("session handler", func(t *testing.T) {
+		client := newClientSession(&recordingConn{})
+		if err := server.handleClientPacketForSession(client, packet); err != nil {
+			t.Fatalf("handleClientPacketForSession() error = %v", err)
+		}
+		if got := len(recordedFrames(t, client.conn.(*recordingConn))); got != 0 {
+			t.Fatalf("session handler frames = %d, want 0", got)
+		}
+	})
 }
 
 func TestHandleClientPacketIgnoresEmptyPayload(t *testing.T) {

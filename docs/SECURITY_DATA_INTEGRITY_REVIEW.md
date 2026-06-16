@@ -101,6 +101,7 @@ Checks:
 - Classified server packet-error aggregation is guarded through the networking gate as `packet_error_aggregation`.
 - Classified server packet-error alert thresholds, including current slow-reader matrix timeout evidence, are guarded through the networking gate as `packet_error_alerts`.
 - Empty or unsupported packet payloads are guarded through the networking gate and surfaced by the security gate as `unknown_packet_policy=ignored_guarded`.
+- Nil `ClientPosition` payload bodies are guarded through the networking gate and surfaced by the security gate as `nil_position_policy=ignored_guarded`.
 - Nil `BlockAction` payload bodies are guarded through the networking gate and surfaced by the security gate as `nil_block_action_policy=ignored_guarded`.
 - Focused deterministic packet/RLE property coverage is surfaced by the security gate as `deterministic_property_tests=guarded`.
 - Valid multi-client block edits at the same coordinate are guarded as sequential last-write-wins snapshots through the server scalability and networking gates, then surfaced by the security gate as `conflict_semantics=last_write_wins_guarded`.
@@ -150,7 +151,7 @@ Use:
 sh scripts/security_data_integrity_review_gate.sh logs/security_data_integrity_review_current
 ```
 
-The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `unknown_packet_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `storage_integrity=guarded`, `storage_backend_ownership=guarded`, `storage_concurrency=guarded`, `storage_errors=actionable_guarded`, `storage_lifecycle=guarded`, `block_edit_validation=y_bounds_guarded`, `block_edit_save_failure_rollback=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
+The expected current result is `status=pass`, `security_status=reviewed`, `packet_boundary=guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `packet_error_alerts=threshold_guarded`, `unknown_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, `nil_block_action_policy=ignored_guarded`, `storage_integrity=guarded`, `storage_backend_ownership=guarded`, `storage_concurrency=guarded`, `storage_errors=actionable_guarded`, `storage_lifecycle=guarded`, `block_edit_validation=y_bounds_guarded`, `block_edit_save_failure_rollback=guarded`, `chunk_decode=guarded`, `deterministic_property_tests=guarded`, `conflict_semantics=last_write_wins_guarded`, `local_server_exposure=loopback_enforced`, `smoke_bind_exposure=loopback_guarded`, and `active_protocol_change=0`.
 
 The gate checks that:
 
@@ -168,7 +169,7 @@ The gate checks that:
 - Server config tests prove PostgreSQL environment variables do not bypass `RUMPELMC_SERVER_ROCKSDB_PATH`.
 - Focused Rust packet-boundary and chunk-decode tests pass.
 - Networking, block-edit persistence, architecture, and observability summaries are clean.
-- Networking summary reports `unknown_packet_policy=ignored_guarded` and `nil_block_action_policy=ignored_guarded`, and API compatibility tests lock empty `Packet{}` zero-wire bytes.
+- Networking summary reports `unknown_packet_policy=ignored_guarded`, `nil_position_policy=ignored_guarded`, and `nil_block_action_policy=ignored_guarded`; API compatibility tests lock empty `Packet{}` zero-wire bytes.
 - Networking summary reports `conflict_semantics=last_write_wins_guarded`.
 - Server world/network tests prove out-of-range block-edit `Y` is rejected without a save or chunk broadcast.
 - Server world tests prove failed `SaveChunk` calls roll the in-memory block edit back before returning an error.
@@ -176,4 +177,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a focused security and data-integrity review checkpoint. Packet framing, nil block-action handling, machine-readable deterministic packet/RLE property coverage, enforced loopback-only local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity including RocksDB open-path failure coverage, concurrent distinct-key save/load coverage, actionable storage error context, lifecycle error guards, and PostgreSQL/RocksDB ownership boundaries, block edit Y-bound validation, block edit save-failure rollback, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.
+This block is complete as a focused security and data-integrity review checkpoint. Packet framing, nil client-position handling, nil block-action handling, machine-readable deterministic packet/RLE property coverage, enforced loopback-only local server exposure, loopback smoke binds, classified packet errors, parser-guarded classified-error aggregation, classified-error alert thresholds, chunk decode, storage integrity including RocksDB open-path failure coverage, concurrent distinct-key save/load coverage, actionable storage error context, lifecycle error guards, and PostgreSQL/RocksDB ownership boundaries, block edit Y-bound validation, block edit save-failure rollback, sequential last-write-wins conflict semantics, opt-in max-client admission with bounded live rejection and matrix evidence, bounded slow-reader matrix behavior, bounded reconnect/rebootstrap, interested-client fanout, and persisted edit runtime evidence are guarded. Production auth before non-local exposure, sustained overload/admission sizing, broad reconnect reset policy, production monitoring integration, and external fuzz campaigns remain future work.
