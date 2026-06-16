@@ -19,6 +19,8 @@ SERVER_MAIN="${RUMPELMC_GAMEPLAY_LOOP_SERVER_MAIN:-"$ROOT_DIR/server/cmd/server/
 CLIENT_STATE_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_CLIENT_STATE_SUMMARY:-"$ROOT_DIR/logs/client_state_machine_hardening_current/client-state-machine-hardening-summary.txt"}"
 BLOCK_EDIT_PERSISTENCE_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_BLOCK_EDIT_PERSISTENCE_SUMMARY:-"$ROOT_DIR/logs/block_edit_persistence_current/block-edit-persistence-summary.txt"}"
 SERVER_INVENTORY_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_SERVER_INVENTORY_SUMMARY:-"$ROOT_DIR/logs/server_inventory_foundation_current/server-inventory-foundation-summary.txt"}"
+PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT="${RUMPELMC_GAMEPLAY_LOOP_PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/player_inventory_reconnect_smoke.sh"}"
+PLAYER_INVENTORY_RECONNECT_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_PLAYER_INVENTORY_RECONNECT_SUMMARY:-"$ROOT_DIR/logs/player_inventory_reconnect_smoke_current/player-inventory-reconnect-smoke-summary.txt"}"
 RUN_RUST_TESTS="${RUMPELMC_GAMEPLAY_LOOP_RUN_RUST_TESTS:-1}"
 RUN_GO_TESTS="${RUMPELMC_GAMEPLAY_LOOP_RUN_GO_TESTS:-1}"
 
@@ -55,7 +57,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$PLAYER_SOURCE" "$CLIENT_SOURCE" "$SERVER_SOURCE" "$WORLD_SOURCE" "$SERVER_MAIN" "$CLIENT_STATE_SUMMARY"; do
+for path in "$DESIGN_DOC" "$PROTOCOL_DOC" "$PLAYER_SOURCE" "$CLIENT_SOURCE" "$SERVER_SOURCE" "$WORLD_SOURCE" "$SERVER_MAIN" "$CLIENT_STATE_SUMMARY" "$PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -113,6 +115,9 @@ require_token "$WORLD_SOURCE" 'func (w *World) SetBlockGlobal'
 require_token "$WORLD_SOURCE" 'w.store.SaveChunk(chunk)'
 require_token "$SERVER_MAIN" 'storage.OpenRocksChunkStore'
 require_token "$SERVER_MAIN" 'network.NewServerWithPlayerInventoryStore'
+require_token "$PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT" 'player_inventory_reconnect=live_server_guarded'
+require_token "$PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT" 'go build -o "$SMOKE_BINARY" ./cmd/player_inventory_reconnect_smoke'
+require_token "$PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT" 'RUMPELMC_SERVER_ROCKSDB_PATH="$SMOKE_DB"'
 
 client_state_status="$(field_metric status "$CLIENT_STATE_SUMMARY")"
 client_state_protocol_change="$(field_metric active_protocol_change "$CLIENT_STATE_SUMMARY")"
@@ -133,6 +138,13 @@ server_inventory_block_action="$(field_metric block_action_inventory "$SERVER_IN
 server_inventory_persistence="$(field_metric player_inventory_persistence "$SERVER_INVENTORY_SUMMARY")"
 server_inventory_protocol_change="$(field_metric active_protocol_change "$SERVER_INVENTORY_SUMMARY")"
 server_inventory_storage_change="$(field_metric active_storage_change "$SERVER_INVENTORY_SUMMARY")"
+test -s "$PLAYER_INVENTORY_RECONNECT_SUMMARY" || fail "missing required input $PLAYER_INVENTORY_RECONNECT_SUMMARY"
+player_inventory_reconnect_status="$(field_metric status "$PLAYER_INVENTORY_RECONNECT_SUMMARY")"
+player_inventory_reconnect="$(field_metric player_inventory_reconnect "$PLAYER_INVENTORY_RECONNECT_SUMMARY")"
+player_inventory_select_status="$(field_metric select_status "$PLAYER_INVENTORY_RECONNECT_SUMMARY")"
+player_inventory_verify_restart_status="$(field_metric verify_restart_status "$PLAYER_INVENTORY_RECONNECT_SUMMARY")"
+player_inventory_restarts="$(field_metric server_restarts "$PLAYER_INVENTORY_RECONNECT_SUMMARY")"
+player_inventory_protocol_change="$(field_metric protocol_change "$PLAYER_INVENTORY_RECONNECT_SUMMARY")"
 proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 
 inventory_tests="skipped"
@@ -173,13 +185,20 @@ awk \
   -v server_inventory_persistence="${server_inventory_persistence:-missing}" \
   -v server_inventory_protocol_change="${server_inventory_protocol_change:-1}" \
   -v server_inventory_storage_change="${server_inventory_storage_change:-1}" \
+  -v player_inventory_reconnect_status="${player_inventory_reconnect_status:-missing}" \
+  -v player_inventory_reconnect="${player_inventory_reconnect:-missing}" \
+  -v player_inventory_select_status="${player_inventory_select_status:-missing}" \
+  -v player_inventory_verify_restart_status="${player_inventory_verify_restart_status:-missing}" \
+  -v player_inventory_restarts="${player_inventory_restarts:-0}" \
+  -v player_inventory_protocol_change="${player_inventory_protocol_change:-1}" \
   -v proto_diff_count="$proto_diff_count" \
   -v inventory_tests="$inventory_tests" \
   -v server_tests="$server_tests" \
   -v design_doc="$DESIGN_DOC" \
   -v client_state_summary="$CLIENT_STATE_SUMMARY" \
   -v block_edit_persistence_summary="$BLOCK_EDIT_PERSISTENCE_SUMMARY" \
-  -v server_inventory_summary="$SERVER_INVENTORY_SUMMARY" '
+  -v server_inventory_summary="$SERVER_INVENTORY_SUMMARY" \
+  -v player_inventory_reconnect_summary="$PLAYER_INVENTORY_RECONNECT_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
@@ -202,6 +221,12 @@ awk \
       server_inventory_persistence == "rocksdb_guarded" &&
       server_inventory_protocol_change + 0 == 0 &&
       server_inventory_storage_change + 0 == 0
+    player_inventory_reconnect_ok = player_inventory_reconnect_status == "pass" &&
+      player_inventory_reconnect == "live_server_guarded" &&
+      player_inventory_select_status == "pass" &&
+      player_inventory_verify_restart_status == "pass" &&
+      player_inventory_restarts + 0 >= 1 &&
+      player_inventory_protocol_change + 0 == 0
     full_reload_persistence = block_edit_visual_ok ? "block_41_visual_guarded" : "missing_block_41_visual_proof"
     active_protocol_change = proto_diff_count + 0
 
@@ -227,9 +252,12 @@ awk \
     } else if (!server_inventory_ok) {
       status = "fail"
       reason = "server_inventory_gate_not_clean"
+    } else if (!player_inventory_reconnect_ok) {
+      status = "fail"
+      reason = "player_inventory_reconnect_not_clean"
     }
 
-    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary)
+    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s player_inventory_reconnect=%s player_inventory_reconnect_status=%s player_inventory_reconnect_restarts=%d server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s player_inventory_reconnect_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, player_inventory_reconnect, player_inventory_reconnect_status, player_inventory_restarts, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary, player_inventory_reconnect_summary)
     if (status != "pass") {
       exit 1
     }

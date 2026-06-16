@@ -18,6 +18,7 @@ Scope:
 - Guard creative and counted stack behavior with Go unit tests.
 - Guard the session placement and selected-slot boundaries with network handler tests.
 - Guard RocksDB player inventory key separation and record round-trip with storage tests.
+- Guard the local-player reconnect/restart runtime path through `scripts/player_inventory_reconnect_smoke.sh` as part of the gameplay loop foundation.
 
 Out of scope:
 
@@ -81,8 +82,9 @@ The gate checks that:
 - Network tests cover session creative inventory, selected-slot action handling, player inventory load/save binding from `ClientPosition.player_id`, rejected placement when the session inventory lacks the requested block, retained counted inventory after a failed world edit, and snapshot refresh after counted placement.
 - `server/pkg/network/server.go` keeps the existing block registry placeability check, adds the session inventory placement check, and validates `InventoryAction SELECT_SLOT` through session inventory.
 - Storage tests cover player inventory record round-trip, key separation from chunk records, corrupt record rejection, and empty id rejection.
+- The gameplay loop foundation consumes the live player-inventory reconnect smoke and reports `player_inventory_reconnect=live_server_guarded`.
 - Protocol schema compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
 
 ## Current Status
 
-This checkpoint is complete when the gate reports `server_inventory_status=session_guarded` and `player_inventory_persistence=rocksdb_guarded`. The server now owns the placement inventory boundary for connected sessions and persists local-player inventory state while current creative placement behavior, chunk serialization, world generation, and renderer behavior remain unchanged.
+This checkpoint is complete when the gate reports `server_inventory_status=session_guarded` and `player_inventory_persistence=rocksdb_guarded`. The gameplay foundation additionally proves the runtime reconnect/restart path with `player_inventory_reconnect=live_server_guarded`. The server now owns the placement inventory boundary for connected sessions and persists local-player inventory state while current creative placement behavior, chunk serialization, world generation, and renderer behavior remain unchanged.

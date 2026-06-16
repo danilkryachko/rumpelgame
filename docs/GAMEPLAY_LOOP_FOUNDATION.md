@@ -30,6 +30,7 @@ Scope:
 - Keep the current creative five-slot hotbar behavior over existing placeable block IDs.
 - Guard inventory slot rules with Rust unit tests.
 - Guard server session inventory rules with Go unit tests and a network handler test.
+- Guard local-player inventory persistence with a live TCP server restart/reconnect smoke over an isolated RocksDB store.
 - Define the minimum mining/building persistence contract before the dedicated Block Edit Persistence Track.
 
 Out of scope:
@@ -51,7 +52,7 @@ Done when:
 
 - The player hotbar has an explicit inventory slot model, selected slot state, and tests.
 - The server session inventory gate reports `server_inventory_status=session_guarded`.
-- A gameplay foundation gate checks the client inventory tests, the existing server edit/persistence path, and the completed Block 41 persisted visual proof.
+- A gameplay foundation gate checks the client inventory tests, the server edit/persistence path, the local-player inventory reconnect smoke, and the completed Block 41 persisted visual proof.
 
 Checks:
 
@@ -114,6 +115,7 @@ The gameplay foundation relies on the existing server boundary:
 - `World.SetBlockGlobal` rejects block edits outside `[0, ChunkHeight)` before creating/loading a chunk or returning an updated snapshot.
 - `server/cmd/server/main.go` creates the default server with `storage.OpenRocksChunkStore`, so normal server runs are persistence-capable.
 - `server/cmd/server/main.go` passes that same store to `network.NewServerWithPlayerInventoryStore`, so local-player inventory records use RocksDB without changing chunk keys or chunk payload bytes.
+- `scripts/player_inventory_reconnect_smoke.sh` starts the real Go server with an isolated RocksDB store, selects a local-player inventory slot over TCP, restarts the server, reconnects, and requires the persisted selected slot to arrive in an `InventorySnapshot`.
 - Block 40 consumes save -> process restart -> reload -> visual/collision/GPU update proof from Block 41 instead of duplicating that heavier runtime matrix.
 
 ## Deferred Work
@@ -143,11 +145,12 @@ Still needed before calling gameplay production-ready:
 Use:
 
 ```sh
+sh scripts/player_inventory_reconnect_smoke.sh logs/player_inventory_reconnect_smoke_current
 sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_current
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `player_inventory_reconnect=live_server_guarded`, `player_inventory_reconnect_status=pass`, `player_inventory_reconnect_restarts>=1`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
 
 The gate checks that:
 
@@ -155,6 +158,7 @@ The gate checks that:
 - The player source contains the hotbar inventory model, selected slot state, selected-slot signal, selection helpers, and tests.
 - The client source contains selected-slot inventory action send coverage and local player-id position packet coverage.
 - The server inventory foundation summary is present and clean.
+- The player inventory reconnect smoke summary is present and proves selected-slot persistence after a real server restart.
 - Server block edits still flow through `World.SetBlockGlobal`.
 - `World.SetBlockGlobal` still calls `ChunkStore.SaveChunk`.
 - The Block 41 block-edit persistence summary is present and its persisted visual/collision/GPU matrix is clean.
@@ -164,4 +168,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, and local-player inventory state persists through RocksDB. Broader gameplay systems still remain outside this foundation checkpoint.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, and local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence. Broader gameplay systems still remain outside this foundation checkpoint.
