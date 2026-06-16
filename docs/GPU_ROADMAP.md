@@ -72,8 +72,8 @@ This roadmap is the sequential GPU backlog for sustained optimization work. Keep
 44. Log upload queue depth.
 45. Log upload latency.
 46. Done 2026-06-16: split terrain queue GPU upload telemetry into new-slot and replacement-slot upload counts/bytes, and validated both lanes in movement plus in-place block-edit gates.
-47. Add upload budget per frame.
-48. Add upload budget tests.
+47. Done 2026-06-16: added `scripts/gpu_terrain_upload_budget.sh` and `docs/GPU_TERRAIN_UPLOAD_BUDGETING.md` as a summary-only per-frame total/new-slot/replacement-slot upload count and KiB budget gate.
+48. Done 2026-06-16: validated the upload budget gate against current movement/in-place artifacts and a negative tight-budget check (`reason=movement_upload_kb_budget`).
 49. Add mass chunk-load stress.
 50. Add upload retry/backoff telemetry.
 

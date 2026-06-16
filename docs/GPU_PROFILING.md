@@ -117,6 +117,14 @@ RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 
 The gate writes `gpu-in-place-upload-summary.txt`.
 
+Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, and on any upload failure counters in the consumed artifacts:
+
+```sh
+sh scripts/gpu_terrain_upload_budget.sh logs/gpu_terrain_upload_budget_current
+```
+
+The gate writes `gpu-terrain-upload-budget-summary.txt`; see `docs/GPU_TERRAIN_UPLOAD_BUDGETING.md`.
+
 Use the resource lifecycle audit after upload-pressure, renderer resource ownership, atlas/uniform, native-shadow, repack upload, or shutdown cleanup work. It refreshes a scoped GPU report and fails on dirty error scans, upload failures, unexpected scene-target replacement, missing default terrain resources, or native-shadow resource error counters:
 
 ```sh
