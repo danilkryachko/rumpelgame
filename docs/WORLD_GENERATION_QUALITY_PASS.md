@@ -50,6 +50,7 @@ Checks:
 - There is no terrain height noise, cave layer, resource distribution, biome runtime, or structure placement.
 - `World.ChunkSnapshot()` creates missing chunks by calling `GenerateFlat()`.
 - Serialized chunk bytes are the authoritative chunk payload for storage and networking.
+- The current flat chunk serialized byte vector is guarded by SHA-256 `41bc68c75bd63c8845bba319c5db67e4ef0ab627b0241cd74e406d5c1878bd94` for representative chunk coordinates.
 
 ## Target Generation Pipeline
 
@@ -139,7 +140,7 @@ Use:
 sh scripts/world_generation_quality_gate.sh logs/world_generation_quality_current
 ```
 
-The expected current result is `status=pass`, `quality_pass_status=designed`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=deferred`, `coordinate_mapping=guarded`, `origin_chunk=guarded`, and `world_tests=pass`.
+The expected current result is `status=pass`, `quality_pass_status=designed`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=deferred`, `coordinate_mapping=guarded`, `origin_chunk=guarded`, `flat_byte_hash=guarded`, and `world_tests=pass`.
 
 The gate checks that:
 
@@ -147,9 +148,10 @@ The gate checks that:
 - Biome foundation is clean and still deferred at runtime.
 - Current `GenerateFlat()` and serialization source remain unchanged.
 - The origin chunk snapshot is stable and matches the current flat strata contract.
+- Representative flat chunk snapshot bytes match the current SHA-256 fixture.
 - Global block-to-chunk coordinate tests cover positive, negative, and high positive boundary mapping.
 - Current world tests pass.
 
 ## Current Status
 
-This block is complete as a design/checkpoint block. Runtime worldgen quality improvements remain future work and must start with explicit seed/version inputs plus deterministic tests before any generated chunk bytes change. Current origin chunk flat strata and global block-to-chunk coordinate mapping are guarded across positive, negative, and high positive chunk boundaries.
+This block is complete as a design/checkpoint block. Runtime worldgen quality improvements remain future work and must start with explicit seed/version inputs plus deterministic tests before any generated chunk bytes change. Current origin chunk flat strata, flat chunk byte hash, and global block-to-chunk coordinate mapping are guarded across positive, negative, and high positive chunk boundaries.

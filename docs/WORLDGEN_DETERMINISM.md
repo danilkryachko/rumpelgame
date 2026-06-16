@@ -8,6 +8,7 @@ This note records the current deterministic world generation and serialization g
 
 - `Chunk.GenerateFlat()` is deterministic for identical chunk coordinates.
 - Generated flat chunks keep the current strata contract: `Stone` from `y=0..60`, `Dirt` from `y=61..62`, `Grass` at `y=63`, and `Air` above.
+- Representative flat chunk serialized bytes have SHA-256 `41bc68c75bd63c8845bba319c5db67e4ef0ab627b0241cd74e406d5c1878bd94`.
 - `Chunk.Serialize()` emits a stable little-endian `u16` block array with index order `x + y * ChunkWidth * ChunkDepth + z * ChunkWidth`.
 - `World.ChunkSnapshot()` preserves requested chunk coordinates and produces stable serialized bytes across independent `World` instances for identical coordinates.
 - These tests do not change generation behavior, storage, protocol, chunk dimensions, or payload encoding defaults.
@@ -23,7 +24,7 @@ go test ./pkg/world
 
 Fresh check:
 
-- `go test ./pkg/world` passed on 2026-06-15 after adding deterministic generation, stable serialization order, and world snapshot determinism coverage.
+- `go test ./pkg/world` passed on 2026-06-16 with deterministic generation, flat byte-hash, stable serialization order, and world snapshot determinism coverage.
 
 ## Biome Foundation
 
@@ -43,4 +44,4 @@ World generation quality work is tracked in `docs/WORLD_GENERATION_QUALITY_PASS.
 sh scripts/world_generation_quality_gate.sh logs/world_generation_quality_current
 ```
 
-The current expected result is `status=pass`, `quality_pass_status=designed`, `active_generator_change=0`, `active_chunk_byte_change=0`, and `runtime_quality_pass=deferred`. Terrain height, caves, resources, and structures remain blocked until an explicit seed/version model and deterministic tests exist.
+The current expected result is `status=pass`, `quality_pass_status=designed`, `active_generator_change=0`, `active_chunk_byte_change=0`, `runtime_quality_pass=deferred`, and `flat_byte_hash=guarded`. Terrain height, caves, resources, and structures remain blocked until an explicit seed/version model and deterministic tests exist.

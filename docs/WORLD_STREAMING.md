@@ -183,11 +183,11 @@ Fresh check:
 
 ## Worldgen Determinism
 
-The current worldgen hardening slice is test-only. It locks down flat generation strata for the origin chunk, repeat generation for positive and negative chunk coordinates, global block-to-chunk coordinate mapping across negative and high-positive boundaries, stable little-endian block serialization order, and `World.ChunkSnapshot()` determinism across independent `World` instances.
+The current worldgen hardening slice is test-only. It locks down flat generation strata for the origin chunk, representative flat chunk SHA-256 bytes, repeat generation for positive and negative chunk coordinates, global block-to-chunk coordinate mapping across negative and high-positive boundaries, stable little-endian block serialization order, and `World.ChunkSnapshot()` determinism across independent `World` instances.
 
 Fresh check:
 
-- `go test ./pkg/world` passed on 2026-06-16 with origin chunk flat-strata coverage.
+- `go test ./pkg/world` passed on 2026-06-16 with origin chunk flat-strata and representative flat byte-hash coverage.
 
 ## Chunk Serialization Compatibility
 
@@ -349,7 +349,7 @@ Fresh check:
 - Pop-in metrics are report-only player-neighborhood probes; they do not fail movement gates until explicit budgets are defined.
 - Movement readiness separates final render-ready and collision-ready evidence; player spawn remains collision-gated.
 - Client collision radius remains `1` by default; `RUMPELMC_CLIENT_COLLISION_CHUNK_DISTANCE=0` is an opt-in lazy-collision experiment only.
-- Worldgen determinism is covered by focused `server/pkg/world` tests including origin chunk flat strata; generation behavior, chunk dimensions, serialization order, protocol, and storage remain unchanged.
+- Worldgen determinism is covered by focused `server/pkg/world` tests including origin chunk flat strata and representative flat byte-hash coverage; generation behavior, chunk dimensions, serialization order, protocol, and storage remain unchanged.
 - Chunk serialization compatibility is guarded by focused `server/pkg/api`, `server/pkg/world`, and `server/pkg/network` tests for empty-packet zero-wire bytes, field numbers, enum values, raw defaults, RLE wire vectors, and protobuf unknown fields.
 - Protocol generated-code drift is guarded by `scripts/protocol_generated_drift_gate.sh`, which rejects partial schema/generated diffs and checks generated-code identity headers.
 - Networking robustness is guarded by focused Go and Rust packet-boundary tests plus opt-in max-client admission with bounded live rejection evidence; adaptive overload and backpressure policy remain deferred and must not change the wire contract without a protocol task.
@@ -719,7 +719,7 @@ Set `RUMPELMC_SERVER_CHUNK_ENCODING=raw` for the rollback path.
 - For block material metadata design, use `scripts/block_material_metadata_design_gate.sh`; see `docs/BLOCK_MATERIAL_METADATA_DESIGN.md`. Current expected status is `pass` with `active_schema_change=0` and the runtime contract still opaque-only.
 - For texture atlas evolution planning, use `scripts/texture_atlas_evolution_gate.sh`; see `docs/TEXTURE_ATLAS_EVOLUTION_TRACK.md`. Current expected status is `pass` with no atlas asset or shader layout change.
 - For biome and visual-variety foundation, use `scripts/biome_visual_variety_foundation_gate.sh`; see `docs/BIOME_VISUAL_VARIETY_FOUNDATION.md`. Current expected status is `pass` with runtime biome visuals deferred and no worldgen/serialization change.
-- For world generation quality planning, use `scripts/world_generation_quality_gate.sh`; see `docs/WORLD_GENERATION_QUALITY_PASS.md`. Current expected status is `pass` with `origin_chunk=guarded`, `coordinate_mapping=guarded` for positive, negative, and high-positive boundaries, and runtime terrain/cave/resource/structure changes deferred.
+- For world generation quality planning, use `scripts/world_generation_quality_gate.sh`; see `docs/WORLD_GENERATION_QUALITY_PASS.md`. Current expected status is `pass` with `origin_chunk=guarded`, `flat_byte_hash=guarded`, `coordinate_mapping=guarded` for positive, negative, and high-positive boundaries, and runtime terrain/cave/resource/structure changes deferred.
 - For server scalability checks, use `scripts/server_scalability_pass_gate.sh`; see `docs/SERVER_SCALABILITY_PASS.md`. Current expected status is `pass` with multi-client sent-state, interested-client fanout, `conflict_semantics=last_write_wins_guarded`, `chunk_request_ordering=guarded`, and `view_distance_config=guarded`, plus bounded live/repeated multi-client evidence.
 - For networking robustness checks, use `scripts/networking_robustness_gate.sh`; see `docs/NETWORKING_ROBUSTNESS_PROGRAM.md`. Current expected status is `pass` with Go/Rust packet boundary tests, zero-length frame decode, empty/unknown payload ignore policy, reconnect, slow-client, stale-session, packet-error classification, parser aggregation, live alert thresholds, `conflict_semantics=last_write_wins_guarded`, and opt-in admission guarded while adaptive overload/backpressure work remains deferred.
 - For client state-machine checks, use `scripts/client_state_machine_hardening_gate.sh`; see `docs/CLIENT_STATE_MACHINE_HARDENING.md`. Current expected status is `pass` with lifecycle transitions unit-guarded and runtime reconnect/state telemetry deferred.

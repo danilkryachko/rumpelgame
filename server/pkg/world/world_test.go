@@ -2,6 +2,8 @@ package world
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"fmt"
 	"testing"
 )
 
@@ -167,6 +169,31 @@ func TestOriginChunkSnapshotUsesFlatGenerationContract(t *testing.T) {
 		t.Run(want.name, func(t *testing.T) {
 			if got := chunk.GetBlock(want.x, want.y, want.z); got != want.block {
 				t.Fatalf("origin block at (%d, %d, %d) = %v, want %v", want.x, want.y, want.z, got, want.block)
+			}
+		})
+	}
+}
+
+func TestFlatChunkSnapshotStableByteHash(t *testing.T) {
+	w := NewWorld(nil)
+	const wantFlatSHA256 = "41bc68c75bd63c8845bba319c5db67e4ef0ab627b0241cd74e406d5c1878bd94"
+
+	for _, coord := range []ChunkCoord{
+		{X: 0, Z: 0},
+		{X: -3, Z: 5},
+		{X: 12345, Z: -23456},
+	} {
+		t.Run(fmt.Sprintf("%d,%d", coord.X, coord.Z), func(t *testing.T) {
+			snapshot, err := w.ChunkSnapshot(coord.X, coord.Z)
+			if err != nil {
+				t.Fatalf("ChunkSnapshot(%d,%d) error = %v", coord.X, coord.Z, err)
+			}
+			if len(snapshot.Blocks) != SerializedChunkSize {
+				t.Fatalf("ChunkSnapshot(%d,%d) block bytes = %d, want %d", coord.X, coord.Z, len(snapshot.Blocks), SerializedChunkSize)
+			}
+			sum := sha256.Sum256(snapshot.Blocks)
+			if got := fmt.Sprintf("%x", sum); got != wantFlatSHA256 {
+				t.Fatalf("ChunkSnapshot(%d,%d) SHA-256 = %s, want %s", coord.X, coord.Z, got, wantFlatSHA256)
 			}
 		})
 	}
