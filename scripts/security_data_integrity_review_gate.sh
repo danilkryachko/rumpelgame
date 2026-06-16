@@ -108,6 +108,7 @@ done
 networking_status="$(field_metric status "$NETWORKING_SUMMARY")"
 networking_protocol_change="$(field_metric active_protocol_change "$NETWORKING_SUMMARY")"
 networking_packet_error_classification="$(field_metric packet_error_classification "$NETWORKING_SUMMARY")"
+networking_packet_error_aggregation="$(field_metric packet_error_aggregation "$NETWORKING_SUMMARY")"
 persistence_status="$(field_metric status "$PERSISTENCE_SUMMARY")"
 persistence_protocol_change="$(field_metric active_protocol_change "$PERSISTENCE_SUMMARY")"
 arch_status="$(field_metric status "$ARCH_SUMMARY")"
@@ -149,6 +150,7 @@ awk \
   -v networking_status="${networking_status:-missing}" \
   -v networking_protocol_change="${networking_protocol_change:-1}" \
   -v networking_packet_error_classification="${networking_packet_error_classification:-missing}" \
+  -v networking_packet_error_aggregation="${networking_packet_error_aggregation:-missing}" \
   -v persistence_status="${persistence_status:-missing}" \
   -v persistence_protocol_change="${persistence_protocol_change:-1}" \
   -v arch_status="${arch_status:-missing}" \
@@ -174,6 +176,7 @@ awk \
 
     prereqs_ok = networking_status == "pass" && networking_protocol_change + 0 == 0 &&
       (networking_packet_error_classification == "unit_guarded" || networking_packet_error_classification == "source_guarded") &&
+      networking_packet_error_aggregation == "parser_guarded" &&
       persistence_status == "pass" && persistence_protocol_change + 0 == 0 &&
       arch_status == "pass" && arch_runtime_change == "none" &&
       observability_status == "pass" && observability_error_scan == "clean"
@@ -192,7 +195,7 @@ awk \
       reason = "integrity_tests_failed"
     }
 
-    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s storage_integrity=%s chunk_decode=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, storage_integrity, chunk_decode, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
+    printf("security_data_integrity_review status=%s reason=%s security_status=%s packet_boundary=%s packet_error_classification=%s packet_error_aggregation=%s storage_integrity=%s chunk_decode=%s active_protocol_change=%d go_integrity_tests=%s rust_packet_tests=%s rust_chunk_decode_tests=%s networking_status=%s persistence_status=%s arch_status=%s observability_status=%s observability_error_scan=%s networking_summary=%s persistence_summary=%s arch_summary=%s observability_summary=%s\n", status, reason, security_status, packet_boundary, networking_packet_error_classification, networking_packet_error_aggregation, storage_integrity, chunk_decode, active_protocol_change, go_integrity_tests, rust_packet_tests, rust_chunk_decode_tests, networking_status, persistence_status, arch_status, observability_status, observability_error_scan, networking_summary, persistence_summary, arch_summary, observability_summary)
     if (status != "pass") {
       exit 1
     }

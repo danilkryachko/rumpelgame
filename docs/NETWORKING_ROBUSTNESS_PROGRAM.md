@@ -27,6 +27,7 @@ Scope:
 - Keep the current server framing tests as the server-side packet-boundary robustness guard.
 - Add server session-write timeout and failed-broadcast cleanup guards.
 - Add stable server-side packet error classification for EOF, short frame, oversized frame, malformed protobuf, timeout, short write, encode, and other errors.
+- Add a parser-guarded offline summary for `packet_error_class` counts across server log artifacts.
 - Consume the server scalability live two-client fanout smoke as networking runtime evidence when available.
 - Add a bounded live slow-reader smoke that proves a non-reading TCP client hits the session write timeout while a separate fast client still receives bootstrap chunk data.
 - Consume a bounded client reconnect smoke that proves a live TCP disconnect, server restart, client reconnect, and rebootstrap back to `client_state=active`.
@@ -60,6 +61,7 @@ Checks:
 - Server `receivePacket` decodes exactly one protobuf `api.Packet` per frame and returns decode errors to the connection loop.
 - Server `handleConnection` logs receive errors as disconnects and closes the connection through `defer conn.Close()`.
 - Server packet and write errors are classified into stable `packet_error_class` labels: `eof`, `short_frame`, `oversized_frame`, `malformed_protobuf`, `timeout`, `short_write`, `encode_error`, and `other`.
+- `scripts/packet_error_class_summary.sh` aggregates those labels from server log files, rejects unknown classes, and writes a count summary plus TSV.
 - Server `receiveInitialClientPacket` has a bounded read deadline for startup probing and clears the deadline before normal streaming.
 - Server `sendPacket` writes the length prefix and payload through `writeFull`, which rejects zero-byte writes with `io.ErrShortWrite`.
 - Live session chunk writes set and clear a bounded write deadline using `RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS`; `0` disables it as a rollback/control.
@@ -177,7 +179,7 @@ Still needed before claiming a full networking robustness program:
 - Broader reconnect state reset rules, packet replay policy, and longer reconnect failure/idle soak.
 - Broader multi-client slow-reader load evidence across more active clients, broadcast fanout, and longer runs.
 - Server overload/admission behavior and connection limits under load.
-- Operational aggregation and alert thresholds for the existing classified packet error labels.
+- Operational alert thresholds for the existing classified packet error labels.
 - Backpressure policy for the existing client reader-thread channel.
 
 ## Compatibility Rules
@@ -197,7 +199,7 @@ Use:
 sh scripts/networking_robustness_gate.sh logs/networking_robustness_current
 ```
 
-The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
+The expected current result is `status=pass`, `robustness_status=unit_guarded`, `client_boundary_tests=pass`, `server_boundary_tests=pass`, `stale_packet_policy=session_guarded`, `packet_error_classification=unit_guarded`, `packet_error_aggregation=parser_guarded`, `active_protocol_change=0`, `reconnect_status=repeated_live_rebootstrap_guarded` when current reconnect smoke and soak summaries exist, `slow_client_status=unit_guarded` or `live_guarded` when a current slow-reader smoke summary exists, `slow_reader_smoke_status=deferred` or `pass`, `multi_client_live_status=deferred` or `pass` depending on the server scalability summary, and `overload_status=deferred`.
 
 To run the slow-reader smoke inside the gate:
 
@@ -216,6 +218,7 @@ The gate checks that:
 - This document records the current robustness contract, added client guards, existing server guards, deferred robustness work, and compatibility rules.
 - Server and client sources still enforce max packet sizes and exact reads.
 - Server logs still expose stable packet error classification labels for receive, decode, timeout, encode, and short-write failures.
+- The packet-error class summary parser accepts all known labels and rejects unknown label drift.
 - Go server framing/network tests pass.
 - Rust network and reader-drain session tests pass.
 - The server scalability summary is clean and carries the current live two-client smoke status when that smoke has been run.
@@ -226,4 +229,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a packet-boundary, classified packet-error, unit-guarded write-timeout, two-client live fanout, bounded slow-reader, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Overload handling, broader live load, broadcast/backpressure policy, broad reconnect state reset, packet replay, and classified-error aggregation remain future work.
+This block is complete as a packet-boundary, classified packet-error, parser-guarded classified-error aggregation, unit-guarded write-timeout, two-client live fanout, bounded slow-reader, bounded repeated reconnect/rebootstrap, and unit-guarded reader-session stale-packet checkpoint. Overload handling, broader live load, broadcast/backpressure policy, broad reconnect state reset, packet replay, and classified-error alert thresholds remain future work.
