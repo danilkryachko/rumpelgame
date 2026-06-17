@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"rumpelmc/server/pkg/api"
 	playerinventory "rumpelmc/server/pkg/inventory"
+	"rumpelmc/server/pkg/item"
 	"rumpelmc/server/pkg/world"
 )
 
@@ -85,22 +86,23 @@ const (
 )
 
 type Server struct {
-	address         string
-	world           *world.World
-	viewDistance    int32
-	bootstrapRadius int32
-	chunksPerUpdate int
-	chunkEncoding   api.ChunkEncoding
-	chunkOrderMode  chunkOrderMode
-	writeTimeout    time.Duration
-	maxClients      int
-	inventoryMode   inventoryMode
-	miningCooldown  time.Duration
-	miningDurations map[world.BlockID]time.Duration
-	now             func() time.Time
-	inventoryStore  playerInventoryStore
-	clientsMu       sync.Mutex
-	clients         map[*clientSession]struct{}
+	address                string
+	world                  *world.World
+	viewDistance           int32
+	bootstrapRadius        int32
+	chunksPerUpdate        int
+	chunkEncoding          api.ChunkEncoding
+	chunkOrderMode         chunkOrderMode
+	writeTimeout           time.Duration
+	maxClients             int
+	inventoryMode          inventoryMode
+	miningCooldown         time.Duration
+	miningCooldownOverride bool
+	miningDurations        map[world.BlockID]time.Duration
+	now                    func() time.Time
+	inventoryStore         playerInventoryStore
+	clientsMu              sync.Mutex
+	clients                map[*clientSession]struct{}
 }
 
 func NewServer(address string, gameWorld *world.World) *Server {
@@ -108,20 +110,21 @@ func NewServer(address string, gameWorld *world.World) *Server {
 	inventoryMode := configuredInventoryMode()
 	miningCooldown, miningCooldownOverride := configuredMiningCooldownWithOverride(inventoryMode)
 	return &Server{
-		address:         address,
-		world:           gameWorld,
-		viewDistance:    viewDistance,
-		bootstrapRadius: configuredBootstrapRadius(viewDistance),
-		chunksPerUpdate: configuredChunksPerUpdate(),
-		chunkEncoding:   configuredChunkEncoding(),
-		chunkOrderMode:  configuredChunkOrderMode(),
-		writeTimeout:    configuredClientWriteTimeout(),
-		maxClients:      configuredMaxClients(),
-		inventoryMode:   inventoryMode,
-		miningCooldown:  miningCooldown,
-		miningDurations: configuredMiningDurations(inventoryMode, miningCooldown, miningCooldownOverride),
-		now:             time.Now,
-		clients:         make(map[*clientSession]struct{}),
+		address:                address,
+		world:                  gameWorld,
+		viewDistance:           viewDistance,
+		bootstrapRadius:        configuredBootstrapRadius(viewDistance),
+		chunksPerUpdate:        configuredChunksPerUpdate(),
+		chunkEncoding:          configuredChunkEncoding(),
+		chunkOrderMode:         configuredChunkOrderMode(),
+		writeTimeout:           configuredClientWriteTimeout(),
+		maxClients:             configuredMaxClients(),
+		inventoryMode:          inventoryMode,
+		miningCooldown:         miningCooldown,
+		miningCooldownOverride: miningCooldownOverride,
+		miningDurations:        configuredMiningDurations(inventoryMode, miningCooldown, miningCooldownOverride),
+		now:                    time.Now,
+		clients:                make(map[*clientSession]struct{}),
 	}
 }
 
@@ -436,7 +439,7 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			if err != nil {
 				return fmt.Errorf("read block for destroy cooldown: %w", err)
 			}
-			miningDuration := s.miningDurationForBlock(targetBlock)
+			miningDuration := s.miningDurationForBlockWithTool(targetBlock, client.selectedToolID())
 			if !client.destroyCooldownReady(actionTime, miningDuration) {
 				log.Printf("Ignored mining cooldown block action x=%d, y=%d, z=%d block_id=%d cooldown=%s", action.X, action.Y, action.Z, targetBlock, miningDuration)
 				return nil
@@ -586,6 +589,8 @@ type clientSession struct {
 	lastDestroyAt         time.Time
 	inventory             playerinventory.Inventory
 	selectedInventorySlot uint32
+	toolbelt              []item.ID
+	selectedToolSlot      uint32
 	playerID              string
 }
 
@@ -615,6 +620,7 @@ func newClientSession(conn net.Conn) *clientSession {
 
 func newClientSessionWithInventory(conn net.Conn, inventory playerinventory.Inventory) *clientSession {
 	selectedSlot, _ := inventory.FirstPlaceableSlot()
+	toolbelt := item.DefaultToolbelt()
 
 	return &clientSession{
 		conn: conn,
@@ -623,6 +629,8 @@ func newClientSessionWithInventory(conn net.Conn, inventory playerinventory.Inve
 		},
 		inventory:             inventory,
 		selectedInventorySlot: selectedSlot,
+		toolbelt:              toolbelt,
+		selectedToolSlot:      0,
 	}
 }
 
@@ -751,6 +759,17 @@ func (s *Server) miningDurationForBlock(block world.BlockID) time.Duration {
 	return 0
 }
 
+func (s *Server) miningDurationForBlockWithTool(block world.BlockID, toolID item.ID) time.Duration {
+	baseDuration := s.miningDurationForBlock(block)
+	if baseDuration <= 0 || s.miningCooldownOverride {
+		return baseDuration
+	}
+
+	baseMS := int(baseDuration / time.Millisecond)
+	adjustedMS := item.AdjustedMiningDurationMS(baseMS, block, toolID)
+	return time.Duration(adjustedMS) * time.Millisecond
+}
+
 func (c *clientSession) hasSentChunk(coord world.ChunkCoord) bool {
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
@@ -763,6 +782,16 @@ func (c *clientSession) selectedSlot() uint32 {
 	defer c.stateMu.Unlock()
 
 	return c.selectedInventorySlot
+}
+
+func (c *clientSession) selectedToolID() item.ID {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if len(c.toolbelt) == 0 || uint64(c.selectedToolSlot) >= uint64(len(c.toolbelt)) {
+		return item.HandToolID
+	}
+	return c.toolbelt[c.selectedToolSlot]
 }
 
 func (c *clientSession) selectInventorySlot(slot uint32) bool {

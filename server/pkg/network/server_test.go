@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"rumpelmc/server/pkg/api"
 	playerinventory "rumpelmc/server/pkg/inventory"
+	"rumpelmc/server/pkg/item"
 	"rumpelmc/server/pkg/world"
 )
 
@@ -1799,6 +1800,133 @@ func TestHandleClientPacketDestroyUsesTargetBlockMiningDuration(t *testing.T) {
 	}
 	if got := snapshot.GetSlots()[1].GetCount(); got != 1 {
 		t.Fatalf("dirt count after block-specific cooldown = %d, want 1", got)
+	}
+}
+
+func TestClientSessionStartsWithHandToolSlot(t *testing.T) {
+	client := newClientSession(&recordingConn{})
+
+	if got := client.selectedToolID(); got != item.HandToolID {
+		t.Fatalf("selectedToolID() = %q, want %q", got, item.HandToolID)
+	}
+
+	client.stateMu.Lock()
+	client.selectedToolSlot = 1
+	client.stateMu.Unlock()
+	if got := client.selectedToolID(); got != item.WoodenPickaxeToolID {
+		t.Fatalf("selectedToolID() after slot 1 = %q, want %q", got, item.WoodenPickaxeToolID)
+	}
+
+	client.stateMu.Lock()
+	client.selectedToolSlot = 99
+	client.stateMu.Unlock()
+	if got := client.selectedToolID(); got != item.HandToolID {
+		t.Fatalf("selectedToolID() after invalid slot = %q, want %q", got, item.HandToolID)
+	}
+
+	client.stateMu.Lock()
+	client.toolbelt = nil
+	client.selectedToolSlot = 0
+	client.stateMu.Unlock()
+	if got := client.selectedToolID(); got != item.HandToolID {
+		t.Fatalf("selectedToolID() without toolbelt = %q, want %q", got, item.HandToolID)
+	}
+}
+
+func TestMiningDurationForBlockWithTool(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.miningDurations = map[world.BlockID]time.Duration{
+		world.Stone: 300 * time.Millisecond,
+		world.Wood:  250 * time.Millisecond,
+		world.Dirt:  150 * time.Millisecond,
+	}
+
+	tests := []struct {
+		name  string
+		block world.BlockID
+		tool  item.ID
+		want  time.Duration
+	}{
+		{name: "hand keeps stone duration", block: world.Stone, tool: item.HandToolID, want: 300 * time.Millisecond},
+		{name: "pickaxe halves stone duration", block: world.Stone, tool: item.WoodenPickaxeToolID, want: 150 * time.Millisecond},
+		{name: "pickaxe does not speed wood", block: world.Wood, tool: item.WoodenPickaxeToolID, want: 250 * time.Millisecond},
+		{name: "axe halves wood duration", block: world.Wood, tool: item.WoodenAxeToolID, want: 125 * time.Millisecond},
+		{name: "shovel halves dirt duration", block: world.Dirt, tool: item.WoodenShovelToolID, want: 75 * time.Millisecond},
+		{name: "air remains instant", block: world.Air, tool: item.WoodenPickaxeToolID, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := server.miningDurationForBlockWithTool(tt.block, tt.tool)
+			if got != tt.want {
+				t.Fatalf("miningDurationForBlockWithTool(%v, %q) = %s, want %s", tt.block, tt.tool, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMiningDurationForBlockWithToolKeepsGlobalOverrideExact(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.miningCooldownOverride = true
+	server.miningDurations = map[world.BlockID]time.Duration{
+		world.Stone: 300 * time.Millisecond,
+	}
+
+	got := server.miningDurationForBlockWithTool(world.Stone, item.WoodenPickaxeToolID)
+	if got != 300*time.Millisecond {
+		t.Fatalf("miningDurationForBlockWithTool() with override = %s, want 300ms", got)
+	}
+}
+
+func TestHandleClientPacketDestroyUsesSelectedToolMiningDuration(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	server.miningDurations = map[world.BlockID]time.Duration{
+		world.Stone: 300 * time.Millisecond,
+	}
+	now := time.Unix(1000, 0)
+	server.now = func() time.Time { return now }
+
+	client := newClientSession(&recordingConn{})
+	recordReachableStoneDestroyPosition(client)
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+	})
+	client.stateMu.Lock()
+	client.selectedToolSlot = 1
+	client.stateMu.Unlock()
+
+	destroyPacket := func(x, y, z int32) *api.Packet {
+		return &api.Packet{
+			Payload: &api.Packet_BlockAction{
+				BlockAction: &api.BlockAction{
+					Action: api.BlockAction_DESTROY,
+					X:      x,
+					Y:      y,
+					Z:      z,
+				},
+			},
+		}
+	}
+
+	if err := server.handleClientPacketForSession(client, destroyPacket(1, 60, 1)); err != nil {
+		t.Fatalf("first handleClientPacketForSession() error = %v", err)
+	}
+	now = now.Add(150 * time.Millisecond)
+	if err := server.handleClientPacketForSession(client, destroyPacket(2, 60, 1)); err != nil {
+		t.Fatalf("second handleClientPacketForSession() error = %v", err)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 4 {
+		t.Fatalf("frames after tool-adjusted cooldown elapsed = %d, want two destroy chunks and snapshots", got)
+	}
+	snapshot := decodedPacket(t, frames[3]).GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("fourth frame inventory snapshot = nil")
+	}
+	if got := snapshot.GetSlots()[0].GetCount(); got != 2 {
+		t.Fatalf("stone count after tool-adjusted cooldown = %d, want 2", got)
 	}
 }
 

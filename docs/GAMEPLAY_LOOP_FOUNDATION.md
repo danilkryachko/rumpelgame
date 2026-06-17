@@ -30,6 +30,7 @@ Scope:
 - Keep the current creative five-slot hotbar behavior over existing placeable block IDs.
 - Show server-authoritative hotbar slot names, counts, and selected slot in the Godot HUD from `InventorySnapshot`.
 - Guard server-owned counted break-drop insertion for destroyed placeable blocks.
+- Guard server-owned item identity and a first selected tool slot for mining duration adjustment.
 - Guard inventory slot rules with Rust unit tests.
 - Guard server session inventory rules with Go unit tests and a network handler test.
 - Guard local-player inventory persistence with a live TCP server restart/reconnect smoke over an isolated RocksDB store.
@@ -37,7 +38,7 @@ Scope:
 
 Out of scope:
 
-- No crafting, item entity pickup packets, tools, durability, survival rules, new block IDs beyond inventory action/snapshot/player-id compatibility, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
+- No crafting, item entity pickup packets, tool durability, client-visible tool selection, survival rules beyond counted mining duration, new block IDs beyond inventory action/snapshot/player-id compatibility, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
 
 Assumptions:
 
@@ -118,15 +119,28 @@ The server now has a session-owned inventory foundation:
 - Counted break-drop insertion is guarded by a live server smoke that destroys a generated Stone block, increments the selected stack, and reloads the added count after restart.
 - Missing inventory entries reject placement before `World.SetBlockGlobal` and before chunk update broadcast.
 
+## Item Tool Foundation
+
+The server now has a first item/tool foundation checkpoint:
+
+- `server/pkg/item` maps the current placeable blocks to stable gameplay item IDs: `block:stone`, `block:dirt`, `block:grass`, `block:wood`, and `block:leaves`.
+- `server/pkg/item` maps the first tool IDs: `tool:hand`, `tool:wooden_pickaxe`, `tool:wooden_axe`, and `tool:wooden_shovel`.
+- New sessions start with `DefaultToolbelt()` and selected tool slot `0`, so the selected tool defaults to `tool:hand`.
+- Invalid selected tool slots and empty toolbelts fall back to `tool:hand`.
+- Wooden pickaxe is effective on Stone, wooden axe on Wood/Leaves, and wooden shovel on Dirt/Grass.
+- Item and tool IDs are server gameplay IDs only; they are not packet fields, RocksDB keys, chunk payload IDs, or worldgen inputs.
+
 ## Mining Rules Foundation
 
 - `RUMPELMC_SERVER_MINING_COOLDOWN_MS` configures the server mining cooldown in milliseconds.
 - Default creative sessions keep zero mining cooldown.
 - Counted/survival sessions use server-owned target-block mining durations unless the operator sets an explicit global value.
 - Connected-session `BlockAction_DESTROY` reads the target block and checks its duration after reach validation and before world mutation.
+- Connected-session destroy applies the selected server-side tool adjustment after choosing the target block's base duration.
+- `tool:hand`, unknown tools, ineffective tools, zero durations, and explicit global mining cooldown overrides keep the base duration unchanged.
 - Cooldown rejection emits no chunk update, no inventory mutation, no player inventory save, and no inventory snapshot.
 - The cooldown is recorded only after `World.ReplaceBlockGlobal` succeeds and the previous block was placeable.
-- This keeps mining-time authority on the server without adding protocol fields; tool tiers and durability remain separate gameplay work.
+- This keeps mining-time authority on the server without adding protocol fields; tool durability and client-visible tool selection remain separate gameplay work.
 
 ## Persistence Boundary
 
@@ -145,7 +159,7 @@ The gameplay foundation relies on the existing server boundary:
 
 Still needed before calling gameplay production-ready:
 
-- Tool tiers and tool durability beyond the current counted/survival block-duration cooldown.
+- Tool durability and client-visible tool selection.
 - Item entity pickup flow.
 - Stack transfer and crafting inventory actions.
 - Edit broadcast/fanout to other clients.
@@ -169,11 +183,12 @@ Use:
 
 ```sh
 sh scripts/player_inventory_reconnect_smoke.sh logs/player_inventory_reconnect_smoke_current
+sh scripts/item_tool_foundation_gate.sh logs/item_tool_foundation_current
 sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_current
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `inventory_hud=authoritative_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `mining_rules_status=cooldown_guarded`, `mining_cooldown=server_guarded`, `mining_block_durations=target_block_guarded`, `player_inventory_reconnect=live_server_guarded`, `player_inventory_reconnect_status=pass`, `player_inventory_reconnect_restarts>=1`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `inventory_hud=authoritative_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `mining_rules_status=cooldown_guarded`, `mining_cooldown=server_guarded`, `mining_block_durations=target_block_guarded`, `item_tool_foundation=server_guarded`, `item_identity=block_items_guarded`, `tool_catalog=wood_tools_guarded`, `first_tool_slot=hand_guarded`, `tool_mining=selected_tool_guarded`, `player_inventory_reconnect=live_server_guarded`, `player_inventory_reconnect_status=pass`, `player_inventory_reconnect_restarts>=1`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
 
 The gate checks that:
 
@@ -184,6 +199,7 @@ The gate checks that:
 - The server inventory foundation summary is present and clean.
 - The server inventory foundation summary includes counted break-drop live evidence.
 - The mining rules foundation summary is present and proves counted/survival server cooldown plus target-block duration enforcement without protocol drift.
+- The item tool foundation summary is present and proves server-owned item identity, first hand tool slot, wooden tool catalog, selected-tool mining adjustment, and no protocol/storage/worldgen drift.
 - The player inventory reconnect smoke summary is present and proves selected-slot persistence after a real server restart.
 - Server block edits still flow through `World.SetBlockGlobal` or `World.ReplaceBlockGlobal`.
 - `World.SetBlockGlobal` still calls `ChunkStore.SaveChunk`.
@@ -194,4 +210,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, counted break-drop insertion is guarded through a real server restart, counted/survival mining cooldown and target-block durations are guarded on the server, server-side placement rejects blocks that intersect the player body, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, counted break-drop insertion is guarded through a real server restart, counted/survival mining cooldown and target-block durations are guarded on the server, the first server-owned item/tool catalog is guarded with selected-tool mining adjustment, server-side placement rejects blocks that intersect the player body, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.

@@ -20,7 +20,11 @@ const VISUAL_SMOKE_DISABLE_PLAYER_INPUT_ENV: &str = "RUMPELMC_VISUAL_SMOKE_DISAB
 const PLAYER_HOTBAR_SLOTS: usize = 5;
 const CREATIVE_HOTBAR_STACK_COUNT: u32 = 999;
 const PLAYER_CHARACTER_VISUAL_NAME: &str = "PlayerVoxelCharacter";
+const PLAYER_HEIGHT_METERS: f32 = 1.90;
+const PLAYER_EYE_HEIGHT_METERS: f32 = 1.80;
+const PLAYER_COLLISION_RADIUS: f32 = 0.4;
 const THIRD_PERSON_CAMERA_DISTANCE: f32 = 4.0;
+const THIRD_PERSON_CAMERA_HEIGHT: f32 = PLAYER_EYE_HEIGHT_METERS + 0.4;
 const THIRD_PERSON_BLOCK_REACH_PADDING: f32 = 0.5;
 const CHARACTER_RUN_SPEED_THRESHOLD: f32 = 0.25;
 const CHARACTER_JUMP_SPEED_THRESHOLD: f32 = 0.5;
@@ -30,23 +34,24 @@ const CHARACTER_RUN_ANIMATION_RATE: f32 = 9.0;
 const CHARACTER_JUMP_ANIMATION_RATE: f32 = 4.0;
 const CHARACTER_ROOT_YAW_DEGREES: f32 = 0.0;
 const CHARACTER_VOXEL_SCALE: f32 = 0.065;
-const CHARACTER_HEAD_Y: f32 = 1.15;
-const CHARACTER_CHEST_Y: f32 = 0.78;
-const CHARACTER_BELT_Y: f32 = 0.63;
-const CHARACTER_PANTS_Y: f32 = 0.43;
-const CHARACTER_SHOULDER_Y: f32 = 1.02;
-const CHARACTER_HIP_Y: f32 = 0.38;
-const CHARACTER_LIMB_X: f32 = 0.38;
+const CHARACTER_HEAD_VOXEL_HEIGHT: f32 = 8.0;
+const CHARACTER_HEAD_Y: f32 =
+    PLAYER_HEIGHT_METERS - CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE;
+const CHARACTER_CHEST_Y: f32 = 0.96;
+const CHARACTER_BELT_Y: f32 = 0.78;
+const CHARACTER_PANTS_Y: f32 = 0.56;
+const CHARACTER_SHOULDER_Y: f32 = 1.23;
+const CHARACTER_HIP_Y: f32 = 0.42;
+const CHARACTER_LIMB_X: f32 = 0.36;
 const CHARACTER_LEG_X: f32 = 0.17;
+const CHARACTER_FACE_DETAIL_Y: f32 = PLAYER_EYE_HEIGHT_METERS - CHARACTER_HEAD_Y;
+const CHARACTER_FACE_DETAIL_Z: f32 = -0.30;
 const VELOREN_CHEST_PATH: &str = "res://assets/veloren/figure/body/chest_male.vox";
 const VELOREN_BELT_PATH: &str = "res://assets/veloren/figure/body/belt_male.vox";
 const VELOREN_PANTS_PATH: &str = "res://assets/veloren/figure/body/pants_male.vox";
 const VELOREN_HAND_PATH: &str = "res://assets/veloren/figure/body/hand.vox";
 const VELOREN_FOOT_PATH: &str = "res://assets/veloren/figure/body/foot.vox";
 const VELOREN_HEAD_PATH: &str = "res://assets/veloren/figure/head/human/male.vox";
-const VELOREN_EYES_PATH: &str = "res://assets/veloren/figure/eyes/general/male_default-0.vox";
-const VELOREN_HAIR_PATH: &str = "res://assets/veloren/figure/hair/human/male-16.vox";
-const VELOREN_BEARD_PATH: &str = "res://assets/veloren/figure/beard/human/human-4.vox";
 
 struct BlockHit {
     block: (i32, i32, i32),
@@ -130,10 +135,10 @@ impl ICharacterBody3D for Player {
         // Добавляем коллизию игроку
         let mut collision = godot::classes::CollisionShape3D::new_alloc();
         let mut shape = godot::classes::CapsuleShape3D::new_gd();
-        shape.set_radius(0.4);
-        shape.set_height(1.8);
+        shape.set_radius(PLAYER_COLLISION_RADIUS);
+        shape.set_height(PLAYER_HEIGHT_METERS);
         collision.set_shape(&shape.upcast::<godot::classes::Shape3D>());
-        collision.set_position(Vector3::new(0.0, 0.9, 0.0));
+        collision.set_position(Vector3::new(0.0, PLAYER_HEIGHT_METERS * 0.5, 0.0));
         self.base_mut()
             .add_child(&collision.upcast::<godot::classes::Node>());
 
@@ -635,11 +640,15 @@ fn hotbar_key_for_slot(slot: usize) -> Option<Key> {
 }
 
 fn first_person_camera_position() -> Vector3 {
-    Vector3::new(0.0, 1.6, 0.0)
+    Vector3::new(0.0, PLAYER_EYE_HEIGHT_METERS, 0.0)
 }
 
 fn third_person_camera_position() -> Vector3 {
-    Vector3::new(0.0, 2.2, THIRD_PERSON_CAMERA_DISTANCE)
+    Vector3::new(
+        0.0,
+        THIRD_PERSON_CAMERA_HEIGHT,
+        THIRD_PERSON_CAMERA_DISTANCE,
+    )
 }
 
 fn block_raycast_target(third_person_camera: bool) -> Vector3 {
@@ -688,32 +697,19 @@ fn create_voxel_character_visual() -> VoxelCharacterVisual {
         Vector3::ZERO,
         Color::from_rgb(0.78, 0.55, 0.38),
     );
-    add_veloren_character_detail(
+    add_box_character_detail(
         &mut head,
-        "Hair",
-        VELOREN_HAIR_PATH,
-        Vector3::new(0.0, -0.02, -0.04),
-        Vector3::new(0.78, 0.60, 0.66),
-        Vector3::ZERO,
-        Color::from_rgb(0.14, 0.09, 0.06),
+        "EyeL",
+        Vector3::new(-0.16, CHARACTER_FACE_DETAIL_Y, CHARACTER_FACE_DETAIL_Z),
+        Vector3::new(0.08, 0.045, 0.025),
+        Color::from_rgb(0.08, 0.12, 0.18),
     );
-    add_veloren_character_detail(
+    add_box_character_detail(
         &mut head,
-        "Eyes",
-        VELOREN_EYES_PATH,
-        Vector3::new(0.0, 0.22, -0.30),
-        Vector3::new(0.38, 0.08, 0.05),
-        Vector3::ZERO,
-        Color::from_rgb(0.10, 0.18, 0.28),
-    );
-    add_veloren_character_detail(
-        &mut head,
-        "Beard",
-        VELOREN_BEARD_PATH,
-        Vector3::new(0.0, 0.06, -0.30),
-        Vector3::new(0.36, 0.08, 0.05),
-        Vector3::ZERO,
-        Color::from_rgb(0.11, 0.07, 0.04),
+        "EyeR",
+        Vector3::new(0.16, CHARACTER_FACE_DETAIL_Y, CHARACTER_FACE_DETAIL_Z),
+        Vector3::new(0.08, 0.045, 0.025),
+        Color::from_rgb(0.08, 0.12, 0.18),
     );
     let chest = create_veloren_character_part(
         "Chest",
@@ -837,25 +833,23 @@ fn create_veloren_character_part(
     pivot
 }
 
-fn add_veloren_character_detail(
+fn add_box_character_detail(
     parent: &mut Gd<Node3D>,
     name: &str,
-    vox_path: &str,
-    mesh_offset: Vector3,
-    fallback_mesh_size: Vector3,
-    fallback_mesh_offset: Vector3,
-    fallback_color: Color,
+    position: Vector3,
+    size: Vector3,
+    color: Color,
 ) {
-    let detail = create_veloren_character_part(
-        name,
-        vox_path,
-        mesh_offset,
-        Vector3::ZERO,
-        fallback_mesh_size,
-        fallback_mesh_offset,
-        fallback_color,
-    );
-    parent.add_child(&detail.upcast::<godot::classes::Node>());
+    let mut mesh_node = MeshInstance3D::new_alloc();
+    mesh_node.set_name(&StringName::from(name));
+    mesh_node.set_position(position);
+
+    let mut mesh = BoxMesh::new_gd();
+    mesh.set_size(size);
+    mesh_node.set_mesh(&mesh.upcast::<godot::classes::Mesh>());
+    mesh_node.set_material_override(&create_voxel_character_material(color));
+
+    parent.add_child(&mesh_node.upcast::<godot::classes::Node>());
 }
 
 fn create_voxel_character_material(color: Color) -> Gd<godot::classes::Material> {
@@ -1180,11 +1174,27 @@ mod tests {
 
     #[test]
     fn camera_positions_are_mode_specific() {
-        assert_eq!(first_person_camera_position(), Vector3::new(0.0, 1.6, 0.0));
+        assert_eq!(
+            first_person_camera_position(),
+            Vector3::new(0.0, PLAYER_EYE_HEIGHT_METERS, 0.0)
+        );
         assert_eq!(
             third_person_camera_position(),
-            Vector3::new(0.0, 2.2, THIRD_PERSON_CAMERA_DISTANCE)
+            Vector3::new(
+                0.0,
+                THIRD_PERSON_CAMERA_HEIGHT,
+                THIRD_PERSON_CAMERA_DISTANCE
+            )
         );
+    }
+
+    #[test]
+    fn character_visual_scale_tracks_player_height_and_eye_height() {
+        let head_top_y = CHARACTER_HEAD_Y + CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE;
+        let eye_center_y = CHARACTER_HEAD_Y + CHARACTER_FACE_DETAIL_Y;
+
+        assert!((head_top_y - PLAYER_HEIGHT_METERS).abs() < 0.001);
+        assert!((eye_center_y - PLAYER_EYE_HEIGHT_METERS).abs() < 0.001);
     }
 
     #[test]

@@ -14,6 +14,7 @@ Scope:
 - Add a server mining cooldown configuration boundary.
 - Keep creative sessions at zero mining cooldown by default.
 - Give counted/survival sessions target-block mining durations.
+- Apply the first server-side selected-tool duration adjustment through the item/tool foundation.
 - Reject destroy actions that arrive before the session cooldown has elapsed.
 - Record cooldown only after a successful destroy of a placeable previous block.
 - Guard cooldown parsing and runtime behavior with Go network tests.
@@ -21,7 +22,7 @@ Scope:
 
 Out of scope:
 
-- No new packets, item entities, client mining animation, tool tiers, tool durability, block-specific mining durations, storage migration, chunk serialization changes, world generation changes, Godot scene/resource/import changes, or renderer changes.
+- No new packets, item entities, client mining animation, client-visible tool selection, tool durability, storage migration, chunk serialization changes, world generation changes, Godot scene/resource/import changes, or renderer changes.
 
 ## Current Contract
 
@@ -31,6 +32,9 @@ Out of scope:
 - Explicit `RUMPELMC_SERVER_MINING_COOLDOWN_MS=0` disables the cooldown for all placeable blocks in operator-controlled checks.
 - Explicit valid `RUMPELMC_SERVER_MINING_COOLDOWN_MS=<n>` applies the same override duration to all placeable blocks.
 - Invalid or negative cooldown values fall back to the mode's target-block defaults.
+- Sessions default to selected tool `tool:hand`, which keeps target-block durations unchanged.
+- If no explicit global override is active, selected effective wooden tools can reduce the target block's base duration through the item/tool foundation.
+- Explicit valid `RUMPELMC_SERVER_MINING_COOLDOWN_MS=<n>` values remain exact and are not reduced by tools.
 - Cooldown is checked after block-action reach validation and before world mutation.
 - The server reads the current target block with `World.BlockAtGlobal` before the destroy mutation, then chooses the mining duration from that block ID.
 - The source duration for known placeable blocks is `world.BlockDefinition.MiningDurationMS`; network code applies it as milliseconds.
@@ -46,6 +50,7 @@ Out of scope:
 - Do not change RocksDB chunk keys, chunk payload bytes, player inventory records, chunk serialization, or world generation.
 - Keep default creative sessions behavior-compatible with zero server mining cooldown.
 - Keep counted/survival cooldown server-authoritative; client-side timing may become UI feedback later but cannot be the authority.
+- Keep item and tool IDs server-side until a separate protocol compatibility task defines client-visible equipment state.
 
 ## Gate
 
@@ -68,6 +73,12 @@ The gate checks that:
 - Protocol schema/generated files are unchanged.
 - Focused Go world and network tests pass.
 
+The item/tool extension of this mining contract is guarded separately by:
+
+```sh
+sh scripts/item_tool_foundation_gate.sh logs/item_tool_foundation_current
+```
+
 ## Current Status
 
-This checkpoint is complete when the gate reports `mining_rules_status=cooldown_guarded` and `mining_block_durations=target_block_guarded`. It is the first server-owned mining-time rule: counted/survival sessions cannot instantly mine multiple placeable blocks, target block IDs choose the required interval, and default creative sessions remain unrestricted. Tool tiers, tool durability, item entities, pickup behavior, and client mining feedback remain separate gameplay checkpoints.
+This checkpoint is complete when the gate reports `mining_rules_status=cooldown_guarded` and `mining_block_durations=target_block_guarded`. It is the first server-owned mining-time rule: counted/survival sessions cannot instantly mine multiple placeable blocks, target block IDs choose the required interval, default creative sessions remain unrestricted, and the item/tool foundation owns the first selected-tool duration adjustment. Tool durability, client-visible tool selection, item entities, pickup behavior, and client mining feedback remain separate gameplay checkpoints.

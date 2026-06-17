@@ -21,6 +21,7 @@ CLIENT_STATE_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_CLIENT_STATE_SUMMARY:-"$ROOT_DIR/
 BLOCK_EDIT_PERSISTENCE_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_BLOCK_EDIT_PERSISTENCE_SUMMARY:-"$ROOT_DIR/logs/block_edit_persistence_current/block-edit-persistence-summary.txt"}"
 SERVER_INVENTORY_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_SERVER_INVENTORY_SUMMARY:-"$ROOT_DIR/logs/server_inventory_foundation_current/server-inventory-foundation-summary.txt"}"
 MINING_RULES_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_MINING_RULES_SUMMARY:-"$ROOT_DIR/logs/mining_rules_foundation_current/mining-rules-foundation-summary.txt"}"
+ITEM_TOOL_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_ITEM_TOOL_SUMMARY:-"$ROOT_DIR/logs/item_tool_foundation_current/item-tool-foundation-summary.txt"}"
 PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT="${RUMPELMC_GAMEPLAY_LOOP_PLAYER_INVENTORY_RECONNECT_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/player_inventory_reconnect_smoke.sh"}"
 PLAYER_INVENTORY_RECONNECT_SUMMARY="${RUMPELMC_GAMEPLAY_LOOP_PLAYER_INVENTORY_RECONNECT_SUMMARY:-"$ROOT_DIR/logs/player_inventory_reconnect_smoke_current/player-inventory-reconnect-smoke-summary.txt"}"
 RUN_RUST_TESTS="${RUMPELMC_GAMEPLAY_LOOP_RUN_RUST_TESTS:-1}"
@@ -70,6 +71,7 @@ for token in \
   'Deferred Work' \
   'Compatibility Rules' \
   'Server Inventory Foundation' \
+  'Item Tool Foundation' \
   'Block 41' \
   'Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload' \
   'Keep `Packet.inventory_action = 5` as the client-to-server selected-slot inventory action payload'; do
@@ -160,6 +162,16 @@ mining_block_durations="$(field_metric mining_block_durations "$MINING_RULES_SUM
 mining_rules_creative_default="$(field_metric creative_default "$MINING_RULES_SUMMARY")"
 mining_rules_counted_cooldown="$(field_metric counted_mining_cooldown "$MINING_RULES_SUMMARY")"
 mining_rules_protocol_change="$(field_metric active_protocol_change "$MINING_RULES_SUMMARY")"
+test -s "$ITEM_TOOL_SUMMARY" || fail "missing required input $ITEM_TOOL_SUMMARY"
+item_tool_status="$(field_metric status "$ITEM_TOOL_SUMMARY")"
+item_tool_guard="$(field_metric item_tool_foundation "$ITEM_TOOL_SUMMARY")"
+item_tool_identity="$(field_metric item_identity "$ITEM_TOOL_SUMMARY")"
+item_tool_catalog="$(field_metric tool_catalog "$ITEM_TOOL_SUMMARY")"
+item_tool_first_slot="$(field_metric first_tool_slot "$ITEM_TOOL_SUMMARY")"
+item_tool_mining="$(field_metric tool_mining "$ITEM_TOOL_SUMMARY")"
+item_tool_protocol_change="$(field_metric active_protocol_change "$ITEM_TOOL_SUMMARY")"
+item_tool_storage_change="$(field_metric active_storage_change "$ITEM_TOOL_SUMMARY")"
+item_tool_worldgen_change="$(field_metric active_worldgen_change "$ITEM_TOOL_SUMMARY")"
 test -s "$PLAYER_INVENTORY_RECONNECT_SUMMARY" || fail "missing required input $PLAYER_INVENTORY_RECONNECT_SUMMARY"
 player_inventory_reconnect_status="$(field_metric status "$PLAYER_INVENTORY_RECONNECT_SUMMARY")"
 player_inventory_reconnect="$(field_metric player_inventory_reconnect "$PLAYER_INVENTORY_RECONNECT_SUMMARY")"
@@ -181,7 +193,7 @@ fi
 
 server_tests="skipped"
 if [ "$RUN_GO_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/server" && go test ./pkg/world ./pkg/network ./pkg/storage > "$OUT_DIR/go-test-gameplay-foundation.txt" 2>&1); then
+  if (cd "$ROOT_DIR/server" && go test ./pkg/world ./pkg/item ./pkg/network ./pkg/storage > "$OUT_DIR/go-test-gameplay-foundation.txt" 2>&1); then
     server_tests="pass"
   else
     cat "$OUT_DIR/go-test-gameplay-foundation.txt" >&2 || true
@@ -213,6 +225,15 @@ awk \
   -v mining_rules_creative_default="${mining_rules_creative_default:-missing}" \
   -v mining_rules_counted_cooldown="${mining_rules_counted_cooldown:-missing}" \
   -v mining_rules_protocol_change="${mining_rules_protocol_change:-1}" \
+  -v item_tool_status="${item_tool_status:-missing}" \
+  -v item_tool_guard="${item_tool_guard:-missing}" \
+  -v item_tool_identity="${item_tool_identity:-missing}" \
+  -v item_tool_catalog="${item_tool_catalog:-missing}" \
+  -v item_tool_first_slot="${item_tool_first_slot:-missing}" \
+  -v item_tool_mining="${item_tool_mining:-missing}" \
+  -v item_tool_protocol_change="${item_tool_protocol_change:-1}" \
+  -v item_tool_storage_change="${item_tool_storage_change:-1}" \
+  -v item_tool_worldgen_change="${item_tool_worldgen_change:-1}" \
   -v player_inventory_reconnect_status="${player_inventory_reconnect_status:-missing}" \
   -v player_inventory_reconnect="${player_inventory_reconnect:-missing}" \
   -v player_inventory_select_status="${player_inventory_select_status:-missing}" \
@@ -227,6 +248,7 @@ awk \
   -v block_edit_persistence_summary="$BLOCK_EDIT_PERSISTENCE_SUMMARY" \
   -v server_inventory_summary="$SERVER_INVENTORY_SUMMARY" \
   -v mining_rules_summary="$MINING_RULES_SUMMARY" \
+  -v item_tool_summary="$ITEM_TOOL_SUMMARY" \
   -v player_inventory_reconnect_summary="$PLAYER_INVENTORY_RECONNECT_SUMMARY" '
   BEGIN {
     status = "pass"
@@ -257,6 +279,15 @@ awk \
       mining_rules_creative_default == "unchanged" &&
       mining_rules_counted_cooldown == "server_guarded" &&
       mining_rules_protocol_change + 0 == 0
+    item_tool_ok = item_tool_status == "pass" &&
+      item_tool_guard == "server_guarded" &&
+      item_tool_identity == "block_items_guarded" &&
+      item_tool_catalog == "wood_tools_guarded" &&
+      item_tool_first_slot == "hand_guarded" &&
+      item_tool_mining == "selected_tool_guarded" &&
+      item_tool_protocol_change + 0 == 0 &&
+      item_tool_storage_change + 0 == 0 &&
+      item_tool_worldgen_change + 0 == 0
     player_inventory_reconnect_ok = player_inventory_reconnect_status == "pass" &&
       player_inventory_reconnect == "live_server_guarded" &&
       player_inventory_select_status == "pass" &&
@@ -291,12 +322,15 @@ awk \
     } else if (!mining_rules_ok) {
       status = "fail"
       reason = "mining_rules_gate_not_clean"
+    } else if (!item_tool_ok) {
+      status = "fail"
+      reason = "item_tool_gate_not_clean"
     } else if (!player_inventory_reconnect_ok) {
       status = "fail"
       reason = "player_inventory_reconnect_not_clean"
     }
 
-    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s inventory_hud=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s mining_rules_status=%s mining_cooldown=%s mining_block_durations=%s player_inventory_reconnect=%s player_inventory_reconnect_status=%s player_inventory_reconnect_restarts=%d server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s mining_rules_summary=%s player_inventory_reconnect_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, inventory_hud, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, mining_rules_guard, mining_rules_counted_cooldown, mining_block_durations, player_inventory_reconnect, player_inventory_reconnect_status, player_inventory_restarts, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary, mining_rules_summary, player_inventory_reconnect_summary)
+    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s inventory_hud=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s mining_rules_status=%s mining_cooldown=%s mining_block_durations=%s item_tool_foundation=%s item_identity=%s tool_catalog=%s first_tool_slot=%s tool_mining=%s player_inventory_reconnect=%s player_inventory_reconnect_status=%s player_inventory_reconnect_restarts=%d server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s mining_rules_summary=%s item_tool_summary=%s player_inventory_reconnect_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, inventory_hud, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, mining_rules_guard, mining_rules_counted_cooldown, mining_block_durations, item_tool_guard, item_tool_identity, item_tool_catalog, item_tool_first_slot, item_tool_mining, player_inventory_reconnect, player_inventory_reconnect_status, player_inventory_restarts, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary, mining_rules_summary, item_tool_summary, player_inventory_reconnect_summary)
     if (status != "pass") {
       exit 1
     }

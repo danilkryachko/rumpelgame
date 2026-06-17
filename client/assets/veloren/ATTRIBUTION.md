@@ -19,12 +19,10 @@ Copied files:
 - `figure/body/hand.vox`
 - `figure/body/foot.vox`
 - `figure/head/human/male.vox`
-- `figure/eyes/general/male_default-0.vox`
-- `figure/hair/human/male-16.vox`
-- `figure/beard/human/human-4.vox`
 
 Local integration notes:
 
-- Files are loaded directly as MagicaVoxel `.vox` assets by the Rust GDExtension.
+- Files are loaded directly as MagicaVoxel `.vox` body-part assets by the Rust GDExtension.
+- Compact face details are local `BoxMesh` children so they stay aligned to the guarded player eye height.
 - The player skeleton and idle/run/jump motion remain local procedural code.
 - No Veloren networking, ECS, gameplay, or renderer code is copied.

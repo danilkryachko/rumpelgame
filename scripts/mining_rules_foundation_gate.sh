@@ -47,8 +47,9 @@ done
 for token in \
   'const miningCooldownEnv = "RUMPELMC_SERVER_MINING_COOLDOWN_MS"' \
   'const defaultCountedMiningCooldown' \
-  'miningCooldown  time.Duration' \
-  'miningDurations map[world.BlockID]time.Duration' \
+  'miningCooldown         time.Duration' \
+  'miningCooldownOverride bool' \
+  'miningDurations        map[world.BlockID]time.Duration' \
   'lastDestroyAt         time.Time' \
   'BlockAtGlobal' \
   'configuredMiningCooldown' \
@@ -57,6 +58,7 @@ for token in \
   'defaultMiningDurationsForMode' \
   'definition.MiningDurationMS' \
   'miningDurationForBlock' \
+  'miningDurationForBlockWithTool' \
   'destroyCooldownReady' \
   'recordSuccessfulDestroy' \
   'Ignored mining cooldown block action'; do

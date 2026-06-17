@@ -42,6 +42,8 @@ for token in \
   'Attach a visible modular voxel character only in third-person mode' \
   'Veloren-derived MagicaVoxel `.vox` body parts' \
   'Drive procedural idle/run/jump poses' \
+  '1.90m' \
+  '1.80m' \
   'PlayerVoxelCharacter' \
   'GPL-3.0-or-later'; do
   require_token "$DESIGN_DOC" "$token"
@@ -49,14 +51,17 @@ done
 
 for token in \
   'const PLAYER_CHARACTER_VISUAL_NAME: &str = "PlayerVoxelCharacter"' \
+  'const PLAYER_HEIGHT_METERS: f32 = 1.90' \
+  'const PLAYER_EYE_HEIGHT_METERS: f32 = 1.80' \
   'const CHARACTER_ROOT_YAW_DEGREES: f32 = 0.0' \
   'const VELOREN_CHEST_PATH' \
   'const VELOREN_HEAD_PATH' \
-  'const VELOREN_HAIR_PATH' \
-  'const VELOREN_EYES_PATH: &str = "res://assets/veloren/figure/eyes/general/male_default-0.vox"' \
+  'const CHARACTER_HEAD_VOXEL_HEIGHT: f32 = 8.0' \
+  'const CHARACTER_FACE_DETAIL_Y: f32 = PLAYER_EYE_HEIGHT_METERS - CHARACTER_HEAD_Y' \
   'struct VoxelCharacterVisual' \
   'character_visual: Option<VoxelCharacterVisual>' \
   'fn create_voxel_character_visual' \
+  'fn add_box_character_detail' \
   'crate::vox::load_vox_mesh_from_res' \
   'BoxMesh::new_gd()' \
   'ALBEDO_FROM_VERTEX_COLOR' \
@@ -71,6 +76,7 @@ for token in \
   'third_person_camera_position()' \
   'block_raycast_target(self.third_person_camera)' \
   'voxel_character_animation_time_wraps_and_ignores_invalid_delta' \
+  'character_visual_scale_tracks_player_height_and_eye_height' \
   'voxel_character_visual_name_is_stable_for_godot_smoke'; do
   require_token "$PLAYER_SOURCE" "$token"
 done
@@ -95,8 +101,7 @@ for token in \
   '39f63fc1919fedd0782bca48fdbff0c23a9a6ae5' \
   'GNU General Public License v3.0 or later' \
   'figure/body/chest_male.vox' \
-  'figure/head/human/male.vox' \
-  'figure/eyes/general/male_default-0.vox'; do
+  'figure/head/human/male.vox'; do
   require_token "$ATTRIBUTION_PATH" "$token"
 done
 
@@ -106,10 +111,7 @@ for asset in \
   "$ASSET_ROOT/figure/body/pants_male.vox" \
   "$ASSET_ROOT/figure/body/hand.vox" \
   "$ASSET_ROOT/figure/body/foot.vox" \
-  "$ASSET_ROOT/figure/head/human/male.vox" \
-  "$ASSET_ROOT/figure/eyes/general/male_default-0.vox" \
-  "$ASSET_ROOT/figure/hair/human/male-16.vox" \
-  "$ASSET_ROOT/figure/beard/human/human-4.vox"; do
+  "$ASSET_ROOT/figure/head/human/male.vox"; do
   test -s "$asset" || fail "missing Veloren character asset $asset"
 done
 
