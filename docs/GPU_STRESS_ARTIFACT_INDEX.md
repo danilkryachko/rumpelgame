@@ -32,6 +32,7 @@ The current required GPU core rows are:
 - edit-burst budget gate
 - edit visual parity gate
 - world interaction checkpoint
+- macOS Metal capture pack
 - streaming priority audit
 - streaming scheduler prototype preflight
 - streaming scheduler workload matrix
@@ -73,7 +74,7 @@ Fresh local evidence:
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt`
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index.txt`
 
-The current index passed with `39` rows, `29` required rows, `29` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
+The current index passed with `40` rows, `30` required rows, `30` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
 
 Current normalized maxima:
 
@@ -91,6 +92,7 @@ Current normalized maxima:
 - Edit-burst budget gate: `source_count=6`, `pass_sources=6`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max collision refresh rebuilds `132`, max compact shadow proxy `808`, max proxy refresh reuse `68`, `gpu_upload_fail=0`, and `ground_misses=0`
 - Edit visual parity gate: `case_count=8`, `pass_cases=8`, `marker_count=16`, max average-luma delta `0.0000`, max terrain-luma-range delta `0.0000`, max terrain sample/color/chroma deltas `0`, max partial dirty edge-neighbor subchunks `8`, max partial dirty saved subchunks `2`, `gpu_upload_fail=0`, and `ground_misses=0`
 - World interaction checkpoint: `source_count=8`, `pass_sources=8`, `checkpoint_status=local_complete_external_pending`, `local_world_interaction_status=pass`, `rollout_status=defer_defaults`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max compact shadow proxy `808`, max visual deltas `0.0000/0.0000/0/0`, max upload count/KiB per frame `1/2.000`, `gpu_upload_fail=0`, and `ground_misses=0`
+- macOS Metal capture pack: `capture_pack_status=pending_external_profiler`, `macos_metal_capture_status=pending_external_profiler`, `macos_metal_capture_rows=4`, `captured_rows=0`, `missing_rows=4`, `external_profile_status=pending_external_profiler`, and `default_runtime_change_allowed=0`
 - Streaming scheduler prototype: `prototype_only`
 - Streaming scheduler workload matrix: `matrix_harness_status=partial`, `candidate_scheduler_status=defer_matrix_harness_unstable`, `scheduler_change_allowed=0`
 - Streaming scheduler tie probe: `runtime_signal=312`, `candidate_scheduler_status=stable_tie_probe_external_profiler_required`, `scheduler_change_allowed=0`
@@ -126,6 +128,7 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU edit-burst budget summary and case rows when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU edit visual parity summary and case rows when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU world interaction checkpoint summary and source rows when present.
+- `scripts/gpu_terrain_report.sh` surfaces the selected GPU macOS Metal capture pack summary, manifest, and checklist when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming priority audit summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler prototype summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler workload matrix summary and case rows when present.
@@ -142,13 +145,14 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 - `scripts/test_strategy_gate.sh` requires the edit-burst budget summary before the index.
 - `scripts/test_strategy_gate.sh` requires the edit visual parity summary before the index.
 - `scripts/test_strategy_gate.sh` requires the world interaction checkpoint summary before the index.
+- `scripts/test_strategy_gate.sh` requires the macOS Metal capture pack summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming priority audit summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler prototype summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler workload matrix summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler tie probe summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler decision checkpoint summary before the index.
 - `scripts/test_strategy_gate.sh` requires the buffer residency budget summary before the index.
-- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, repeated edit benchmark, border edit benchmark, partial dirty edge matrix, collision refresh cost audit, shadow proxy refresh cost audit, edit-burst budget gate, edit visual parity gate, world interaction checkpoint, streaming priority audit, streaming scheduler prototype, streaming scheduler workload matrix, streaming scheduler decision checkpoint, upload-failure fallback, and buffer residency budget visible as required rows.
+- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, repeated edit benchmark, border edit benchmark, partial dirty edge matrix, collision refresh cost audit, shadow proxy refresh cost audit, edit-burst budget gate, edit visual parity gate, world interaction checkpoint, macOS Metal capture pack, streaming priority audit, streaming scheduler prototype, streaming scheduler workload matrix, streaming scheduler decision checkpoint, upload-failure fallback, and buffer residency budget visible as required rows.
 
 ## External Context
 

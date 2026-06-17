@@ -270,7 +270,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 
 ### Weeks 71-80: Cross-Platform And Quality Guards
 
-71. Refresh macOS Metal capture evidence.
+71. Done 2026-06-17: added `scripts/gpu_macos_metal_capture_pack.sh` and `docs/GPU_MACOS_METAL_CAPTURE_PACK.md` to refresh macOS Metal capture handoff evidence from the local world-interaction checkpoint, emitting Xcode Metal frame capture, Metal System Trace, memory/resource, and shader-cost rows while keeping the pack pending external profiler evidence and default runtime changes blocked.
 72. Prepare Windows RenderDoc or PIX capture flow.
 73. Add a Linux/Vulkan smoke path if the backend is available.
 74. Compare marker parity across backends.

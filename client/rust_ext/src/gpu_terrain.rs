@@ -114,6 +114,7 @@ impl PackedFace {
         Self::with_extent_and_flags(x, y, z, face, tile, block_id, extent, 0)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn with_extent_and_flags(
         x: u32,
         y: u32,

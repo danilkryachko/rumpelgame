@@ -2321,17 +2321,12 @@ fn pop_next_streaming_queue_key(
     queue.remove(selected_idx).map(|key| (key, stats))
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum ClientStreamingSchedulerMode {
+    #[default]
     Nearest,
     DirectionalTiePreview,
     DirectionalTie,
-}
-
-impl Default for ClientStreamingSchedulerMode {
-    fn default() -> Self {
-        Self::Nearest
-    }
 }
 
 impl ClientStreamingSchedulerMode {
@@ -5070,6 +5065,7 @@ impl TransparentCostMetrics {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn gpu_terrain_transparent_cost_metrics(
     active: bool,
     cutout_requested: bool,

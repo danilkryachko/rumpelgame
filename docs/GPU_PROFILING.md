@@ -322,6 +322,14 @@ sh scripts/gpu_world_interaction_checkpoint.sh logs/gpu_world_interaction_checkp
 
 The gate writes `gpu-world-interaction-checkpoint-summary.txt` and `gpu-world-interaction-checkpoint-sources.txt`; see `docs/GPU_WORLD_INTERACTION_CHECKPOINT.md`.
 
+Use the macOS Metal capture pack after refreshing the world interaction checkpoint or before handing macOS evidence to Xcode/Metal profiling. It requires a clean local checkpoint, emits Xcode Metal frame capture, Metal System Trace, memory/resource, and shader-cost rows, and keeps the generated pack as pending handoff state rather than profiler evidence:
+
+```sh
+sh scripts/gpu_macos_metal_capture_pack.sh logs/gpu_macos_metal_capture_pack_current
+```
+
+The gate writes `gpu-macos-metal-capture-pack-summary.txt`, `gpu-macos-metal-capture-manifest.txt`, and `gpu-macos-metal-capture-checklist.txt`; see `docs/GPU_MACOS_METAL_CAPTURE_PACK.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh
