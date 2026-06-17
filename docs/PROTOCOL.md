@@ -20,7 +20,7 @@
 - Preserve wire compatibility unless the task explicitly changes it.
 - Do not reuse or repurpose existing packet fields without documenting the compatibility impact.
 - Add or update encode/decode, round-trip, or integration tests when changing protocol behavior.
-- Add new `Packet.payload` variants with new field numbers; never reuse field numbers `1`, `2`, `3`, or `4`.
+- Add new `Packet.payload` variants with new field numbers; never reuse field numbers `1` through `7`.
 - Add new fields to existing messages with new field numbers; do not change the type, meaning, or encoding of existing fields.
 
 ## Wire Format
@@ -40,7 +40,9 @@
 - `Packet.block_action = 3`: client-to-server `BlockAction`.
 - `Packet.inventory_snapshot = 4`: server-to-client `InventorySnapshot`.
 - `Packet.inventory_action = 5`: client-to-server `InventoryAction`.
-- Packets with no active payload, nil `ClientPosition`/`BlockAction`/`InventoryAction` bodies, or an unsupported payload shape are ignored by current handlers and must not emit chunk updates.
+- `Packet.item_entities = 6`: server-to-client `ItemEntitySnapshot`.
+- `Packet.item_pickup = 7`: client-to-server `ItemPickupAction`.
+- Packets with no active payload, nil `ClientPosition`/`BlockAction`/`InventoryAction`/`ItemPickupAction` bodies, or an unsupported payload shape are ignored by current handlers and must not emit chunk updates.
 
 ## Client Position
 
@@ -85,9 +87,22 @@
 - Server session toolbelt remains authoritative for selected-tool mining behavior.
 - When a valid `ClientPosition.player_id` is present and a player inventory store is configured, the server loads and saves inventory slots plus selected block slot under that player identity.
 - The selected tool slot is current session state in this checkpoint; it is echoed through `InventorySnapshot.selected_tool_slot` but does not change the RocksDB player-inventory record format.
-- New inventory packet payloads must use new `Packet.payload` tags greater than `5`.
+- Destroyed placeable blocks now enter inventory through the item entity pickup flow instead of direct destroy-to-inventory insertion.
+- New inventory packet payloads must use new `Packet.payload` tags greater than `7`.
 - New `BlockAction` fields must use field numbers greater than `5`.
 - Run `scripts/inventory_protocol_compatibility_gate.sh` before finishing inventory work that claims protocol compatibility.
+
+## Item Entity Pickup
+
+- `ItemEntity.entity_id = 1` is the server-authoritative runtime entity id.
+- `ItemEntity.item_id = 2` carries the server gameplay item id such as `block:stone`.
+- `ItemEntity.count = 3` carries the stack count represented by the entity.
+- `ItemEntity.x = 4`, `y = 5`, and `z = 6` carry the item entity world position.
+- `ItemEntitySnapshot.entities = 1` carries the full current server item entity set visible to connected clients.
+- `ItemEntitySnapshot.revision = 2` increments when the server spawns or removes an item entity.
+- `ItemPickupAction.entity_id = 1` requests collection of one server item entity.
+- Connected-session `BlockAction DESTROY` of a placeable previous block spawns an item entity and broadcasts `Packet.item_entities = 6`.
+- Connected-session `ItemPickupAction` validates recorded client position against the server pickup reach, validates the item-to-block mapping, mutates the server inventory through `CollectBlock`, saves bound player inventory, broadcasts the updated item entity snapshot, and sends the collecting client a fresh `InventorySnapshot`.
 
 ## Sensitive Behavior
 

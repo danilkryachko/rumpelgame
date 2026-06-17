@@ -1619,7 +1619,7 @@ func TestHandleClientPacketPlaceSendsInventorySnapshotAfterCountedPlacement(t *t
 	}
 }
 
-func TestHandleClientPacketDestroyAddsBlockToCountedInventoryAndSendsSnapshot(t *testing.T) {
+func TestHandleClientPacketDestroySpawnsItemEntityAndSendsSnapshot(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
@@ -1652,19 +1652,29 @@ func TestHandleClientPacketDestroyAddsBlockToCountedInventoryAndSendsSnapshot(t 
 	if decodedPacket(t, frames[0]).GetChunk() == nil {
 		t.Fatal("first frame chunk = nil")
 	}
-	snapshot := decodedPacket(t, frames[1]).GetInventorySnapshot()
+	snapshot := decodedPacket(t, frames[1]).GetItemEntities()
 	if snapshot == nil {
-		t.Fatal("second frame inventory snapshot = nil")
+		t.Fatal("second frame item entity snapshot = nil")
 	}
-	if got := snapshot.GetSlots()[0].GetCount(); got != 1 {
-		t.Fatalf("stone count after destroy drop = %d, want 1", got)
+	if got := len(snapshot.GetEntities()); got != 1 {
+		t.Fatalf("item entities after destroy = %d, want 1", got)
 	}
-	if got := snapshot.GetSelectedSlot(); got != 0 {
-		t.Fatalf("selected slot after destroy drop = %d, want 0", got)
+	entity := snapshot.GetEntities()[0]
+	if got := entity.GetItemId(); got != string(item.StoneItemID) {
+		t.Fatalf("spawned item id = %q, want %q", got, item.StoneItemID)
+	}
+	if got := entity.GetCount(); got != 1 {
+		t.Fatalf("spawned item count = %d, want 1", got)
+	}
+	if entity.GetX() != 1.5 || entity.GetY() != 60.5 || entity.GetZ() != 1.5 {
+		t.Fatalf("spawned item position = %.1f,%.1f,%.1f; want 1.5,60.5,1.5", entity.GetX(), entity.GetY(), entity.GetZ())
+	}
+	if got := client.inventory.Slots()[0].Count; got != 0 {
+		t.Fatalf("stone count after destroy before pickup = %d, want 0", got)
 	}
 }
 
-func TestHandleClientPacketDestroyPersistsCollectedCountedDrop(t *testing.T) {
+func TestHandleClientPacketPickupPersistsCollectedCountedDrop(t *testing.T) {
 	store := newMemoryPlayerInventoryStore()
 	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
@@ -1690,6 +1700,24 @@ func TestHandleClientPacketDestroyPersistsCollectedCountedDrop(t *testing.T) {
 	if err := server.handleClientPacketForSession(client, packet); err != nil {
 		t.Fatalf("handleClientPacketForSession() error = %v", err)
 	}
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 2 {
+		t.Fatalf("frames after destroy = %d, want chunk plus item snapshot", got)
+	}
+	itemSnapshot := decodedPacket(t, frames[1]).GetItemEntities()
+	if itemSnapshot == nil || len(itemSnapshot.GetEntities()) != 1 {
+		t.Fatalf("item snapshot after destroy = %#v, want one entity", itemSnapshot)
+	}
+	entityID := itemSnapshot.GetEntities()[0].GetEntityId()
+
+	pickup := &api.Packet{
+		Payload: &api.Packet_ItemPickup{
+			ItemPickup: &api.ItemPickupAction{EntityId: entityID},
+		},
+	}
+	if err := server.handleClientPacketForSession(client, pickup); err != nil {
+		t.Fatalf("pickup handleClientPacketForSession() error = %v", err)
+	}
 
 	saved := store.states["local_player"]
 	if len(saved.Slots) != 2 {
@@ -1700,6 +1728,64 @@ func TestHandleClientPacketDestroyPersistsCollectedCountedDrop(t *testing.T) {
 	}
 	if got := store.saveCount; got != 1 {
 		t.Fatalf("save count = %d, want 1", got)
+	}
+	frames = recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 4 {
+		t.Fatalf("frames after pickup = %d, want destroy chunk, drop snapshot, empty snapshot, inventory snapshot", got)
+	}
+	emptySnapshot := decodedPacket(t, frames[2]).GetItemEntities()
+	if emptySnapshot == nil {
+		t.Fatal("third frame item entity snapshot = nil")
+	}
+	if got := len(emptySnapshot.GetEntities()); got != 0 {
+		t.Fatalf("item entities after pickup = %d, want 0", got)
+	}
+	inventorySnapshot := decodedPacket(t, frames[3]).GetInventorySnapshot()
+	if inventorySnapshot == nil {
+		t.Fatal("fourth frame inventory snapshot = nil")
+	}
+	if got := inventorySnapshot.GetSlots()[0].GetCount(); got != 1 {
+		t.Fatalf("inventory snapshot stone count after pickup = %d, want 1", got)
+	}
+}
+
+func TestHandleClientPacketPickupRejectsOutOfReachEntity(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	client := newClientSession(&recordingConn{})
+	client.recordPosition(&api.ClientPosition{X: 99, Y: 99, Z: 99})
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+	})
+
+	if !server.spawnItemEntityForBlock(world.Stone, 1, 60, 1) {
+		t.Fatal("spawnItemEntityForBlock(Stone) = false, want true")
+	}
+	entityID := server.itemEntitySnapshot().GetEntities()[0].GetEntityId()
+	packet := &api.Packet{
+		Payload: &api.Packet_ItemPickup{
+			ItemPickup: &api.ItemPickupAction{EntityId: entityID},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if got := client.inventory.Slots()[0].Count; got != 0 {
+		t.Fatalf("stone count after out-of-reach pickup = %d, want 0", got)
+	}
+	if got := len(server.itemEntitySnapshot().GetEntities()); got != 1 {
+		t.Fatalf("server item entities after out-of-reach pickup = %d, want 1", got)
+	}
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames after out-of-reach pickup = %d, want current item snapshot", got)
+	}
+	snapshot := decodedPacket(t, frames[0]).GetItemEntities()
+	if snapshot == nil {
+		t.Fatal("out-of-reach pickup response item entity snapshot = nil")
+	}
+	if got := len(snapshot.GetEntities()); got != 1 {
+		t.Fatalf("out-of-reach pickup response item entities = %d, want 1", got)
 	}
 }
 
@@ -1747,14 +1833,14 @@ func TestHandleClientPacketDestroyRejectsMiningCooldown(t *testing.T) {
 
 	frames := recordedFrames(t, client.conn.(*recordingConn))
 	if got := len(frames); got != 2 {
-		t.Fatalf("frames after cooldown rejection = %d, want first destroy chunk and snapshot only", got)
+		t.Fatalf("frames after cooldown rejection = %d, want first destroy chunk and item snapshot only", got)
 	}
-	snapshot := decodedPacket(t, frames[1]).GetInventorySnapshot()
+	snapshot := decodedPacket(t, frames[1]).GetItemEntities()
 	if snapshot == nil {
-		t.Fatal("second frame inventory snapshot = nil")
+		t.Fatal("second frame item entity snapshot = nil")
 	}
-	if got := snapshot.GetSlots()[0].GetCount(); got != 1 {
-		t.Fatalf("stone count after cooldown rejection = %d, want 1", got)
+	if got := len(snapshot.GetEntities()); got != 1 {
+		t.Fatalf("item entities after cooldown rejection = %d, want 1", got)
 	}
 	worldSnapshot, err := server.world.ChunkSnapshot(0, 0)
 	if err != nil {
@@ -1814,14 +1900,14 @@ func TestHandleClientPacketDestroyAllowsAfterMiningCooldown(t *testing.T) {
 
 	frames := recordedFrames(t, client.conn.(*recordingConn))
 	if got := len(frames); got != 4 {
-		t.Fatalf("frames after cooldown elapsed = %d, want two destroy chunks and snapshots", got)
+		t.Fatalf("frames after cooldown elapsed = %d, want two destroy chunks and item snapshots", got)
 	}
-	snapshot := decodedPacket(t, frames[3]).GetInventorySnapshot()
+	snapshot := decodedPacket(t, frames[3]).GetItemEntities()
 	if snapshot == nil {
-		t.Fatal("fourth frame inventory snapshot = nil")
+		t.Fatal("fourth frame item entity snapshot = nil")
 	}
-	if got := snapshot.GetSlots()[0].GetCount(); got != 2 {
-		t.Fatalf("stone count after cooldown elapsed = %d, want 2", got)
+	if got := len(snapshot.GetEntities()); got != 2 {
+		t.Fatalf("item entities after cooldown elapsed = %d, want 2", got)
 	}
 }
 
@@ -1867,17 +1953,20 @@ func TestHandleClientPacketDestroyUsesTargetBlockMiningDuration(t *testing.T) {
 
 	frames := recordedFrames(t, client.conn.(*recordingConn))
 	if got := len(frames); got != 4 {
-		t.Fatalf("frames after block-specific cooldown elapsed = %d, want two destroy chunks and snapshots", got)
+		t.Fatalf("frames after block-specific cooldown elapsed = %d, want two destroy chunks and item snapshots", got)
 	}
-	snapshot := decodedPacket(t, frames[3]).GetInventorySnapshot()
+	snapshot := decodedPacket(t, frames[3]).GetItemEntities()
 	if snapshot == nil {
-		t.Fatal("fourth frame inventory snapshot = nil")
+		t.Fatal("fourth frame item entity snapshot = nil")
 	}
-	if got := snapshot.GetSlots()[0].GetCount(); got != 1 {
-		t.Fatalf("stone count after block-specific cooldown = %d, want 1", got)
+	if got := len(snapshot.GetEntities()); got != 2 {
+		t.Fatalf("item entities after block-specific cooldown = %d, want 2", got)
 	}
-	if got := snapshot.GetSlots()[1].GetCount(); got != 1 {
-		t.Fatalf("dirt count after block-specific cooldown = %d, want 1", got)
+	if got := snapshot.GetEntities()[0].GetItemId(); got != string(item.StoneItemID) {
+		t.Fatalf("first item id after block-specific cooldown = %q, want %q", got, item.StoneItemID)
+	}
+	if got := snapshot.GetEntities()[1].GetItemId(); got != string(item.DirtItemID) {
+		t.Fatalf("second item id after block-specific cooldown = %q, want %q", got, item.DirtItemID)
 	}
 }
 
@@ -1997,18 +2086,18 @@ func TestHandleClientPacketDestroyUsesSelectedToolMiningDuration(t *testing.T) {
 
 	frames := recordedFrames(t, client.conn.(*recordingConn))
 	if got := len(frames); got != 4 {
-		t.Fatalf("frames after tool-adjusted cooldown elapsed = %d, want two destroy chunks and snapshots", got)
+		t.Fatalf("frames after tool-adjusted cooldown elapsed = %d, want two destroy chunks and item snapshots", got)
 	}
-	snapshot := decodedPacket(t, frames[3]).GetInventorySnapshot()
+	snapshot := decodedPacket(t, frames[3]).GetItemEntities()
 	if snapshot == nil {
-		t.Fatal("fourth frame inventory snapshot = nil")
+		t.Fatal("fourth frame item entity snapshot = nil")
 	}
-	if got := snapshot.GetSlots()[0].GetCount(); got != 2 {
-		t.Fatalf("stone count after tool-adjusted cooldown = %d, want 2", got)
+	if got := len(snapshot.GetEntities()); got != 2 {
+		t.Fatalf("item entities after tool-adjusted cooldown = %d, want 2", got)
 	}
 }
 
-func TestHandleClientPacketDestroyDoesNotCollectAir(t *testing.T) {
+func TestHandleClientPacketDestroyDoesNotSpawnItemEntityForAir(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 
@@ -2043,9 +2132,12 @@ func TestHandleClientPacketDestroyDoesNotCollectAir(t *testing.T) {
 	if client.inventory.CanPlaceBlock(world.Stone) {
 		t.Fatal("destroying Air added Stone to inventory")
 	}
+	if got := len(server.itemEntitySnapshot().GetEntities()); got != 0 {
+		t.Fatalf("item entities after destroying Air = %d, want 0", got)
+	}
 }
 
-func TestHandleClientPacketDestroyDoesNotCollectWhenBlockUpdateFails(t *testing.T) {
+func TestHandleClientPacketDestroyDoesNotSpawnItemEntityWhenBlockUpdateFails(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	client := newClientSession(&recordingConn{})
 	recordReachableOutOfRangeYPosition(client)
@@ -2069,6 +2161,9 @@ func TestHandleClientPacketDestroyDoesNotCollectWhenBlockUpdateFails(t *testing.
 	}
 	if client.inventory.CanPlaceBlock(world.Stone) {
 		t.Fatal("failed destroy update added Stone to inventory")
+	}
+	if got := len(server.itemEntitySnapshot().GetEntities()); got != 0 {
+		t.Fatalf("item entities after failed destroy = %d, want 0", got)
 	}
 	if got := len(recordedFrames(t, client.conn.(*recordingConn))); got != 0 {
 		t.Fatalf("frames = %d, want 0", got)

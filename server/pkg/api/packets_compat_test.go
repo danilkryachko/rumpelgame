@@ -178,6 +178,34 @@ func TestPacketWireCompatibility(t *testing.T) {
 				0x18, 0x02,
 			},
 		},
+		{
+			name: "item entity snapshot payload tag 6",
+			packet: &Packet{
+				Payload: &Packet_ItemEntities{
+					ItemEntities: &ItemEntitySnapshot{
+						Revision: 9,
+					},
+				},
+			},
+			expected: []byte{
+				0x32, 0x02,
+				0x10, 0x09,
+			},
+		},
+		{
+			name: "item pickup payload tag 7",
+			packet: &Packet{
+				Payload: &Packet_ItemPickup{
+					ItemPickup: &ItemPickupAction{
+						EntityId: 42,
+					},
+				},
+			},
+			expected: []byte{
+				0x3a, 0x02,
+				0x08, 0x2a,
+			},
+		},
 	}
 
 	for _, tc := range tests {

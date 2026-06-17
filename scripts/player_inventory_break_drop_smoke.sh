@@ -146,8 +146,8 @@ esac
 rm -f "$SUMMARY_PATH"
 rm -rf "$SMOKE_DB"
 
-start_server "destroy"
-destroy_summary="$(run_phase destroy -action destroy-expect -position-y "$DESTROY_POSITION_Y" -expect-count "$EXPECTED_COUNT")"
+start_server "destroy-pickup"
+destroy_summary="$(run_phase destroy-pickup -action destroy-pickup-expect -position-y "$DESTROY_POSITION_Y" -expect-count "$EXPECTED_COUNT")"
 cleanup_server
 
 start_server "verify-restart"
@@ -155,9 +155,9 @@ verify_restart_summary="$(run_phase verify-restart -action expect -expect-count 
 cleanup_server
 
 {
-  printf 'player_inventory_break_drop_smoke status=pass break_drop_inventory=live_server_guarded phases=2 destroy_status=pass verify_restart_status=pass player_id=%s selected_slot=%s destroyed_block_id=%s expected_count=%s server_restarts=1 protocol_change=0 db_path=%s\n' \
+  printf 'player_inventory_break_drop_smoke status=pass break_drop_inventory=live_server_guarded break_drop_pickup=live_server_guarded phases=2 destroy_status=pass pickup_status=pass verify_restart_status=pass player_id=%s selected_slot=%s destroyed_block_id=%s expected_count=%s server_restarts=1 protocol_change=0 db_path=%s\n' \
     "$PLAYER_ID" "$SELECTED_SLOT" "$DESTROYED_BLOCK_ID" "$EXPECTED_COUNT" "$SMOKE_DB"
-  printf 'phase_destroy %s\n' "$destroy_summary"
+  printf 'phase_destroy_pickup %s\n' "$destroy_summary"
   printf 'phase_verify_restart %s\n' "$verify_restart_summary"
 } > "$SUMMARY_PATH"
 

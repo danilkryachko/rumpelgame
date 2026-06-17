@@ -18,10 +18,11 @@ const maxPacketSize = 16 * 1024 * 1024
 type smokeAction string
 
 const (
-	actionSelect        smokeAction = "select"
-	actionExpect        smokeAction = "expect"
-	actionPlaceExpect   smokeAction = "place-expect"
-	actionDestroyExpect smokeAction = "destroy-expect"
+	actionSelect              smokeAction = "select"
+	actionExpect              smokeAction = "expect"
+	actionPlaceExpect         smokeAction = "place-expect"
+	actionDestroyExpect       smokeAction = "destroy-expect"
+	actionDestroyPickupExpect smokeAction = "destroy-pickup-expect"
 )
 
 type smokeClient struct {
@@ -29,16 +30,17 @@ type smokeClient struct {
 }
 
 type inventoryObservation struct {
-	selectedSlot uint32
-	slotCount    uint32
-	snapshots    int
-	chunks       int
+	selectedSlot  uint32
+	slotCount     uint32
+	snapshots     int
+	itemSnapshots int
+	chunks        int
 }
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:25565", "server TCP address")
 	timeout := flag.Duration("timeout", 3*time.Second, "per-read/write timeout")
-	action := flag.String("action", string(actionExpect), "smoke action: select, expect, place-expect, or destroy-expect")
+	action := flag.String("action", string(actionExpect), "smoke action: select, expect, place-expect, destroy-expect, or destroy-pickup-expect")
 	playerID := flag.String("player-id", "local_player", "player id to send in ClientPosition")
 	positionX := flag.Float64("position-x", 1.5, "client position x to send in ClientPosition")
 	positionY := flag.Float64("position-y", 68, "client position y to send in ClientPosition")
@@ -72,6 +74,8 @@ func run(addr string, timeout time.Duration, action smokeAction, playerID string
 		return err
 	}
 
+	preInventoryItemSnapshots := 0
+	preInventoryChunks := 0
 	switch action {
 	case actionSelect:
 		if err := client.sendInventorySelect(slot, timeout); err != nil {
@@ -82,10 +86,19 @@ func run(addr string, timeout time.Duration, action smokeAction, playerID string
 		if err := client.sendBlockPlace(blockID, timeout); err != nil {
 			return err
 		}
-	case actionDestroyExpect:
+	case actionDestroyExpect, actionDestroyPickupExpect:
 		if err := client.sendBlockDestroy(timeout); err != nil {
 			return err
 		}
+		entityID, itemSnapshots, chunks, err := client.readFirstItemEntity(timeout)
+		if err != nil {
+			return err
+		}
+		if err := client.sendItemPickup(entityID, timeout); err != nil {
+			return err
+		}
+		preInventoryItemSnapshots = itemSnapshots
+		preInventoryChunks = chunks
 	default:
 		return fmt.Errorf("unsupported action %q", action)
 	}
@@ -94,13 +107,16 @@ func run(addr string, timeout time.Duration, action smokeAction, playerID string
 	if err != nil {
 		return err
 	}
+	observation.itemSnapshots += preInventoryItemSnapshots
+	observation.chunks += preInventoryChunks
 	fmt.Printf(
-		"player_inventory_reconnect_smoke status=pass action=%s player_id=%s selected_slot=%d slot_count=%d snapshots=%d chunks=%d protocol_change=0\n",
+		"player_inventory_reconnect_smoke status=pass action=%s player_id=%s selected_slot=%d slot_count=%d snapshots=%d item_snapshots=%d chunks=%d protocol_change=0\n",
 		action,
 		playerID,
 		observation.selectedSlot,
 		observation.slotCount,
 		observation.snapshots,
+		observation.itemSnapshots,
 		observation.chunks,
 	)
 	return nil
@@ -165,6 +181,14 @@ func (c *smokeClient) sendBlockDestroy(timeout time.Duration) error {
 	}, timeout)
 }
 
+func (c *smokeClient) sendItemPickup(entityID uint64, timeout time.Duration) error {
+	return c.writePacket(&api.Packet{
+		Payload: &api.Packet_ItemPickup{
+			ItemPickup: &api.ItemPickupAction{EntityId: entityID},
+		},
+	}, timeout)
+}
+
 func (c *smokeClient) writePacket(packet *api.Packet, timeout time.Duration) error {
 	data, err := proto.Marshal(packet)
 	if err != nil {
@@ -222,6 +246,10 @@ func (c *smokeClient) readInventorySnapshot(wantSlot uint32, wantCount int, time
 			observation.chunks++
 			continue
 		}
+		if packet.GetItemEntities() != nil {
+			observation.itemSnapshots++
+			continue
+		}
 		snapshot := packet.GetInventorySnapshot()
 		if snapshot == nil {
 			continue
@@ -243,6 +271,39 @@ func (c *smokeClient) readInventorySnapshot(wantSlot uint32, wantCount int, time
 			continue
 		}
 		return observation, nil
+	}
+}
+
+func (c *smokeClient) readFirstItemEntity(timeout time.Duration) (uint64, int, int, error) {
+	deadline := time.Now().Add(timeout)
+	itemSnapshots := 0
+	chunks := 0
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return 0, itemSnapshots, chunks, fmt.Errorf("timed out waiting for item entity snapshot after item_snapshots=%d chunks=%d", itemSnapshots, chunks)
+		}
+		packet, err := c.readPacket(remaining)
+		if err != nil {
+			return 0, itemSnapshots, chunks, err
+		}
+		if packet.GetChunk() != nil {
+			chunks++
+			continue
+		}
+		snapshot := packet.GetItemEntities()
+		if snapshot == nil {
+			continue
+		}
+		itemSnapshots++
+		if len(snapshot.GetEntities()) == 0 {
+			continue
+		}
+		entityID := snapshot.GetEntities()[0].GetEntityId()
+		if entityID == 0 {
+			return 0, itemSnapshots, chunks, fmt.Errorf("item entity snapshot contained zero entity id")
+		}
+		return entityID, itemSnapshots, chunks, nil
 	}
 }
 

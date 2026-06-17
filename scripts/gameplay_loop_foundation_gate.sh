@@ -72,17 +72,23 @@ for token in \
   'Compatibility Rules' \
   'Server Inventory Foundation' \
   'Item Tool Foundation' \
+  'Item Entity Pickup' \
   'Client-Visible Tool Selection' \
   'Block 41' \
   'Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload' \
   'Keep `Packet.inventory_action = 5` as the client-to-server selected block/tool slot inventory action payload' \
+  'Keep `Packet.item_entities = 6` as the server-to-client item entity snapshot payload' \
+  'Keep `Packet.item_pickup = 7` as the client-to-server item entity pickup payload' \
   'tool_selection=inventory_action_guarded' \
-  'tool_hud=authoritative_guarded'; do
+  'tool_hud=authoritative_guarded' \
+  'item_entity_pickup=live_server_guarded'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
 require_token "$PROTOCOL_DOC" '`Packet.block_action = 3`'
 require_token "$PROTOCOL_DOC" '`InventoryAction SELECT_TOOL_SLOT = 1`'
+require_token "$PROTOCOL_DOC" '`Packet.item_entities = 6`'
+require_token "$PROTOCOL_DOC" '`Packet.item_pickup = 7`'
 require_token "$PLAYER_SOURCE" 'struct InventorySlot'
 require_token "$PLAYER_SOURCE" 'PLAYER_HOTBAR_SLOTS'
 require_token "$PLAYER_SOURCE" 'PLAYER_TOOL_SLOTS'
@@ -118,6 +124,10 @@ require_token "$CLIENT_SOURCE" 'fn on_hotbar_selected'
 require_token "$CLIENT_SOURCE" 'fn on_tool_slot_selected'
 require_token "$CLIENT_SOURCE" 'inventory_action_select_slot_packet'
 require_token "$CLIENT_SOURCE" 'inventory_action_select_tool_slot_packet'
+require_token "$CLIENT_SOURCE" 'Payload::ItemEntities'
+require_token "$CLIENT_SOURCE" 'item_pickup_action_packet'
+require_token "$CLIENT_SOURCE" 'sync_item_entity_visuals'
+require_token "$CLIENT_SOURCE" 'request_nearby_item_pickups'
 require_token "$CLIENT_SOURCE" 'client_position_packet'
 require_token "$CLIENT_SOURCE" 'LOCAL_PLAYER_ID'
 require_token "$CLIENT_SOURCE" 'BlockAction'
@@ -134,6 +144,8 @@ require_token "$CLIENT_SOURCE" 'inventory_hotbar_text_reports_selected_and_count
 require_token "$CLIENT_SOURCE" 'inventory_selected_slot_requires_authoritative_slot'
 require_token "$CLIENT_SOURCE" 'authoritative_tool_text_reports_selected_tool_slot'
 require_token "$CLIENT_SOURCE" 'inventory_action_select_tool_slot_packet_uses_wire_tool_slot'
+require_token "$CLIENT_SOURCE" 'item_entity_snapshot_copies_authoritative_entities'
+require_token "$CLIENT_SOURCE" 'item_pickup_action_packet_uses_wire_entity_id'
 require_token "$HUD_SOURCE" 'hotbar_labels'
 require_token "$HUD_SOURCE" 'tool_label'
 require_token "$HUD_SOURCE" 'get_authoritative_inventory_selected_slot'
@@ -144,9 +156,13 @@ require_token "$HUD_SOURCE" 'get_authoritative_tool_selected_slot'
 require_token "$HUD_SOURCE" 'get_authoritative_tool_text'
 require_token "$SERVER_SOURCE" 'case *api.Packet_BlockAction:'
 require_token "$SERVER_SOURCE" 'case *api.Packet_InventoryAction:'
+require_token "$SERVER_SOURCE" 'case *api.Packet_ItemPickup:'
 require_token "$SERVER_SOURCE" 'case api.InventoryAction_SELECT_TOOL_SLOT:'
 require_token "$SERVER_SOURCE" 'bindPlayerInventoryFromPosition'
 require_token "$SERVER_SOURCE" 'SavePlayerInventory'
+require_token "$SERVER_SOURCE" 'spawnItemEntityForBlock(previousBlock'
+require_token "$SERVER_SOURCE" 'collectItemEntityForSession(client, action.EntityId)'
+require_token "$SERVER_SOURCE" 'broadcastItemEntitySnapshot(client)'
 require_token "$SERVER_SOURCE" 'world.IsPlaceable(block)'
 require_token "$SERVER_SOURCE" 's.world.SetBlockGlobal'
 require_token "$WORLD_SOURCE" 'func (w *World) SetBlockGlobal'
@@ -174,6 +190,7 @@ server_inventory_status="$(field_metric status "$SERVER_INVENTORY_SUMMARY")"
 server_inventory_guard="$(field_metric server_inventory_status "$SERVER_INVENTORY_SUMMARY")"
 server_inventory_block_action="$(field_metric block_action_inventory "$SERVER_INVENTORY_SUMMARY")"
 server_inventory_persistence="$(field_metric player_inventory_persistence "$SERVER_INVENTORY_SUMMARY")"
+server_item_entity_pickup="$(field_metric item_entity_pickup "$SERVER_INVENTORY_SUMMARY")"
 server_inventory_protocol_change="$(field_metric active_protocol_change "$SERVER_INVENTORY_SUMMARY")"
 server_inventory_storage_change="$(field_metric active_storage_change "$SERVER_INVENTORY_SUMMARY")"
 test -s "$MINING_RULES_SUMMARY" || fail "missing required input $MINING_RULES_SUMMARY"
@@ -204,7 +221,7 @@ proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.pr
 
 inventory_tests="skipped"
 if [ "$RUN_RUST_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/client/rust_ext" && cargo test --lib inventory > "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib hotbar >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib tool >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib inventory_action >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib client_position_packet >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1); then
+  if (cd "$ROOT_DIR/client/rust_ext" && cargo test --lib inventory > "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib hotbar >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib tool >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib inventory_action >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib item >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib client_position_packet >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1); then
     inventory_tests="pass"
   else
     cat "$OUT_DIR/cargo-test-inventory.txt" >&2 || true
@@ -238,6 +255,7 @@ awk \
   -v server_inventory_guard="${server_inventory_guard:-missing}" \
   -v server_inventory_block_action="${server_inventory_block_action:-missing}" \
   -v server_inventory_persistence="${server_inventory_persistence:-missing}" \
+  -v server_item_entity_pickup="${server_item_entity_pickup:-missing}" \
   -v server_inventory_protocol_change="${server_inventory_protocol_change:-1}" \
   -v server_inventory_storage_change="${server_inventory_storage_change:-1}" \
   -v mining_rules_status="${mining_rules_status:-missing}" \
@@ -280,6 +298,7 @@ awk \
     tool_selection = "inventory_action_guarded"
     inventory_hud = "authoritative_guarded"
     tool_hud = "authoritative_guarded"
+    item_entity_pickup = "live_server_guarded"
     server_edit_persistence = "store_save_boundary"
     block_edit_visual_ok = block_edit_persistence_status == "pass" &&
       block_edit_visual_path == "godot_persisted_reload_guarded" &&
@@ -294,6 +313,7 @@ awk \
       server_inventory_guard == "session_guarded" &&
       server_inventory_block_action == "session_guarded" &&
       server_inventory_persistence == "rocksdb_guarded" &&
+      server_item_entity_pickup == "live_server_guarded" &&
       server_inventory_protocol_change + 0 == 0 &&
       server_inventory_storage_change + 0 == 0
     mining_rules_ok = mining_rules_status == "pass" &&
@@ -353,7 +373,7 @@ awk \
       reason = "player_inventory_reconnect_not_clean"
     }
 
-    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s tool_selection=%s inventory_hud=%s tool_hud=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s mining_rules_status=%s mining_cooldown=%s mining_block_durations=%s item_tool_foundation=%s item_identity=%s tool_catalog=%s first_tool_slot=%s tool_mining=%s player_inventory_reconnect=%s player_inventory_reconnect_status=%s player_inventory_reconnect_restarts=%d server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s mining_rules_summary=%s item_tool_summary=%s player_inventory_reconnect_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, tool_selection, inventory_hud, tool_hud, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, mining_rules_guard, mining_rules_counted_cooldown, mining_block_durations, item_tool_guard, item_tool_identity, item_tool_catalog, item_tool_first_slot, item_tool_mining, player_inventory_reconnect, player_inventory_reconnect_status, player_inventory_restarts, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary, mining_rules_summary, item_tool_summary, player_inventory_reconnect_summary)
+    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s tool_selection=%s inventory_hud=%s tool_hud=%s item_entity_pickup=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s mining_rules_status=%s mining_cooldown=%s mining_block_durations=%s item_tool_foundation=%s item_identity=%s tool_catalog=%s first_tool_slot=%s tool_mining=%s player_inventory_reconnect=%s player_inventory_reconnect_status=%s player_inventory_reconnect_restarts=%d server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s mining_rules_summary=%s item_tool_summary=%s player_inventory_reconnect_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, tool_selection, inventory_hud, tool_hud, item_entity_pickup, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, mining_rules_guard, mining_rules_counted_cooldown, mining_block_durations, item_tool_guard, item_tool_identity, item_tool_catalog, item_tool_first_slot, item_tool_mining, player_inventory_reconnect, player_inventory_reconnect_status, player_inventory_restarts, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary, mining_rules_summary, item_tool_summary, player_inventory_reconnect_summary)
     if (status != "pass") {
       exit 1
     }

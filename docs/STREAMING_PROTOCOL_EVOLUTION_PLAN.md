@@ -21,7 +21,7 @@ Decision: no streaming protocol change is needed for the current streaming work.
 
 - Never reuse existing field numbers or change their meaning.
 - Do not hand-edit generated Go or Rust protocol files.
-- Any new `Packet.payload` variant must use a new oneof tag greater than `5`.
+- Any new `Packet.payload` variant must use a new oneof tag greater than `7`.
 - Any new field on an existing message must use a new field number greater than the current highest field for that message.
 - Old clients must continue to handle omitted new fields through default values.
 - Rollback must be explicit and documented before a protocol change becomes default.

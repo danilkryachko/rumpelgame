@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,6 +45,8 @@ const serverBlockActionReach = 7.0
 const serverBlockActionReachSquared = serverBlockActionReach * serverBlockActionReach
 const serverPlayerCollisionHalfWidth = 0.4
 const serverPlayerCollisionHeight = 1.8
+const serverItemPickupReach = 6.0
+const serverItemPickupReachSquared = serverItemPickupReach * serverItemPickupReach
 const defaultCountedMiningCooldown = time.Duration(world.DefaultBlockMiningMS) * time.Millisecond
 
 type networkErrorClass string
@@ -85,6 +88,15 @@ const (
 	inventoryModeCounted  inventoryMode = "counted"
 )
 
+type itemEntity struct {
+	entityID uint64
+	itemID   item.ID
+	count    uint32
+	x        float64
+	y        float64
+	z        float64
+}
+
 type Server struct {
 	address                string
 	world                  *world.World
@@ -101,6 +113,10 @@ type Server struct {
 	miningDurations        map[world.BlockID]time.Duration
 	now                    func() time.Time
 	inventoryStore         playerInventoryStore
+	itemEntitiesMu         sync.Mutex
+	itemEntities           map[uint64]itemEntity
+	nextItemEntityID       uint64
+	itemEntityRevision     uint64
 	clientsMu              sync.Mutex
 	clients                map[*clientSession]struct{}
 }
@@ -124,6 +140,8 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		miningCooldownOverride: miningCooldownOverride,
 		miningDurations:        configuredMiningDurations(inventoryMode, miningCooldown, miningCooldownOverride),
 		now:                    time.Now,
+		itemEntities:           make(map[uint64]itemEntity),
+		nextItemEntityID:       1,
 		clients:                make(map[*clientSession]struct{}),
 	}
 }
@@ -168,6 +186,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	if err := s.sendInventorySnapshotToSession(client); err != nil {
 		log.Printf("Failed to send inventory snapshot packet_error_class=%s: %v", classifyNetworkError(err), err)
+		return
+	}
+	if err := s.sendItemEntitySnapshotToSessionIfNotEmpty(client); err != nil {
+		log.Printf("Failed to send item entity snapshot packet_error_class=%s: %v", classifyNetworkError(err), err)
 		return
 	}
 
@@ -366,6 +388,13 @@ func (s *Server) handleClientPacketWithState(conn net.Conn, clientPacket *api.Pa
 		}
 		log.Printf("Ignored inventory action without session")
 
+	case *api.Packet_ItemPickup:
+		if p.ItemPickup == nil {
+			log.Printf("Ignored nil item pickup")
+			return nil
+		}
+		log.Printf("Ignored item pickup without session")
+
 	default:
 		log.Printf("Unknown packet received")
 	}
@@ -451,6 +480,7 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			return fmt.Errorf("update block: %w", err)
 		}
 		inventoryChanged := false
+		itemEntitiesChanged := false
 		if applyInventoryPlacement {
 			if !client.placeInventoryBlock(block) {
 				return fmt.Errorf("place inventory block %d: unavailable", block)
@@ -462,16 +492,16 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 		}
 		if action.Action == api.BlockAction_DESTROY && world.IsPlaceable(previousBlock) {
 			client.recordSuccessfulDestroy(actionTime)
-			if client.addInventoryBlock(previousBlock) {
-				if err := s.saveClientInventory(client); err != nil {
-					return err
-				}
-				inventoryChanged = true
-			}
+			itemEntitiesChanged = s.spawnItemEntityForBlock(previousBlock, action.X, action.Y, action.Z)
 		}
 
 		if err := s.broadcastChunkUpdate(client, snapshot); err != nil {
 			return fmt.Errorf("send updated chunk %d,%d: %w", snapshot.X, snapshot.Z, err)
+		}
+		if itemEntitiesChanged {
+			if err := s.broadcastItemEntitySnapshot(client); err != nil {
+				return fmt.Errorf("send item entity snapshot: %w", err)
+			}
 		}
 		if inventoryChanged {
 			if err := s.sendInventorySnapshotToSession(client); err != nil {
@@ -516,6 +546,30 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 		default:
 			log.Printf("Ignored unknown inventory action=%v", action.Action)
 			return nil
+		}
+
+	case *api.Packet_ItemPickup:
+		action := p.ItemPickup
+		if action == nil {
+			log.Printf("Ignored nil item pickup")
+			return nil
+		}
+		log.Printf("Received ItemPickupAction: entity_id=%d", action.EntityId)
+
+		if !s.collectItemEntityForSession(client, action.EntityId) {
+			if err := s.sendItemEntitySnapshotToSession(client); err != nil {
+				return fmt.Errorf("send item entity snapshot: %w", err)
+			}
+			return nil
+		}
+		if err := s.saveClientInventory(client); err != nil {
+			return err
+		}
+		if err := s.broadcastItemEntitySnapshot(client); err != nil {
+			return fmt.Errorf("send item entity snapshot: %w", err)
+		}
+		if err := s.sendInventorySnapshotToSession(client); err != nil {
+			return fmt.Errorf("send inventory snapshot: %w", err)
 		}
 
 	default:
@@ -853,6 +907,17 @@ func (c *clientSession) addInventoryBlock(block world.BlockID) bool {
 	defer c.stateMu.Unlock()
 
 	if !c.inventory.AddBlock(block) {
+		return false
+	}
+	c.normalizeSelectedInventorySlotLocked()
+	return true
+}
+
+func (c *clientSession) collectInventoryBlock(block world.BlockID, count uint32) bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if !c.inventory.CollectBlock(block, count) {
 		return false
 	}
 	c.normalizeSelectedInventorySlotLocked()
@@ -1298,6 +1363,51 @@ func (s *Server) sendInventorySnapshotToSession(client *clientSession) error {
 	return s.sendPacketToSession(client, inventorySnapshotPacket(client.inventory, client.selectedSlot(), client.selectedToolSlotIndex()))
 }
 
+func (s *Server) sendItemEntitySnapshotToSessionIfNotEmpty(client *clientSession) error {
+	if !s.hasItemEntities() {
+		return nil
+	}
+	return s.sendItemEntitySnapshotToSession(client)
+}
+
+func (s *Server) sendItemEntitySnapshotToSession(client *clientSession) error {
+	return s.sendPacketToSession(client, itemEntitySnapshotPacket(s.itemEntitySnapshot()))
+}
+
+func (s *Server) broadcastItemEntitySnapshot(origin *clientSession) error {
+	packet := itemEntitySnapshotPacket(s.itemEntitySnapshot())
+
+	targets := s.itemEntitySnapshotTargets(origin)
+
+	for _, target := range targets {
+		if err := s.sendPacketToSession(target, packet); err != nil {
+			if target == origin {
+				return err
+			}
+			log.Printf("Failed to broadcast item entity snapshot to %s packet_error_class=%s: %v", target.conn.RemoteAddr(), classifyNetworkError(err), err)
+			s.disconnectClient(target)
+		}
+	}
+	return nil
+}
+
+func (s *Server) itemEntitySnapshotTargets(origin *clientSession) []*clientSession {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	targets := make([]*clientSession, 0, len(s.clients)+1)
+	if origin != nil {
+		targets = append(targets, origin)
+	}
+	for client := range s.clients {
+		if client == origin {
+			continue
+		}
+		targets = append(targets, client)
+	}
+	return targets
+}
+
 func (s *Server) sendPacketToSession(client *clientSession, packet *api.Packet) error {
 	client.writeMu.Lock()
 	defer client.writeMu.Unlock()
@@ -1376,6 +1486,120 @@ func inventorySnapshot(inventory playerinventory.Inventory, selectedSlot uint32,
 		SelectedSlot:     selectedSlot,
 		SelectedToolSlot: selectedToolSlot,
 	}
+}
+
+func itemEntitySnapshotPacket(snapshot *api.ItemEntitySnapshot) *api.Packet {
+	return &api.Packet{
+		Payload: &api.Packet_ItemEntities{
+			ItemEntities: snapshot,
+		},
+	}
+}
+
+func (s *Server) hasItemEntities() bool {
+	s.itemEntitiesMu.Lock()
+	defer s.itemEntitiesMu.Unlock()
+
+	return len(s.itemEntities) > 0
+}
+
+func (s *Server) itemEntitySnapshot() *api.ItemEntitySnapshot {
+	s.itemEntitiesMu.Lock()
+	defer s.itemEntitiesMu.Unlock()
+
+	ids := make([]uint64, 0, len(s.itemEntities))
+	for id := range s.itemEntities {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	entities := make([]*api.ItemEntity, 0, len(ids))
+	for _, id := range ids {
+		entity := s.itemEntities[id]
+		entities = append(entities, &api.ItemEntity{
+			EntityId: entity.entityID,
+			ItemId:   string(entity.itemID),
+			Count:    entity.count,
+			X:        float32(entity.x),
+			Y:        float32(entity.y),
+			Z:        float32(entity.z),
+		})
+	}
+	return &api.ItemEntitySnapshot{
+		Entities: entities,
+		Revision: s.itemEntityRevision,
+	}
+}
+
+func (s *Server) spawnItemEntityForBlock(block world.BlockID, x, y, z int32) bool {
+	itemID, ok := item.BlockItemID(block)
+	if !ok {
+		return false
+	}
+
+	s.itemEntitiesMu.Lock()
+	defer s.itemEntitiesMu.Unlock()
+
+	if s.itemEntities == nil {
+		s.itemEntities = make(map[uint64]itemEntity)
+	}
+	if s.nextItemEntityID == 0 {
+		s.nextItemEntityID = 1
+	}
+	entityID := s.nextItemEntityID
+	s.nextItemEntityID++
+	if s.nextItemEntityID == 0 {
+		s.nextItemEntityID = 1
+	}
+
+	s.itemEntities[entityID] = itemEntity{
+		entityID: entityID,
+		itemID:   itemID,
+		count:    1,
+		x:        float64(x) + 0.5,
+		y:        float64(y) + 0.5,
+		z:        float64(z) + 0.5,
+	}
+	s.itemEntityRevision++
+	return true
+}
+
+func (s *Server) collectItemEntityForSession(client *clientSession, entityID uint64) bool {
+	if entityID == 0 {
+		return false
+	}
+
+	s.itemEntitiesMu.Lock()
+	defer s.itemEntitiesMu.Unlock()
+
+	entity, ok := s.itemEntities[entityID]
+	if !ok {
+		return false
+	}
+	if !itemEntityWithinPickupReach(client.recordedPosition(), entity) {
+		return false
+	}
+	block, ok := item.BlockForItem(entity.itemID)
+	if !ok {
+		return false
+	}
+	if !client.collectInventoryBlock(block, entity.count) {
+		return false
+	}
+
+	delete(s.itemEntities, entityID)
+	s.itemEntityRevision++
+	return true
+}
+
+func itemEntityWithinPickupReach(position clientPositionState, entity itemEntity) bool {
+	if !position.ok {
+		return false
+	}
+	dx := entity.x - position.x
+	dy := entity.y - position.y
+	dz := entity.z - position.z
+	return dx*dx+dy*dy+dz*dz <= serverItemPickupReachSquared
 }
 
 func (s *chunkStreamBatchStats) add(stats chunkSendStats) {

@@ -159,6 +159,63 @@ func TestCreativeHotbarAddBlockRetainsCounts(t *testing.T) {
 	}
 }
 
+func TestCountedInventoryCollectBlockAddsStack(t *testing.T) {
+	inv := NewCounted([]Slot{
+		{BlockID: world.Stone, Count: 0},
+		{BlockID: world.Wood, Count: 1},
+	})
+
+	if !inv.CollectBlock(world.Stone, 3) {
+		t.Fatal("CollectBlock(Stone, 3) = false, want true")
+	}
+	if !inv.CanPlaceBlock(world.Stone) {
+		t.Fatal("CanPlaceBlock(Stone) after CollectBlock = false, want true")
+	}
+
+	slots := inv.Slots()
+	if got := slots[0].Count; got != 3 {
+		t.Fatalf("Stone count after CollectBlock = %d, want 3", got)
+	}
+	if got := slots[1].Count; got != 1 {
+		t.Fatalf("Wood count after CollectBlock = %d, want 1", got)
+	}
+}
+
+func TestCollectBlockRejectsInvalidOrOverflowingStacks(t *testing.T) {
+	inv := NewCounted([]Slot{{BlockID: world.Stone, Count: ^uint32(0) - 1}})
+
+	if inv.CollectBlock(world.Stone, 0) {
+		t.Fatal("CollectBlock(Stone, 0) = true, want false")
+	}
+	if inv.CollectBlock(world.Air, 1) {
+		t.Fatal("CollectBlock(Air, 1) = true, want false")
+	}
+	if inv.CollectBlock(world.Wood, 1) {
+		t.Fatal("CollectBlock(Wood missing slot, 1) = true, want false")
+	}
+	if inv.CollectBlock(world.Stone, 2) {
+		t.Fatal("CollectBlock(Stone overflow, 2) = true, want false")
+	}
+
+	if got := inv.Slots()[0].Count; got != ^uint32(0)-1 {
+		t.Fatalf("Stone count after rejected collect calls = %d, want %d", got, ^uint32(0)-1)
+	}
+}
+
+func TestCreativeHotbarCollectBlockRetainsCounts(t *testing.T) {
+	inv := NewCreativeHotbar()
+
+	if !inv.CollectBlock(world.Wood, 4) {
+		t.Fatal("CollectBlock(Wood, 4) on creative hotbar = false, want true")
+	}
+
+	for _, slot := range inv.Slots() {
+		if slot.BlockID == world.Wood && slot.Count != CreativeStackCount {
+			t.Fatalf("Wood count after CollectBlock = %d, want %d", slot.Count, CreativeStackCount)
+		}
+	}
+}
+
 func TestInventorySlotsReturnsCopy(t *testing.T) {
 	inv := NewCounted([]Slot{{BlockID: world.Stone, Count: 1}})
 	slots := inv.Slots()

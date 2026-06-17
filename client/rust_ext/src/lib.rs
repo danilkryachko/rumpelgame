@@ -27,6 +27,9 @@ const LOCAL_PLAYER_ID: &str = "local_player";
 const RECONNECT_RETRY_INTERVAL_SEC: f64 = 0.5;
 const AUTHORITATIVE_TOOL_SLOT_LABELS: [&str; 4] =
     ["Hand", "Wooden Pickaxe", "Wooden Axe", "Wooden Shovel"];
+const ITEM_ENTITY_ROOT_NAME: &str = "ItemEntities";
+const CLIENT_ITEM_PICKUP_RADIUS: f32 = 6.0;
+const CLIENT_ITEM_PICKUP_RETRY_SEC: f64 = 0.5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ClientLifecycleState {
@@ -92,6 +95,14 @@ struct AuthoritativeInventorySlot {
     count: u32,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct AuthoritativeItemEntity {
+    entity_id: u64,
+    item_id: String,
+    count: u32,
+    position: Vector3,
+}
+
 fn authoritative_inventory_slots_from_snapshot(
     snapshot: &crate::api::InventorySnapshot,
 ) -> Vec<AuthoritativeInventorySlot> {
@@ -103,6 +114,57 @@ fn authoritative_inventory_slots_from_snapshot(
             count: slot.count,
         })
         .collect()
+}
+
+fn authoritative_item_entities_from_snapshot(
+    snapshot: &crate::api::ItemEntitySnapshot,
+) -> Vec<AuthoritativeItemEntity> {
+    snapshot
+        .entities
+        .iter()
+        .map(|entity| AuthoritativeItemEntity {
+            entity_id: entity.entity_id,
+            item_id: entity.item_id.clone(),
+            count: entity.count,
+            position: Vector3::new(entity.x, entity.y, entity.z),
+        })
+        .collect()
+}
+
+fn authoritative_item_entities_text(entities: &[AuthoritativeItemEntity], revision: u64) -> String {
+    let entity_text = entities
+        .iter()
+        .map(|entity| {
+            format!(
+                "{}:{}:{}@{:.1},{:.1},{:.1}",
+                entity.entity_id,
+                entity.item_id,
+                entity.count,
+                entity.position.x,
+                entity.position.y,
+                entity.position.z
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    format!(
+        "revision={} count={} entities={}",
+        revision,
+        entities.len(),
+        entity_text
+    )
+}
+
+fn item_entity_color(item_id: &str) -> Color {
+    match item_id {
+        "block:stone" => Color::from_rgba8(130, 132, 136, 255),
+        "block:dirt" => Color::from_rgba8(118, 83, 48, 255),
+        "block:grass" => Color::from_rgba8(82, 142, 57, 255),
+        "block:wood" => Color::from_rgba8(126, 83, 42, 255),
+        "block:leaves" => Color::from_rgba8(54, 126, 58, 255),
+        _ => Color::from_rgba8(230, 210, 90, 255),
+    }
 }
 
 fn authoritative_inventory_selected_slot_index(
@@ -210,6 +272,14 @@ fn inventory_action_select_tool_slot_packet(tool_slot: u32) -> crate::api::Packe
     }
 }
 
+fn item_pickup_action_packet(entity_id: u64) -> crate::api::Packet {
+    crate::api::Packet {
+        payload: Some(crate::api::packet::Payload::ItemPickup(
+            crate::api::ItemPickupAction { entity_id },
+        )),
+    }
+}
+
 fn client_position_packet(x: f32, y: f32, z: f32) -> crate::api::Packet {
     crate::api::Packet {
         payload: Some(crate::api::packet::Payload::Position(
@@ -304,6 +374,9 @@ pub struct GameClient {
     authoritative_inventory_slots: Vec<AuthoritativeInventorySlot>,
     authoritative_inventory_selected_slot: u32,
     authoritative_inventory_selected_tool_slot: u32,
+    authoritative_item_entities: Vec<AuthoritativeItemEntity>,
+    authoritative_item_entity_revision: u64,
+    item_pickup_last_attempt_sec: HashMap<u64, f64>,
     mesh_queue: VecDeque<SubchunkKey>,
     queued_subchunks: HashMap<SubchunkKey, MeshQueueReason>,
     collision_refresh_queue: VecDeque<SubchunkKey>,
@@ -353,6 +426,9 @@ impl INode for GameClient {
             authoritative_inventory_slots: Vec::new(),
             authoritative_inventory_selected_slot: 0,
             authoritative_inventory_selected_tool_slot: 0,
+            authoritative_item_entities: Vec::new(),
+            authoritative_item_entity_revision: 0,
+            item_pickup_last_attempt_sec: HashMap::new(),
             mesh_queue: VecDeque::new(),
             queued_subchunks: HashMap::new(),
             collision_refresh_queue: VecDeque::new(),
@@ -478,9 +554,13 @@ impl INode for GameClient {
                 Some(crate::api::packet::Payload::InventorySnapshot(snapshot)) => {
                     self.update_inventory_snapshot(snapshot);
                 }
+                Some(crate::api::packet::Payload::ItemEntities(snapshot)) => {
+                    self.update_item_entity_snapshot(snapshot);
+                }
                 _ => {}
             }
         }
+        self.request_nearby_item_pickups();
         let collision_frame = self.process_collision_refresh_queue();
         let mesh_frame =
             if should_process_mesh_queue_after_collision_refresh(collision_frame.rebuilt) {
@@ -848,6 +928,111 @@ impl GameClient {
             self.authoritative_inventory_selected_slot,
             self.authoritative_inventory_selected_tool_slot
         ));
+    }
+
+    fn update_item_entity_snapshot(&mut self, snapshot: crate::api::ItemEntitySnapshot) {
+        self.authoritative_item_entity_revision = snapshot.revision;
+        self.authoritative_item_entities = authoritative_item_entities_from_snapshot(&snapshot);
+
+        let live_entity_ids = self
+            .authoritative_item_entities
+            .iter()
+            .map(|entity| entity.entity_id)
+            .collect::<HashSet<_>>();
+        self.item_pickup_last_attempt_sec
+            .retain(|entity_id, _| live_entity_ids.contains(entity_id));
+        self.last_block_action = format!(
+            "item entities {} revision {}",
+            self.authoritative_item_entities.len(),
+            self.authoritative_item_entity_revision
+        );
+        self.sync_item_entity_visuals();
+        self.emit_debug_log(&format!(
+            "Item entity snapshot received count={} revision={}",
+            self.authoritative_item_entities.len(),
+            self.authoritative_item_entity_revision
+        ));
+    }
+
+    fn request_nearby_item_pickups(&mut self) {
+        if self.authoritative_item_entities.is_empty() {
+            return;
+        }
+        let Some(player_position) = self.current_player_position() else {
+            return;
+        };
+
+        let radius_squared = CLIENT_ITEM_PICKUP_RADIUS * CLIENT_ITEM_PICKUP_RADIUS;
+        let now = self.client_runtime_sec;
+        let pickup_ids = self
+            .authoritative_item_entities
+            .iter()
+            .filter(|entity| entity.position.distance_squared_to(player_position) <= radius_squared)
+            .filter(|entity| {
+                self.item_pickup_last_attempt_sec
+                    .get(&entity.entity_id)
+                    .is_none_or(|last_attempt| now - *last_attempt >= CLIENT_ITEM_PICKUP_RETRY_SEC)
+            })
+            .map(|entity| entity.entity_id)
+            .collect::<Vec<_>>();
+
+        for entity_id in pickup_ids {
+            self.item_pickup_last_attempt_sec.insert(entity_id, now);
+            let packet = item_pickup_action_packet(entity_id);
+            self.send_packet_to_server(&packet);
+        }
+    }
+
+    fn current_player_position(&self) -> Option<Vector3> {
+        self.base()
+            .try_get_node_as::<godot::classes::Node3D>("Player")
+            .map(|player| player.get_global_position())
+    }
+
+    fn ensure_item_entity_root(&mut self) -> Gd<godot::classes::Node3D> {
+        if let Some(root) = self
+            .base()
+            .try_get_node_as::<godot::classes::Node3D>(ITEM_ENTITY_ROOT_NAME)
+        {
+            return root;
+        }
+
+        let mut root = godot::classes::Node3D::new_alloc();
+        root.set_name(&StringName::from(ITEM_ENTITY_ROOT_NAME));
+        self.base_mut()
+            .add_child(&root.clone().upcast::<godot::classes::Node>());
+        root
+    }
+
+    fn sync_item_entity_visuals(&mut self) {
+        let entities = self.authoritative_item_entities.clone();
+        let mut root = self.ensure_item_entity_root();
+
+        for index in (0..root.get_child_count()).rev() {
+            let Some(mut child) = root.get_child(index) else {
+                continue;
+            };
+            root.remove_child(&child);
+            child.queue_free();
+        }
+
+        for entity in entities {
+            let mut mesh_instance = godot::classes::MeshInstance3D::new_alloc();
+            mesh_instance.set_name(&StringName::from(&format!(
+                "ItemEntity{}",
+                entity.entity_id
+            )));
+            mesh_instance.set_position(entity.position);
+
+            let mut mesh = godot::classes::BoxMesh::new_gd();
+            mesh.set_size(Vector3::new(0.35, 0.35, 0.35));
+            mesh_instance.set_mesh(&mesh.upcast::<godot::classes::Mesh>());
+
+            let material =
+                item_entity_material(&entity.item_id).upcast::<godot::classes::Material>();
+            mesh_instance.set_material_override(&material);
+            root.add_child(&mesh_instance.upcast::<godot::classes::Node>());
+        }
     }
 
     fn process_mesh_queue(&mut self) -> MeshQueueFrame {
@@ -5728,6 +5913,15 @@ fn create_chunk_material() -> Gd<godot::classes::StandardMaterial3D> {
     material
 }
 
+fn item_entity_material(item_id: &str) -> Gd<godot::classes::StandardMaterial3D> {
+    let mut material = godot::classes::StandardMaterial3D::new_gd();
+    material.set_albedo(item_entity_color(item_id));
+    material.set_roughness(1.0);
+    material.set_specular(0.0);
+    material.set_texture_filter(godot::classes::base_material_3d::TextureFilter::NEAREST);
+    material
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TerrainMeshRenderMode {
     VisibleDoubleSided,
@@ -5974,6 +6168,22 @@ impl GameClient {
     }
 
     #[func]
+    fn get_authoritative_item_entity_count(&self) -> i32 {
+        self.authoritative_item_entities.len() as i32
+    }
+
+    #[func]
+    fn get_authoritative_item_entities_text(&self) -> GString {
+        GString::from(
+            authoritative_item_entities_text(
+                &self.authoritative_item_entities,
+                self.authoritative_item_entity_revision,
+            )
+            .as_str(),
+        )
+    }
+
+    #[func]
     fn get_debug_overlay_text(&self) -> GString {
         let state = client_lifecycle_state_label(self.client_state);
         let current_chunk = self
@@ -6002,7 +6212,7 @@ impl GameClient {
             },
         );
         let text = format!(
-            "State: {state}\nStreaming: chunks={} current={} loaded={} mesh_q={}/{} packet_drain={}/{}\nRender/GPU: submeshes={} current_submeshes={} gpu={}\nCollision: bodies={} current_bodies={} refresh_q={}/{} last={}/{}\nDirty/storage: chunks={} blocks={} last_blocks={} rebuild_subchunks={} partial={}/{} bounds={} edges={} save={}\nEvents: chunk={} block={} tool={}",
+            "State: {state}\nStreaming: chunks={} current={} loaded={} mesh_q={}/{} packet_drain={}/{}\nRender/GPU: submeshes={} current_submeshes={} gpu={}\nCollision: bodies={} current_bodies={} refresh_q={}/{} last={}/{}\nDirty/storage: chunks={} blocks={} last_blocks={} rebuild_subchunks={} partial={}/{} bounds={} edges={} save={}\nItems: count={} revision={}\nEvents: chunk={} block={} tool={}",
             self.chunk_blocks.len(),
             current_chunk,
             u8::from(current_loaded),
@@ -6028,6 +6238,8 @@ impl GameClient {
             dirty_bounds,
             dirty_edges,
             self.last_save_event,
+            self.authoritative_item_entities.len(),
+            self.authoritative_item_entity_revision,
             self.last_chunk_event,
             self.last_block_action,
             authoritative_tool_text(self.authoritative_inventory_selected_tool_slot)
@@ -6889,6 +7101,22 @@ impl GameClient {
         self.send_packet_to_server(&packet);
     }
 
+    #[func]
+    fn on_item_pickup(&mut self, entity_id: i64) {
+        if entity_id <= 0 {
+            self.emit_debug_log(&format!(
+                "Skipped invalid item pickup entity_id={entity_id}"
+            ));
+            return;
+        }
+
+        self.last_block_action = format!("pickup item entity {}", entity_id);
+        self.emit_debug_log(&format!("Item pickup sent: entity_id={entity_id}"));
+
+        let packet = item_pickup_action_packet(entity_id as u64);
+        self.send_packet_to_server(&packet);
+    }
+
     #[signal]
     fn debug_log(message: GString);
 }
@@ -7016,6 +7244,37 @@ mod tests {
     }
 
     #[test]
+    fn item_entity_snapshot_copies_authoritative_entities() {
+        let snapshot = crate::api::ItemEntitySnapshot {
+            entities: vec![crate::api::ItemEntity {
+                entity_id: 42,
+                item_id: "block:stone".to_string(),
+                count: 3,
+                x: 1.5,
+                y: 60.5,
+                z: -2.5,
+            }],
+            revision: 7,
+        };
+
+        let entities = authoritative_item_entities_from_snapshot(&snapshot);
+
+        assert_eq!(
+            entities,
+            vec![AuthoritativeItemEntity {
+                entity_id: 42,
+                item_id: "block:stone".to_string(),
+                count: 3,
+                position: Vector3::new(1.5, 60.5, -2.5),
+            }]
+        );
+        assert_eq!(
+            authoritative_item_entities_text(&entities, snapshot.revision),
+            "revision=7 count=1 entities=42:block:stone:3@1.5,60.5,-2.5"
+        );
+    }
+
+    #[test]
     fn inventory_selected_slot_requires_authoritative_slot() {
         let slots = vec![AuthoritativeInventorySlot {
             block_id: blocks::GRASS,
@@ -7054,6 +7313,17 @@ mod tests {
         packet.encode(&mut encoded).unwrap();
 
         assert_eq!(encoded, vec![0x2a, 0x04, 0x08, 0x01, 0x18, 0x02]);
+    }
+
+    #[test]
+    fn item_pickup_action_packet_uses_wire_entity_id() {
+        use prost::Message;
+
+        let packet = item_pickup_action_packet(42);
+        let mut encoded = Vec::new();
+        packet.encode(&mut encoded).unwrap();
+
+        assert_eq!(encoded, vec![0x3a, 0x02, 0x08, 0x2a]);
     }
 
     #[test]

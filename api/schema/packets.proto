@@ -57,6 +57,24 @@ message InventoryAction {
   uint32 tool_slot = 3;
 }
 
+message ItemEntity {
+  uint64 entity_id = 1;
+  string item_id = 2;
+  uint32 count = 3;
+  float x = 4;
+  float y = 5;
+  float z = 6;
+}
+
+message ItemEntitySnapshot {
+  repeated ItemEntity entities = 1;
+  uint64 revision = 2;
+}
+
+message ItemPickupAction {
+  uint64 entity_id = 1;
+}
+
 message Packet {
   oneof payload {
     ChunkData chunk = 1;
@@ -64,5 +82,7 @@ message Packet {
     BlockAction block_action = 3;
     InventorySnapshot inventory_snapshot = 4;
     InventoryAction inventory_action = 5;
+    ItemEntitySnapshot item_entities = 6;
+    ItemPickupAction item_pickup = 7;
   }
 }

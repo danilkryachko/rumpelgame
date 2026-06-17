@@ -128,6 +128,27 @@ func (i *Inventory) AddBlock(blockID world.BlockID) bool {
 	return true
 }
 
+// CollectBlock accepts a picked-up placeable block stack into this inventory.
+func (i *Inventory) CollectBlock(blockID world.BlockID, count uint32) bool {
+	if count == 0 {
+		return false
+	}
+
+	slotIndex, ok := i.addableSlotIndex(blockID)
+	if !ok {
+		return false
+	}
+	if i.placementPolicy == PlacementPolicyRetain {
+		return true
+	}
+	if ^uint32(0)-i.slots[slotIndex].Count < count {
+		return false
+	}
+
+	i.slots[slotIndex].Count += count
+	return true
+}
+
 func (i *Inventory) Slots() []Slot {
 	copiedSlots := make([]Slot, len(i.slots))
 	copy(copiedSlots, i.slots)

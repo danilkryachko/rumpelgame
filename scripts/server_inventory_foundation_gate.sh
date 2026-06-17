@@ -88,6 +88,7 @@ require_token "$INVENTORY_SOURCE" 'func (i *Inventory) FirstPlaceableSlot'
 require_token "$INVENTORY_SOURCE" 'func (i *Inventory) PlaceableBlockAtSlot'
 require_token "$INVENTORY_SOURCE" 'func (i *Inventory) PlaceBlock'
 require_token "$INVENTORY_SOURCE" 'func (i *Inventory) AddBlock'
+require_token "$INVENTORY_SOURCE" 'func (i *Inventory) CollectBlock'
 require_token "$INVENTORY_SOURCE" 'func (i *Inventory) State'
 require_token "$INVENTORY_SOURCE" 'world.IsPlaceable'
 require_token "$INVENTORY_TEST" 'TestCreativeHotbarContainsCurrentPlaceableBlocks'
@@ -97,6 +98,9 @@ require_token "$INVENTORY_TEST" 'TestCountedInventoryConsumesStacksAndRejectsEmp
 require_token "$INVENTORY_TEST" 'TestCountedInventoryAddBlockRestoresDepletedSlot'
 require_token "$INVENTORY_TEST" 'TestInventoryAddBlockRejectsNonPlaceableAndMissingSlots'
 require_token "$INVENTORY_TEST" 'TestCreativeHotbarAddBlockRetainsCounts'
+require_token "$INVENTORY_TEST" 'TestCountedInventoryCollectBlockAddsStack'
+require_token "$INVENTORY_TEST" 'TestCollectBlockRejectsInvalidOrOverflowingStacks'
+require_token "$INVENTORY_TEST" 'TestCreativeHotbarCollectBlockRetainsCounts'
 require_token "$INVENTORY_TEST" 'TestInventorySlotsReturnsCopy'
 require_token "$INVENTORY_TEST" 'TestInventorySlotSelectionRequiresAvailablePlaceableSlot'
 require_token "$INVENTORY_TEST" 'TestInventoryFirstPlaceableSlotSkipsUnavailableSlots'
@@ -115,7 +119,11 @@ require_token "$NETWORK_SOURCE" 'playerinventory.NewCreativeHotbar()'
 require_token "$NETWORK_SOURCE" 'inventory.FirstPlaceableSlot()'
 require_token "$NETWORK_SOURCE" 'client.selectInventorySlot(action.Slot)'
 require_token "$NETWORK_SOURCE" 'client.placeInventoryBlock(block)'
-require_token "$NETWORK_SOURCE" 'client.addInventoryBlock(previousBlock)'
+require_token "$NETWORK_SOURCE" 'case *api.Packet_ItemPickup:'
+require_token "$NETWORK_SOURCE" 'spawnItemEntityForBlock(previousBlock'
+require_token "$NETWORK_SOURCE" 'broadcastItemEntitySnapshot(client)'
+require_token "$NETWORK_SOURCE" 'collectItemEntityForSession(client, action.EntityId)'
+require_token "$NETWORK_SOURCE" 'client.collectInventoryBlock(block, entity.count)'
 require_token "$NETWORK_SOURCE" 's.saveClientInventory(client)'
 require_token "$NETWORK_SOURCE" 'client.inventory.CanPlaceBlock'
 require_token "$NETWORK_SOURCE" 'normalizedPlayerID'
@@ -145,16 +153,19 @@ require_token "$NETWORK_TEST" 'TestHandleClientPacketPlacePersistsInventoryAfter
 require_token "$NETWORK_TEST" 'TestHandleClientPacketInventoryActionSelectsSlotAndSendsSnapshot'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketInventoryActionRejectsUnavailableSlot'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketPlaceSendsInventorySnapshotAfterCountedPlacement'
-require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroyAddsBlockToCountedInventoryAndSendsSnapshot'
-require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroyPersistsCollectedCountedDrop'
-require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroyDoesNotCollectAir'
-require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroyDoesNotCollectWhenBlockUpdateFails'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroySpawnsItemEntityAndSendsSnapshot'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketPickupPersistsCollectedCountedDrop'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketPickupRejectsOutOfReachEntity'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroyDoesNotSpawnItemEntityForAir'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroyDoesNotSpawnItemEntityWhenBlockUpdateFails'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketRejectsPlaceWhenSessionInventoryLacksBlock'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketDoesNotConsumeInventoryWhenBlockUpdateFails'
 require_token "$COUNTED_SMOKE_SCRIPT" 'RUMPELMC_SERVER_INVENTORY_MODE=counted'
 require_token "$COUNTED_SMOKE_SCRIPT" 'counted_inventory_runtime=live_server_guarded'
 require_token "$BREAK_DROP_SMOKE_SCRIPT" 'RUMPELMC_SERVER_INVENTORY_MODE=counted'
 require_token "$BREAK_DROP_SMOKE_SCRIPT" 'break_drop_inventory=live_server_guarded'
+require_token "$BREAK_DROP_SMOKE_SCRIPT" 'break_drop_pickup=live_server_guarded'
+require_token "$BREAK_DROP_SMOKE_SCRIPT" 'destroy-pickup-expect'
 
 test -s "$COUNTED_SMOKE_SUMMARY" || fail "missing required input $COUNTED_SMOKE_SUMMARY"
 counted_smoke_status="$(field_metric status "$COUNTED_SMOKE_SUMMARY")"
@@ -167,7 +178,9 @@ counted_protocol_change="$(field_metric protocol_change "$COUNTED_SMOKE_SUMMARY"
 test -s "$BREAK_DROP_SMOKE_SUMMARY" || fail "missing required input $BREAK_DROP_SMOKE_SUMMARY"
 break_drop_smoke_status="$(field_metric status "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_runtime="$(field_metric break_drop_inventory "$BREAK_DROP_SMOKE_SUMMARY")"
+break_drop_pickup="$(field_metric break_drop_pickup "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_destroy_status="$(field_metric destroy_status "$BREAK_DROP_SMOKE_SUMMARY")"
+break_drop_pickup_status="$(field_metric pickup_status "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_verify_restart_status="$(field_metric verify_restart_status "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_restarts="$(field_metric server_restarts "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_protocol_change="$(field_metric protocol_change "$BREAK_DROP_SMOKE_SUMMARY")"
@@ -196,7 +209,9 @@ awk \
   -v counted_protocol_change="${counted_protocol_change:-1}" \
   -v break_drop_smoke_status="${break_drop_smoke_status:-missing}" \
   -v break_drop_runtime="${break_drop_runtime:-missing}" \
+  -v break_drop_pickup="${break_drop_pickup:-missing}" \
   -v break_drop_destroy_status="${break_drop_destroy_status:-missing}" \
+  -v break_drop_pickup_status="${break_drop_pickup_status:-missing}" \
   -v break_drop_verify_restart_status="${break_drop_verify_restart_status:-missing}" \
   -v break_drop_restarts="${break_drop_restarts:-0}" \
   -v break_drop_protocol_change="${break_drop_protocol_change:-1}" \
@@ -214,6 +229,7 @@ awk \
     counted_inventory = "unit_guarded"
     counted_runtime_status = "live_server_guarded"
     break_drop_inventory = "live_server_guarded"
+    item_entity_pickup = "live_server_guarded"
     block_action_inventory = "session_guarded"
     player_inventory_persistence = "rocksdb_guarded"
     go_ok = go_tests == "pass" || go_tests == "skipped"
@@ -225,7 +241,9 @@ awk \
       counted_protocol_change + 0 == 0
     break_drop_ok = break_drop_smoke_status == "pass" &&
       break_drop_runtime == "live_server_guarded" &&
+      break_drop_pickup == "live_server_guarded" &&
       break_drop_destroy_status == "pass" &&
+      break_drop_pickup_status == "pass" &&
       break_drop_verify_restart_status == "pass" &&
       break_drop_restarts + 0 >= 1 &&
       break_drop_protocol_change + 0 == 0
@@ -247,7 +265,7 @@ awk \
       reason = "go_tests_failed"
     }
 
-    printf("server_inventory_foundation status=%s reason=%s server_inventory_status=%s creative_inventory=%s counted_inventory=%s counted_inventory_runtime=%s counted_inventory_runtime_status=%s counted_inventory_restarts=%d break_drop_inventory=%s break_drop_inventory_status=%s break_drop_inventory_restarts=%d block_action_inventory=%s player_inventory_persistence=%s active_protocol_change=%d active_storage_change=%d go_tests=%s design_doc=%s inventory_source=%s network_source=%s counted_smoke_summary=%s break_drop_smoke_summary=%s\n", status, reason, server_inventory_status, creative_inventory, counted_inventory, counted_runtime_status, counted_smoke_status, counted_restarts, break_drop_inventory, break_drop_smoke_status, break_drop_restarts, block_action_inventory, player_inventory_persistence, protocol_diff_count, storage_diff_count, go_tests, design_doc, inventory_source, network_source, counted_smoke_summary, break_drop_smoke_summary)
+    printf("server_inventory_foundation status=%s reason=%s server_inventory_status=%s creative_inventory=%s counted_inventory=%s counted_inventory_runtime=%s counted_inventory_runtime_status=%s counted_inventory_restarts=%d break_drop_inventory=%s break_drop_inventory_status=%s break_drop_inventory_restarts=%d item_entity_pickup=%s item_entity_pickup_status=%s block_action_inventory=%s player_inventory_persistence=%s active_protocol_change=%d active_storage_change=%d go_tests=%s design_doc=%s inventory_source=%s network_source=%s counted_smoke_summary=%s break_drop_smoke_summary=%s\n", status, reason, server_inventory_status, creative_inventory, counted_inventory, counted_runtime_status, counted_smoke_status, counted_restarts, break_drop_inventory, break_drop_smoke_status, break_drop_restarts, item_entity_pickup, break_drop_pickup_status, block_action_inventory, player_inventory_persistence, protocol_diff_count, storage_diff_count, go_tests, design_doc, inventory_source, network_source, counted_smoke_summary, break_drop_smoke_summary)
     if (status != "pass") {
       exit 1
     }

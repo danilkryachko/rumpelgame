@@ -14,6 +14,8 @@ func TestPacketPayloadFieldNumbersAreStable(t *testing.T) {
 	assertFieldNumber(t, packet, "block_action", 3)
 	assertFieldNumber(t, packet, "inventory_snapshot", 4)
 	assertFieldNumber(t, packet, "inventory_action", 5)
+	assertFieldNumber(t, packet, "item_entities", 6)
+	assertFieldNumber(t, packet, "item_pickup", 7)
 }
 
 func TestChunkDataFieldNumbersAreStable(t *testing.T) {
@@ -62,6 +64,22 @@ func TestInventoryActionFieldNumbersAreStable(t *testing.T) {
 	assertFieldNumber(t, action, "tool_slot", 3)
 	assertEnumNumber(t, actionType, "SELECT_SLOT", 0)
 	assertEnumNumber(t, actionType, "SELECT_TOOL_SLOT", 1)
+}
+
+func TestItemEntityFieldNumbersAreStable(t *testing.T) {
+	entity := (&ItemEntity{}).ProtoReflect().Descriptor()
+	snapshot := (&ItemEntitySnapshot{}).ProtoReflect().Descriptor()
+	pickup := (&ItemPickupAction{}).ProtoReflect().Descriptor()
+
+	assertFieldNumber(t, entity, "entity_id", 1)
+	assertFieldNumber(t, entity, "item_id", 2)
+	assertFieldNumber(t, entity, "count", 3)
+	assertFieldNumber(t, entity, "x", 4)
+	assertFieldNumber(t, entity, "y", 5)
+	assertFieldNumber(t, entity, "z", 6)
+	assertFieldNumber(t, snapshot, "entities", 1)
+	assertFieldNumber(t, snapshot, "revision", 2)
+	assertFieldNumber(t, pickup, "entity_id", 1)
 }
 
 func assertFieldNumber(t *testing.T, message protoreflect.MessageDescriptor, name protoreflect.Name, want protoreflect.FieldNumber) {
