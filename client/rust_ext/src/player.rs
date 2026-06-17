@@ -18,6 +18,7 @@ const FLY_DISABLE_MIN_FLOOR_NORMAL_Y: f32 = 0.7;
 const GROUND_SAFETY_RAYCAST_NAME: &str = "GroundSafetyRayCast";
 const VISUAL_SMOKE_DISABLE_PLAYER_INPUT_ENV: &str = "RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT";
 const PLAYER_HOTBAR_SLOTS: usize = 5;
+const PLAYER_TOOL_SLOTS: usize = 4;
 const CREATIVE_HOTBAR_STACK_COUNT: u32 = 999;
 const PLAYER_CHARACTER_VISUAL_NAME: &str = "PlayerVoxelCharacter";
 const PLAYER_HEIGHT_METERS: f32 = 1.90;
@@ -93,6 +94,7 @@ pub struct Player {
     mouse_sensitivity: f32,
     selected_block: i32,
     selected_hotbar_slot: usize,
+    selected_tool_slot: usize,
     hotbar: [InventorySlot; PLAYER_HOTBAR_SLOTS],
     fly_mode: bool,
     third_person_camera: bool,
@@ -118,6 +120,7 @@ impl ICharacterBody3D for Player {
             mouse_sensitivity: 0.002,
             selected_block,
             selected_hotbar_slot,
+            selected_tool_slot: 0,
             hotbar,
             fly_mode: false,
             third_person_camera: false,
@@ -247,6 +250,7 @@ impl ICharacterBody3D for Player {
         }
 
         self.update_selected_block_from_hotbar(&input);
+        self.update_selected_tool_from_keys(&input);
 
         if let Some(mouse_button) = mouse_button_event
             && mouse_button.is_pressed()
@@ -512,6 +516,26 @@ impl Player {
         }
     }
 
+    fn update_selected_tool_from_keys(&mut self, input: &Gd<Input>) {
+        for slot in 0..PLAYER_TOOL_SLOTS {
+            let Some(key) = tool_key_for_slot(slot) else {
+                continue;
+            };
+
+            if input.is_physical_key_pressed(key) {
+                let selected_slot =
+                    selected_tool_state_after_request(self.selected_tool_slot, slot);
+                if selected_slot != self.selected_tool_slot {
+                    self.selected_tool_slot = selected_slot;
+                    self.base_mut().emit_signal(
+                        &StringName::from("tool_slot_selected"),
+                        &[i32::try_from(selected_slot).unwrap_or(0).to_variant()],
+                    );
+                }
+            }
+        }
+    }
+
     fn aimed_block_hit(&mut self) -> Option<BlockHit> {
         let camera = self.camera.as_mut()?;
         let mut raycast = camera.try_get_node_as::<godot::classes::RayCast3D>("BlockRayCast")?;
@@ -619,6 +643,14 @@ fn selected_hotbar_state_after_request(
         .unwrap_or((current_slot, current_block_id))
 }
 
+fn selected_tool_state_after_request(current_slot: usize, requested_slot: usize) -> usize {
+    if requested_slot < PLAYER_TOOL_SLOTS {
+        requested_slot
+    } else {
+        current_slot
+    }
+}
+
 fn inventory_has_placeable_block(
     hotbar: &[InventorySlot],
     block_id: crate::blocks::BlockId,
@@ -635,6 +667,16 @@ fn hotbar_key_for_slot(slot: usize) -> Option<Key> {
         2 => Some(Key::KEY_3),
         3 => Some(Key::KEY_4),
         4 => Some(Key::KEY_5),
+        _ => None,
+    }
+}
+
+fn tool_key_for_slot(slot: usize) -> Option<Key> {
+    match slot {
+        0 => Some(Key::KEY_6),
+        1 => Some(Key::KEY_7),
+        2 => Some(Key::KEY_8),
+        3 => Some(Key::KEY_9),
         _ => None,
     }
 }
@@ -1110,6 +1152,9 @@ impl Player {
     fn hotbar_selected(slot: i32, block_id: i32);
 
     #[signal]
+    fn tool_slot_selected(slot: i32);
+
+    #[signal]
     fn debug_log(message: GString);
 }
 
@@ -1164,6 +1209,15 @@ mod tests {
             assert!(hotbar_key_for_slot(slot).is_some());
         }
         assert!(hotbar_key_for_slot(PLAYER_HOTBAR_SLOTS).is_none());
+    }
+
+    #[test]
+    fn tool_key_mapping_is_bounded_to_tool_slots() {
+        assert_eq!(tool_key_for_slot(0), Some(Key::KEY_6));
+        assert_eq!(tool_key_for_slot(1), Some(Key::KEY_7));
+        assert_eq!(tool_key_for_slot(2), Some(Key::KEY_8));
+        assert_eq!(tool_key_for_slot(3), Some(Key::KEY_9));
+        assert_eq!(tool_key_for_slot(PLAYER_TOOL_SLOTS), None);
     }
 
     #[test]
@@ -1283,5 +1337,11 @@ mod tests {
             ),
             (0, crate::blocks::STONE)
         );
+    }
+
+    #[test]
+    fn selected_tool_state_tracks_bounded_request() {
+        assert_eq!(selected_tool_state_after_request(0, 2), 2);
+        assert_eq!(selected_tool_state_after_request(2, PLAYER_TOOL_SLOTS), 2);
     }
 }

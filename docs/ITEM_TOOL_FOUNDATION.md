@@ -6,7 +6,7 @@ This document records the first server-owned item identity and tool slot checkpo
 
 Goal:
 
-Add stable server-side item IDs for the current placeable blocks and a first server-owned tool slot that can affect counted/survival mining duration without changing packet shape, storage formats, world generation, chunk serialization, or default creative behavior.
+Add stable server-side item IDs for the current placeable blocks and a first server-owned tool slot that can affect counted/survival mining duration without changing storage formats, world generation, chunk serialization, or default creative behavior. Client-visible selected-tool changes are carried by the inventory action/snapshot protocol without adding item ID or tool ID packet fields.
 
 Scope:
 
@@ -22,7 +22,7 @@ Scope:
 Outside this checkpoint:
 
 - No item entity pickup packet.
-- No crafting, stack transfer, client-visible tool selection, tool durability, equipment save format, or new inventory action.
+- No crafting, stack transfer, tool durability, or equipment save format.
 - No protocol fields for item IDs or tool IDs.
 - No RocksDB key or payload change.
 - No world generation, chunk serialization, Godot scene/resource/import, renderer, lighting, shadow, draw-distance, or texture-quality change.
@@ -58,6 +58,8 @@ The catalog exposes copy-returning accessors so callers cannot mutate the regist
 
 Invalid selected tool slots and empty toolbelts fall back to `tool:hand`.
 
+Client-selected tool changes use `InventoryAction SELECT_TOOL_SLOT` and are echoed through `InventorySnapshot.selected_tool_slot`. The selected slot remains session state for this checkpoint; the current RocksDB player-inventory record still stores inventory slots and selected block slot only.
+
 ## Mining Duration Contract
 
 Connected-session `BlockAction_DESTROY` still follows the existing server sequence:
@@ -74,7 +76,7 @@ Tool adjustment is intentionally integer and deterministic. Effective wooden too
 ## Compatibility Rules
 
 - Keep `Packet.block_action = 3` and the current `BlockAction` fields.
-- Keep `Packet.inventory_snapshot = 4` and `Packet.inventory_action = 5` unchanged.
+- Keep `Packet.inventory_snapshot = 4` and `Packet.inventory_action = 5` as the selected block/tool slot inventory protocol boundary.
 - Keep `block_id` as the current wire/storage identity for voxel contents.
 - Do not add item/tool packet fields without a separate protocol compatibility task.
 - Do not change RocksDB chunk keys, chunk payload bytes, player inventory records, chunk serialization, or world generation.

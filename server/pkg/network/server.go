@@ -485,7 +485,7 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			log.Printf("Ignored nil inventory action")
 			return nil
 		}
-		log.Printf("Received InventoryAction: action=%v, slot=%d", action.Action, action.Slot)
+		log.Printf("Received InventoryAction: action=%v, slot=%d, tool_slot=%d", action.Action, action.Slot, action.ToolSlot)
 
 		switch action.Action {
 		case api.InventoryAction_SELECT_SLOT:
@@ -498,6 +498,17 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			}
 			if err := s.saveClientInventory(client); err != nil {
 				return err
+			}
+			if err := s.sendInventorySnapshotToSession(client); err != nil {
+				return fmt.Errorf("send inventory snapshot: %w", err)
+			}
+		case api.InventoryAction_SELECT_TOOL_SLOT:
+			if !client.selectToolSlot(action.ToolSlot) {
+				log.Printf("Ignored invalid tool slot=%d", action.ToolSlot)
+				if err := s.sendInventorySnapshotToSession(client); err != nil {
+					return fmt.Errorf("send inventory snapshot: %w", err)
+				}
+				return nil
 			}
 			if err := s.sendInventorySnapshotToSession(client); err != nil {
 				return fmt.Errorf("send inventory snapshot: %w", err)
@@ -794,6 +805,16 @@ func (c *clientSession) selectedToolID() item.ID {
 	return c.toolbelt[c.selectedToolSlot]
 }
 
+func (c *clientSession) selectedToolSlotIndex() uint32 {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if len(c.toolbelt) == 0 || uint64(c.selectedToolSlot) >= uint64(len(c.toolbelt)) {
+		return 0
+	}
+	return c.selectedToolSlot
+}
+
 func (c *clientSession) selectInventorySlot(slot uint32) bool {
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
@@ -802,6 +823,17 @@ func (c *clientSession) selectInventorySlot(slot uint32) bool {
 		return false
 	}
 	c.selectedInventorySlot = slot
+	return true
+}
+
+func (c *clientSession) selectToolSlot(slot uint32) bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if len(c.toolbelt) == 0 || uint64(slot) >= uint64(len(c.toolbelt)) {
+		return false
+	}
+	c.selectedToolSlot = slot
 	return true
 }
 
@@ -1263,7 +1295,7 @@ func (s *Server) sendChunkToSession(client *clientSession, chunk world.ChunkSnap
 }
 
 func (s *Server) sendInventorySnapshotToSession(client *clientSession) error {
-	return s.sendPacketToSession(client, inventorySnapshotPacket(client.inventory, client.selectedSlot()))
+	return s.sendPacketToSession(client, inventorySnapshotPacket(client.inventory, client.selectedSlot(), client.selectedToolSlotIndex()))
 }
 
 func (s *Server) sendPacketToSession(client *clientSession, packet *api.Packet) error {
@@ -1322,15 +1354,15 @@ func (s *Server) chunkPacket(chunk world.ChunkSnapshot) (*api.Packet, chunkSendS
 	return packet, stats, nil
 }
 
-func inventorySnapshotPacket(inventory playerinventory.Inventory, selectedSlot uint32) *api.Packet {
+func inventorySnapshotPacket(inventory playerinventory.Inventory, selectedSlot uint32, selectedToolSlot uint32) *api.Packet {
 	return &api.Packet{
 		Payload: &api.Packet_InventorySnapshot{
-			InventorySnapshot: inventorySnapshot(inventory, selectedSlot),
+			InventorySnapshot: inventorySnapshot(inventory, selectedSlot, selectedToolSlot),
 		},
 	}
 }
 
-func inventorySnapshot(inventory playerinventory.Inventory, selectedSlot uint32) *api.InventorySnapshot {
+func inventorySnapshot(inventory playerinventory.Inventory, selectedSlot uint32, selectedToolSlot uint32) *api.InventorySnapshot {
 	slots := inventory.Slots()
 	apiSlots := make([]*api.InventorySlot, 0, len(slots))
 	for _, slot := range slots {
@@ -1340,8 +1372,9 @@ func inventorySnapshot(inventory playerinventory.Inventory, selectedSlot uint32)
 		})
 	}
 	return &api.InventorySnapshot{
-		Slots:        apiSlots,
-		SelectedSlot: selectedSlot,
+		Slots:            apiSlots,
+		SelectedSlot:     selectedSlot,
+		SelectedToolSlot: selectedToolSlot,
 	}
 }
 

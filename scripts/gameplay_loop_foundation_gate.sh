@@ -72,28 +72,37 @@ for token in \
   'Compatibility Rules' \
   'Server Inventory Foundation' \
   'Item Tool Foundation' \
+  'Client-Visible Tool Selection' \
   'Block 41' \
   'Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload' \
-  'Keep `Packet.inventory_action = 5` as the client-to-server selected-slot inventory action payload'; do
+  'Keep `Packet.inventory_action = 5` as the client-to-server selected block/tool slot inventory action payload' \
+  'tool_selection=inventory_action_guarded' \
+  'tool_hud=authoritative_guarded'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
 require_token "$PROTOCOL_DOC" '`Packet.block_action = 3`'
+require_token "$PROTOCOL_DOC" '`InventoryAction SELECT_TOOL_SLOT = 1`'
 require_token "$PLAYER_SOURCE" 'struct InventorySlot'
 require_token "$PLAYER_SOURCE" 'PLAYER_HOTBAR_SLOTS'
+require_token "$PLAYER_SOURCE" 'PLAYER_TOOL_SLOTS'
 require_token "$PLAYER_SOURCE" 'CREATIVE_HOTBAR_STACK_COUNT'
 require_token "$PLAYER_SOURCE" 'selected_hotbar_slot: usize'
+require_token "$PLAYER_SOURCE" 'selected_tool_slot: usize'
 require_token "$PLAYER_SOURCE" 'hotbar: [InventorySlot; PLAYER_HOTBAR_SLOTS]'
 require_token "$PLAYER_SOURCE" 'fn initial_hotbar_inventory'
 require_token "$PLAYER_SOURCE" 'fn inventory_slot_can_place'
 require_token "$PLAYER_SOURCE" 'fn first_placeable_hotbar_slot'
 require_token "$PLAYER_SOURCE" 'fn selected_block_for_hotbar_slot'
 require_token "$PLAYER_SOURCE" 'fn selected_hotbar_state_after_request'
+require_token "$PLAYER_SOURCE" 'fn selected_tool_state_after_request'
 require_token "$PLAYER_SOURCE" 'fn inventory_has_placeable_block'
 require_token "$PLAYER_SOURCE" 'fn hotbar_key_for_slot'
+require_token "$PLAYER_SOURCE" 'fn tool_key_for_slot'
 require_token "$PLAYER_SOURCE" 'block_broken'
 require_token "$PLAYER_SOURCE" 'block_placed'
 require_token "$PLAYER_SOURCE" 'hotbar_selected'
+require_token "$PLAYER_SOURCE" 'tool_slot_selected'
 require_token "$PLAYER_SOURCE" 'initial_hotbar_inventory_contains_placeable_blocks'
 require_token "$PLAYER_SOURCE" 'inventory_slot_can_place_requires_count_and_placeable_block'
 require_token "$PLAYER_SOURCE" 'inventory_has_placeable_block_accepts_only_available_hotbar_blocks'
@@ -101,10 +110,14 @@ require_token "$PLAYER_SOURCE" 'hotbar_key_mapping_is_bounded_to_inventory_slots
 require_token "$PLAYER_SOURCE" 'hotbar_first_placeable_slot_picks_available_block'
 require_token "$PLAYER_SOURCE" 'selected_hotbar_state_tracks_placeable_slot'
 require_token "$PLAYER_SOURCE" 'selected_hotbar_state_ignores_unplaceable_or_empty_slot'
+require_token "$PLAYER_SOURCE" 'tool_key_mapping_is_bounded_to_tool_slots'
+require_token "$PLAYER_SOURCE" 'selected_tool_state_tracks_bounded_request'
 require_token "$CLIENT_SOURCE" 'fn on_block_broken'
 require_token "$CLIENT_SOURCE" 'fn on_block_placed'
 require_token "$CLIENT_SOURCE" 'fn on_hotbar_selected'
+require_token "$CLIENT_SOURCE" 'fn on_tool_slot_selected'
 require_token "$CLIENT_SOURCE" 'inventory_action_select_slot_packet'
+require_token "$CLIENT_SOURCE" 'inventory_action_select_tool_slot_packet'
 require_token "$CLIENT_SOURCE" 'client_position_packet'
 require_token "$CLIENT_SOURCE" 'LOCAL_PLAYER_ID'
 require_token "$CLIENT_SOURCE" 'BlockAction'
@@ -114,16 +127,24 @@ require_token "$CLIENT_SOURCE" 'fn authoritative_inventory_text'
 require_token "$CLIENT_SOURCE" 'fn get_authoritative_inventory_selected_slot'
 require_token "$CLIENT_SOURCE" 'fn get_authoritative_inventory_selected_block'
 require_token "$CLIENT_SOURCE" 'fn get_authoritative_inventory_slot_text'
+require_token "$CLIENT_SOURCE" 'fn get_authoritative_tool_selected_slot'
+require_token "$CLIENT_SOURCE" 'fn get_authoritative_tool_text'
 require_token "$CLIENT_SOURCE" 'inventory_hotbar_slot_text_formats_authoritative_counts'
 require_token "$CLIENT_SOURCE" 'inventory_hotbar_text_reports_selected_and_counts'
 require_token "$CLIENT_SOURCE" 'inventory_selected_slot_requires_authoritative_slot'
+require_token "$CLIENT_SOURCE" 'authoritative_tool_text_reports_selected_tool_slot'
+require_token "$CLIENT_SOURCE" 'inventory_action_select_tool_slot_packet_uses_wire_tool_slot'
 require_token "$HUD_SOURCE" 'hotbar_labels'
+require_token "$HUD_SOURCE" 'tool_label'
 require_token "$HUD_SOURCE" 'get_authoritative_inventory_selected_slot'
 require_token "$HUD_SOURCE" 'get_authoritative_inventory_selected_block'
 require_token "$HUD_SOURCE" 'get_authoritative_inventory_slot_text'
 require_token "$HUD_SOURCE" 'get_authoritative_inventory_text'
+require_token "$HUD_SOURCE" 'get_authoritative_tool_selected_slot'
+require_token "$HUD_SOURCE" 'get_authoritative_tool_text'
 require_token "$SERVER_SOURCE" 'case *api.Packet_BlockAction:'
 require_token "$SERVER_SOURCE" 'case *api.Packet_InventoryAction:'
+require_token "$SERVER_SOURCE" 'case api.InventoryAction_SELECT_TOOL_SLOT:'
 require_token "$SERVER_SOURCE" 'bindPlayerInventoryFromPosition'
 require_token "$SERVER_SOURCE" 'SavePlayerInventory'
 require_token "$SERVER_SOURCE" 'world.IsPlaceable(block)'
@@ -183,7 +204,7 @@ proto_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.pr
 
 inventory_tests="skipped"
 if [ "$RUN_RUST_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/client/rust_ext" && cargo test --lib inventory > "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib hotbar >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib inventory_action >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib client_position_packet >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1); then
+  if (cd "$ROOT_DIR/client/rust_ext" && cargo test --lib inventory > "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib hotbar >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib tool >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib inventory_action >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1 && cargo test --lib client_position_packet >> "$OUT_DIR/cargo-test-inventory.txt" 2>&1); then
     inventory_tests="pass"
   else
     cat "$OUT_DIR/cargo-test-inventory.txt" >&2 || true
@@ -256,7 +277,9 @@ awk \
     gameplay_loop_status = "foundation_guarded"
     inventory_foundation = "unit_guarded"
     hotbar_selection = "unit_guarded"
+    tool_selection = "inventory_action_guarded"
     inventory_hud = "authoritative_guarded"
+    tool_hud = "authoritative_guarded"
     server_edit_persistence = "store_save_boundary"
     block_edit_visual_ok = block_edit_persistence_status == "pass" &&
       block_edit_visual_path == "godot_persisted_reload_guarded" &&
@@ -330,7 +353,7 @@ awk \
       reason = "player_inventory_reconnect_not_clean"
     }
 
-    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s inventory_hud=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s mining_rules_status=%s mining_cooldown=%s mining_block_durations=%s item_tool_foundation=%s item_identity=%s tool_catalog=%s first_tool_slot=%s tool_mining=%s player_inventory_reconnect=%s player_inventory_reconnect_status=%s player_inventory_reconnect_restarts=%d server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s mining_rules_summary=%s item_tool_summary=%s player_inventory_reconnect_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, inventory_hud, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, mining_rules_guard, mining_rules_counted_cooldown, mining_block_durations, item_tool_guard, item_tool_identity, item_tool_catalog, item_tool_first_slot, item_tool_mining, player_inventory_reconnect, player_inventory_reconnect_status, player_inventory_restarts, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary, mining_rules_summary, item_tool_summary, player_inventory_reconnect_summary)
+    printf("gameplay_loop_foundation status=%s reason=%s gameplay_loop_status=%s inventory_foundation=%s hotbar_selection=%s tool_selection=%s inventory_hud=%s tool_hud=%s server_inventory_status=%s server_inventory_block_action=%s server_inventory_persistence=%s mining_rules_status=%s mining_cooldown=%s mining_block_durations=%s item_tool_foundation=%s item_identity=%s tool_catalog=%s first_tool_slot=%s tool_mining=%s player_inventory_reconnect=%s player_inventory_reconnect_status=%s player_inventory_reconnect_restarts=%d server_edit_persistence=%s active_protocol_change=%d inventory_tests=%s server_tests=%s full_reload_persistence=%s block_edit_persistence_status=%s block_edit_visual_path=%s block_edit_active_protocol_change=%d block_edit_persisted_visual_smoke=%s block_edit_persisted_visual_smoke_status=%s block_edit_persisted_visual_scenarios=%d block_edit_persisted_visual_place_reload_status=%s block_edit_persisted_visual_destroy_after_reload_status=%s block_edit_persisted_visual_edge_place_status=%s client_state_status=%s client_state_protocol_change=%d design_doc=%s client_state_summary=%s block_edit_persistence_summary=%s server_inventory_summary=%s mining_rules_summary=%s item_tool_summary=%s player_inventory_reconnect_summary=%s\n", status, reason, gameplay_loop_status, inventory_foundation, hotbar_selection, tool_selection, inventory_hud, tool_hud, server_inventory_guard, server_inventory_block_action, server_inventory_persistence, mining_rules_guard, mining_rules_counted_cooldown, mining_block_durations, item_tool_guard, item_tool_identity, item_tool_catalog, item_tool_first_slot, item_tool_mining, player_inventory_reconnect, player_inventory_reconnect_status, player_inventory_restarts, server_edit_persistence, active_protocol_change, inventory_tests, server_tests, full_reload_persistence, block_edit_persistence_status, block_edit_visual_path, block_edit_active_protocol_change, block_edit_persisted_visual_smoke, block_edit_persisted_visual_smoke_status, block_edit_persisted_visual_scenarios, block_edit_persisted_visual_place_reload_status, block_edit_persisted_visual_destroy_after_reload_status, block_edit_persisted_visual_edge_place_status, client_state_status, client_state_protocol_change, design_doc, client_state_summary, block_edit_persistence_summary, server_inventory_summary, mining_rules_summary, item_tool_summary, player_inventory_reconnect_summary)
     if (status != "pass") {
       exit 1
     }

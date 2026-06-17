@@ -19,6 +19,7 @@ var block_names = {
 var labels = []
 var hotbar_labels = []
 var fps_label: Label
+var tool_label: Label
 var dev_panel: PanelContainer
 var dev_info_label: Label
 var dev_log_label: Label
@@ -50,6 +51,18 @@ func _ready():
 	hbox.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	hbox.set_offset(SIDE_BOTTOM, -20)
 	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	var tool_panel = PanelContainer.new()
+	tool_panel.custom_minimum_size = Vector2(140, 60)
+
+	tool_label = Label.new()
+	tool_label.text = get_authoritative_tool_text()
+	tool_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tool_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	tool_label.add_theme_font_size_override("font_size", 13)
+
+	tool_panel.add_child(tool_label)
+	hbox.add_child(tool_panel)
 
 	for i in range(1, 6):
 		var panel = PanelContainer.new()
@@ -213,6 +226,8 @@ func update_ui():
 	var selected_inventory_block = get_authoritative_inventory_selected_block()
 	if selected_inventory_block > 0:
 		selected_block = selected_inventory_block
+	if tool_label:
+		tool_label.text = get_authoritative_tool_text()
 
 	for i in range(labels.size()):
 		var panel = labels[i]
@@ -293,6 +308,7 @@ func dev_tab_lines(fps: int, frame_ms: float, window_size: Vector2i, viewport_si
 				"Last block action: %s" % get_client_text("get_last_block_action_text", "n/a"),
 				"Last save: %s" % get_client_text("get_last_save_text", "n/a"),
 				"Selected: %d %s" % [selected_block, get_block_name(selected_block)],
+				"Tool: %s" % get_authoritative_tool_text().replace("\n", " "),
 				"Inventory: %s" % get_authoritative_inventory_text(),
 				"Fly: %s" % get_player_fly_text(),
 				"Mouse: %s" % get_mouse_mode_text(),
@@ -314,6 +330,7 @@ func dev_tab_lines(fps: int, frame_ms: float, window_size: Vector2i, viewport_si
 				"Fly: %s" % get_player_fly_text(),
 				"Texture stand: %s" % get_texture_debug_stand_text(),
 				"Selected: %d %s" % [selected_block, get_block_name(selected_block)],
+				"Tool: %s" % get_authoritative_tool_text().replace("\n", " "),
 				"Inventory: %s" % get_authoritative_inventory_text(),
 			]
 
@@ -408,6 +425,15 @@ func get_authoritative_inventory_selected_block() -> int:
 
 func get_authoritative_inventory_text() -> String:
 	return get_client_text("get_authoritative_inventory_text", "selected=none slots=")
+
+func get_authoritative_tool_selected_slot() -> int:
+	var client = get_tree().root.find_child("GameClient", true, false)
+	if client and client.has_method("get_authoritative_tool_selected_slot"):
+		return int(client.get_authoritative_tool_selected_slot())
+	return -1
+
+func get_authoritative_tool_text() -> String:
+	return get_client_text("get_authoritative_tool_text", "Tool 1\nHand")
 
 func get_hotbar_slot_text(slot_index: int) -> String:
 	var client = get_tree().root.find_child("GameClient", true, false)

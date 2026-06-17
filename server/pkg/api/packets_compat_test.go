@@ -134,6 +134,20 @@ func TestPacketWireCompatibility(t *testing.T) {
 			},
 		},
 		{
+			name: "inventory snapshot selected tool slot field tag 3",
+			packet: &Packet{
+				Payload: &Packet_InventorySnapshot{
+					InventorySnapshot: &InventorySnapshot{
+						SelectedToolSlot: 2,
+					},
+				},
+			},
+			expected: []byte{
+				0x22, 0x02,
+				0x18, 0x02,
+			},
+		},
+		{
 			name: "inventory action payload tag 5",
 			packet: &Packet{
 				Payload: &Packet_InventoryAction{
@@ -146,6 +160,22 @@ func TestPacketWireCompatibility(t *testing.T) {
 			expected: []byte{
 				0x2a, 0x02,
 				0x10, 0x03,
+			},
+		},
+		{
+			name: "inventory tool action payload tag 5",
+			packet: &Packet{
+				Payload: &Packet_InventoryAction{
+					InventoryAction: &InventoryAction{
+						Action:   InventoryAction_SELECT_TOOL_SLOT,
+						ToolSlot: 2,
+					},
+				},
+			},
+			expected: []byte{
+				0x2a, 0x04,
+				0x08, 0x01,
+				0x18, 0x02,
 			},
 		},
 	}

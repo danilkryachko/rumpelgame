@@ -77,12 +77,14 @@
 
 - Current inventory validation uses the existing `BlockAction` packet shape.
 - `BlockAction.block_id = 5` remains the requested placement block ID for `PLACE`.
-- `Packet.inventory_snapshot = 4` sends server-authoritative inventory slots to the client after admission.
-- `InventorySlot.block_id = 1`, `InventorySlot.count = 2`, `InventorySnapshot.slots = 1`, and `InventorySnapshot.selected_slot = 2` keep their current meanings.
-- `Packet.inventory_action = 5` carries client slot-selection requests.
-- `InventoryAction.action = 1`, `InventoryAction.slot = 2`, and `InventoryAction SELECT_SLOT = 0` keep their current meanings.
+- `Packet.inventory_snapshot = 4` sends server-authoritative inventory slots and selected block/tool slots to the client after admission.
+- `InventorySlot.block_id = 1`, `InventorySlot.count = 2`, `InventorySnapshot.slots = 1`, `InventorySnapshot.selected_slot = 2`, and `InventorySnapshot.selected_tool_slot = 3` keep their current meanings.
+- `Packet.inventory_action = 5` carries client slot-selection and tool-selection requests.
+- `InventoryAction.action = 1`, `InventoryAction.slot = 2`, `InventoryAction.tool_slot = 3`, `InventoryAction SELECT_SLOT = 0`, and `InventoryAction SELECT_TOOL_SLOT = 1` keep their current meanings.
 - Server session inventory remains authoritative for placement approval.
-- When a valid `ClientPosition.player_id` is present and a player inventory store is configured, the server loads and saves inventory slots plus selected slot under that player identity.
+- Server session toolbelt remains authoritative for selected-tool mining behavior.
+- When a valid `ClientPosition.player_id` is present and a player inventory store is configured, the server loads and saves inventory slots plus selected block slot under that player identity.
+- The selected tool slot is current session state in this checkpoint; it is echoed through `InventorySnapshot.selected_tool_slot` but does not change the RocksDB player-inventory record format.
 - New inventory packet payloads must use new `Packet.payload` tags greater than `5`.
 - New `BlockAction` fields must use field numbers greater than `5`.
 - Run `scripts/inventory_protocol_compatibility_gate.sh` before finishing inventory work that claims protocol compatibility.

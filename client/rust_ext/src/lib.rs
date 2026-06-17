@@ -24,6 +24,8 @@ use std::sync::{
 const SERVER_ADDRESS: &str = "127.0.0.1:25565";
 const LOCAL_PLAYER_ID: &str = "local_player";
 const RECONNECT_RETRY_INTERVAL_SEC: f64 = 0.5;
+const AUTHORITATIVE_TOOL_SLOT_LABELS: [&str; 4] =
+    ["Hand", "Wooden Pickaxe", "Wooden Axe", "Wooden Shovel"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ClientLifecycleState {
@@ -162,12 +164,46 @@ fn authoritative_inventory_text(
     format!("selected={} slots={}", selected, slot_text)
 }
 
+fn authoritative_tool_slot_index(selected_tool_slot: u32) -> Option<usize> {
+    let selected_tool_slot = selected_tool_slot as usize;
+    if selected_tool_slot < AUTHORITATIVE_TOOL_SLOT_LABELS.len() {
+        Some(selected_tool_slot)
+    } else {
+        None
+    }
+}
+
+fn authoritative_tool_text(selected_tool_slot: u32) -> String {
+    authoritative_tool_slot_index(selected_tool_slot)
+        .map(|slot| {
+            format!(
+                "Tool {}\n{}",
+                slot + 1,
+                AUTHORITATIVE_TOOL_SLOT_LABELS[slot]
+            )
+        })
+        .unwrap_or_else(|| "Tool\nUnknown".to_string())
+}
+
 fn inventory_action_select_slot_packet(slot: u32) -> crate::api::Packet {
     crate::api::Packet {
         payload: Some(crate::api::packet::Payload::InventoryAction(
             crate::api::InventoryAction {
                 action: crate::api::inventory_action::ActionType::SelectSlot as i32,
                 slot,
+                tool_slot: 0,
+            },
+        )),
+    }
+}
+
+fn inventory_action_select_tool_slot_packet(tool_slot: u32) -> crate::api::Packet {
+    crate::api::Packet {
+        payload: Some(crate::api::packet::Payload::InventoryAction(
+            crate::api::InventoryAction {
+                action: crate::api::inventory_action::ActionType::SelectToolSlot as i32,
+                slot: 0,
+                tool_slot,
             },
         )),
     }
@@ -266,6 +302,7 @@ pub struct GameClient {
     chunk_last_seen_sec: HashMap<(i32, i32), f64>,
     authoritative_inventory_slots: Vec<AuthoritativeInventorySlot>,
     authoritative_inventory_selected_slot: u32,
+    authoritative_inventory_selected_tool_slot: u32,
     mesh_queue: VecDeque<SubchunkKey>,
     queued_subchunks: HashMap<SubchunkKey, MeshQueueReason>,
     collision_refresh_queue: VecDeque<SubchunkKey>,
@@ -314,6 +351,7 @@ impl INode for GameClient {
             chunk_last_seen_sec: HashMap::new(),
             authoritative_inventory_slots: Vec::new(),
             authoritative_inventory_selected_slot: 0,
+            authoritative_inventory_selected_tool_slot: 0,
             mesh_queue: VecDeque::new(),
             queued_subchunks: HashMap::new(),
             collision_refresh_queue: VecDeque::new(),
@@ -634,6 +672,11 @@ impl GameClient {
             .callable(&StringName::from("on_hotbar_selected"));
         player.connect(&StringName::from("hotbar_selected"), &callable_hotbar);
 
+        let callable_tool = self
+            .base()
+            .callable(&StringName::from("on_tool_slot_selected"));
+        player.connect(&StringName::from("tool_slot_selected"), &callable_tool);
+
         let callable_log = self
             .base()
             .callable(&StringName::from("on_player_debug_log"));
@@ -790,16 +833,19 @@ impl GameClient {
 
     fn update_inventory_snapshot(&mut self, snapshot: crate::api::InventorySnapshot) {
         self.authoritative_inventory_selected_slot = snapshot.selected_slot;
+        self.authoritative_inventory_selected_tool_slot = snapshot.selected_tool_slot;
         self.authoritative_inventory_slots = authoritative_inventory_slots_from_snapshot(&snapshot);
         self.last_block_action = format!(
-            "inventory slots {} selected {}",
+            "inventory slots {} selected {} tool {}",
             self.authoritative_inventory_slots.len(),
-            self.authoritative_inventory_selected_slot
+            self.authoritative_inventory_selected_slot,
+            self.authoritative_inventory_selected_tool_slot
         );
         self.emit_debug_log(&format!(
-            "Inventory snapshot received slots={} selected={}",
+            "Inventory snapshot received slots={} selected={} tool={}",
             self.authoritative_inventory_slots.len(),
-            self.authoritative_inventory_selected_slot
+            self.authoritative_inventory_selected_slot,
+            self.authoritative_inventory_selected_tool_slot
         ));
     }
 
@@ -5913,6 +5959,20 @@ impl GameClient {
     }
 
     #[func]
+    fn get_authoritative_tool_selected_slot(&self) -> i32 {
+        authoritative_tool_slot_index(self.authoritative_inventory_selected_tool_slot)
+            .map(|slot| slot as i32)
+            .unwrap_or(-1)
+    }
+
+    #[func]
+    fn get_authoritative_tool_text(&self) -> GString {
+        GString::from(
+            authoritative_tool_text(self.authoritative_inventory_selected_tool_slot).as_str(),
+        )
+    }
+
+    #[func]
     fn get_debug_overlay_text(&self) -> GString {
         let state = client_lifecycle_state_label(self.client_state);
         let current_chunk = self
@@ -5941,7 +6001,7 @@ impl GameClient {
             },
         );
         let text = format!(
-            "State: {state}\nStreaming: chunks={} current={} loaded={} mesh_q={}/{} packet_drain={}/{}\nRender/GPU: submeshes={} current_submeshes={} gpu={}\nCollision: bodies={} current_bodies={} refresh_q={}/{} last={}/{}\nDirty/storage: chunks={} blocks={} last_blocks={} rebuild_subchunks={} partial={}/{} bounds={} edges={} save={}\nEvents: chunk={} block={}",
+            "State: {state}\nStreaming: chunks={} current={} loaded={} mesh_q={}/{} packet_drain={}/{}\nRender/GPU: submeshes={} current_submeshes={} gpu={}\nCollision: bodies={} current_bodies={} refresh_q={}/{} last={}/{}\nDirty/storage: chunks={} blocks={} last_blocks={} rebuild_subchunks={} partial={}/{} bounds={} edges={} save={}\nEvents: chunk={} block={} tool={}",
             self.chunk_blocks.len(),
             current_chunk,
             u8::from(current_loaded),
@@ -5968,7 +6028,9 @@ impl GameClient {
             dirty_edges,
             self.last_save_event,
             self.last_chunk_event,
-            self.last_block_action
+            self.last_block_action,
+            authoritative_tool_text(self.authoritative_inventory_selected_tool_slot)
+                .replace('\n', ":")
         );
         GString::from(text.as_str())
     }
@@ -6812,6 +6874,20 @@ impl GameClient {
         self.send_packet_to_server(&packet);
     }
 
+    #[func]
+    fn on_tool_slot_selected(&mut self, slot: i32) {
+        if slot < 0 || authoritative_tool_slot_index(slot as u32).is_none() {
+            self.emit_debug_log(&format!("Skipped invalid tool slot={slot}"));
+            return;
+        }
+
+        self.last_block_action = format!("select tool slot {}", slot);
+        self.emit_debug_log(&format!("Tool slot selected: {slot}"));
+
+        let packet = inventory_action_select_tool_slot_packet(slot as u32);
+        self.send_packet_to_server(&packet);
+    }
+
     #[signal]
     fn debug_log(message: GString);
 }
@@ -6869,6 +6945,7 @@ mod tests {
                 },
             ],
             selected_slot: 1,
+            selected_tool_slot: 2,
         };
 
         let slots = authoritative_inventory_slots_from_snapshot(&snapshot);
@@ -6926,6 +7003,18 @@ mod tests {
     }
 
     #[test]
+    fn authoritative_tool_text_reports_selected_tool_slot() {
+        assert_eq!(authoritative_tool_slot_index(0), Some(0));
+        assert_eq!(authoritative_tool_slot_index(3), Some(3));
+        assert_eq!(authoritative_tool_slot_index(4), None);
+        assert_eq!(authoritative_tool_text(0), "Tool 1\nHand");
+        assert_eq!(authoritative_tool_text(1), "Tool 2\nWooden Pickaxe");
+        assert_eq!(authoritative_tool_text(2), "Tool 3\nWooden Axe");
+        assert_eq!(authoritative_tool_text(3), "Tool 4\nWooden Shovel");
+        assert_eq!(authoritative_tool_text(4), "Tool\nUnknown");
+    }
+
+    #[test]
     fn inventory_selected_slot_requires_authoritative_slot() {
         let slots = vec![AuthoritativeInventorySlot {
             block_id: blocks::GRASS,
@@ -6953,6 +7042,17 @@ mod tests {
         packet.encode(&mut encoded).unwrap();
 
         assert_eq!(encoded, vec![0x2a, 0x02, 0x10, 0x03]);
+    }
+
+    #[test]
+    fn inventory_action_select_tool_slot_packet_uses_wire_tool_slot() {
+        use prost::Message;
+
+        let packet = inventory_action_select_tool_slot_packet(2);
+        let mut encoded = Vec::new();
+        packet.encode(&mut encoded).unwrap();
+
+        assert_eq!(encoded, vec![0x2a, 0x04, 0x08, 0x01, 0x18, 0x02]);
     }
 
     #[test]

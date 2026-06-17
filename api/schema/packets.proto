@@ -44,14 +44,17 @@ message InventorySlot {
 message InventorySnapshot {
   repeated InventorySlot slots = 1;
   uint32 selected_slot = 2;
+  uint32 selected_tool_slot = 3;
 }
 
 message InventoryAction {
   enum ActionType {
     SELECT_SLOT = 0;
+    SELECT_TOOL_SLOT = 1;
   }
   ActionType action = 1;
   uint32 slot = 2;
+  uint32 tool_slot = 3;
 }
 
 message Packet {

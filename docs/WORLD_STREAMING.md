@@ -248,7 +248,7 @@ Inventory protocol compatibility is guarded with a server-to-client snapshot pac
 
 Fresh check:
 
-- `logs/inventory_protocol_compatibility_current/inventory-protocol-compatibility-summary.txt` should report `status=pass`, `inventory_protocol_status=action_guarded`, `active_schema_change=0`, `current_wire_contract=block_action_inventory_snapshot_action_and_player_id`, `position_identity_schema=tag_4_guarded`, `inventory_snapshot_schema=tag_4_guarded`, `inventory_action_schema=tag_5_guarded`, `future_packet_tags=packet_gt_5`, `future_block_action_fields=block_action_gt_5`, `protocol_generated_drift=guarded`, `server_inventory_status=session_guarded`, and `gameplay_inventory_status=session_guarded` after this slice is committed. `ClientPosition.player_id = 4` is the current optional local-player identity field for inventory persistence.
+- `logs/inventory_protocol_compatibility_current/inventory-protocol-compatibility-summary.txt` should report `status=pass`, `inventory_protocol_status=tool_action_guarded`, `active_schema_change=0`, `current_wire_contract=block_action_inventory_snapshot_action_tool_action_and_player_id`, `position_identity_schema=tag_4_guarded`, `inventory_snapshot_schema=tag_4_guarded`, `inventory_action_schema=tag_5_guarded`, `tool_selection_schema=field_3_guarded`, `future_packet_tags=packet_gt_5`, `future_block_action_fields=block_action_gt_5`, `protocol_generated_drift=guarded`, `server_inventory_status=session_guarded`, and `gameplay_inventory_status=session_guarded` after this slice is committed. `ClientPosition.player_id = 4` is the current optional local-player identity field for inventory persistence.
 
 ## Block Edit Persistence
 

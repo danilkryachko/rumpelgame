@@ -50,6 +50,7 @@ func TestInventorySnapshotFieldNumbersAreStable(t *testing.T) {
 	assertFieldNumber(t, slot, "count", 2)
 	assertFieldNumber(t, snapshot, "slots", 1)
 	assertFieldNumber(t, snapshot, "selected_slot", 2)
+	assertFieldNumber(t, snapshot, "selected_tool_slot", 3)
 }
 
 func TestInventoryActionFieldNumbersAreStable(t *testing.T) {
@@ -58,7 +59,9 @@ func TestInventoryActionFieldNumbersAreStable(t *testing.T) {
 
 	assertFieldNumber(t, action, "action", 1)
 	assertFieldNumber(t, action, "slot", 2)
+	assertFieldNumber(t, action, "tool_slot", 3)
 	assertEnumNumber(t, actionType, "SELECT_SLOT", 0)
+	assertEnumNumber(t, actionType, "SELECT_TOOL_SLOT", 1)
 }
 
 func assertFieldNumber(t *testing.T, message protoreflect.MessageDescriptor, name protoreflect.Name, want protoreflect.FieldNumber) {

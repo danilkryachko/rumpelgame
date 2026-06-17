@@ -31,6 +31,7 @@ Scope:
 - Show server-authoritative hotbar slot names, counts, and selected slot in the Godot HUD from `InventorySnapshot`.
 - Guard server-owned counted break-drop insertion for destroyed placeable blocks.
 - Guard server-owned item identity and a first selected tool slot for mining duration adjustment.
+- Show server-authoritative selected tool state in the HUD and let the client request tool slots through the inventory action protocol.
 - Guard inventory slot rules with Rust unit tests.
 - Guard server session inventory rules with Go unit tests and a network handler test.
 - Guard local-player inventory persistence with a live TCP server restart/reconnect smoke over an isolated RocksDB store.
@@ -38,7 +39,7 @@ Scope:
 
 Out of scope:
 
-- No crafting, item entity pickup packets, tool durability, client-visible tool selection, survival rules beyond counted mining duration, new block IDs beyond inventory action/snapshot/player-id compatibility, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
+- No crafting, item entity pickup packets, tool durability, survival rules beyond counted mining duration, new block IDs beyond inventory action/snapshot/tool-action/player-id compatibility, dirty chunk scheduler, visual smoke rewrite, or Godot scene/resource/import change.
 
 Assumptions:
 
@@ -89,10 +90,11 @@ The client now has a local creative hotbar inventory model:
 - `selected_hotbar_state_after_request()` updates slot and block ID together only for usable slots
 - `hotbar_key_for_slot()` keeps key mapping bounded to slots `1..5`
 - `hotbar_selected(slot, block_id)` emits only when the requested usable slot changes, and `GameClient.on_hotbar_selected` sends `InventoryAction SELECT_SLOT`
+- `tool_slot_selected(slot)` emits only when the requested bounded tool slot changes, and `GameClient.on_tool_slot_selected` sends `InventoryAction SELECT_TOOL_SLOT`
 - `client_position_packet()` includes the stable local `player_id` on bootstrap and periodic position packets
-- `GameClient` copies authoritative inventory slots and selected slot from `InventorySnapshot`, exposes slot/count text through `get_authoritative_inventory_slot_text()`, and exposes selected slot/block getters for the HUD.
+- `GameClient` copies authoritative inventory slots, selected slot, and selected tool slot from `InventorySnapshot`, exposes slot/count text through `get_authoritative_inventory_slot_text()`, exposes selected slot/block getters for the HUD, and exposes `get_authoritative_tool_text()` for visible tool feedback.
 
-This keeps the existing hotbar behavior while making selected-slot intent visible to the server. Authoritative selected-slot state comes back through `InventorySnapshot`, and the HUD uses that state for labels and highlight once it arrives.
+This keeps the existing hotbar behavior while making selected-slot and selected-tool intent visible to the server. Authoritative selected-slot and selected-tool state comes back through `InventorySnapshot`, and the HUD uses that state for labels, highlight, and selected tool text once it arrives.
 
 ## Server Inventory Foundation
 
@@ -130,6 +132,21 @@ The server now has a first item/tool foundation checkpoint:
 - Wooden pickaxe is effective on Stone, wooden axe on Wood/Leaves, and wooden shovel on Dirt/Grass.
 - Item and tool IDs are server gameplay IDs only; they are not packet fields, RocksDB keys, chunk payload IDs, or worldgen inputs.
 
+## Client-Visible Tool Selection
+
+The inventory action protocol now exposes bounded tool selection without adding item IDs to chunk or storage payloads:
+
+- `Player` owns `selected_tool_slot` and maps tool keys `6..9` to the four current server toolbelt slots.
+- `tool_key_for_slot()` keeps the key mapping bounded to `PLAYER_TOOL_SLOTS`.
+- `selected_tool_state_after_request()` ignores out-of-range requests.
+- `tool_slot_selected(slot)` emits only when the local bounded tool slot changes.
+- `GameClient.on_tool_slot_selected()` sends `InventoryAction SELECT_TOOL_SLOT` with `tool_slot = 3`.
+- The server validates the requested tool slot against the session toolbelt and echoes the authoritative state through `InventorySnapshot.selected_tool_slot = 3`.
+- The HUD displays `GameClient.get_authoritative_tool_text()` next to the hotbar and in the dev overlay.
+- Selected tool slot state is session-only in this checkpoint and does not alter the RocksDB player-inventory record.
+
+This makes tool choice visible and server-authoritative while keeping durability, equipment persistence, item entity pickup, and crafting outside this checkpoint.
+
 ## Mining Rules Foundation
 
 - `RUMPELMC_SERVER_MINING_COOLDOWN_MS` configures the server mining cooldown in milliseconds.
@@ -140,7 +157,7 @@ The server now has a first item/tool foundation checkpoint:
 - `tool:hand`, unknown tools, ineffective tools, zero durations, and explicit global mining cooldown overrides keep the base duration unchanged.
 - Cooldown rejection emits no chunk update, no inventory mutation, no player inventory save, and no inventory snapshot.
 - The cooldown is recorded only after `World.ReplaceBlockGlobal` succeeds and the previous block was placeable.
-- This keeps mining-time authority on the server without adding protocol fields; tool durability and client-visible tool selection remain separate gameplay work.
+- This keeps mining-time authority on the server while using the guarded inventory action fields for selected tool state; tool durability remains separate gameplay work.
 
 ## Persistence Boundary
 
@@ -159,7 +176,7 @@ The gameplay foundation relies on the existing server boundary:
 
 Still needed before calling gameplay production-ready:
 
-- Tool durability and client-visible tool selection.
+- Tool durability.
 - Item entity pickup flow.
 - Stack transfer and crafting inventory actions.
 - Edit broadcast/fanout to other clients.
@@ -169,7 +186,7 @@ Still needed before calling gameplay production-ready:
 ## Compatibility Rules
 
 - Keep `Packet.inventory_snapshot = 4` as the server-to-client inventory snapshot payload.
-- Keep `Packet.inventory_action = 5` as the client-to-server selected-slot inventory action payload.
+- Keep `Packet.inventory_action = 5` as the client-to-server selected block/tool slot inventory action payload.
 - Keep `scripts/inventory_protocol_compatibility_gate.sh` clean after inventory schema work.
 - Keep player inventory persistence on the documented RocksDB player-inventory record format.
 - Do not bypass `World.SetBlockGlobal` or `World.ReplaceBlockGlobal` for persistent block edits.
@@ -188,14 +205,14 @@ sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_curren
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `inventory_hud=authoritative_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `mining_rules_status=cooldown_guarded`, `mining_cooldown=server_guarded`, `mining_block_durations=target_block_guarded`, `item_tool_foundation=server_guarded`, `item_identity=block_items_guarded`, `tool_catalog=wood_tools_guarded`, `first_tool_slot=hand_guarded`, `tool_mining=selected_tool_guarded`, `player_inventory_reconnect=live_server_guarded`, `player_inventory_reconnect_status=pass`, `player_inventory_reconnect_restarts>=1`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `tool_selection=inventory_action_guarded`, `inventory_hud=authoritative_guarded`, `tool_hud=authoritative_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `mining_rules_status=cooldown_guarded`, `mining_cooldown=server_guarded`, `mining_block_durations=target_block_guarded`, `item_tool_foundation=server_guarded`, `item_identity=block_items_guarded`, `tool_catalog=wood_tools_guarded`, `first_tool_slot=hand_guarded`, `tool_mining=selected_tool_guarded`, `player_inventory_reconnect=live_server_guarded`, `player_inventory_reconnect_status=pass`, `player_inventory_reconnect_restarts>=1`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
 
 The gate checks that:
 
 - This document records mining/building flow, inventory foundation, persistence boundary, deferred work, and compatibility rules.
-- The player source contains the hotbar inventory model, selected slot state, selected-slot signal, selection helpers, and tests.
-- The client source contains selected-slot inventory action send coverage, local player-id position packet coverage, authoritative inventory HUD getter coverage, and authoritative inventory formatting tests.
-- The HUD source reads authoritative inventory slot text, selected slot, selected block, and summary text from `GameClient`.
+- The player source contains the hotbar inventory model, selected slot state, selected-slot signal, tool slot state, selected-tool signal, selection helpers, and tests.
+- The client source contains selected-slot and selected-tool inventory action send coverage, local player-id position packet coverage, authoritative inventory HUD getter coverage, authoritative tool text getter coverage, and authoritative inventory formatting tests.
+- The HUD source reads authoritative inventory slot text, selected slot, selected block, selected tool text, and summary text from `GameClient`.
 - The server inventory foundation summary is present and clean.
 - The server inventory foundation summary includes counted break-drop live evidence.
 - The mining rules foundation summary is present and proves counted/survival server cooldown plus target-block duration enforcement without protocol drift.
@@ -210,4 +227,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, counted break-drop insertion is guarded through a real server restart, counted/survival mining cooldown and target-block durations are guarded on the server, the first server-owned item/tool catalog is guarded with selected-tool mining adjustment, server-side placement rejects blocks that intersect the player body, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, selected tool slot is guarded through `InventoryAction SELECT_TOOL_SLOT` and `InventorySnapshot.selected_tool_slot`, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, counted break-drop insertion is guarded through a real server restart, counted/survival mining cooldown and target-block durations are guarded on the server, the first server-owned item/tool catalog is guarded with selected-tool mining adjustment, server-side placement rejects blocks that intersect the player body, and the Godot HUD displays authoritative inventory labels/counts/tool text from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.

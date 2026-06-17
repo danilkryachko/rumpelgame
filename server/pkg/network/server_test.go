@@ -1138,13 +1138,16 @@ func TestInventorySnapshotPacketUsesSessionInventorySlots(t *testing.T) {
 		{BlockID: world.Wood, Count: 7},
 	})
 
-	packet := inventorySnapshotPacket(inv, 1)
+	packet := inventorySnapshotPacket(inv, 1, 2)
 	snapshot := packet.GetInventorySnapshot()
 	if snapshot == nil {
 		t.Fatal("inventory snapshot packet payload = nil")
 	}
 	if got := snapshot.GetSelectedSlot(); got != 1 {
 		t.Fatalf("snapshot selected slot = %d, want 1", got)
+	}
+	if got := snapshot.GetSelectedToolSlot(); got != 2 {
+		t.Fatalf("snapshot selected tool slot = %d, want 2", got)
 	}
 	if got := len(snapshot.GetSlots()); got != 2 {
 		t.Fatalf("snapshot slots = %d, want 2", got)
@@ -1195,6 +1198,9 @@ func TestSendInventorySnapshotToSessionWritesInventorySnapshot(t *testing.T) {
 	if got := snapshot.GetSelectedSlot(); got != 0 {
 		t.Fatalf("snapshot selected slot = %d, want 0", got)
 	}
+	if got := snapshot.GetSelectedToolSlot(); got != 0 {
+		t.Fatalf("snapshot selected tool slot = %d, want 0", got)
+	}
 	for _, slot := range snapshot.GetSlots() {
 		if !world.IsPlaceable(world.BlockID(slot.GetBlockId())) {
 			t.Fatalf("snapshot block id %d is not placeable", slot.GetBlockId())
@@ -1240,6 +1246,78 @@ func TestHandleClientPacketInventoryActionSelectsSlotAndSendsSnapshot(t *testing
 	}
 	if got := snapshot.GetSelectedSlot(); got != 1 {
 		t.Fatalf("response selected slot = %d, want 1", got)
+	}
+}
+
+func TestHandleClientPacketInventoryActionSelectsToolSlotAndSendsSnapshot(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	client := newClientSession(&recordingConn{})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_InventoryAction{
+			InventoryAction: &api.InventoryAction{
+				Action:   api.InventoryAction_SELECT_TOOL_SLOT,
+				ToolSlot: 1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if got := client.selectedToolID(); got != item.WoodenPickaxeToolID {
+		t.Fatalf("selected tool id = %q, want %q", got, item.WoodenPickaxeToolID)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames = %d, want 1", got)
+	}
+	snapshot := decodedPacket(t, frames[0]).GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("tool action response snapshot = nil")
+	}
+	if got := snapshot.GetSelectedToolSlot(); got != 1 {
+		t.Fatalf("response selected tool slot = %d, want 1", got)
+	}
+	if got := snapshot.GetSelectedSlot(); got != 0 {
+		t.Fatalf("response selected inventory slot = %d, want 0", got)
+	}
+}
+
+func TestHandleClientPacketInventoryActionRejectsInvalidToolSlot(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	client := newClientSession(&recordingConn{})
+	if !client.selectToolSlot(2) {
+		t.Fatal("selectToolSlot(2) = false, want true")
+	}
+
+	packet := &api.Packet{
+		Payload: &api.Packet_InventoryAction{
+			InventoryAction: &api.InventoryAction{
+				Action:   api.InventoryAction_SELECT_TOOL_SLOT,
+				ToolSlot: 99,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if got := client.selectedToolID(); got != item.WoodenAxeToolID {
+		t.Fatalf("selected tool id after invalid slot = %q, want %q", got, item.WoodenAxeToolID)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames = %d, want 1", got)
+	}
+	snapshot := decodedPacket(t, frames[0]).GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("invalid tool slot response snapshot = nil")
+	}
+	if got := snapshot.GetSelectedToolSlot(); got != 2 {
+		t.Fatalf("response selected tool slot after invalid request = %d, want 2", got)
 	}
 }
 

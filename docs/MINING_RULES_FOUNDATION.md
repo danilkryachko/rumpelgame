@@ -22,7 +22,7 @@ Scope:
 
 Out of scope:
 
-- No new packets, item entities, client mining animation, client-visible tool selection, tool durability, storage migration, chunk serialization changes, world generation changes, Godot scene/resource/import changes, or renderer changes.
+- No item entities, client mining animation, tool durability, storage migration, chunk serialization changes, world generation changes, Godot scene/resource/import changes, or renderer changes.
 
 ## Current Contract
 
@@ -81,4 +81,4 @@ sh scripts/item_tool_foundation_gate.sh logs/item_tool_foundation_current
 
 ## Current Status
 
-This checkpoint is complete when the gate reports `mining_rules_status=cooldown_guarded` and `mining_block_durations=target_block_guarded`. It is the first server-owned mining-time rule: counted/survival sessions cannot instantly mine multiple placeable blocks, target block IDs choose the required interval, default creative sessions remain unrestricted, and the item/tool foundation owns the first selected-tool duration adjustment. Tool durability, client-visible tool selection, item entities, pickup behavior, and client mining feedback remain separate gameplay checkpoints.
+This checkpoint is complete when the gate reports `mining_rules_status=cooldown_guarded` and `mining_block_durations=target_block_guarded`. It is the first server-owned mining-time rule: counted/survival sessions cannot instantly mine multiple placeable blocks, target block IDs choose the required interval, default creative sessions remain unrestricted, and the item/tool foundation owns the first selected-tool duration adjustment. Tool durability, item entities, pickup behavior, and client mining feedback remain separate gameplay checkpoints.
