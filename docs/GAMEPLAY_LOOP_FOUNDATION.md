@@ -118,6 +118,16 @@ The server now has a session-owned inventory foundation:
 - Counted break-drop insertion is guarded by a live server smoke that destroys a generated Stone block, increments the selected stack, and reloads the added count after restart.
 - Missing inventory entries reject placement before `World.SetBlockGlobal` and before chunk update broadcast.
 
+## Mining Rules Foundation
+
+- `RUMPELMC_SERVER_MINING_COOLDOWN_MS` configures the server mining cooldown in milliseconds.
+- Default creative sessions keep zero mining cooldown.
+- Counted/survival sessions use a server-owned default mining cooldown unless the operator sets an explicit value.
+- Connected-session `BlockAction_DESTROY` checks the cooldown after reach validation and before world mutation.
+- Cooldown rejection emits no chunk update, no inventory mutation, no player inventory save, and no inventory snapshot.
+- The cooldown is recorded only after `World.ReplaceBlockGlobal` succeeds and the previous block was placeable.
+- This keeps mining-time authority on the server without adding protocol fields; tool tiers, durability, and block-specific mining durations remain separate gameplay work.
+
 ## Persistence Boundary
 
 The gameplay foundation relies on the existing server boundary:
@@ -135,7 +145,7 @@ The gameplay foundation relies on the existing server boundary:
 
 Still needed before calling gameplay production-ready:
 
-- Tool/durability/mining-time rules.
+- Tool tiers, tool durability, and block-specific mining duration rules beyond the current counted/survival cooldown.
 - Item entity pickup flow.
 - Stack transfer and crafting inventory actions.
 - Edit broadcast/fanout to other clients.
@@ -163,7 +173,7 @@ sh scripts/gameplay_loop_foundation_gate.sh logs/gameplay_loop_foundation_curren
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
-The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `inventory_hud=authoritative_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `player_inventory_reconnect=live_server_guarded`, `player_inventory_reconnect_status=pass`, `player_inventory_reconnect_restarts>=1`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
+The expected current result is `status=pass`, `gameplay_loop_status=foundation_guarded`, `inventory_foundation=unit_guarded`, `hotbar_selection=unit_guarded`, `inventory_hud=authoritative_guarded`, `server_inventory_status=session_guarded`, `server_inventory_block_action=session_guarded`, `server_inventory_persistence=rocksdb_guarded`, `mining_rules_status=cooldown_guarded`, `mining_cooldown=server_guarded`, `player_inventory_reconnect=live_server_guarded`, `player_inventory_reconnect_status=pass`, `player_inventory_reconnect_restarts>=1`, `server_edit_persistence=store_save_boundary`, `active_protocol_change=0`, `full_reload_persistence=block_41_visual_guarded`, `block_edit_persistence_status=pass`, `block_edit_visual_path=godot_persisted_reload_guarded`, `block_edit_persisted_visual_smoke=godot_guarded`, `block_edit_persisted_visual_smoke_status=pass`, `block_edit_persisted_visual_scenarios=3`, `block_edit_persisted_visual_place_reload_status=pass`, `block_edit_persisted_visual_destroy_after_reload_status=pass`, `block_edit_persisted_visual_edge_place_status=pass`, and `block_edit_active_protocol_change=0`.
 
 The gate checks that:
 
@@ -173,6 +183,7 @@ The gate checks that:
 - The HUD source reads authoritative inventory slot text, selected slot, selected block, and summary text from `GameClient`.
 - The server inventory foundation summary is present and clean.
 - The server inventory foundation summary includes counted break-drop live evidence.
+- The mining rules foundation summary is present and proves counted/survival server cooldown enforcement without protocol drift.
 - The player inventory reconnect smoke summary is present and proves selected-slot persistence after a real server restart.
 - Server block edits still flow through `World.SetBlockGlobal` or `World.ReplaceBlockGlobal`.
 - `World.SetBlockGlobal` still calls `ChunkStore.SaveChunk`.
@@ -183,4 +194,4 @@ The gate checks that:
 
 ## Current Status
 
-This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, counted break-drop insertion is guarded through a real server restart, server-side placement rejects blocks that intersect the player body, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.
+This block is complete as a gameplay foundation checkpoint and now requires the completed Block 41 dirty chunk save/reload plus visual/collision/GPU proof. The selected hotbar slot is guarded as explicit player state alongside the selected block ID, local-player inventory state persists through RocksDB with live TCP reconnect/restart evidence, counted break-drop insertion is guarded through a real server restart, counted/survival mining cooldown is guarded on the server, server-side placement rejects blocks that intersect the player body, and the Godot HUD displays authoritative inventory labels/counts from the latest server snapshot. Broader gameplay systems still remain outside this foundation checkpoint.

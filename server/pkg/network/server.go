@@ -36,12 +36,14 @@ const chunkOrderEnv = "RUMPELMC_SERVER_CHUNK_ORDER"
 const clientWriteTimeoutEnv = "RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS"
 const maxClientsEnv = "RUMPELMC_SERVER_MAX_CLIENTS"
 const inventoryModeEnv = "RUMPELMC_SERVER_INVENTORY_MODE"
+const miningCooldownEnv = "RUMPELMC_SERVER_MINING_COOLDOWN_MS"
 const initialClientPacketTimeout = 250 * time.Millisecond
 const maxPlayerIDLength = 64
 const serverBlockActionReach = 7.0
 const serverBlockActionReachSquared = serverBlockActionReach * serverBlockActionReach
 const serverPlayerCollisionHalfWidth = 0.4
 const serverPlayerCollisionHeight = 1.8
+const defaultCountedMiningCooldown = 300 * time.Millisecond
 
 type networkErrorClass string
 
@@ -93,6 +95,8 @@ type Server struct {
 	writeTimeout    time.Duration
 	maxClients      int
 	inventoryMode   inventoryMode
+	miningCooldown  time.Duration
+	now             func() time.Time
 	inventoryStore  playerInventoryStore
 	clientsMu       sync.Mutex
 	clients         map[*clientSession]struct{}
@@ -100,6 +104,7 @@ type Server struct {
 
 func NewServer(address string, gameWorld *world.World) *Server {
 	viewDistance := configuredViewDistance()
+	inventoryMode := configuredInventoryMode()
 	return &Server{
 		address:         address,
 		world:           gameWorld,
@@ -110,7 +115,9 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		chunkOrderMode:  configuredChunkOrderMode(),
 		writeTimeout:    configuredClientWriteTimeout(),
 		maxClients:      configuredMaxClients(),
-		inventoryMode:   configuredInventoryMode(),
+		inventoryMode:   inventoryMode,
+		miningCooldown:  configuredMiningCooldown(inventoryMode),
+		now:             time.Now,
 		clients:         make(map[*clientSession]struct{}),
 	}
 }
@@ -420,6 +427,11 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			log.Printf("Ignored player-intersecting block placement x=%d, y=%d, z=%d", action.X, action.Y, action.Z)
 			return nil
 		}
+		actionTime := s.currentTime()
+		if action.Action == api.BlockAction_DESTROY && !client.destroyCooldownReady(actionTime, s.miningCooldown) {
+			log.Printf("Ignored mining cooldown block action x=%d, y=%d, z=%d cooldown=%s", action.X, action.Y, action.Z, s.miningCooldown)
+			return nil
+		}
 
 		snapshot, previousBlock, err := s.world.ReplaceBlockGlobal(action.X, action.Y, action.Z, block)
 		if err != nil {
@@ -436,6 +448,7 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			inventoryChanged = true
 		}
 		if action.Action == api.BlockAction_DESTROY && world.IsPlaceable(previousBlock) {
+			client.recordSuccessfulDestroy(actionTime)
 			if client.addInventoryBlock(previousBlock) {
 				if err := s.saveClientInventory(client); err != nil {
 					return err
@@ -560,6 +573,7 @@ type clientSession struct {
 	writeMu               sync.Mutex
 	streamState           clientChunkStreamState
 	lastPosition          clientPositionState
+	lastDestroyAt         time.Time
 	inventory             playerinventory.Inventory
 	selectedInventorySlot uint32
 	playerID              string
@@ -690,6 +704,28 @@ func blockActionIntersectsPlayer(position clientPositionState, action *api.Block
 		playerMaxY > blockMinY &&
 		playerMinZ < blockMaxZ &&
 		playerMaxZ > blockMinZ
+}
+
+func (c *clientSession) destroyCooldownReady(now time.Time, cooldown time.Duration) bool {
+	if cooldown <= 0 {
+		return true
+	}
+
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	return c.lastDestroyAt.IsZero() || !now.Before(c.lastDestroyAt.Add(cooldown))
+}
+
+func (c *clientSession) recordSuccessfulDestroy(now time.Time) {
+	if now.IsZero() {
+		return
+	}
+
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	c.lastDestroyAt = now
 }
 
 func (c *clientSession) hasSentChunk(coord world.ChunkCoord) bool {
@@ -1075,6 +1111,34 @@ func configuredInventoryMode() inventoryMode {
 		log.Printf("Ignoring invalid %s=%q; using %s", inventoryModeEnv, value, inventoryModeCreative)
 		return inventoryModeCreative
 	}
+}
+
+func configuredMiningCooldown(mode inventoryMode) time.Duration {
+	defaultCooldown := defaultMiningCooldownForMode(mode)
+	value := strings.TrimSpace(os.Getenv(miningCooldownEnv))
+	if value == "" {
+		return defaultCooldown
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		log.Printf("Ignoring invalid %s=%q; using %s", miningCooldownEnv, value, defaultCooldown)
+		return defaultCooldown
+	}
+	return time.Duration(parsed) * time.Millisecond
+}
+
+func defaultMiningCooldownForMode(mode inventoryMode) time.Duration {
+	if mode == inventoryModeCounted {
+		return defaultCountedMiningCooldown
+	}
+	return 0
+}
+
+func (s *Server) currentTime() time.Time {
+	if s.now == nil {
+		return time.Now()
+	}
+	return s.now()
 }
 
 type chunkSendStats struct {
