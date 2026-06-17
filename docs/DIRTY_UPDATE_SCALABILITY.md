@@ -98,6 +98,7 @@ Existing runtime wrappers remain the correct heavy checks:
 - `scripts/gpu_shadow_proxy_refresh_cost_audit.sh`
 - `scripts/gpu_edit_burst_budget_gate.sh`
 - `scripts/gpu_edit_visual_parity_gate.sh`
+- `scripts/gpu_world_interaction_checkpoint.sh`
 
 The gate does not run them by default because they require Godot runtime capture, a free local server port, and longer execution time. It does verify their shell syntax and required metric tokens.
 
@@ -114,6 +115,8 @@ Fresh shadow proxy refresh cost evidence now lives at `logs/gpu_shadow_proxy_ref
 Fresh edit-burst budget evidence now lives at `logs/gpu_edit_burst_budget_gate_current/gpu-edit-burst-budget-summary.txt`. It composes repeated, border, partial-matrix, collision-refresh, shadow-refresh, and upload-budget summaries, passed with `source_count=6`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max collision refresh rebuilds `132`, max compact shadow proxy `808`, max proxy refresh reuse `68`, zero GPU upload failures, zero ground misses, and default/visible/scheduler changes blocked.
 
 Fresh edit visual parity evidence now lives at `logs/gpu_edit_visual_parity_gate_current/gpu-edit-visual-parity-summary.txt`. It validates the existing full rebuild versus partial dirty screenshots for all eight partial dirty edge/corner cases, passed with `case_count=8`, max average-luma delta `0.0000`, max terrain-luma-range delta `0.0000`, max terrain sample/color bucket/chroma deltas `0`, max partial edge-neighbor subchunks `8`, max partial saved subchunks `2`, zero GPU upload failures, zero ground misses, and external profiler/macOS/Windows blockers.
+
+Fresh world-interaction checkpoint evidence now lives at `logs/gpu_world_interaction_checkpoint_current/gpu-world-interaction-checkpoint-summary.txt`. It composes the dirty runtime, correctness, collision, shadow, budget, visual parity, and upload-budget summaries, passed with `source_count=8`, `local_world_interaction_status=pass`, `rollout_status=defer_defaults`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max compact shadow proxy `808`, max visual deltas `0.0000/0.0000/0/0`, zero GPU upload failures, zero ground misses, and explicit external profiler/macOS/Windows blockers.
 
 ## Deferred Work
 

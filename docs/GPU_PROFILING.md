@@ -314,6 +314,14 @@ sh scripts/gpu_edit_visual_parity_gate.sh logs/gpu_edit_visual_parity_gate_curre
 
 The gate writes `gpu-edit-visual-parity-summary.txt` and `gpu-edit-visual-parity-cases.txt`; see `docs/GPU_EDIT_VISUAL_PARITY_GATE.md`.
 
+Use the world interaction checkpoint after changing any dirty-edit gate, collision refresh audit, shadow proxy refresh audit, edit visual parity, upload budget, or aggregate world-interaction report plumbing. It composes the current local world-interaction evidence into one required checkpoint and keeps rollout/default changes blocked until external profiler plus macOS/Windows validation exist:
+
+```sh
+sh scripts/gpu_world_interaction_checkpoint.sh logs/gpu_world_interaction_checkpoint_current
+```
+
+The gate writes `gpu-world-interaction-checkpoint-summary.txt` and `gpu-world-interaction-checkpoint-sources.txt`; see `docs/GPU_WORLD_INTERACTION_CHECKPOINT.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh

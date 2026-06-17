@@ -324,6 +324,18 @@ Fresh check:
 - `scripts/gpu_terrain_report.sh` surfaces the selected edit visual parity summary/cases and max visual deltas.
 - This is local screenshot/marker parity evidence only. External profiler rows, GPU-native shadow activation, and Windows/Vulkan/Direct3D validation remain separate.
 
+## GPU World Interaction Checkpoint
+
+The world interaction checkpoint composes the repeated edit benchmark, border edit benchmark, partial dirty edge matrix, collision refresh cost audit, shadow proxy refresh cost audit, edit-burst budget gate, edit visual parity gate, and upload budget gate into one required local readiness artifact. It is the local Week 70 checkpoint for dirty edit world interaction performance.
+
+Fresh check:
+
+- `logs/gpu_world_interaction_checkpoint_current/gpu-world-interaction-checkpoint-summary.txt` passed with `source_count=8`, `pass_sources=8`, `checkpoint_status=local_complete_external_pending`, `local_world_interaction_status=pass`, `rollout_status=defer_defaults`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max dirty edge-neighbor subchunks `2836`, max dirty partial saved subchunks `1418`, max partial edge-neighbor subchunks `8`, max collision refresh rebuilds `132`, max collision phase total/component `1.950/1.540ms`, max compact shadow proxy `808`, max proxy refresh reuse `68`, max visual deltas `0.0000/0.0000/0/0`, max upload count/KiB per frame `1/2.000`, `gpu_upload_fail=0`, and `ground_misses=0`.
+- `scripts/gpu_stress_artifact_index.sh` requires the checkpoint as a `world_interaction` row; the current stress index now passes with `39` rows and `29` required passes.
+- `scripts/test_strategy_gate.sh` requires the checkpoint summary before the GPU stress artifact index and includes it in the nightly summary chain.
+- `scripts/gpu_terrain_report.sh` surfaces checkpoint status, local world-interaction status, rollout status, and selected checkpoint summary/source rows.
+- This is local summary/screenshot evidence only. Default rollout remains blocked by pending external profiler rows and Windows/Vulkan/Direct3D validation.
+
 ## Storage Persistence Foundation
 
 The storage foundation slice keeps RocksDB as the implemented chunk persistence backend and does not add PostgreSQL behavior. It adds focused coverage for missing chunks, save/reopen round-trips, overwrite isolation between neighboring chunk keys, and corrupt persisted payload errors.

@@ -266,7 +266,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 67. Done 2026-06-17: added `scripts/gpu_edit_burst_budget_gate.sh` and `docs/GPU_EDIT_BURST_BUDGET_GATE.md` to compose repeated/border/partial dirty edit evidence with collision refresh, shadow proxy refresh, and upload budget checks into one required edit-burst budget gate, preserving default runtime, scheduler, and visible-quality lockouts plus external profiler/macOS/Windows blockers.
 68. Done 2026-06-17: added `scripts/gpu_edit_visual_parity_gate.sh` and `docs/GPU_EDIT_VISUAL_PARITY_GATE.md` to validate full rebuild versus partial dirty edit screenshots across all eight partial dirty edge/corner cases, requiring block-edit observation, current render/collision readiness, zero upload/ground errors, and tight visual deltas.
 69. Done 2026-06-17: integrated edit visual parity into the stress artifact index, test strategy gate, and aggregate GPU terrain report, keeping the new row required while preserving external profiler/macOS/Windows blockers.
-70. Checkpoint world interaction performance.
+70. Done 2026-06-17: added `scripts/gpu_world_interaction_checkpoint.sh` and `docs/GPU_WORLD_INTERACTION_CHECKPOINT.md` to compose repeated/border/partial dirty edits, collision refresh, shadow proxy refresh, edit-burst budget, edit visual parity, and upload budget evidence into one local world-interaction checkpoint with rollout blocked until external profiler and macOS/Windows validation.
 
 ### Weeks 71-80: Cross-Platform And Quality Guards
 
