@@ -28,14 +28,25 @@ const CHARACTER_ANIMATION_WRAP_SECONDS: f32 = 4096.0;
 const CHARACTER_IDLE_ANIMATION_RATE: f32 = 2.0;
 const CHARACTER_RUN_ANIMATION_RATE: f32 = 9.0;
 const CHARACTER_JUMP_ANIMATION_RATE: f32 = 4.0;
-const CHARACTER_ROOT_YAW_DEGREES: f32 = 180.0;
-const CHARACTER_HEAD_Y: f32 = 1.62;
-const CHARACTER_CHEST_Y: f32 = 1.12;
-const CHARACTER_BELT_Y: f32 = 0.74;
-const CHARACTER_SHOULDER_Y: f32 = 1.34;
-const CHARACTER_HIP_Y: f32 = 0.78;
-const CHARACTER_LIMB_X: f32 = 0.43;
-const CHARACTER_LEG_X: f32 = 0.18;
+const CHARACTER_ROOT_YAW_DEGREES: f32 = 0.0;
+const CHARACTER_VOXEL_SCALE: f32 = 0.065;
+const CHARACTER_HEAD_Y: f32 = 1.15;
+const CHARACTER_CHEST_Y: f32 = 0.78;
+const CHARACTER_BELT_Y: f32 = 0.63;
+const CHARACTER_PANTS_Y: f32 = 0.43;
+const CHARACTER_SHOULDER_Y: f32 = 1.02;
+const CHARACTER_HIP_Y: f32 = 0.38;
+const CHARACTER_LIMB_X: f32 = 0.38;
+const CHARACTER_LEG_X: f32 = 0.17;
+const VELOREN_CHEST_PATH: &str = "res://assets/veloren/figure/body/chest_male.vox";
+const VELOREN_BELT_PATH: &str = "res://assets/veloren/figure/body/belt_male.vox";
+const VELOREN_PANTS_PATH: &str = "res://assets/veloren/figure/body/pants_male.vox";
+const VELOREN_HAND_PATH: &str = "res://assets/veloren/figure/body/hand.vox";
+const VELOREN_FOOT_PATH: &str = "res://assets/veloren/figure/body/foot.vox";
+const VELOREN_HEAD_PATH: &str = "res://assets/veloren/figure/head/human/male.vox";
+const VELOREN_EYES_PATH: &str = "res://assets/veloren/figure/eyes/general/male_default-0.vox";
+const VELOREN_HAIR_PATH: &str = "res://assets/veloren/figure/hair/human/male-16.vox";
+const VELOREN_BEARD_PATH: &str = "res://assets/veloren/figure/beard/human/human-4.vox";
 
 struct BlockHit {
     block: (i32, i32, i32),
@@ -60,6 +71,7 @@ struct VoxelCharacterVisual {
     head: Gd<Node3D>,
     chest: Gd<Node3D>,
     belt: Gd<Node3D>,
+    pants: Gd<Node3D>,
     hand_l: Gd<Node3D>,
     hand_r: Gd<Node3D>,
     foot_l: Gd<Node3D>,
@@ -667,51 +679,101 @@ fn create_voxel_character_visual() -> VoxelCharacterVisual {
     root.set_rotation_degrees(Vector3::new(0.0, CHARACTER_ROOT_YAW_DEGREES, 0.0));
     root.set_visible(false);
 
-    let head = create_voxel_character_part(
+    let mut head = create_veloren_character_part(
         "Head",
+        VELOREN_HEAD_PATH,
         Vector3::new(0.0, CHARACTER_HEAD_Y, 0.0),
-        Vector3::new(0.46, 0.46, 0.46),
+        Vector3::ZERO,
+        Vector3::new(0.76, 0.44, 0.44),
         Vector3::ZERO,
         Color::from_rgb(0.78, 0.55, 0.38),
     );
-    let chest = create_voxel_character_part(
+    add_veloren_character_detail(
+        &mut head,
+        "Hair",
+        VELOREN_HAIR_PATH,
+        Vector3::new(0.0, -0.02, -0.04),
+        Vector3::new(0.78, 0.60, 0.66),
+        Vector3::ZERO,
+        Color::from_rgb(0.14, 0.09, 0.06),
+    );
+    add_veloren_character_detail(
+        &mut head,
+        "Eyes",
+        VELOREN_EYES_PATH,
+        Vector3::new(0.0, 0.22, -0.30),
+        Vector3::new(0.38, 0.08, 0.05),
+        Vector3::ZERO,
+        Color::from_rgb(0.10, 0.18, 0.28),
+    );
+    add_veloren_character_detail(
+        &mut head,
+        "Beard",
+        VELOREN_BEARD_PATH,
+        Vector3::new(0.0, 0.06, -0.30),
+        Vector3::new(0.36, 0.08, 0.05),
+        Vector3::ZERO,
+        Color::from_rgb(0.11, 0.07, 0.04),
+    );
+    let chest = create_veloren_character_part(
         "Chest",
+        VELOREN_CHEST_PATH,
         Vector3::new(0.0, CHARACTER_CHEST_Y, 0.0),
+        Vector3::ZERO,
         Vector3::new(0.68, 0.68, 0.34),
         Vector3::ZERO,
         Color::from_rgb(0.18, 0.45, 0.78),
     );
-    let belt = create_voxel_character_part(
+    let belt = create_veloren_character_part(
         "Belt",
+        VELOREN_BELT_PATH,
         Vector3::new(0.0, CHARACTER_BELT_Y, 0.0),
+        Vector3::ZERO,
         Vector3::new(0.58, 0.28, 0.34),
         Vector3::ZERO,
         Color::from_rgb(0.12, 0.16, 0.20),
     );
-    let hand_l = create_voxel_character_part(
+    let pants = create_veloren_character_part(
+        "Pants",
+        VELOREN_PANTS_PATH,
+        Vector3::new(0.0, CHARACTER_PANTS_Y, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.58, 0.24, 0.34),
+        Vector3::ZERO,
+        Color::from_rgb(0.10, 0.16, 0.25),
+    );
+    let hand_l = create_veloren_character_part(
         "HandL",
+        VELOREN_HAND_PATH,
         Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+        Vector3::new(0.0, -0.26, 0.0),
         Vector3::new(0.20, 0.62, 0.20),
         Vector3::new(0.0, -0.31, 0.0),
         Color::from_rgb(0.78, 0.55, 0.38),
     );
-    let hand_r = create_voxel_character_part(
+    let hand_r = create_veloren_character_part(
         "HandR",
+        VELOREN_HAND_PATH,
         Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+        Vector3::new(0.0, -0.26, 0.0),
         Vector3::new(0.20, 0.62, 0.20),
         Vector3::new(0.0, -0.31, 0.0),
         Color::from_rgb(0.78, 0.55, 0.38),
     );
-    let foot_l = create_voxel_character_part(
+    let foot_l = create_veloren_character_part(
         "FootL",
+        VELOREN_FOOT_PATH,
         Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
+        Vector3::new(0.0, -0.18, 0.0),
         Vector3::new(0.22, 0.72, 0.24),
         Vector3::new(0.0, -0.36, 0.0),
         Color::from_rgb(0.16, 0.22, 0.32),
     );
-    let foot_r = create_voxel_character_part(
+    let foot_r = create_veloren_character_part(
         "FootR",
+        VELOREN_FOOT_PATH,
         Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
+        Vector3::new(0.0, -0.18, 0.0),
         Vector3::new(0.22, 0.72, 0.24),
         Vector3::new(0.0, -0.36, 0.0),
         Color::from_rgb(0.16, 0.22, 0.32),
@@ -720,6 +782,7 @@ fn create_voxel_character_visual() -> VoxelCharacterVisual {
     root.add_child(&head.clone().upcast::<godot::classes::Node>());
     root.add_child(&chest.clone().upcast::<godot::classes::Node>());
     root.add_child(&belt.clone().upcast::<godot::classes::Node>());
+    root.add_child(&pants.clone().upcast::<godot::classes::Node>());
     root.add_child(&hand_l.clone().upcast::<godot::classes::Node>());
     root.add_child(&hand_r.clone().upcast::<godot::classes::Node>());
     root.add_child(&foot_l.clone().upcast::<godot::classes::Node>());
@@ -730,6 +793,7 @@ fn create_voxel_character_visual() -> VoxelCharacterVisual {
         head,
         chest,
         belt,
+        pants,
         hand_l,
         hand_r,
         foot_l,
@@ -739,33 +803,73 @@ fn create_voxel_character_visual() -> VoxelCharacterVisual {
     visual
 }
 
-fn create_voxel_character_part(
+fn create_veloren_character_part(
     name: &str,
+    vox_path: &str,
     pivot_position: Vector3,
-    mesh_size: Vector3,
     mesh_offset: Vector3,
-    color: Color,
+    fallback_mesh_size: Vector3,
+    fallback_mesh_offset: Vector3,
+    fallback_color: Color,
 ) -> Gd<Node3D> {
     let mut pivot = Node3D::new_alloc();
     pivot.set_name(&StringName::from(name));
     pivot.set_position(pivot_position);
 
-    let mut box_mesh = BoxMesh::new_gd();
-    box_mesh.set_size(mesh_size);
-
     let mut mesh = MeshInstance3D::new_alloc();
     mesh.set_position(mesh_offset);
-    mesh.set_mesh(&box_mesh.upcast::<godot::classes::Mesh>());
-    mesh.set_material_override(&create_voxel_character_material(color));
+    match crate::vox::load_vox_mesh_from_res(vox_path, CHARACTER_VOXEL_SCALE) {
+        Ok(vox_mesh) => {
+            mesh.set_mesh(&vox_mesh);
+            mesh.set_material_override(&create_vox_vertex_color_material());
+        }
+        Err(err) => {
+            godot_print!("Veloren character part fallback for {vox_path}: {err}");
+            let mut box_mesh = BoxMesh::new_gd();
+            box_mesh.set_size(fallback_mesh_size);
+            mesh.set_position(fallback_mesh_offset);
+            mesh.set_mesh(&box_mesh.upcast::<godot::classes::Mesh>());
+            mesh.set_material_override(&create_voxel_character_material(fallback_color));
+        }
+    }
 
     pivot.add_child(&mesh.upcast::<godot::classes::Node>());
     pivot
+}
+
+fn add_veloren_character_detail(
+    parent: &mut Gd<Node3D>,
+    name: &str,
+    vox_path: &str,
+    mesh_offset: Vector3,
+    fallback_mesh_size: Vector3,
+    fallback_mesh_offset: Vector3,
+    fallback_color: Color,
+) {
+    let detail = create_veloren_character_part(
+        name,
+        vox_path,
+        mesh_offset,
+        Vector3::ZERO,
+        fallback_mesh_size,
+        fallback_mesh_offset,
+        fallback_color,
+    );
+    parent.add_child(&detail.upcast::<godot::classes::Node>());
 }
 
 fn create_voxel_character_material(color: Color) -> Gd<godot::classes::Material> {
     let mut material = StandardMaterial3D::new_gd();
     material.set_albedo(color);
     material.set_shading_mode(base_material_3d::ShadingMode::UNSHADED);
+    material.upcast::<godot::classes::Material>()
+}
+
+fn create_vox_vertex_color_material() -> Gd<godot::classes::Material> {
+    let mut material = StandardMaterial3D::new_gd();
+    material.set_albedo(Color::WHITE);
+    material.set_shading_mode(base_material_3d::ShadingMode::UNSHADED);
+    material.set_flag(base_material_3d::Flags::ALBEDO_FROM_VERTEX_COLOR, true);
     material.upcast::<godot::classes::Material>()
 }
 
@@ -798,6 +902,11 @@ fn apply_voxel_idle_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
     set_node_transform(
         &mut visual.belt,
         Vector3::new(0.0, CHARACTER_BELT_Y + bob * 0.5, 0.0),
+        Vector3::ZERO,
+    );
+    set_node_transform(
+        &mut visual.pants,
+        Vector3::new(0.0, CHARACTER_PANTS_Y + bob * 0.35, 0.0),
         Vector3::ZERO,
     );
     set_node_transform(
@@ -844,6 +953,11 @@ fn apply_voxel_run_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: f
         Vector3::new(-3.0, 0.0, swing * 1.4),
     );
     set_node_transform(
+        &mut visual.pants,
+        Vector3::new(0.0, CHARACTER_PANTS_Y + bob * 0.35, 0.0),
+        Vector3::new(-2.0, 0.0, swing * 1.8),
+    );
+    set_node_transform(
         &mut visual.hand_l,
         Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
         Vector3::new(counter_swing * 44.0, 0.0, -5.0),
@@ -882,6 +996,11 @@ fn apply_voxel_jump_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
         &mut visual.belt,
         Vector3::new(0.0, CHARACTER_BELT_Y + 0.02 + float, 0.0),
         Vector3::new(3.0, 0.0, 0.0),
+    );
+    set_node_transform(
+        &mut visual.pants,
+        Vector3::new(0.0, CHARACTER_PANTS_Y + 0.01 + float, 0.0),
+        Vector3::new(5.0, 0.0, 0.0),
     );
     set_node_transform(
         &mut visual.hand_l,

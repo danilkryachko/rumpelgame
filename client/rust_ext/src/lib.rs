@@ -9,6 +9,7 @@ mod gpu_terrain;
 mod meshing;
 mod network;
 mod player;
+mod vox;
 
 struct RumpelmcExtension;
 
