@@ -330,6 +330,14 @@ sh scripts/gpu_macos_metal_capture_pack.sh logs/gpu_macos_metal_capture_pack_cur
 
 The gate writes `gpu-macos-metal-capture-pack-summary.txt`, `gpu-macos-metal-capture-manifest.txt`, and `gpu-macos-metal-capture-checklist.txt`; see `docs/GPU_MACOS_METAL_CAPTURE_PACK.md`.
 
+Use the Windows RenderDoc/PIX capture pack after the macOS peer pack is current or before handing Windows evidence to PIX, RenderDoc, or a vendor profiler. It requires the local world-interaction checkpoint plus macOS capture pack to pass, emits PIX GPU capture, PIX timing capture, RenderDoc frame capture, and Windows shader hot-path rows, and keeps the generated pack as pending handoff state rather than profiler evidence:
+
+```sh
+sh scripts/gpu_windows_capture_pack.sh logs/gpu_windows_capture_pack_current
+```
+
+The gate writes `gpu-windows-capture-pack-summary.txt`, `gpu-windows-capture-manifest.txt`, and `gpu-windows-capture-checklist.txt`; see `docs/GPU_WINDOWS_CAPTURE_PACK.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh
