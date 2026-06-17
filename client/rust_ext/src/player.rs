@@ -1,7 +1,7 @@
 use godot::classes::{
     ArrayMesh, Camera3D, CharacterBody3D, ICharacterBody3D, Input, InputEvent, InputEventKey,
-    InputEventMouseButton, InputEventMouseMotion, MeshInstance3D, StandardMaterial3D,
-    base_material_3d,
+    InputEventMouseButton, InputEventMouseMotion, MeshInstance3D, Node3D, PackedScene,
+    ResourceLoader, StandardMaterial3D, base_material_3d,
 };
 use godot::global::{Key, MouseButton};
 use godot::prelude::*;
@@ -19,6 +19,12 @@ const GROUND_SAFETY_RAYCAST_NAME: &str = "GroundSafetyRayCast";
 const VISUAL_SMOKE_DISABLE_PLAYER_INPUT_ENV: &str = "RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT";
 const PLAYER_HOTBAR_SLOTS: usize = 5;
 const CREATIVE_HOTBAR_STACK_COUNT: u32 = 999;
+const PLAYER_CHARACTER_SCENE_PATH: &str = "res://kenney_character_preview.tscn";
+const PLAYER_CHARACTER_VISUAL_NAME: &str = "PlayerCharacterVisual";
+const THIRD_PERSON_CAMERA_DISTANCE: f32 = 4.0;
+const THIRD_PERSON_BLOCK_REACH_PADDING: f32 = 0.5;
+const CHARACTER_RUN_SPEED_THRESHOLD: f32 = 0.25;
+const CHARACTER_JUMP_SPEED_THRESHOLD: f32 = 0.5;
 
 struct BlockHit {
     block: (i32, i32, i32),
@@ -31,17 +37,37 @@ struct InventorySlot {
     count: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CharacterMotionState {
+    Idle,
+    Run,
+    Jump,
+}
+
+impl CharacterMotionState {
+    fn as_str(self) -> &'static str {
+        match self {
+            CharacterMotionState::Idle => "idle",
+            CharacterMotionState::Run => "run",
+            CharacterMotionState::Jump => "jump",
+        }
+    }
+}
+
 #[derive(GodotClass)]
 #[class(base=CharacterBody3D)]
 pub struct Player {
     base: Base<CharacterBody3D>,
     camera: Option<Gd<Camera3D>>,
     selection_outline: Option<Gd<MeshInstance3D>>,
+    character_visual: Option<Gd<Node3D>>,
     mouse_sensitivity: f32,
     selected_block: i32,
     selected_hotbar_slot: usize,
     hotbar: [InventorySlot; PLAYER_HOTBAR_SLOTS],
     fly_mode: bool,
+    third_person_camera: bool,
+    character_motion_state: CharacterMotionState,
     default_collision_layer: u32,
     default_collision_mask: u32,
 }
@@ -58,11 +84,14 @@ impl ICharacterBody3D for Player {
             base,
             camera: None,
             selection_outline: None,
+            character_visual: None,
             mouse_sensitivity: 0.002,
             selected_block,
             selected_hotbar_slot,
             hotbar,
             fly_mode: false,
+            third_person_camera: false,
+            character_motion_state: CharacterMotionState::Idle,
             default_collision_layer: 1,
             default_collision_mask: 1,
         }
@@ -84,12 +113,12 @@ impl ICharacterBody3D for Player {
 
         // Создаем камеру
         let mut camera = Camera3D::new_alloc();
-        camera.set_position(Vector3::new(0.0, 1.6, 0.0)); // Рост персонажа
+        camera.set_position(first_person_camera_position());
         camera.set_current(true);
 
         // Добавляем RayCast3D для разрушения блоков
         let mut raycast = godot::classes::RayCast3D::new_alloc();
-        raycast.set_target_position(Vector3::new(0.0, 0.0, -BLOCK_REACH));
+        raycast.set_target_position(block_raycast_target(false));
         raycast.set_name(&StringName::from("BlockRayCast"));
         let player_collision = self
             .base()
@@ -120,6 +149,9 @@ impl ICharacterBody3D for Player {
             .add_child(&selection_outline.clone().upcast::<godot::classes::Node>());
         self.selection_outline = Some(selection_outline);
 
+        self.attach_character_visual();
+        self.apply_camera_mode();
+
         if !visual_smoke_player_input_disabled() {
             Input::singleton().set_mouse_mode(godot::classes::input::MouseMode::CAPTURED);
         }
@@ -143,6 +175,10 @@ impl ICharacterBody3D for Player {
                 }
                 Key::F => {
                     self.set_fly_mode(!self.fly_mode);
+                    return;
+                }
+                Key::V => {
+                    self.set_third_person_camera(!self.third_person_camera);
                     return;
                 }
                 _ => {}
@@ -295,6 +331,9 @@ impl ICharacterBody3D for Player {
 
         self.base_mut().set_velocity(velocity);
         self.base_mut().move_and_slide();
+        let velocity_after_slide = self.base().get_velocity();
+        let on_floor = self.base().is_on_floor();
+        self.update_character_motion_state(velocity_after_slide, on_floor);
     }
 }
 
@@ -355,6 +394,91 @@ impl Player {
 
     fn release_mouse() {
         Input::singleton().set_mouse_mode(godot::classes::input::MouseMode::VISIBLE);
+    }
+
+    fn attach_character_visual(&mut self) {
+        let Some(resource) = ResourceLoader::singleton().load(PLAYER_CHARACTER_SCENE_PATH) else {
+            self.emit_debug_log(&format!(
+                "Player character scene not found: {PLAYER_CHARACTER_SCENE_PATH}"
+            ));
+            return;
+        };
+
+        let Ok(scene) = resource.try_cast::<PackedScene>() else {
+            self.emit_debug_log(&format!(
+                "Player character resource is not a PackedScene: {PLAYER_CHARACTER_SCENE_PATH}"
+            ));
+            return;
+        };
+
+        let Some(node) = scene.instantiate() else {
+            self.emit_debug_log("Failed to instantiate player character scene");
+            return;
+        };
+
+        let Ok(mut visual) = node.try_cast::<Node3D>() else {
+            self.emit_debug_log("Player character scene root is not Node3D");
+            return;
+        };
+
+        visual.set_name(&StringName::from(PLAYER_CHARACTER_VISUAL_NAME));
+        visual.set_position(Vector3::ZERO);
+        visual.set_rotation_degrees(Vector3::new(0.0, 180.0, 0.0));
+        visual.set_visible(false);
+        self.base_mut()
+            .add_child(&visual.clone().upcast::<godot::classes::Node>());
+        self.character_visual = Some(visual);
+    }
+
+    fn set_third_person_camera(&mut self, enabled: bool) {
+        if self.third_person_camera == enabled {
+            return;
+        }
+
+        self.third_person_camera = enabled;
+        self.apply_camera_mode();
+
+        let message = if enabled {
+            "Third-person camera enabled"
+        } else {
+            "First-person camera enabled"
+        };
+        self.emit_debug_log(message);
+    }
+
+    fn apply_camera_mode(&mut self) {
+        if let Some(camera) = &mut self.camera {
+            camera.set_position(if self.third_person_camera {
+                third_person_camera_position()
+            } else {
+                first_person_camera_position()
+            });
+
+            if let Some(mut raycast) =
+                camera.try_get_node_as::<godot::classes::RayCast3D>("BlockRayCast")
+            {
+                raycast.set_target_position(block_raycast_target(self.third_person_camera));
+            }
+        }
+
+        if let Some(visual) = &mut self.character_visual {
+            visual.set_visible(self.third_person_camera);
+        }
+    }
+
+    fn update_character_motion_state(&mut self, velocity: Vector3, on_floor: bool) {
+        let motion_state = character_motion_state_for_velocity(velocity, on_floor);
+        if self.character_motion_state == motion_state {
+            return;
+        }
+
+        self.character_motion_state = motion_state;
+        if let Some(visual) = &mut self.character_visual {
+            visual.call(
+                &StringName::from("set_motion_state"),
+                &[motion_state.as_str().to_variant()],
+            );
+        }
     }
 
     fn update_selected_block_from_hotbar(&mut self, input: &Gd<Input>) {
@@ -514,6 +638,34 @@ fn hotbar_key_for_slot(slot: usize) -> Option<Key> {
     }
 }
 
+fn first_person_camera_position() -> Vector3 {
+    Vector3::new(0.0, 1.6, 0.0)
+}
+
+fn third_person_camera_position() -> Vector3 {
+    Vector3::new(0.0, 2.2, THIRD_PERSON_CAMERA_DISTANCE)
+}
+
+fn block_raycast_target(third_person_camera: bool) -> Vector3 {
+    let reach = if third_person_camera {
+        BLOCK_REACH + THIRD_PERSON_CAMERA_DISTANCE + THIRD_PERSON_BLOCK_REACH_PADDING
+    } else {
+        BLOCK_REACH
+    };
+    Vector3::new(0.0, 0.0, -reach)
+}
+
+fn character_motion_state_for_velocity(velocity: Vector3, on_floor: bool) -> CharacterMotionState {
+    let horizontal_speed = (velocity.x * velocity.x + velocity.z * velocity.z).sqrt();
+    if !on_floor && velocity.y.abs() > CHARACTER_JUMP_SPEED_THRESHOLD {
+        CharacterMotionState::Jump
+    } else if horizontal_speed > CHARACTER_RUN_SPEED_THRESHOLD {
+        CharacterMotionState::Run
+    } else {
+        CharacterMotionState::Idle
+    }
+}
+
 fn create_selection_outline() -> Gd<MeshInstance3D> {
     let min = -SELECTION_OUTLINE_PADDING;
     let max = 1.0 + SELECTION_OUTLINE_PADDING;
@@ -586,6 +738,11 @@ impl Player {
         self.fly_mode
     }
 
+    #[func]
+    fn is_third_person_camera_enabled(&self) -> bool {
+        self.third_person_camera
+    }
+
     #[signal]
     fn block_broken(x: i32, y: i32, z: i32);
 
@@ -650,6 +807,44 @@ mod tests {
             assert!(hotbar_key_for_slot(slot).is_some());
         }
         assert!(hotbar_key_for_slot(PLAYER_HOTBAR_SLOTS).is_none());
+    }
+
+    #[test]
+    fn third_person_raycast_extends_reach_by_camera_offset() {
+        assert_eq!(block_raycast_target(false), Vector3::new(0.0, 0.0, -5.0));
+        assert_eq!(block_raycast_target(true), Vector3::new(0.0, 0.0, -9.5));
+    }
+
+    #[test]
+    fn camera_positions_are_mode_specific() {
+        assert_eq!(first_person_camera_position(), Vector3::new(0.0, 1.6, 0.0));
+        assert_eq!(
+            third_person_camera_position(),
+            Vector3::new(0.0, 2.2, THIRD_PERSON_CAMERA_DISTANCE)
+        );
+    }
+
+    #[test]
+    fn character_motion_state_follows_velocity() {
+        assert_eq!(
+            character_motion_state_for_velocity(Vector3::ZERO, true),
+            CharacterMotionState::Idle
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(Vector3::new(1.0, 0.0, 0.0), true),
+            CharacterMotionState::Run
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(Vector3::new(0.0, 2.0, 0.0), false),
+            CharacterMotionState::Jump
+        );
+    }
+
+    #[test]
+    fn character_motion_state_labels_are_stable_for_godot_script() {
+        assert_eq!(CharacterMotionState::Idle.as_str(), "idle");
+        assert_eq!(CharacterMotionState::Run.as_str(), "run");
+        assert_eq!(CharacterMotionState::Jump.as_str(), "jump");
     }
 
     #[test]

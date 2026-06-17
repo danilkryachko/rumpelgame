@@ -2,8 +2,8 @@
 
 ## Stack
 
-- **Godot client**: owns the scene tree, window setup, HUD, local server lifecycle helper, lighting, visual smoke harness, and user input surface. The HUD renders hotbar slot labels/counts and selected-slot highlight from `GameClient` authoritative inventory getters when server snapshots are available.
-- **Rust GDExtension client logic**: owns TCP networking, packet decode, chunk residency, dirty-update detection, meshing queues, collision refresh queues, GPU terrain upload/render orchestration, local player gameplay glue, authoritative inventory snapshot state exposed to Godot, debug overlay getters, and perf telemetry.
+- **Godot client**: owns the scene tree, window setup, HUD, local server lifecycle helper, lighting, visual smoke harness, third-person character preview scene/assets, and user input surface. The HUD renders hotbar slot labels/counts and selected-slot highlight from `GameClient` authoritative inventory getters when server snapshots are available.
+- **Rust GDExtension client logic**: owns TCP networking, packet decode, chunk residency, dirty-update detection, meshing queues, collision refresh queues, GPU terrain upload/render orchestration, local player gameplay glue, first-person/third-person player camera mode, authoritative inventory snapshot state exposed to Godot, debug overlay getters, and perf telemetry.
 - **Go server**: owns authoritative world state, chunk generation/loading, block edits, chunk streaming, packet framing, and storage integration.
 - **Storage**: RocksDB is the implemented chunk persistence backend. PostgreSQL is approved but has no current implemented role.
 - **Protocol**: protobuf packets over TCP with a 4-byte little-endian payload length prefix.
@@ -18,6 +18,7 @@
 6. The Rust client decodes chunk bytes into the full serialized chunk buffer, records dirty-update counters for replacements, and updates chunk residency.
 7. Geometry, GPU upload, CPU proxy, and collision work are queued from chunk/subchunk state.
 8. Player spawn remains collision-gated on startup readiness.
+9. The local player starts in first-person mode; pressing `V` toggles the Rust-owned third-person camera and shows the Godot `KenneyCharacterPreview` model without changing server reach validation or protocol state.
 
 ## Server World And Storage
 
@@ -45,6 +46,7 @@
 - The packet reader feeds the main-thread packet queue; packet queue metrics are observational and do not implement backpressure or dropping.
 - Chunk replacements run through dirty-update detection. Partial dirty GPU upload is default-on; `RUMPELMC_GPU_TERRAIN_PARTIAL_DIRTY_UPLOAD=0` is the full-rebuild rollback path.
 - Local creative hotbar input state includes the requested selected slot and selected block ID. Server sessions own creative placement inventory, selected-slot validation for `InventoryAction_SELECT_SLOT`, last-position reach validation for `BlockAction`, player-body collision rejection for `BlockAction_PLACE`, placement approval for `BlockAction_PLACE`, counted/survival target-block mining cooldown for `BlockAction_DESTROY`, counted break-drop insertion for `BlockAction_DESTROY`, and local-player inventory load/save when `ClientPosition.player_id` is valid; the Rust client copies authoritative inventory slots and selected slot from `InventorySnapshot`, and the Godot HUD displays those authoritative labels/counts. Persistent block edits flow through `World.SetBlockGlobal` or `World.ReplaceBlockGlobal`.
+- The local `Player` owns first-person and third-person camera placement, extends the client block raycast only by the third-person camera offset, attaches `res://kenney_character_preview.tscn` as a visible third-person-only character visual, and dispatches stable `idle`/`run`/`jump` motion labels to the Godot character script.
 - Reconnect execution, slow-client policy, block-edit broadcast fanout, and opt-in max-client admission with bounded live rejection evidence are guarded; adaptive overload/backpressure behavior remains deferred policy work.
 
 ## GPU Terrain Contract
