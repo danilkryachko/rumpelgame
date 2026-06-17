@@ -307,10 +307,22 @@ The edit-burst budget gate composes the repeated edit benchmark, border edit ben
 Fresh check:
 
 - `logs/gpu_edit_burst_budget_gate_current/gpu-edit-burst-budget-summary.txt` passed with `source_count=6`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max dirty edge-neighbor subchunks `2836`, max dirty partial saved subchunks `1418`, max partial edge-neighbor subchunks `8`, max collision refresh rebuilds `132`, max collision phase total/component `1.950/1.540ms`, max proxy shadow `243`, max compact shadow proxy `808`, max proxy refresh reuse `68`, `gpu_upload_fail=0`, `ground_misses=0`, and default/visible/scheduler change blockers `0`.
-- `scripts/gpu_stress_artifact_index.sh` requires the edit-burst budget gate as a `world_interaction` row; the current stress index now passes with `37` rows and `27` required passes.
+- `scripts/gpu_stress_artifact_index.sh` requires the edit-burst budget gate as a `world_interaction` row; the current stress index also requires the edit visual parity row below.
 - `scripts/test_strategy_gate.sh` requires the edit-burst budget summary before the GPU stress artifact index and includes it in the nightly summary chain.
 - `scripts/gpu_terrain_report.sh` surfaces the selected edit-burst budget summary and case rows.
 - This is local summary evidence only. Visual parity, external profiler rows, GPU-native shadow activation, and Windows/Vulkan/Direct3D validation remain separate.
+
+## GPU Edit Visual Parity Gate
+
+The edit visual parity gate validates the existing full rebuild versus partial dirty screenshots from the partial dirty edge matrix. It confirms that each edit case has a saved screenshot/marker, observed block edit, current render/collision readiness, conservative compact Godot proxy shadows, zero upload failures, zero ground misses, and tight visual deltas.
+
+Fresh check:
+
+- `logs/gpu_edit_visual_parity_gate_current/gpu-edit-visual-parity-summary.txt` passed with `case_count=8`, `pass_cases=8`, `marker_count=16`, max average-luma delta `0.0000`, max terrain-luma-range delta `0.0000`, max terrain sample delta `0`, max terrain color bucket delta `0`, max partial dirty edge-neighbor subchunks `8`, max partial dirty partial subchunks `4`, max partial dirty saved subchunks `2`, `smoke_err=0`, `gpu_upload_fail=0`, and `ground_misses=0`.
+- `scripts/gpu_stress_artifact_index.sh` requires the edit visual parity gate as a `world_interaction` row; the current stress index now passes with `38` rows and `28` required passes.
+- `scripts/test_strategy_gate.sh` requires the edit visual parity summary before the GPU stress artifact index and includes it in the nightly summary chain.
+- `scripts/gpu_terrain_report.sh` surfaces the selected edit visual parity summary/cases and max visual deltas.
+- This is local screenshot/marker parity evidence only. External profiler rows, GPU-native shadow activation, and Windows/Vulkan/Direct3D validation remain separate.
 
 ## Storage Persistence Foundation
 

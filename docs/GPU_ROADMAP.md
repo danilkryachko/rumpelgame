@@ -264,8 +264,8 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 65. Done 2026-06-17: added `scripts/gpu_collision_refresh_cost_audit.sh` and `docs/GPU_COLLISION_REFRESH_COST_AUDIT.md` to gate collision refresh rebuild churn and `collision_refresh_phase_max` over the 16-case partial dirty edge matrix plus 2 pressure dirty lanes, requiring zero queue duplicate/stale/missing counters, zero upload failures, collision readiness, and CPU-side phase totals under the 150 FPS budget.
 66. Done 2026-06-17: added `scripts/gpu_shadow_proxy_refresh_cost_audit.sh` and `docs/GPU_SHADOW_PROXY_REFRESH_COST_AUDIT.md` to gate Godot shadow proxy refresh cost over the same 18 dirty-edit lanes, requiring `shadow_path=godot_proxy`, compact conservative shadow proxies, positive compact savings/reuse, native-shadow lockout, zero upload/ground failures, and CPU-side queue/process/submit budgets under the 150 FPS budget.
 67. Done 2026-06-17: added `scripts/gpu_edit_burst_budget_gate.sh` and `docs/GPU_EDIT_BURST_BUDGET_GATE.md` to compose repeated/border/partial dirty edit evidence with collision refresh, shadow proxy refresh, and upload budget checks into one required edit-burst budget gate, preserving default runtime, scheduler, and visible-quality lockouts plus external profiler/macOS/Windows blockers.
-68. Add edit visual parity where needed.
-69. Integrate edit workload evidence into the aggregate report.
+68. Done 2026-06-17: added `scripts/gpu_edit_visual_parity_gate.sh` and `docs/GPU_EDIT_VISUAL_PARITY_GATE.md` to validate full rebuild versus partial dirty edit screenshots across all eight partial dirty edge/corner cases, requiring block-edit observation, current render/collision readiness, zero upload/ground errors, and tight visual deltas.
+69. Done 2026-06-17: integrated edit visual parity into the stress artifact index, test strategy gate, and aggregate GPU terrain report, keeping the new row required while preserving external profiler/macOS/Windows blockers.
 70. Checkpoint world interaction performance.
 
 ### Weeks 71-80: Cross-Platform And Quality Guards

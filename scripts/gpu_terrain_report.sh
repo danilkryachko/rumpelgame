@@ -513,6 +513,12 @@ error_scan() {
   printf -- '- max `dirty_last_edge_neighbor_subchunks`: `%s`\n' "$(metric_max dirty_last_edge_neighbor_subchunks)"
   printf -- '- max `dirty_partial_subchunks`: `%s`\n' "$(metric_max dirty_partial_subchunks)"
   printf -- '- max `dirty_partial_saved_subchunks`: `%s`\n' "$(metric_max dirty_partial_saved_subchunks)"
+  printf -- '- max edit visual `max_avg_luma_delta`: `%s`\n' "$(metric_max max_avg_luma_delta)"
+  printf -- '- max edit visual `max_terrain_luma_range_delta`: `%s`\n' "$(metric_max max_terrain_luma_range_delta)"
+  printf -- '- max edit visual `max_terrain_samples_delta`: `%s`\n' "$(metric_max max_terrain_samples_delta)"
+  printf -- '- max edit visual `max_terrain_color_bucket_delta`: `%s`\n' "$(metric_max max_terrain_color_bucket_delta)"
+  printf -- '- max edit visual `max_partial_dirty_edge_neighbor_subchunks`: `%s`\n' "$(metric_max max_partial_dirty_edge_neighbor_subchunks)"
+  printf -- '- max edit visual `max_partial_dirty_partial_saved_subchunks`: `%s`\n' "$(metric_max max_partial_dirty_partial_saved_subchunks)"
   printf -- '- max `current_chunk_collision`: `%s`\n' "$(metric_max current_chunk_collision)"
   printf -- '- max `collision_refresh_rebuilt`: `%s`\n' "$(metric_max collision_refresh_rebuilt)"
   printf -- '- max `collision_refresh_last_rebuilt`: `%s`\n' "$(metric_max collision_refresh_last_rebuilt)"
@@ -724,6 +730,12 @@ error_scan() {
   metric_max_source dirty_last_blocks | sed 's/^/- /'
   metric_max_source dirty_edge_neighbor_subchunks | sed 's/^/- /'
   metric_max_source dirty_partial_saved_subchunks | sed 's/^/- /'
+  metric_max_source max_avg_luma_delta | sed 's/^/- /'
+  metric_max_source max_terrain_luma_range_delta | sed 's/^/- /'
+  metric_max_source max_terrain_samples_delta | sed 's/^/- /'
+  metric_max_source max_terrain_color_bucket_delta | sed 's/^/- /'
+  metric_max_source max_partial_dirty_edge_neighbor_subchunks | sed 's/^/- /'
+  metric_max_source max_partial_dirty_partial_saved_subchunks | sed 's/^/- /'
   metric_max_source current_chunk_collision | sed 's/^/- /'
   metric_max_source collision_refresh_rebuilt | sed 's/^/- /'
   metric_max_source collision_phase_total_ms | sed 's/^/- /'
@@ -878,6 +890,8 @@ error_scan() {
   print_optional_file "Selected GPU Shadow Proxy Refresh Cost Audit Cases" "$(latest_file gpu-shadow-proxy-refresh-cost-audit-cases.txt)"
   print_optional_file "Selected GPU Edit Burst Budget Summary" "$(latest_file gpu-edit-burst-budget-summary.txt)"
   print_optional_file "Selected GPU Edit Burst Budget Cases" "$(latest_file gpu-edit-burst-budget-cases.txt)"
+  print_optional_file "Selected GPU Edit Visual Parity Summary" "$(latest_file gpu-edit-visual-parity-summary.txt)"
+  print_optional_file "Selected GPU Edit Visual Parity Cases" "$(latest_file gpu-edit-visual-parity-cases.txt)"
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
   print_optional_file "Selected Workload Matrix Summary" "$(latest_file workload-matrix-summary.txt)"
   print_optional_file "Selected Perf Baseline Summary" "$(latest_file perf-baseline-summary.txt)"

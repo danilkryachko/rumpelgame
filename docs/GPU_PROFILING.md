@@ -306,6 +306,14 @@ sh scripts/gpu_edit_burst_budget_gate.sh logs/gpu_edit_burst_budget_gate_current
 
 The gate writes `gpu-edit-burst-budget-summary.txt` and `gpu-edit-burst-budget-cases.txt`; see `docs/GPU_EDIT_BURST_BUDGET_GATE.md`.
 
+Use the edit visual parity gate after changing dirty-edit visual output, partial dirty upload, edit screenshot markers, partial dirty edge matrix case definitions, shadow proxy mode, or aggregate report plumbing. It validates the existing full rebuild versus partial dirty screenshots from all eight partial dirty edge/corner cases:
+
+```sh
+sh scripts/gpu_edit_visual_parity_gate.sh logs/gpu_edit_visual_parity_gate_current
+```
+
+The gate writes `gpu-edit-visual-parity-summary.txt` and `gpu-edit-visual-parity-cases.txt`; see `docs/GPU_EDIT_VISUAL_PARITY_GATE.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh
