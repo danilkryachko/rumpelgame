@@ -7,6 +7,7 @@ const PERF_LOG_MAX_BYTES = 2 * 1024 * 1024
 const PERF_LOG_PATH = "res://../logs/perf.log"
 const RUN_ID_ENV = "RUMPELMC_RUN_ID"
 const DEV_TABS = ["Summary", "Streaming", "Render", "Events", "Logs"]
+const CHARACTER_MENU_UPDATE_INTERVAL = 0.2
 
 var selected_block: int = 1
 var block_names = {
@@ -27,16 +28,28 @@ var dev_tab_buttons = {}
 var dev_logs: Array[String] = []
 var selected_dev_tab: String = "Summary"
 var dev_update_timer: float = 0.0
+var character_panel: PanelContainer
+var character_appearance_row: HBoxContainer
+var character_appearance_buttons = []
+var character_animation_option: OptionButton
+var character_preview_toggle: CheckBox
+var character_third_person_toggle: CheckBox
+var character_status_label: Label
+var character_update_timer: float = 0.0
+var character_known_appearance_count: int = -1
+var character_known_animation_count: int = -1
 var perf_log_timer: float = 0.0
 var perf_log_path: String = ""
 var perf_run_id: String = ""
 var last_window_size: Vector2i = Vector2i.ZERO
 var mouse_mode_before_dev_menu: int = Input.MOUSE_MODE_VISIBLE
+var mouse_mode_before_character_menu: int = Input.MOUSE_MODE_VISIBLE
 
 func _ready():
 	setup_perf_log()
 	create_fps_counter()
 	create_dev_menu()
+	create_character_menu()
 	add_log("HUD initialized")
 
 	# Crosshair (Прицел)
@@ -90,6 +103,11 @@ func _process(delta):
 		dev_update_timer = DEV_UPDATE_INTERVAL
 		update_dev_menu()
 
+	character_update_timer -= delta
+	if character_update_timer <= 0.0:
+		character_update_timer = CHARACTER_MENU_UPDATE_INTERVAL
+		update_character_menu()
+
 	perf_log_timer -= delta
 	if perf_log_timer <= 0.0:
 		perf_log_timer = PERF_LOG_INTERVAL
@@ -104,6 +122,10 @@ func _input(event):
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_I or event.physical_keycode == KEY_I:
 			toggle_dev_menu()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_C or event.physical_keycode == KEY_C:
+			toggle_character_menu()
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_T or event.physical_keycode == KEY_T:
@@ -189,6 +211,74 @@ func create_dev_menu():
 	add_child(dev_panel)
 	update_dev_menu()
 
+func create_character_menu():
+	character_panel = PanelContainer.new()
+	character_panel.name = "CharacterCreator"
+	character_panel.visible = false
+	character_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	character_panel.offset_left = -430
+	character_panel.offset_top = 56
+	character_panel.offset_right = -12
+	character_panel.offset_bottom = 408
+	character_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.025, 0.026, 0.03, 0.88), 6))
+
+	var root = VBoxContainer.new()
+	root.add_theme_constant_override("separation", 8)
+	character_panel.add_child(root)
+
+	var title = Label.new()
+	title.text = "CHARACTER"
+	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_color_override("font_color", Color(0.94, 0.96, 0.98, 0.98))
+	root.add_child(title)
+
+	var camera_row = HBoxContainer.new()
+	camera_row.add_theme_constant_override("separation", 10)
+	root.add_child(camera_row)
+
+	character_third_person_toggle = CheckBox.new()
+	character_third_person_toggle.text = "Third person"
+	character_third_person_toggle.focus_mode = Control.FOCUS_NONE
+	character_third_person_toggle.toggled.connect(Callable(self, "set_character_third_person"))
+	camera_row.add_child(character_third_person_toggle)
+
+	character_preview_toggle = CheckBox.new()
+	character_preview_toggle.text = "Preview"
+	character_preview_toggle.focus_mode = Control.FOCUS_NONE
+	character_preview_toggle.toggled.connect(Callable(self, "set_character_animation_preview"))
+	camera_row.add_child(character_preview_toggle)
+
+	var appearance_title = Label.new()
+	appearance_title.text = "APPEARANCE"
+	appearance_title.add_theme_font_size_override("font_size", 12)
+	appearance_title.add_theme_color_override("font_color", Color(0.66, 0.78, 0.88, 0.94))
+	root.add_child(appearance_title)
+
+	character_appearance_row = HBoxContainer.new()
+	character_appearance_row.add_theme_constant_override("separation", 6)
+	root.add_child(character_appearance_row)
+
+	var animation_title = Label.new()
+	animation_title.text = "ANIMATION"
+	animation_title.add_theme_font_size_override("font_size", 12)
+	animation_title.add_theme_color_override("font_color", Color(0.66, 0.78, 0.88, 0.94))
+	root.add_child(animation_title)
+
+	character_animation_option = OptionButton.new()
+	character_animation_option.custom_minimum_size = Vector2(388, 34)
+	character_animation_option.focus_mode = Control.FOCUS_NONE
+	character_animation_option.item_selected.connect(Callable(self, "select_character_animation_clip"))
+	root.add_child(character_animation_option)
+
+	character_status_label = Label.new()
+	character_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	character_status_label.add_theme_font_size_override("font_size", 12)
+	character_status_label.add_theme_color_override("font_color", Color(0.82, 0.87, 0.90, 0.95))
+	root.add_child(character_status_label)
+
+	add_child(character_panel)
+	update_character_menu(true)
+
 func create_dev_tabs(root: VBoxContainer):
 	var tabs = HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 4)
@@ -210,6 +300,7 @@ func create_dev_actions(root: VBoxContainer):
 	root.add_child(actions)
 
 	actions.add_child(make_dev_action_button("Texture Stand", "toggle_texture_debug_stand"))
+	actions.add_child(make_dev_action_button("Character", "toggle_character_menu"))
 	actions.add_child(make_dev_action_button("Copy Snapshot", "copy_dev_snapshot"))
 	actions.add_child(make_dev_action_button("Open Perf Log", "open_perf_log"))
 	actions.add_child(make_dev_action_button("Clear Log", "clear_dev_log"))
@@ -260,6 +351,87 @@ func update_dev_menu():
 	dev_info_label.text = "\n".join(dev_tab_lines(fps, frame_ms, window_size, viewport_size))
 	dev_log_label.text = "\n".join(dev_logs)
 
+func update_character_menu(force_rebuild: bool = false):
+	if not character_panel.visible and not force_rebuild:
+		return
+
+	var player = get_character_player()
+	if not player:
+		character_status_label.text = "Player: not spawned"
+		character_animation_option.disabled = true
+		character_preview_toggle.disabled = true
+		character_third_person_toggle.disabled = true
+		return
+
+	character_animation_option.disabled = false
+	character_preview_toggle.disabled = false
+	character_third_person_toggle.disabled = false
+
+	var appearance_count = get_player_int(player, "character_appearance_preset_count", 0)
+	if force_rebuild or appearance_count != character_known_appearance_count:
+		rebuild_character_appearance_buttons(player, appearance_count)
+		character_known_appearance_count = appearance_count
+
+	var animation_count = get_player_int(player, "character_animation_clip_count", 0)
+	if force_rebuild or animation_count != character_known_animation_count:
+		rebuild_character_animation_options(player, animation_count)
+		character_known_animation_count = animation_count
+
+	var selected_appearance = get_player_int(player, "character_appearance_preset_index", -1)
+	for i in range(character_appearance_buttons.size()):
+		character_appearance_buttons[i].button_pressed = i == selected_appearance
+
+	var selected_clip = get_player_int(player, "selected_character_animation_clip_index", -1)
+	if selected_clip >= 0 and selected_clip < character_animation_option.get_item_count():
+		if character_animation_option.selected != selected_clip:
+			character_animation_option.select(selected_clip)
+
+	var third_person_enabled = false
+	if player.has_method("is_third_person_camera_enabled"):
+		third_person_enabled = bool(player.is_third_person_camera_enabled())
+	if character_third_person_toggle.button_pressed != third_person_enabled:
+		character_third_person_toggle.button_pressed = third_person_enabled
+
+	var preview_enabled = false
+	if player.has_method("is_character_animation_preview_enabled"):
+		preview_enabled = bool(player.is_character_animation_preview_enabled())
+	if character_preview_toggle.button_pressed != preview_enabled:
+		character_preview_toggle.button_pressed = preview_enabled
+
+	var clip_name = get_player_text(player, "selected_character_animation_clip_name", "n/a")
+	var clip_duration = get_player_float(player, "selected_character_animation_clip_duration", 0.0)
+	character_status_label.text = "Appearance: %s\nAnimation: %s (%.2fs)\nClips: %d" % [
+		get_player_text(player, "character_appearance_label", "n/a"),
+		clip_name,
+		clip_duration,
+		animation_count
+	]
+
+func rebuild_character_appearance_buttons(player: Node, appearance_count: int):
+	for child in character_appearance_row.get_children():
+		character_appearance_row.remove_child(child)
+		child.queue_free()
+	character_appearance_buttons.clear()
+
+	for index in range(appearance_count):
+		var button = Button.new()
+		button.text = get_player_text_arg(player, "character_appearance_preset_label", index, "Preset %d" % [index + 1])
+		button.toggle_mode = true
+		button.focus_mode = Control.FOCUS_NONE
+		button.custom_minimum_size = Vector2(92, 32)
+		button.pressed.connect(Callable(self, "select_character_appearance_preset").bind(index))
+		character_appearance_row.add_child(button)
+		character_appearance_buttons.append(button)
+
+func rebuild_character_animation_options(player: Node, animation_count: int):
+	character_animation_option.clear()
+	for index in range(animation_count):
+		var clip_name = get_player_text_arg(player, "character_animation_clip_name", index, "Clip %d" % [index + 1])
+		var duration = 0.0
+		if player.has_method("character_animation_clip_duration"):
+			duration = float(player.character_animation_clip_duration(index))
+		character_animation_option.add_item("%02d  %s  %.2fs" % [index + 1, clip_name, duration], index)
+
 func toggle_dev_menu():
 	dev_panel.visible = not dev_panel.visible
 	if dev_panel.visible:
@@ -269,6 +441,45 @@ func toggle_dev_menu():
 		Input.set_mouse_mode(mouse_mode_before_dev_menu)
 	add_log("Dev menu %s" % ("opened" if dev_panel.visible else "closed"))
 	update_dev_menu()
+
+func toggle_character_menu():
+	character_panel.visible = not character_panel.visible
+	if character_panel.visible:
+		mouse_mode_before_character_menu = Input.get_mouse_mode()
+		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+		var player = get_character_player()
+		if player and player.has_method("set_third_person_camera_enabled"):
+			player.set_third_person_camera_enabled(true)
+	else:
+		Input.set_mouse_mode(mouse_mode_before_character_menu)
+	add_log("Character menu %s" % ("opened" if character_panel.visible else "closed"))
+	update_character_menu(true)
+
+func select_character_appearance_preset(index: int):
+	var player = get_character_player()
+	if player and player.has_method("select_character_appearance_preset"):
+		player.select_character_appearance_preset(index)
+		add_log("Character appearance: %s" % get_player_text(player, "character_appearance_label", "n/a"))
+	update_character_menu(true)
+
+func select_character_animation_clip(index: int):
+	var player = get_character_player()
+	if player and player.has_method("select_character_animation_clip"):
+		player.select_character_animation_clip(index)
+		add_log("Character animation: %s" % get_player_text(player, "selected_character_animation_clip_name", "n/a"))
+	update_character_menu(true)
+
+func set_character_animation_preview(enabled: bool):
+	var player = get_character_player()
+	if player and player.has_method("set_character_animation_preview_enabled"):
+		player.set_character_animation_preview_enabled(enabled)
+	update_character_menu(true)
+
+func set_character_third_person(enabled: bool):
+	var player = get_character_player()
+	if player and player.has_method("set_third_person_camera_enabled"):
+		player.set_third_person_camera_enabled(enabled)
+	update_character_menu(true)
 
 func select_dev_tab(tab: String):
 	selected_dev_tab = tab
@@ -363,6 +574,29 @@ func toggle_texture_debug_stand():
 		client.toggle_texture_debug_stand()
 	else:
 		add_log("Texture debug stand unavailable")
+
+func get_character_player():
+	return get_tree().root.find_child("Player", true, false)
+
+func get_player_int(player: Node, method: String, fallback: int) -> int:
+	if player and player.has_method(method):
+		return int(player.call(method))
+	return fallback
+
+func get_player_float(player: Node, method: String, fallback: float) -> float:
+	if player and player.has_method(method):
+		return float(player.call(method))
+	return fallback
+
+func get_player_text(player: Node, method: String, fallback: String) -> String:
+	if player and player.has_method(method):
+		return str(player.call(method))
+	return fallback
+
+func get_player_text_arg(player: Node, method: String, index: int, fallback: String) -> String:
+	if player and player.has_method(method):
+		return str(player.call(method, index))
+	return fallback
 
 func get_player_position_text() -> String:
 	var player = get_tree().root.find_child("Player", true, false)

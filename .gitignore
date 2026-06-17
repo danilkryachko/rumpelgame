@@ -12,3 +12,4 @@ server/server
 server/server.exe
 *.import
 *.uid
+client/assets/biomes/animations/character-animations_*.png

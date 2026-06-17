@@ -4,12 +4,12 @@ use std::ops::Range;
 use std::time::Instant;
 
 mod api;
+mod biomes_avatar;
 mod blocks;
 mod gpu_terrain;
 mod meshing;
 mod network;
 mod player;
-mod veloren_composer;
 mod vox;
 
 struct RumpelmcExtension;

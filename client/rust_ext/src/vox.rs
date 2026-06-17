@@ -461,10 +461,12 @@ fn palette_color(palette: [Color; 256], color_index: u8) -> Color {
         .unwrap_or(Color::WHITE)
 }
 
+#[allow(dead_code)]
 pub(crate) fn model_palette_color(model: &VoxModel, color_index: u8) -> Color {
     palette_color(model.palette, color_index)
 }
 
+#[allow(dead_code)]
 pub(crate) fn model_raw_palette_color(model: &VoxModel, color_index: u8) -> Color {
     model
         .palette

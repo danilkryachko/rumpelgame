@@ -6,7 +6,7 @@ use godot::classes::{
 use godot::global::{Key, MouseButton};
 use godot::prelude::*;
 
-use crate::veloren_composer::VelorenHumanoidPart;
+use crate::biomes_avatar::{BiomesAnimationCatalog, BiomesAvatarAppearance, BiomesAvatarJoint};
 
 const BLOCK_REACH: f32 = 5.0;
 const SELECTION_OUTLINE_PADDING: f32 = 0.01;
@@ -36,17 +36,19 @@ const CHARACTER_IDLE_ANIMATION_RATE: f32 = 2.0;
 const CHARACTER_RUN_ANIMATION_RATE: f32 = 9.0;
 const CHARACTER_JUMP_ANIMATION_RATE: f32 = 4.0;
 const CHARACTER_ROOT_YAW_DEGREES: f32 = 0.0;
-const CHARACTER_VOXEL_SCALE: f32 = 0.065;
-const CHARACTER_HEAD_VOXEL_HEIGHT: f32 = 11.0;
+const CHARACTER_VOXEL_SCALE: f32 = 0.030;
+const CHARACTER_HEAD_VOXEL_HEIGHT: f32 = 18.0;
 const CHARACTER_HEAD_Y: f32 =
     PLAYER_HEIGHT_METERS - CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE;
 const CHARACTER_CHEST_Y: f32 = 0.96;
 const CHARACTER_BELT_Y: f32 = 0.78;
-const CHARACTER_PANTS_Y: f32 = 0.56;
 const CHARACTER_SHOULDER_Y: f32 = 1.23;
+const CHARACTER_FOREARM_Y: f32 = 1.04;
 const CHARACTER_HIP_Y: f32 = 0.42;
 const CHARACTER_LIMB_X: f32 = 0.36;
+const CHARACTER_FOREARM_X: f32 = 0.42;
 const CHARACTER_LEG_X: f32 = 0.17;
+const CHARACTER_LOWER_LEG_Y: f32 = 0.19;
 
 struct BlockHit {
     block: (i32, i32, i32),
@@ -66,15 +68,50 @@ enum CharacterMotionState {
     Jump,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CharacterClipPreviewKind {
+    Idle,
+    Walk,
+    Run,
+    Jump,
+    Crouch,
+    Swim,
+    Wave,
+    Dance,
+    Applause,
+    Work,
+    Fishing,
+    Consume,
+    Sit,
+    Flex,
+    Laugh,
+    Point,
+    Camera,
+    Rock,
+    Sick,
+    Item,
+    Craft,
+    Watering,
+    TPose,
+    Fallback,
+}
+
 struct VoxelCharacterVisual {
     root: Gd<Node3D>,
     head: Gd<Node3D>,
     chest: Gd<Node3D>,
-    belt: Gd<Node3D>,
-    pants: Gd<Node3D>,
+    waist: Gd<Node3D>,
+    l_arm: Gd<Node3D>,
+    l_forearm: Gd<Node3D>,
     hand_l: Gd<Node3D>,
+    r_arm: Gd<Node3D>,
+    r_forearm: Gd<Node3D>,
     hand_r: Gd<Node3D>,
+    l_thigh: Gd<Node3D>,
+    l_leg: Gd<Node3D>,
     foot_l: Gd<Node3D>,
+    r_thigh: Gd<Node3D>,
+    r_leg: Gd<Node3D>,
     foot_r: Gd<Node3D>,
 }
 
@@ -92,6 +129,11 @@ pub struct Player {
     hotbar: [InventorySlot; PLAYER_HOTBAR_SLOTS],
     fly_mode: bool,
     third_person_camera: bool,
+    character_appearance_preset: usize,
+    character_appearance: BiomesAvatarAppearance,
+    character_animation_catalog: Option<BiomesAnimationCatalog>,
+    character_preview_animation_index: usize,
+    character_preview_animation_enabled: bool,
     character_motion_state: CharacterMotionState,
     character_animation_time_sec: f32,
     default_collision_layer: u32,
@@ -118,6 +160,11 @@ impl ICharacterBody3D for Player {
             hotbar,
             fly_mode: false,
             third_person_camera: false,
+            character_appearance_preset: 0,
+            character_appearance: crate::biomes_avatar::default_avatar_appearance(),
+            character_animation_catalog: None,
+            character_preview_animation_index: 0,
+            character_preview_animation_enabled: false,
             character_motion_state: CharacterMotionState::Idle,
             character_animation_time_sec: 0.0,
             default_collision_layer: 1,
@@ -177,6 +224,7 @@ impl ICharacterBody3D for Player {
             .add_child(&selection_outline.clone().upcast::<godot::classes::Node>());
         self.selection_outline = Some(selection_outline);
 
+        self.load_character_animation_catalog();
         self.attach_character_visual();
         self.apply_camera_mode();
 
@@ -207,6 +255,10 @@ impl ICharacterBody3D for Player {
                 }
                 Key::V => {
                     self.set_third_person_camera(!self.third_person_camera);
+                    return;
+                }
+                Key::B => {
+                    self.cycle_character_appearance();
                     return;
                 }
                 _ => {}
@@ -425,11 +477,112 @@ impl Player {
         Input::singleton().set_mouse_mode(godot::classes::input::MouseMode::VISIBLE);
     }
 
+    fn load_character_animation_catalog(&mut self) {
+        match crate::biomes_avatar::load_biomes_animation_catalog_from_res() {
+            Ok(catalog) => {
+                let clip_count = catalog.clip_count();
+                self.character_preview_animation_index = catalog
+                    .clips()
+                    .iter()
+                    .position(|clip| clip.file_animation_name == "Idle")
+                    .unwrap_or(0);
+                self.character_animation_catalog = Some(catalog);
+                self.emit_debug_log(&format!("Biomes character animation clips: {clip_count}"));
+            }
+            Err(err) => {
+                godot_print!("Biomes character animation catalog fallback: {err}");
+                self.emit_debug_log(&format!(
+                    "Biomes character animation catalog unavailable: {err}"
+                ));
+            }
+        }
+    }
+
     fn attach_character_visual(&mut self) {
-        let visual = create_voxel_character_visual();
+        let visual = create_voxel_character_visual(self.character_appearance);
         self.base_mut()
             .add_child(&visual.root.clone().upcast::<godot::classes::Node>());
         self.character_visual = Some(visual);
+    }
+
+    fn rebuild_character_visual(&mut self) {
+        if let Some(mut visual) = self.character_visual.take() {
+            self.base_mut()
+                .remove_child(&visual.root.clone().upcast::<godot::classes::Node>());
+            visual.root.queue_free();
+        }
+        self.attach_character_visual();
+        self.apply_camera_mode();
+    }
+
+    fn cycle_character_appearance(&mut self) {
+        let count = crate::biomes_avatar::avatar_appearance_preset_count();
+        if count == 0 {
+            return;
+        }
+        self.character_appearance_preset = (self.character_appearance_preset + 1) % count;
+        self.character_appearance =
+            crate::biomes_avatar::avatar_appearance_preset(self.character_appearance_preset);
+        self.rebuild_character_visual();
+        self.emit_debug_log(&format!(
+            "Character appearance: {}",
+            self.character_appearance.label
+        ));
+    }
+
+    fn set_character_appearance_preset_index(&mut self, index: usize) {
+        let count = crate::biomes_avatar::avatar_appearance_preset_count();
+        if count == 0 {
+            return;
+        }
+        let normalized_index = index % count;
+        if self.character_appearance_preset == normalized_index {
+            return;
+        }
+        self.character_appearance_preset = normalized_index;
+        self.character_appearance =
+            crate::biomes_avatar::avatar_appearance_preset(self.character_appearance_preset);
+        self.rebuild_character_visual();
+        self.emit_debug_log(&format!(
+            "Character appearance: {}",
+            self.character_appearance.label
+        ));
+    }
+
+    fn set_character_preview_animation_index(&mut self, index: usize, enable_preview: bool) {
+        let Some(catalog) = &self.character_animation_catalog else {
+            return;
+        };
+        let clip_count = catalog.clip_count();
+        if clip_count == 0 {
+            return;
+        }
+
+        self.character_preview_animation_index = index.min(clip_count - 1);
+        self.character_animation_time_sec = 0.0;
+        if enable_preview {
+            self.character_preview_animation_enabled = true;
+            self.set_third_person_camera(true);
+        }
+
+        if let Some(clip_name) = self.selected_character_animation_clip_name_str() {
+            self.emit_debug_log(&format!("Character animation preview: {clip_name}"));
+        }
+    }
+
+    fn selected_character_animation_clip_name_str(&self) -> Option<&str> {
+        self.character_animation_catalog
+            .as_ref()
+            .and_then(|catalog| catalog.clips().get(self.character_preview_animation_index))
+            .map(|clip| clip.file_animation_name.as_str())
+    }
+
+    fn selected_character_animation_clip_duration_sec(&self) -> f32 {
+        self.character_animation_catalog
+            .as_ref()
+            .and_then(|catalog| catalog.clips().get(self.character_preview_animation_index))
+            .map(|clip| clip.duration_sec)
+            .unwrap_or(0.0)
     }
 
     fn set_third_person_camera(&mut self, enabled: bool) {
@@ -474,9 +627,24 @@ impl Player {
 
         self.character_animation_time_sec =
             next_character_animation_time(self.character_animation_time_sec, delta_sec);
+        let preview_clip_name = self
+            .character_preview_animation_enabled
+            .then(|| {
+                self.selected_character_animation_clip_name_str()
+                    .map(str::to_string)
+            })
+            .flatten();
 
         if let Some(visual) = &mut self.character_visual {
-            apply_voxel_character_pose(visual, motion_state, self.character_animation_time_sec);
+            if let Some(clip_name) = preview_clip_name {
+                apply_voxel_character_clip_pose(
+                    visual,
+                    &clip_name,
+                    self.character_animation_time_sec,
+                );
+            } else {
+                apply_voxel_character_pose(visual, motion_state, self.character_animation_time_sec);
+            }
         }
     }
 
@@ -717,113 +885,206 @@ fn next_character_animation_time(current_time_sec: f32, delta_sec: f32) -> f32 {
     (current_time_sec + delta_sec) % CHARACTER_ANIMATION_WRAP_SECONDS
 }
 
-fn create_voxel_character_visual() -> VoxelCharacterVisual {
+fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCharacterVisual {
     let mut root = Node3D::new_alloc();
     root.set_name(&StringName::from(PLAYER_CHARACTER_VISUAL_NAME));
     root.set_position(Vector3::ZERO);
     root.set_rotation_degrees(Vector3::new(0.0, CHARACTER_ROOT_YAW_DEGREES, 0.0));
     root.set_visible(false);
 
-    let head = create_veloren_composed_character_part(
+    let head = create_biomes_avatar_character_part(
         "Head",
-        VelorenHumanoidPart::Head,
+        BiomesAvatarJoint::Head,
+        appearance,
         Vector3::new(0.0, CHARACTER_HEAD_Y, 0.0),
         Vector3::ZERO,
         Vector3::new(0.76, 0.44, 0.44),
         Vector3::ZERO,
         Color::from_rgb(0.78, 0.55, 0.38),
     );
-    let chest = create_veloren_composed_character_part(
+    let chest = create_biomes_avatar_character_part(
         "Chest",
-        VelorenHumanoidPart::Chest,
+        BiomesAvatarJoint::Chest,
+        appearance,
         Vector3::new(0.0, CHARACTER_CHEST_Y, 0.0),
         Vector3::ZERO,
         Vector3::new(0.68, 0.68, 0.34),
         Vector3::ZERO,
         Color::from_rgb(0.18, 0.45, 0.78),
     );
-    let belt = create_veloren_composed_character_part(
-        "Belt",
-        VelorenHumanoidPart::Belt,
+    let waist = create_biomes_avatar_character_part(
+        "Waist",
+        BiomesAvatarJoint::Waist,
+        appearance,
         Vector3::new(0.0, CHARACTER_BELT_Y, 0.0),
         Vector3::ZERO,
-        Vector3::new(0.58, 0.28, 0.34),
+        Vector3::new(0.58, 0.32, 0.34),
         Vector3::ZERO,
         Color::from_rgb(0.12, 0.16, 0.20),
     );
-    let pants = create_veloren_composed_character_part(
-        "Pants",
-        VelorenHumanoidPart::Pants,
-        Vector3::new(0.0, CHARACTER_PANTS_Y, 0.0),
+    let l_arm = create_biomes_avatar_character_part(
+        "L_Arm",
+        BiomesAvatarJoint::LArm,
+        appearance,
+        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
         Vector3::ZERO,
-        Vector3::new(0.58, 0.24, 0.34),
+        Vector3::new(0.20, 0.34, 0.20),
+        Vector3::ZERO,
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let l_forearm = create_biomes_avatar_character_part(
+        "L_Forearm",
+        BiomesAvatarJoint::LForearm,
+        appearance,
+        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.20, 0.34, 0.20),
+        Vector3::ZERO,
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let hand_l = create_biomes_avatar_character_part(
+        "HandL",
+        BiomesAvatarJoint::LHand,
+        appearance,
+        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.20, 0.18, 0.20),
+        Vector3::ZERO,
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let r_arm = create_biomes_avatar_character_part(
+        "R_Arm",
+        BiomesAvatarJoint::RArm,
+        appearance,
+        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.20, 0.34, 0.20),
+        Vector3::ZERO,
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let r_forearm = create_biomes_avatar_character_part(
+        "R_Forearm",
+        BiomesAvatarJoint::RForearm,
+        appearance,
+        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.20, 0.34, 0.20),
+        Vector3::ZERO,
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let hand_r = create_biomes_avatar_character_part(
+        "HandR",
+        BiomesAvatarJoint::RHand,
+        appearance,
+        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.20, 0.18, 0.20),
+        Vector3::ZERO,
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let l_thigh = create_biomes_avatar_character_part(
+        "L_Thigh",
+        BiomesAvatarJoint::LThigh,
+        appearance,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.22, 0.32, 0.24),
         Vector3::ZERO,
         Color::from_rgb(0.10, 0.16, 0.25),
     );
-    let hand_l = create_veloren_composed_character_part(
-        "HandL",
-        VelorenHumanoidPart::LeftHand,
-        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
-        Vector3::new(0.0, -0.26, 0.0),
-        Vector3::new(0.20, 0.62, 0.20),
-        Vector3::new(0.0, -0.31, 0.0),
-        Color::from_rgb(0.78, 0.55, 0.38),
+    let l_leg = create_biomes_avatar_character_part(
+        "L_Leg",
+        BiomesAvatarJoint::LLeg,
+        appearance,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.22, 0.32, 0.24),
+        Vector3::ZERO,
+        Color::from_rgb(0.10, 0.16, 0.25),
     );
-    let hand_r = create_veloren_composed_character_part(
-        "HandR",
-        VelorenHumanoidPart::RightHand,
-        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
-        Vector3::new(0.0, -0.26, 0.0),
-        Vector3::new(0.20, 0.62, 0.20),
-        Vector3::new(0.0, -0.31, 0.0),
-        Color::from_rgb(0.78, 0.55, 0.38),
-    );
-    let foot_l = create_veloren_composed_character_part(
+    let foot_l = create_biomes_avatar_character_part(
         "FootL",
-        VelorenHumanoidPart::LeftFoot,
-        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
-        Vector3::new(0.0, -0.18, 0.0),
-        Vector3::new(0.22, 0.72, 0.24),
-        Vector3::new(0.0, -0.36, 0.0),
+        BiomesAvatarJoint::LFoot,
+        appearance,
+        Vector3::new(-CHARACTER_LEG_X, 0.0, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.22, 0.14, 0.28),
+        Vector3::ZERO,
         Color::from_rgb(0.16, 0.22, 0.32),
     );
-    let foot_r = create_veloren_composed_character_part(
+    let r_thigh = create_biomes_avatar_character_part(
+        "R_Thigh",
+        BiomesAvatarJoint::RThigh,
+        appearance,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.22, 0.32, 0.24),
+        Vector3::ZERO,
+        Color::from_rgb(0.10, 0.16, 0.25),
+    );
+    let r_leg = create_biomes_avatar_character_part(
+        "R_Leg",
+        BiomesAvatarJoint::RLeg,
+        appearance,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.22, 0.32, 0.24),
+        Vector3::ZERO,
+        Color::from_rgb(0.10, 0.16, 0.25),
+    );
+    let foot_r = create_biomes_avatar_character_part(
         "FootR",
-        VelorenHumanoidPart::RightFoot,
-        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
-        Vector3::new(0.0, -0.18, 0.0),
-        Vector3::new(0.22, 0.72, 0.24),
-        Vector3::new(0.0, -0.36, 0.0),
+        BiomesAvatarJoint::RFoot,
+        appearance,
+        Vector3::new(CHARACTER_LEG_X, 0.0, 0.0),
+        Vector3::ZERO,
+        Vector3::new(0.22, 0.14, 0.28),
+        Vector3::ZERO,
         Color::from_rgb(0.16, 0.22, 0.32),
     );
 
     root.add_child(&head.clone().upcast::<godot::classes::Node>());
     root.add_child(&chest.clone().upcast::<godot::classes::Node>());
-    root.add_child(&belt.clone().upcast::<godot::classes::Node>());
-    root.add_child(&pants.clone().upcast::<godot::classes::Node>());
+    root.add_child(&waist.clone().upcast::<godot::classes::Node>());
+    root.add_child(&l_arm.clone().upcast::<godot::classes::Node>());
+    root.add_child(&l_forearm.clone().upcast::<godot::classes::Node>());
     root.add_child(&hand_l.clone().upcast::<godot::classes::Node>());
+    root.add_child(&r_arm.clone().upcast::<godot::classes::Node>());
+    root.add_child(&r_forearm.clone().upcast::<godot::classes::Node>());
     root.add_child(&hand_r.clone().upcast::<godot::classes::Node>());
+    root.add_child(&l_thigh.clone().upcast::<godot::classes::Node>());
+    root.add_child(&l_leg.clone().upcast::<godot::classes::Node>());
     root.add_child(&foot_l.clone().upcast::<godot::classes::Node>());
+    root.add_child(&r_thigh.clone().upcast::<godot::classes::Node>());
+    root.add_child(&r_leg.clone().upcast::<godot::classes::Node>());
     root.add_child(&foot_r.clone().upcast::<godot::classes::Node>());
 
     let mut visual = VoxelCharacterVisual {
         root,
         head,
         chest,
-        belt,
-        pants,
+        waist,
+        l_arm,
+        l_forearm,
         hand_l,
+        r_arm,
+        r_forearm,
         hand_r,
+        l_thigh,
+        l_leg,
         foot_l,
+        r_thigh,
+        r_leg,
         foot_r,
     };
     apply_voxel_character_pose(&mut visual, CharacterMotionState::Idle, 0.0);
     visual
 }
 
-fn create_veloren_composed_character_part(
+fn create_biomes_avatar_character_part(
     name: &str,
-    part: VelorenHumanoidPart,
+    joint: BiomesAvatarJoint,
+    appearance: BiomesAvatarAppearance,
     pivot_position: Vector3,
     mesh_offset: Vector3,
     fallback_mesh_size: Vector3,
@@ -836,13 +1097,16 @@ fn create_veloren_composed_character_part(
 
     let mut mesh = MeshInstance3D::new_alloc();
     mesh.set_position(mesh_offset);
-    match crate::veloren_composer::load_default_humanoid_part_mesh(part, CHARACTER_VOXEL_SCALE) {
+    match crate::biomes_avatar::load_avatar_joint_mesh(joint, appearance, CHARACTER_VOXEL_SCALE) {
         Ok(composed_mesh) => {
             mesh.set_mesh(&composed_mesh);
             mesh.set_material_override(&create_vox_vertex_color_material());
         }
         Err(err) => {
-            godot_print!("Veloren composed character part fallback for {name}: {err}");
+            godot_print!(
+                "Biomes avatar character part fallback for {name}/{}: {err}",
+                joint.name()
+            );
             let mut box_mesh = BoxMesh::new_gd();
             box_mesh.set_size(fallback_mesh_size);
             mesh.set_position(fallback_mesh_offset);
@@ -882,6 +1146,403 @@ fn apply_voxel_character_pose(
     }
 }
 
+fn apply_voxel_character_clip_pose(
+    visual: &mut VoxelCharacterVisual,
+    clip_name: &str,
+    animation_time_sec: f32,
+) {
+    match character_clip_preview_kind(clip_name) {
+        CharacterClipPreviewKind::Idle | CharacterClipPreviewKind::Fallback => {
+            apply_voxel_idle_pose(visual, animation_time_sec)
+        }
+        CharacterClipPreviewKind::Walk => apply_voxel_run_pose(visual, animation_time_sec * 0.58),
+        CharacterClipPreviewKind::Run => apply_voxel_run_pose(visual, animation_time_sec),
+        CharacterClipPreviewKind::Jump => apply_voxel_jump_pose(visual, animation_time_sec),
+        kind => apply_voxel_upper_body_preview_pose(visual, kind, animation_time_sec),
+    }
+}
+
+fn character_clip_preview_kind(clip_name: &str) -> CharacterClipPreviewKind {
+    match clip_name {
+        "Idle" => CharacterClipPreviewKind::Idle,
+        "Walking" | "CrouchWalking" | "StrafeLeftWalking" | "StrafeRightWalking" => {
+            CharacterClipPreviewKind::Walk
+        }
+        "Running" | "RunningBackward" | "StrafeLeftRunning" | "StrafeRightRunning" => {
+            CharacterClipPreviewKind::Run
+        }
+        "Jump" | "Fall" => CharacterClipPreviewKind::Jump,
+        "Crouch" | "CrouchIdle" => CharacterClipPreviewKind::Crouch,
+        "SwimmingBackward" | "SwimmingForward" | "SwimmingIdle" => CharacterClipPreviewKind::Swim,
+        "Waving" => CharacterClipPreviewKind::Wave,
+        "Dancing" => CharacterClipPreviewKind::Dance,
+        "Applause" => CharacterClipPreviewKind::Applause,
+        "Attack" | "Attack2" | "DiggingHand" | "DiggingTool" | "DiggingToolOld" | "Tilling" => {
+            CharacterClipPreviewKind::Work
+        }
+        "FishingCastPull" | "FishingCastRelease" | "FishingIdle" | "FishingReel"
+        | "FishingShow" => CharacterClipPreviewKind::Fishing,
+        "Drink" | "Eat" => CharacterClipPreviewKind::Consume,
+        "Sit" => CharacterClipPreviewKind::Sit,
+        "Flex" => CharacterClipPreviewKind::Flex,
+        "Laugh" => CharacterClipPreviewKind::Laugh,
+        "Point" => CharacterClipPreviewKind::Point,
+        "HoldingCamera" => CharacterClipPreviewKind::Camera,
+        "Rock" => CharacterClipPreviewKind::Rock,
+        "Sick" => CharacterClipPreviewKind::Sick,
+        "ItemAway" | "ItemPutBack" => CharacterClipPreviewKind::Item,
+        "Craft" => CharacterClipPreviewKind::Craft,
+        "Watering" => CharacterClipPreviewKind::Watering,
+        "TPose" => CharacterClipPreviewKind::TPose,
+        _ => CharacterClipPreviewKind::Fallback,
+    }
+}
+
+fn apply_voxel_upper_body_preview_pose(
+    visual: &mut VoxelCharacterVisual,
+    kind: CharacterClipPreviewKind,
+    animation_time_sec: f32,
+) {
+    apply_voxel_idle_pose(visual, animation_time_sec);
+
+    let fast_wave = (animation_time_sec * 7.5).sin();
+    let slow_wave = (animation_time_sec * 3.0).sin();
+
+    match kind {
+        CharacterClipPreviewKind::Crouch => {
+            set_node_transform(
+                &mut visual.head,
+                Vector3::new(0.0, CHARACTER_HEAD_Y - 0.18, 0.02),
+                Vector3::new(6.0, 0.0, 0.0),
+            );
+            set_node_transform(
+                &mut visual.chest,
+                Vector3::new(0.0, CHARACTER_CHEST_Y - 0.14, 0.02),
+                Vector3::new(10.0, 0.0, slow_wave * 2.0),
+            );
+            set_node_transform(
+                &mut visual.waist,
+                Vector3::new(0.0, CHARACTER_BELT_Y - 0.08, 0.0),
+                Vector3::new(8.0, 0.0, 0.0),
+            );
+            set_node_transform(
+                &mut visual.l_thigh,
+                Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.13, 0.02),
+                Vector3::new(34.0, 0.0, -3.0),
+            );
+            set_node_transform(
+                &mut visual.r_thigh,
+                Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.13, 0.02),
+                Vector3::new(34.0, 0.0, 3.0),
+            );
+        }
+        CharacterClipPreviewKind::Swim => {
+            set_node_transform(
+                &mut visual.chest,
+                Vector3::new(0.0, CHARACTER_CHEST_Y + slow_wave * 0.018, -0.04),
+                Vector3::new(-18.0, 0.0, slow_wave * 3.0),
+            );
+            set_node_transform(
+                &mut visual.l_arm,
+                Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+                Vector3::new(78.0 * fast_wave, 0.0, -14.0),
+            );
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+                Vector3::new(-78.0 * fast_wave, 0.0, 14.0),
+            );
+            set_node_transform(
+                &mut visual.l_leg,
+                Vector3::new(-CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y, 0.0),
+                Vector3::new(-28.0 * fast_wave, 0.0, 0.0),
+            );
+            set_node_transform(
+                &mut visual.r_leg,
+                Vector3::new(CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y, 0.0),
+                Vector3::new(28.0 * fast_wave, 0.0, 0.0),
+            );
+        }
+        CharacterClipPreviewKind::Wave => {
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+                Vector3::new(-118.0, 0.0, 18.0 + fast_wave * 8.0),
+            );
+            set_node_transform(
+                &mut visual.r_forearm,
+                Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + 0.12, 0.0),
+                Vector3::new(-128.0, 0.0, 32.0 + fast_wave * 18.0),
+            );
+            set_node_transform(
+                &mut visual.hand_r,
+                Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.04, 0.0),
+                Vector3::new(-132.0, 0.0, 38.0 + fast_wave * 20.0),
+            );
+        }
+        CharacterClipPreviewKind::Dance => {
+            set_node_transform(
+                &mut visual.head,
+                Vector3::new(0.0, CHARACTER_HEAD_Y + fast_wave.abs() * 0.025, 0.0),
+                Vector3::new(slow_wave * 6.0, fast_wave * 10.0, slow_wave * 4.0),
+            );
+            set_node_transform(
+                &mut visual.chest,
+                Vector3::new(0.0, CHARACTER_CHEST_Y + fast_wave.abs() * 0.035, 0.0),
+                Vector3::new(-4.0, fast_wave * 12.0, slow_wave * 9.0),
+            );
+            set_node_transform(
+                &mut visual.l_arm,
+                Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+                Vector3::new(-40.0 + fast_wave * 34.0, 0.0, -28.0),
+            );
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+                Vector3::new(40.0 + fast_wave * 34.0, 0.0, 28.0),
+            );
+        }
+        CharacterClipPreviewKind::Applause | CharacterClipPreviewKind::Craft => {
+            set_node_transform(
+                &mut visual.l_arm,
+                Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, -0.02),
+                Vector3::new(-46.0, 0.0, 32.0),
+            );
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, -0.02),
+                Vector3::new(-46.0, 0.0, -32.0),
+            );
+            set_node_transform(
+                &mut visual.hand_l,
+                Vector3::new(
+                    -0.10 - fast_wave.abs() * 0.03,
+                    CHARACTER_FOREARM_Y - 0.12,
+                    -0.18,
+                ),
+                Vector3::new(-58.0, 0.0, 48.0),
+            );
+            set_node_transform(
+                &mut visual.hand_r,
+                Vector3::new(
+                    0.10 + fast_wave.abs() * 0.03,
+                    CHARACTER_FOREARM_Y - 0.12,
+                    -0.18,
+                ),
+                Vector3::new(-58.0, 0.0, -48.0),
+            );
+        }
+        CharacterClipPreviewKind::Work | CharacterClipPreviewKind::Watering => {
+            let swing = -48.0 + fast_wave * 44.0;
+            set_node_transform(
+                &mut visual.chest,
+                Vector3::new(0.0, CHARACTER_CHEST_Y, -0.02),
+                Vector3::new(12.0 + fast_wave.abs() * 4.0, 0.0, 0.0),
+            );
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, -0.03),
+                Vector3::new(swing, 0.0, 10.0),
+            );
+            set_node_transform(
+                &mut visual.r_forearm,
+                Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y, -0.04),
+                Vector3::new(swing - 18.0, 0.0, 10.0),
+            );
+        }
+        CharacterClipPreviewKind::Fishing => {
+            set_node_transform(
+                &mut visual.chest,
+                Vector3::new(0.0, CHARACTER_CHEST_Y, -0.03),
+                Vector3::new(7.0, slow_wave * 3.0, 0.0),
+            );
+            set_node_transform(
+                &mut visual.l_arm,
+                Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, -0.04),
+                Vector3::new(-34.0 + fast_wave * 5.0, 0.0, 16.0),
+            );
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, -0.04),
+                Vector3::new(-34.0 - fast_wave * 5.0, 0.0, -16.0),
+            );
+        }
+        CharacterClipPreviewKind::Consume | CharacterClipPreviewKind::Camera => {
+            set_node_transform(
+                &mut visual.head,
+                Vector3::new(0.0, CHARACTER_HEAD_Y, 0.0),
+                Vector3::new(-6.0 + fast_wave.abs() * 4.0, 0.0, 0.0),
+            );
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+                Vector3::new(-96.0, 0.0, -18.0),
+            );
+            set_node_transform(
+                &mut visual.r_forearm,
+                Vector3::new(
+                    CHARACTER_FOREARM_X * 0.72,
+                    CHARACTER_FOREARM_Y + 0.10,
+                    -0.08,
+                ),
+                Vector3::new(-118.0, 0.0, -24.0),
+            );
+            set_node_transform(
+                &mut visual.hand_r,
+                Vector3::new(
+                    CHARACTER_FOREARM_X * 0.55,
+                    CHARACTER_FOREARM_Y + 0.12,
+                    -0.13,
+                ),
+                Vector3::new(-122.0, 0.0, -30.0),
+            );
+        }
+        CharacterClipPreviewKind::Sit => {
+            set_node_transform(
+                &mut visual.head,
+                Vector3::new(0.0, CHARACTER_HEAD_Y - 0.32, 0.0),
+                Vector3::new(3.0, 0.0, 0.0),
+            );
+            set_node_transform(
+                &mut visual.chest,
+                Vector3::new(0.0, CHARACTER_CHEST_Y - 0.30, 0.0),
+                Vector3::new(6.0, 0.0, 0.0),
+            );
+            set_node_transform(
+                &mut visual.waist,
+                Vector3::new(0.0, CHARACTER_BELT_Y - 0.26, 0.0),
+                Vector3::new(6.0, 0.0, 0.0),
+            );
+            set_node_transform(
+                &mut visual.l_thigh,
+                Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y - 0.04, -0.10),
+                Vector3::new(78.0, 0.0, -4.0),
+            );
+            set_node_transform(
+                &mut visual.r_thigh,
+                Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y - 0.04, -0.10),
+                Vector3::new(78.0, 0.0, 4.0),
+            );
+        }
+        CharacterClipPreviewKind::Flex => {
+            set_node_transform(
+                &mut visual.l_arm,
+                Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + 0.03, 0.0),
+                Vector3::new(-82.0, 0.0, -54.0),
+            );
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + 0.03, 0.0),
+                Vector3::new(-82.0, 0.0, 54.0),
+            );
+            set_node_transform(
+                &mut visual.l_forearm,
+                Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + 0.12, 0.0),
+                Vector3::new(-112.0, 0.0, -72.0),
+            );
+            set_node_transform(
+                &mut visual.r_forearm,
+                Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + 0.12, 0.0),
+                Vector3::new(-112.0, 0.0, 72.0),
+            );
+        }
+        CharacterClipPreviewKind::Laugh | CharacterClipPreviewKind::Sick => {
+            set_node_transform(
+                &mut visual.head,
+                Vector3::new(0.0, CHARACTER_HEAD_Y + slow_wave.abs() * 0.02, 0.0),
+                Vector3::new(
+                    if kind == CharacterClipPreviewKind::Sick {
+                        18.0
+                    } else {
+                        -14.0
+                    },
+                    slow_wave * 5.0,
+                    fast_wave * 2.0,
+                ),
+            );
+            set_node_transform(
+                &mut visual.chest,
+                Vector3::new(0.0, CHARACTER_CHEST_Y - slow_wave.abs() * 0.012, 0.0),
+                Vector3::new(
+                    if kind == CharacterClipPreviewKind::Sick {
+                        16.0
+                    } else {
+                        -6.0
+                    },
+                    0.0,
+                    slow_wave * 4.0,
+                ),
+            );
+        }
+        CharacterClipPreviewKind::Point => {
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, -0.05),
+                Vector3::new(-88.0, 0.0, -16.0),
+            );
+            set_node_transform(
+                &mut visual.r_forearm,
+                Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + 0.02, -0.14),
+                Vector3::new(-102.0, 0.0, -18.0),
+            );
+            set_node_transform(
+                &mut visual.hand_r,
+                Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.10, -0.24),
+                Vector3::new(-104.0, 0.0, -18.0),
+            );
+        }
+        CharacterClipPreviewKind::Rock | CharacterClipPreviewKind::Item => {
+            set_node_transform(
+                &mut visual.chest,
+                Vector3::new(slow_wave * 0.025, CHARACTER_CHEST_Y, 0.0),
+                Vector3::new(0.0, slow_wave * 8.0, fast_wave * 5.0),
+            );
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+                Vector3::new(-18.0 + fast_wave * 18.0, 0.0, 10.0),
+            );
+        }
+        CharacterClipPreviewKind::TPose => {
+            set_node_transform(
+                &mut visual.l_arm,
+                Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+                Vector3::new(0.0, 0.0, -86.0),
+            );
+            set_node_transform(
+                &mut visual.l_forearm,
+                Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y, 0.0),
+                Vector3::new(0.0, 0.0, -88.0),
+            );
+            set_node_transform(
+                &mut visual.hand_l,
+                Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22, 0.0),
+                Vector3::new(0.0, 0.0, -88.0),
+            );
+            set_node_transform(
+                &mut visual.r_arm,
+                Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+                Vector3::new(0.0, 0.0, 86.0),
+            );
+            set_node_transform(
+                &mut visual.r_forearm,
+                Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y, 0.0),
+                Vector3::new(0.0, 0.0, 88.0),
+            );
+            set_node_transform(
+                &mut visual.hand_r,
+                Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22, 0.0),
+                Vector3::new(0.0, 0.0, 88.0),
+            );
+        }
+        CharacterClipPreviewKind::Idle
+        | CharacterClipPreviewKind::Walk
+        | CharacterClipPreviewKind::Run
+        | CharacterClipPreviewKind::Jump
+        | CharacterClipPreviewKind::Fallback => {}
+    }
+}
+
 fn apply_voxel_idle_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: f32) {
     let wave = (animation_time_sec * CHARACTER_IDLE_ANIMATION_RATE).sin();
     let bob = wave * 0.012;
@@ -897,33 +1558,68 @@ fn apply_voxel_idle_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
         Vector3::new(wave * 1.4, 0.0, wave * 0.6),
     );
     set_node_transform(
-        &mut visual.belt,
+        &mut visual.waist,
         Vector3::new(0.0, CHARACTER_BELT_Y + bob * 0.5, 0.0),
         Vector3::ZERO,
     );
     set_node_transform(
-        &mut visual.pants,
-        Vector3::new(0.0, CHARACTER_PANTS_Y + bob * 0.35, 0.0),
-        Vector3::ZERO,
-    );
-    set_node_transform(
-        &mut visual.hand_l,
+        &mut visual.l_arm,
         Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
         Vector3::new(0.0, 0.0, -3.0 + wave * 1.2),
     );
     set_node_transform(
-        &mut visual.hand_r,
+        &mut visual.l_forearm,
+        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + bob, 0.0),
+        Vector3::new(0.0, 0.0, -3.0 + wave * 1.2),
+    );
+    set_node_transform(
+        &mut visual.hand_l,
+        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22 + bob, 0.0),
+        Vector3::new(0.0, 0.0, -3.0 + wave * 1.2),
+    );
+    set_node_transform(
+        &mut visual.r_arm,
         Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
         Vector3::new(0.0, 0.0, 3.0 - wave * 1.2),
     );
     set_node_transform(
+        &mut visual.r_forearm,
+        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + bob, 0.0),
+        Vector3::new(0.0, 0.0, 3.0 - wave * 1.2),
+    );
+    set_node_transform(
+        &mut visual.hand_r,
+        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22 + bob, 0.0),
+        Vector3::new(0.0, 0.0, 3.0 - wave * 1.2),
+    );
+    set_node_transform(
+        &mut visual.l_thigh,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23, 0.0),
+        Vector3::ZERO,
+    );
+    set_node_transform(
+        &mut visual.l_leg,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y, 0.0),
+        Vector3::ZERO,
+    );
+    set_node_transform(
         &mut visual.foot_l,
-        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
+        Vector3::new(-CHARACTER_LEG_X, 0.0, 0.0),
+        Vector3::ZERO,
+    );
+    set_node_transform(
+        &mut visual.r_thigh,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23, 0.0),
+        Vector3::ZERO,
+    );
+    set_node_transform(
+        &mut visual.r_leg,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y, 0.0),
         Vector3::ZERO,
     );
     set_node_transform(
         &mut visual.foot_r,
-        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
+        Vector3::new(CHARACTER_LEG_X, 0.0, 0.0),
         Vector3::ZERO,
     );
 }
@@ -945,33 +1641,68 @@ fn apply_voxel_run_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: f
         Vector3::new(-7.0, 0.0, counter_swing * 1.8),
     );
     set_node_transform(
-        &mut visual.belt,
+        &mut visual.waist,
         Vector3::new(0.0, CHARACTER_BELT_Y + bob * 0.6, 0.0),
         Vector3::new(-3.0, 0.0, swing * 1.4),
     );
     set_node_transform(
-        &mut visual.pants,
-        Vector3::new(0.0, CHARACTER_PANTS_Y + bob * 0.35, 0.0),
-        Vector3::new(-2.0, 0.0, swing * 1.8),
+        &mut visual.l_arm,
+        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
+        Vector3::new(counter_swing * 34.0, 0.0, -5.0),
+    );
+    set_node_transform(
+        &mut visual.l_forearm,
+        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + bob, 0.0),
+        Vector3::new(counter_swing * 40.0, 0.0, -5.0),
     );
     set_node_transform(
         &mut visual.hand_l,
-        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
+        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22 + bob, 0.0),
         Vector3::new(counter_swing * 44.0, 0.0, -5.0),
     );
     set_node_transform(
-        &mut visual.hand_r,
+        &mut visual.r_arm,
         Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
+        Vector3::new(swing * 34.0, 0.0, 5.0),
+    );
+    set_node_transform(
+        &mut visual.r_forearm,
+        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + bob, 0.0),
+        Vector3::new(swing * 40.0, 0.0, 5.0),
+    );
+    set_node_transform(
+        &mut visual.hand_r,
+        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22 + bob, 0.0),
         Vector3::new(swing * 44.0, 0.0, 5.0),
     );
     set_node_transform(
-        &mut visual.foot_l,
-        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + bob * 0.25, 0.0),
+        &mut visual.l_thigh,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23 + bob * 0.25, 0.0),
+        Vector3::new(swing * 30.0, 0.0, 0.0),
+    );
+    set_node_transform(
+        &mut visual.l_leg,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y + bob * 0.25, 0.0),
         Vector3::new(swing * 34.0, 0.0, 0.0),
     );
     set_node_transform(
+        &mut visual.foot_l,
+        Vector3::new(-CHARACTER_LEG_X, bob * 0.25, 0.0),
+        Vector3::new(swing * 34.0, 0.0, 0.0),
+    );
+    set_node_transform(
+        &mut visual.r_thigh,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23 + bob * 0.25, 0.0),
+        Vector3::new(counter_swing * 30.0, 0.0, 0.0),
+    );
+    set_node_transform(
+        &mut visual.r_leg,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y + bob * 0.25, 0.0),
+        Vector3::new(counter_swing * 34.0, 0.0, 0.0),
+    );
+    set_node_transform(
         &mut visual.foot_r,
-        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + bob * 0.25, 0.0),
+        Vector3::new(CHARACTER_LEG_X, bob * 0.25, 0.0),
         Vector3::new(counter_swing * 34.0, 0.0, 0.0),
     );
 }
@@ -990,33 +1721,80 @@ fn apply_voxel_jump_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
         Vector3::new(-4.0, 0.0, 0.0),
     );
     set_node_transform(
-        &mut visual.belt,
+        &mut visual.waist,
         Vector3::new(0.0, CHARACTER_BELT_Y + 0.02 + float, 0.0),
         Vector3::new(3.0, 0.0, 0.0),
     );
     set_node_transform(
-        &mut visual.pants,
-        Vector3::new(0.0, CHARACTER_PANTS_Y + 0.01 + float, 0.0),
-        Vector3::new(5.0, 0.0, 0.0),
+        &mut visual.l_arm,
+        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + 0.02 + float, 0.0),
+        Vector3::new(-26.0, 0.0, -8.0),
+    );
+    set_node_transform(
+        &mut visual.l_forearm,
+        Vector3::new(
+            -CHARACTER_FOREARM_X,
+            CHARACTER_FOREARM_Y + 0.02 + float,
+            0.0,
+        ),
+        Vector3::new(-32.0, 0.0, -8.0),
     );
     set_node_transform(
         &mut visual.hand_l,
-        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + 0.02 + float, 0.0),
+        Vector3::new(
+            -CHARACTER_FOREARM_X,
+            CHARACTER_FOREARM_Y - 0.22 + 0.02 + float,
+            0.0,
+        ),
         Vector3::new(-34.0, 0.0, -8.0),
     );
     set_node_transform(
-        &mut visual.hand_r,
+        &mut visual.r_arm,
         Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + 0.02 + float, 0.0),
+        Vector3::new(-26.0, 0.0, 8.0),
+    );
+    set_node_transform(
+        &mut visual.r_forearm,
+        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + 0.02 + float, 0.0),
+        Vector3::new(-32.0, 0.0, 8.0),
+    );
+    set_node_transform(
+        &mut visual.hand_r,
+        Vector3::new(
+            CHARACTER_FOREARM_X,
+            CHARACTER_FOREARM_Y - 0.22 + 0.02 + float,
+            0.0,
+        ),
         Vector3::new(-34.0, 0.0, 8.0),
     );
     set_node_transform(
-        &mut visual.foot_l,
-        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + float, 0.0),
+        &mut visual.l_thigh,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23 + float, 0.0),
+        Vector3::new(14.0, 0.0, -2.0),
+    );
+    set_node_transform(
+        &mut visual.l_leg,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y + float, 0.0),
         Vector3::new(18.0, 0.0, -2.0),
     );
     set_node_transform(
+        &mut visual.foot_l,
+        Vector3::new(-CHARACTER_LEG_X, float, 0.0),
+        Vector3::new(18.0, 0.0, -2.0),
+    );
+    set_node_transform(
+        &mut visual.r_thigh,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23 + float, 0.0),
+        Vector3::new(14.0, 0.0, 2.0),
+    );
+    set_node_transform(
+        &mut visual.r_leg,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y + float, 0.0),
+        Vector3::new(18.0, 0.0, 2.0),
+    );
+    set_node_transform(
         &mut visual.foot_r,
-        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + float, 0.0),
+        Vector3::new(CHARACTER_LEG_X, float, 0.0),
         Vector3::new(18.0, 0.0, 2.0),
     );
 }
@@ -1101,6 +1879,123 @@ impl Player {
     #[func]
     fn is_third_person_camera_enabled(&self) -> bool {
         self.third_person_camera
+    }
+
+    #[func]
+    fn character_appearance_label(&self) -> GString {
+        self.character_appearance.label.into()
+    }
+
+    #[func]
+    fn character_appearance_preset_count(&self) -> i32 {
+        crate::biomes_avatar::avatar_appearance_preset_count() as i32
+    }
+
+    #[func]
+    fn character_appearance_preset_index(&self) -> i32 {
+        self.character_appearance_preset as i32
+    }
+
+    #[func]
+    fn character_appearance_preset_label(&self, index: i32) -> GString {
+        let count = crate::biomes_avatar::avatar_appearance_preset_count();
+        if index < 0 || count == 0 {
+            return GString::new();
+        }
+        crate::biomes_avatar::avatar_appearance_preset(index as usize)
+            .label
+            .into()
+    }
+
+    #[func]
+    fn select_character_appearance_preset(&mut self, index: i32) {
+        if index < 0 {
+            return;
+        }
+        self.set_character_appearance_preset_index(index as usize);
+    }
+
+    #[func]
+    fn character_animation_clip_count(&self) -> i32 {
+        self.character_animation_catalog
+            .as_ref()
+            .map(|catalog| catalog.clip_count() as i32)
+            .unwrap_or(0)
+    }
+
+    #[func]
+    fn character_animation_clip_name(&self, index: i32) -> GString {
+        if index < 0 {
+            return GString::new();
+        }
+        self.character_animation_catalog
+            .as_ref()
+            .and_then(|catalog| catalog.clips().get(index as usize))
+            .map(|clip| clip.file_animation_name.as_str().into())
+            .unwrap_or_else(GString::new)
+    }
+
+    #[func]
+    fn character_animation_clip_duration(&self, index: i32) -> f32 {
+        if index < 0 {
+            return 0.0;
+        }
+        self.character_animation_catalog
+            .as_ref()
+            .and_then(|catalog| catalog.clips().get(index as usize))
+            .map(|clip| clip.duration_sec)
+            .unwrap_or(0.0)
+    }
+
+    #[func]
+    fn selected_character_animation_clip_index(&self) -> i32 {
+        self.character_preview_animation_index as i32
+    }
+
+    #[func]
+    fn selected_character_animation_clip_name(&self) -> GString {
+        self.selected_character_animation_clip_name_str()
+            .map(Into::into)
+            .unwrap_or_else(GString::new)
+    }
+
+    #[func]
+    fn is_character_animation_preview_enabled(&self) -> bool {
+        self.character_preview_animation_enabled
+    }
+
+    #[func]
+    fn set_character_animation_preview_enabled(&mut self, enabled: bool) {
+        if enabled
+            && self
+                .character_animation_catalog
+                .as_ref()
+                .is_some_and(|catalog| catalog.clip_count() > 0)
+        {
+            self.character_preview_animation_enabled = true;
+            self.character_animation_time_sec = 0.0;
+            self.set_third_person_camera(true);
+        } else {
+            self.character_preview_animation_enabled = false;
+        }
+    }
+
+    #[func]
+    fn select_character_animation_clip(&mut self, index: i32) {
+        if index < 0 {
+            return;
+        }
+        self.set_character_preview_animation_index(index as usize, true);
+    }
+
+    #[func]
+    fn selected_character_animation_clip_duration(&self) -> f32 {
+        self.selected_character_animation_clip_duration_sec()
+    }
+
+    #[func]
+    fn set_third_person_camera_enabled(&mut self, enabled: bool) {
+        self.set_third_person_camera(enabled);
     }
 
     #[signal]
@@ -1225,6 +2120,30 @@ mod tests {
             character_motion_state_for_velocity(Vector3::new(0.0, 2.0, 0.0), false),
             CharacterMotionState::Jump
         );
+    }
+
+    #[test]
+    fn biomes_clip_preview_kind_covers_all_source_animation_names() {
+        assert_eq!(
+            character_clip_preview_kind("Craft"),
+            CharacterClipPreviewKind::Craft
+        );
+        assert_eq!(
+            character_clip_preview_kind("FishingReel"),
+            CharacterClipPreviewKind::Fishing
+        );
+        assert_eq!(
+            character_clip_preview_kind("TPose"),
+            CharacterClipPreviewKind::TPose
+        );
+
+        for clip_name in crate::biomes_avatar::BIOMES_CHARACTER_ANIMATION_CLIP_NAMES {
+            assert_ne!(
+                character_clip_preview_kind(clip_name),
+                CharacterClipPreviewKind::Fallback,
+                "{clip_name} should have a character preview kind"
+            );
+        }
     }
 
     #[test]
