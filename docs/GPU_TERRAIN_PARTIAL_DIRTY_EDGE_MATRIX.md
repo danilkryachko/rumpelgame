@@ -68,4 +68,4 @@ The matrix follows the same evidence policy as the surrounding GPU gates: prove 
 - Direct3D 12 fence-based resource management: https://learn.microsoft.com/en-us/windows/win32/direct3d12/fence-based-resource-management
 - Vulkan staging buffers: https://docs.vulkan.org/tutorial/latest/04_Vertex_buffers/02_Staging_buffer.html
 
-This benchmark is local macOS/Metal CPU-side runtime evidence only. It does not replace edit-burst gates, mass-edit pressure gates, collision refresh cost audit, shadow proxy refresh cost audit, visual parity, external profiler rows, or Windows/Vulkan/Direct3D validation.
+This benchmark is local macOS/Metal CPU-side runtime evidence only. The edit-burst budget gate now composes it with repeated/border edit, collision refresh, shadow proxy refresh, and upload budget evidence; mass-edit pressure gates, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain separate.

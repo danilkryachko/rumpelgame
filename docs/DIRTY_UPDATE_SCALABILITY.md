@@ -96,6 +96,7 @@ Existing runtime wrappers remain the correct heavy checks:
 - `scripts/gpu_terrain_partial_dirty_edge_matrix.sh`
 - `scripts/gpu_collision_refresh_cost_audit.sh`
 - `scripts/gpu_shadow_proxy_refresh_cost_audit.sh`
+- `scripts/gpu_edit_burst_budget_gate.sh`
 
 The gate does not run them by default because they require Godot runtime capture, a free local server port, and longer execution time. It does verify their shell syntax and required metric tokens.
 
@@ -109,6 +110,8 @@ Fresh collision refresh cost evidence now lives at `logs/gpu_collision_refresh_c
 
 Fresh shadow proxy refresh cost evidence now lives at `logs/gpu_shadow_proxy_refresh_cost_audit_current/gpu-shadow-proxy-refresh-cost-audit-summary.txt`. It consumes the same partial dirty edge matrix and pressure dirty compare movement markers, passed with `case_count=18`, max proxy shadow `243`, max compact shadow proxy `808`, max compact shadow normals saved `5236`, max proxy refresh reuse `68`, zero native-shadow activation, zero GPU upload failures, and zero ground misses.
 
+Fresh edit-burst budget evidence now lives at `logs/gpu_edit_burst_budget_gate_current/gpu-edit-burst-budget-summary.txt`. It composes repeated, border, partial-matrix, collision-refresh, shadow-refresh, and upload-budget summaries, passed with `source_count=6`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max collision refresh rebuilds `132`, max compact shadow proxy `808`, max proxy refresh reuse `68`, zero GPU upload failures, zero ground misses, and default/visible/scheduler changes blocked.
+
 ## Deferred Work
 
 Still needed:
@@ -116,9 +119,7 @@ Still needed:
 - Multi-edit runtime smoke that applies many block edits in one session.
 - Chunk-edge mass-edit runtime smoke with both full and partial dirty controls.
 - Repeated persisted reload plus dirty update runtime smoke from Block 41 follow-up.
-- Collision refresh budget under mass edits beyond the current edge-matrix and pressure dirty lanes.
-- Shadow proxy refresh budget under mass edits beyond the current edge-matrix and pressure dirty lanes.
-- GPU upload budget under mass edits.
+- Collision, shadow proxy, and upload budget coverage under true many-edit runtime bursts beyond the current edge-matrix and pressure dirty lanes.
 - Multi-client block edit fanout once server broadcast exists.
 
 ## Compatibility Rules

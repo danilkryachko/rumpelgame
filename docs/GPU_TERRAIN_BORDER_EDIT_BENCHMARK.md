@@ -71,4 +71,4 @@ Vulkan documentation describes staging buffers for transferring CPU data into de
 
 - https://docs.vulkan.org/tutorial/latest/04_Vertex_buffers/02_Staging_buffer.html
 
-This benchmark is local macOS/Metal CPU-side budget evidence only. It does not replace edit-burst budget gates, collision refresh cost audit, shadow proxy refresh cost audit, visual parity, external profiler rows, or Windows/Vulkan/Direct3D validation.
+This benchmark is local macOS/Metal CPU-side budget evidence only. The edit-burst budget gate now composes it with collision refresh, shadow proxy refresh, and upload budget evidence; visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain separate.

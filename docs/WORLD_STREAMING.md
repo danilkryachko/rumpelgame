@@ -273,7 +273,7 @@ Fresh check:
 
 Remaining coverage gap:
 
-- Mass-edit runtime, edit-burst budget gates, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain future work before claiming complete world-interaction performance coverage.
+- Mass-edit runtime, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain future work before claiming complete world-interaction performance coverage. The current edit-burst budget aggregate is tracked by the dedicated gate below.
 
 ## GPU Collision Refresh Cost Audit
 
@@ -299,6 +299,18 @@ Fresh check:
 - `scripts/test_strategy_gate.sh` requires the audit summary before the GPU stress artifact index and includes it in the nightly summary chain.
 - `scripts/gpu_terrain_report.sh` surfaces the selected audit summary and case rows.
 - This is local macOS/Metal CPU-side Godot shadow proxy evidence. Visual parity, external profiler rows, GPU-native shadow activation, and Windows/Vulkan/Direct3D validation remain separate.
+
+## GPU Edit Burst Budget Gate
+
+The edit-burst budget gate composes the repeated edit benchmark, border edit benchmark, partial dirty edge matrix, collision refresh cost audit, shadow proxy refresh cost audit, and upload budget summary into one required world-interaction artifact. It validates that dirty-edit burst evidence stays inside the 150 FPS CPU-side queue/process/submit budget, keeps upload failures and ground misses at zero, and blocks default runtime, scheduler, or visible-quality permission changes.
+
+Fresh check:
+
+- `logs/gpu_edit_burst_budget_gate_current/gpu-edit-burst-budget-summary.txt` passed with `source_count=6`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max dirty edge-neighbor subchunks `2836`, max dirty partial saved subchunks `1418`, max partial edge-neighbor subchunks `8`, max collision refresh rebuilds `132`, max collision phase total/component `1.950/1.540ms`, max proxy shadow `243`, max compact shadow proxy `808`, max proxy refresh reuse `68`, `gpu_upload_fail=0`, `ground_misses=0`, and default/visible/scheduler change blockers `0`.
+- `scripts/gpu_stress_artifact_index.sh` requires the edit-burst budget gate as a `world_interaction` row; the current stress index now passes with `37` rows and `27` required passes.
+- `scripts/test_strategy_gate.sh` requires the edit-burst budget summary before the GPU stress artifact index and includes it in the nightly summary chain.
+- `scripts/gpu_terrain_report.sh` surfaces the selected edit-burst budget summary and case rows.
+- This is local summary evidence only. Visual parity, external profiler rows, GPU-native shadow activation, and Windows/Vulkan/Direct3D validation remain separate.
 
 ## Storage Persistence Foundation
 

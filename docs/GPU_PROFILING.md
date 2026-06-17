@@ -298,6 +298,14 @@ sh scripts/gpu_shadow_proxy_refresh_cost_audit.sh logs/gpu_shadow_proxy_refresh_
 
 The gate writes `gpu-shadow-proxy-refresh-cost-audit-summary.txt` and `gpu-shadow-proxy-refresh-cost-audit-cases.txt`; see `docs/GPU_SHADOW_PROXY_REFRESH_COST_AUDIT.md`.
 
+Use the edit-burst budget gate after changing dirty-edit scheduling, partial dirty upload, collision refresh, shadow proxy refresh, GPU upload budget logic, or world-interaction report plumbing. It composes the current repeated edit benchmark, border edit benchmark, partial dirty edge matrix, collision refresh cost audit, shadow proxy refresh cost audit, and upload budget summary into one required budget artifact:
+
+```sh
+sh scripts/gpu_edit_burst_budget_gate.sh logs/gpu_edit_burst_budget_gate_current
+```
+
+The gate writes `gpu-edit-burst-budget-summary.txt` and `gpu-edit-burst-budget-cases.txt`; see `docs/GPU_EDIT_BURST_BUDGET_GATE.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh
