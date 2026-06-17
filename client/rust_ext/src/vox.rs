@@ -369,7 +369,7 @@ fn colored_voxel_mesh_origin(voxels: &[ColoredVoxel]) -> (f32, f32, f32) {
     )
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 fn push_vox_face(
     size: (u32, u32, u32),
     coord: VoxCoord,
@@ -393,6 +393,7 @@ fn push_vox_face(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_colored_voxel_face(
     position: (i32, i32, i32),
     origin: (f32, f32, f32),

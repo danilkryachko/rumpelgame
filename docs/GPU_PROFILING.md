@@ -12,13 +12,24 @@ This document defines how GPU terrain performance should be measured. The goal i
 ## Trusted Local Signals
 
 - `gpu_upload_fail`: must stay `0` in normal stress runs.
+- `gpu_upload_fail_injected`: must stay `0` in normal stress runs. It may be nonzero only in the explicit upload failure fallback gate.
+- `gpu_upload_retry_policy`, `gpu_upload_retry_attempts`, `gpu_upload_retry_success`, `gpu_upload_retry_giveups`, `gpu_upload_backoff_active`, `gpu_upload_backoff_frames`, and `gpu_upload_backoff_max_frames`: currently define the no-retry/no-backoff upload policy and must stay `none` / `0` until an explicit recovery policy is implemented and rebaselined.
 - `terrain_queue_work_ms`: useful for Rust/Godot terrain queue CPU work.
 - `process_wall_p95_ms`: useful for client `_process` CPU pressure.
 - `gpu_compositor_submit_ms`: useful for CPU-side compositor submission overhead.
 - `gpu_compositor_submit_max_parts`: useful to separate setup, target, constants, and draw submission cost.
+- `terrain_queue_gpu_upload_new_slots` / `terrain_queue_gpu_upload_new_slot_kb`: useful to separate initial GPU-resident world load pressure from later dirty/update replacement work.
+- `terrain_queue_gpu_upload_replace_slots` / `terrain_queue_gpu_upload_replace_slot_kb`: useful to isolate GPU slot replacement pressure from ordinary new-slot streaming.
+- `terrain_queue_gpu_upload_cutout_slots` / `terrain_queue_gpu_upload_cutout_kb` and `terrain_queue_gpu_upload_cutout_faces` / `terrain_queue_gpu_upload_cutout_face_kb`: useful to prove that active cutout workloads actually upload GPU payloads containing cutout faces, while staying inside the existing opaque-pass terrain buffer.
+- `gpu_upload_stage_pool_enabled`, `gpu_upload_stage_pool_entries`, `gpu_upload_stage_pool_bytes`, `gpu_upload_stage_pba_creates`, and `gpu_upload_stage_pba_reuses`: useful to compare the default upload staging path against the opt-in exact-size `PackedByteArray` stage pool without treating it as a default policy.
+- `gpu_draw_grouped_enabled`, `gpu_draw_records_logical`, `gpu_draw_records_grouped`, and `gpu_draw_grouped_saved_records`: useful to compare the default one-record-per-subchunk indirect draw path against the opt-in grouped-record path. When grouping is enabled, use `gpu_draw_records_logical` for workload size and `gpu_draw_records_grouped` / `gpu_draws` for actual indirect records submitted.
+- `transparent_requested`, `transparent_active`, `transparent_fallback`, `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`: useful to distinguish the legacy full-transparent fallback from the active default-off cutout prototype. These fields are local workload evidence only; they do not replace depth/sorting/collision parity or external profiler evidence.
+- `transparent_cutout_uploads`, `transparent_cutout_upload_bytes`, `transparent_cutout_upload_faces`, and `transparent_cutout_upload_face_bytes`: useful to distinguish visible cutout workload from actual GPU upload work. `transparent_cutout_upload_bytes` is the full uploaded packed-face payload for subchunks that contain cutout faces; `transparent_cutout_upload_face_bytes` is the logical cutout-face subset.
+- `transparent_sort_policy`, `transparent_sort_active`, `transparent_sort_keys`, and `transparent_sort_ms`: useful to prove that the current default-off cutout prototype remains alpha-test/no-sort inside the opaque-depth terrain path. For the accepted cutout prototype these must stay `opaque_depth_alpha_test_no_sort`, `0`, `0`, and `0.000`.
+- `transparent_build_cost_source`, `transparent_build_faces`, `transparent_build_subchunks`, `transparent_build_envelope_ms`, and `transparent_build_upload*`: useful to carry the CPU-side cutout build/upload cost envelope through runtime markers, fixture/pressure gates, and reports. The current source must be `cutout_in_opaque_mesh_phase`; these fields are not a separate transparent buffer/pass timing and do not replace external profiler evidence.
 - `gpu_draws`, `gpu_effective_draws`, `gpu_faces`, `gpu_subchunks`: useful for workload size.
 - `gpu_upload_staging_buffers`, `gpu_upload_staging_mb`, and `gpu_upload_staging_kb`: useful for CPU-side upload staging materialization churn before considering any upload pool or staging reuse work.
-- `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and `compact_shadow_normals_saved`: useful local signals for shadow proxy load and compact proxy savings.
+- `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, `compact_shadow_normals_saved`, and `proxy_refresh_reuse`: useful local signals for shadow proxy load, compact proxy savings, and refresh reuse.
 - `smoke_err`, `terrain_samples`, color buckets, and marker generation: useful for visual correctness gates.
 
 ## Shader Findings
@@ -26,11 +37,15 @@ This document defines how GPU terrain performance should be measured. The goal i
 - GPU terrain face lighting normals now use a branchless 8-entry shader lookup table. Entries `5`, `6`, and `7` intentionally resolve to `+Z`, preserving the previous fallback behavior for any masked nonstandard face index while removing the old `face_normal` branch chain.
 - GPU terrain face UVs now use a branchless 32-entry shader lookup table. Rows `6` and `7` intentionally preserve the previous fallback UV order.
 - GPU terrain face corners now use branchless `FACE_CORNER_BASES`, `FACE_CORNER_EXTENT_X_FACTORS`, and `FACE_CORNER_EXTENT_Y_FACTORS` tables. Rows `6` and `7` intentionally preserve the previous front-face fallback, and the geometry-affecting change was checked with full CPU/GPU terrain parity in `logs/gpu_shader_branchless_corners_parity`.
+- GPU terrain signed chunk/subchunk coordinate unpack now uses a branchless mask/subtract expression in the vertex shader: `int(low & 32767u) - int(low & 32768u)`. This avoids the previous per-vertex `low >= 32768u` branch while keeping conversions inside representable signed `int` values.
+- GPU terrain lighting push constants are sanitized on the Rust side before packing, so the render shader now reads direction, ambient, color, and energy directly instead of repeating per-vertex `normalize`, `clamp`, and `max` guards. Keep `terrain_lighting_sanitizes_marker_and_push_constant_values` green before relying on this shader contract.
+- GPU terrain atlas tile `col/row` is computed in the vertex shader and carried through `flat` `tile_offset_out` / `tile_offset_in`, while tiled UV stays in the interpolated `uv_out` / `uv_in` path. The fragment shader still applies `fract(tile_uv)` so merged-face texture repetition is preserved, but it no longer performs per-fragment tile-index `mod`/`floor`. Terrain lighting is also passed as `flat` `lighting_out` / `lighting_in` because it is constant per packed face. Triangle corner selection uses the global `TRIANGLE_CORNER_INDICES` table instead of declaring a local array in `main()`.
 - `scripts/gpu_terrain_parity_smoke.sh` writes `parity-summary.txt` after a passing full or validate-only parity run. Use it as the compact evidence for atlas/depth, lighting/shadow, low-angle lighting, compact-shadow including low-angle compact-vs-full shadow proxy, and texture-stand visual deltas before deciding whether another shader change needs fresh captures.
-- The render shader lighting contract is guarded in Rust tests: vertex code computes lighting from `face_normal(face_idx)` and lighting push constants, passes it through `lighting_out`/`lighting_in`, and fragment code only applies that lighting to the sampled atlas texel with opaque alpha. Scene depth remains guarded separately as reverse-Z `GREATER_OR_EQUAL`.
+- The render shader contract is guarded in Rust tests: vertex code computes lighting from `face_normal(face_idx)` and sanitized lighting push constants, precomputes atlas tile offsets, passes interpolated UV separately from `flat` tile offsets, `flat` lighting, and a `flat` cutout flag, and fragment code only applies repeated atlas UV plus lighting to the sampled atlas texel with opaque alpha after the default-off cutout discard. Scene depth remains guarded separately as reverse-Z `GREATER_OR_EQUAL`.
 - Runtime markers expose the sanitized lighting push block as `gpu_light_dir`, `gpu_light_color`, `gpu_light_energy`, and `gpu_light_ambient`. Use these fields to prove which scene light values were rendered before comparing lighting variants or shadow paths.
 - `RUMPELMC_VISUAL_SMOKE_POSE=lighting_low_angle` is a smoke-only controlled lighting variant. It keeps the existing visual smoke path and Godot shadow proxy but changes the `SunLight` rotation/energy for comparison captures, and the marker records `lighting_variant="low_angle"`.
 - Native-shadow fallback markers expose `native_shadow_requested`, `native_shadow_active`, `native_shadow_fallback`, `native_shadow_implemented`, `native_shadow_resource_*`, and native-shadow coverage counters. Movement-stress summaries also surface these existing marker values in a compact `movement_native_shadow` row. While `native_shadow_implemented=0`, env-on captures must remain on `shadow_path=godot_proxy` with `requested=1`, `active=0`, `fallback=1`, `native_shadow_resource_status=disabled`, and zero native-shadow resource lifecycle plus coverage counters.
+- GPU terrain push-constant packing uses a fixed `112`-byte stack array for the current camera/projection, lighting, and atlas-layout block. The byte layout is still guarded by Rust tests and runtime markers expose the `64/32/16` split; do not move the atlas layout out of push constants unless a focused profiler capture shows the constants phase matters.
 
 ## Report-Only Or Untrusted Local Signals
 
@@ -62,6 +77,36 @@ Use release builds for terrain performance comparisons:
 RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
 RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
 ./scripts/gpu_terrain_movement_stress.sh logs/gpu_terrain_profile_movement
+```
+
+Use the shader profiler capture pack after shader hot-path changes or before external macOS/Windows shader captures. It validates the current movement artifact, the render shader source contracts, and emits a manifest for Xcode/Metal plus Windows PIX/RenderDoc/vendor profiler follow-up. The generated pack is pending handoff state, not profiler evidence:
+
+```sh
+sh scripts/gpu_shader_profiler_capture_pack.sh logs/gpu_shader_profiler_capture_pack_current
+```
+
+Record external shader profiler rows separately from the pending pack. Each result row must start with `external_profile_status=captured` and include `row`, `priority`, `platform`, `backend`, `profiler_tool`, `profiler_artifact`, positive `shader_pass_ms` and `draw_pass_ms`, nonnegative `vertex_stage_ms` and `fragment_stage_ms`, plus non-placeholder `counter_evidence`. Validate rows against the manifest before citing them:
+
+```sh
+sh scripts/gpu_shader_profiler_results_check.sh \
+  logs/gpu_shader_profiler_capture_pack_current/shader-profiler-manifest.txt \
+  logs/gpu_shader_profiler_capture_pack_current/shader-profiler-results.txt \
+  logs/gpu_shader_profiler_capture_pack_current/shader-profiler-results-summary.txt
+```
+
+Use the Windows RenderDoc/PIX capture pack after the local world-interaction checkpoint is clean and before external Windows capture:
+
+```sh
+sh scripts/gpu_windows_capture_pack.sh logs/gpu_windows_capture_pack_current
+```
+
+Record Windows PIX/RenderDoc rows separately from the pending pack. Each result row must start with `external_profile_status=captured`, match a planned manifest row, include Windows machine/backend/driver context, point to non-placeholder profiler artifacts and counter evidence, and include the row-specific timings/counters documented in `docs/GPU_WINDOWS_CAPTURE_RESULTS.md`. Validate rows before citing them:
+
+```sh
+sh scripts/gpu_windows_capture_results_check.sh \
+  logs/gpu_windows_capture_pack_current/gpu-windows-capture-manifest.txt \
+  logs/gpu_windows_capture_pack_current/gpu-windows-capture-results.txt \
+  logs/gpu_windows_capture_pack_current/gpu-windows-capture-results-summary.txt
 ```
 
 Use the low-angle lighting pose when comparing directional-light behavior without changing the default scene:
@@ -105,6 +150,294 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 ```
 
 The wrapper writes `gpu-upload-pressure-summary.txt`; see `docs/GPU_UPLOAD_PRESSURE.md`.
+
+Use the chunk-boundary stress gate after changing world streaming, movement readiness, chunk unload policy, packet queue handling, or GPU residency reporting. It runs the existing high-pressure movement cases plus a bounded residency workload and fails on wrong final chunk, missing render/collision readiness, ground misses, upload failures, unexpected unload/reload churn, or missing case coverage:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_TIMEOUT_SEC=360 \
+GODOT_QUIT_AFTER_FRAMES=42000 \
+SMOKE_DELAY_SEC=8.0 \
+sh scripts/gpu_terrain_chunk_boundary_stress.sh logs/gpu_terrain_chunk_boundary_stress_current
+```
+
+The gate writes `chunk-boundary-stress-summary.txt`; see `docs/GPU_TERRAIN_CHUNK_BOUNDARY_STRESS.md`.
+
+Use the chunk unload churn diagnosis after changing client chunk unload policy, keep distance, grace behavior, movement streaming readiness, or residency reporting. It is summary-only by default: the current chunk-boundary proof is required, while teleport-only default/immediate controls are optional unless `RUMPELMC_GPU_CHUNK_UNLOAD_REQUIRE_CONTROLS=1` is set.
+
+```sh
+sh scripts/gpu_chunk_unload_churn_diagnosis.sh logs/gpu_chunk_unload_churn_diagnosis_current
+```
+
+The gate writes `gpu-chunk-unload-churn-diagnosis-summary.txt`; see `docs/GPU_CHUNK_UNLOAD_CHURN_DIAGNOSIS.md`.
+
+Use the rapid camera-turn stress gate after changing culling, camera-facing draw submission, visibility/proxy refresh behavior, or movement smoke camera poses. It keeps the player in a single chunk while rapidly rotating the camera through the `chunk_fast_turn` pose sequence:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_TIMEOUT_SEC=240 \
+GODOT_QUIT_AFTER_FRAMES=30000 \
+SMOKE_DELAY_SEC=8.0 \
+sh scripts/gpu_terrain_rapid_camera_turn_stress.sh logs/gpu_terrain_rapid_camera_turn_stress_current
+```
+
+The gate writes `rapid-camera-turn-stress-summary.txt`; see `docs/GPU_TERRAIN_RAPID_CAMERA_TURN_STRESS.md`.
+
+Use the GPU stress artifact index when checking whether current GPU world-loading/rendering evidence is complete enough to guide the next optimization. It is summary-only: required core GPU artifacts must pass, while missing optional governance/profiler rows are listed as gaps instead of silently skipped.
+
+```sh
+sh scripts/gpu_stress_artifact_index.sh logs/gpu_stress_artifact_index_current
+```
+
+The index writes `gpu-stress-artifact-index-summary.txt` and `gpu-stress-artifact-index.txt`; see `docs/GPU_STRESS_ARTIFACT_INDEX.md`.
+
+Use the buffer residency budget gate when checking whether current GPU terrain buffers are close to cross-backend residency limits before changing repack, eviction, or default streaming policy. It consumes current mass chunk-load, upload stage-pool load-scaling, grouped-draw, and cutout-pressure summaries, optionally consumes memory-budget allocator/free-range evidence, and keeps external profiler plus macOS/Windows validation blockers explicit:
+
+```sh
+sh scripts/gpu_buffer_residency_budget.sh logs/gpu_buffer_residency_budget_current
+```
+
+The gate writes `gpu-buffer-residency-budget-summary.txt`; see `docs/GPU_BUFFER_RESIDENCY_BUDGET.md`.
+
+Use the streaming priority audit before changing server chunk ordering, client mesh/collision queue scheduling, unload policy, buffer repack/eviction policy, or GPU upload fallback policy. It composes current chunk-boundary, rapid camera-turn, unload churn, buffer residency, and upload-failure fallback summaries, checks client/server source contracts, and keeps profiler plus macOS/Windows validation blockers explicit:
+
+```sh
+sh scripts/gpu_streaming_priority_audit.sh logs/gpu_streaming_priority_audit_current
+```
+
+The gate writes `gpu-streaming-priority-audit-summary.txt`; see `docs/GPU_STREAMING_PRIORITY_AUDIT.md`.
+
+Use the streaming scheduler prototype preflight before comparing or enabling a client-side queue scheduler variant. It verifies the default-off `RUMPELMC_CLIENT_STREAMING_SCHEDULER` contract, checks that `nearest` remains the default, keeps collision-refresh backpressure and frame caps unchanged, and consumes the current streaming priority audit:
+
+```sh
+sh scripts/gpu_streaming_scheduler_prototype.sh logs/gpu_streaming_scheduler_prototype_current
+```
+
+The gate writes `gpu-streaming-scheduler-prototype-summary.txt`; see `docs/GPU_STREAMING_SCHEDULER_PROTOTYPE.md`.
+
+Use the streaming scheduler workload matrix after changing client streaming queue ordering or before considering a scheduler rollout. It compares `nearest`, `directional_tie_preview`, and `directional_tie` on the same movement workloads, validates scheduler markers and readiness, and keeps default changes blocked:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+RUMPELMC_STREAMING_SCHEDULER_MATRIX_RUN_WORKLOADS=1 \
+sh scripts/gpu_streaming_scheduler_workload_matrix.sh logs/gpu_streaming_scheduler_workload_matrix_current
+```
+
+The gate writes `gpu-streaming-scheduler-workload-matrix-summary.txt` and `gpu-streaming-scheduler-workload-matrix-cases.txt`; see `docs/GPU_STREAMING_SCHEDULER_WORKLOAD_MATRIX.md`.
+
+Use the streaming scheduler tie probe after refreshing the workload matrix. It extracts the stable tie-heavy `chunk_fly_snap_back` lanes, requires runtime tie signal, and keeps default changes blocked:
+
+```sh
+sh scripts/gpu_streaming_scheduler_tie_probe.sh logs/gpu_streaming_scheduler_tie_probe_current
+```
+
+The gate writes `gpu-streaming-scheduler-tie-probe-summary.txt`; see `docs/GPU_STREAMING_SCHEDULER_TIE_PROBE.md`.
+
+Use the streaming scheduler decision checkpoint after refreshing scheduler/runtime/residency evidence. It composes the prototype, workload matrix, tie probe, chunk-boundary baseline, and buffer residency budget into one rollout-status summary while keeping scheduler/default runtime changes blocked:
+
+```sh
+sh scripts/gpu_streaming_scheduler_decision_checkpoint.sh logs/gpu_streaming_scheduler_decision_checkpoint_current
+```
+
+The checkpoint writes `gpu-streaming-scheduler-decision-checkpoint-summary.txt`; see `docs/GPU_STREAMING_SCHEDULER_DECISION_CHECKPOINT.md`.
+
+Use the optional boundary-backed scheduler matrix only when stabilizing scheduler lane captures through the chunk-boundary harness:
+
+```sh
+RUMPELMC_STREAMING_SCHEDULER_BOUNDARY_MATRIX_RUN_WORKLOADS=1 \
+sh scripts/gpu_streaming_scheduler_boundary_matrix.sh logs/gpu_streaming_scheduler_boundary_matrix_current
+```
+
+Use the in-place upload gate after changing dirty-update GPU upload code. It runs a release block-edit smoke with `RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD=1` against a clean isolated RocksDB path and fails unless the same-face-count in-place subchunk update path is observed with zero upload failures, zero retry/backoff activity, and nonzero new-slot plus replacement-slot terrain queue upload markers:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+./scripts/gpu_terrain_in_place_upload_gate.sh logs/gpu_terrain_in_place_upload_gate_current
+```
+
+The gate writes `gpu-in-place-upload-summary.txt`.
+
+Use the pressure dirty compare gate after changing partial dirty upload, border/neighbor dirty refresh, terrain pressure fixtures, or workload-matrix summary plumbing. It runs full-rebuild and partial-dirty lanes against isolated RocksDB paths with the same high-pressure `chunk_disc` fixture at local block `31,31`, then fails unless full control stays partial-disabled, partial dirty saves subchunks and refreshes edge neighbors, upload failures stay zero, queue/process/submit budgets remain within the 150 FPS frame budget, and collision/ground/terrain samples stay valid:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=42000 \
+GODOT_TIMEOUT_SEC=900 \
+sh scripts/gpu_terrain_pressure_dirty_compare.sh logs/gpu_terrain_pressure_dirty_compare_current
+```
+
+The gate writes `gpu-terrain-pressure-dirty-compare-summary.txt`; see `docs/GPU_TERRAIN_LOAD_SCALING.md`.
+
+Use the repeated edit benchmark after changing dirty update scheduling, block-edit runtime handling, collision refresh, proxy refresh, or GPU dirty upload budget logic. It composes the single-edge and corner-edge dirty repeat summaries into one required evidence row while keeping default runtime and visible quality unchanged:
+
+```sh
+sh scripts/gpu_terrain_repeated_edit_benchmark.sh logs/gpu_terrain_repeated_edit_benchmark_current
+```
+
+The gate writes `gpu-terrain-repeated-edit-benchmark-summary.txt` and `gpu-terrain-repeated-edit-benchmark-cases.txt`; see `docs/GPU_TERRAIN_REPEATED_EDIT_BENCHMARK.md`.
+
+Use the border edit benchmark after changing chunk-edge dirty update behavior, border/corner edit harnesses, pressure dirty fixtures, collision refresh, proxy refresh, or GPU dirty upload budget logic. It composes repeated single-edge/corner-edge evidence with the high-volume pressure dirty compare at local chunk border `31,31`:
+
+```sh
+sh scripts/gpu_terrain_border_edit_benchmark.sh logs/gpu_terrain_border_edit_benchmark_current
+```
+
+The gate writes `gpu-terrain-border-edit-benchmark-summary.txt` and `gpu-terrain-border-edit-benchmark-cases.txt`; see `docs/GPU_TERRAIN_BORDER_EDIT_BENCHMARK.md`.
+
+Use the partial dirty edge matrix after changing dirty edge masks, edge-neighbor refresh, full-rebuild rollback behavior, or partial dirty upload accounting. It refreshes full-vs-partial compare evidence for all four single edges and all four corner combinations:
+
+```sh
+RUMPELMC_PARTIAL_DIRTY_EDGE_MATRIX_RUN_CASES=1 \
+  sh scripts/gpu_terrain_partial_dirty_edge_matrix.sh logs/gpu_terrain_partial_dirty_edge_matrix_current
+```
+
+The gate writes `gpu-terrain-partial-dirty-edge-matrix-summary.txt` and `gpu-terrain-partial-dirty-edge-matrix-cases.txt`; see `docs/GPU_TERRAIN_PARTIAL_DIRTY_EDGE_MATRIX.md`.
+
+Use the collision refresh cost audit after changing collision refresh, dirty edge scheduling, pressure dirty fixtures, or collision queue accounting. It consumes the partial dirty edge matrix plus pressure dirty compare movement markers and fails unless collision rebuilds happen, `collision_refresh_phase_max` stays under the 150 FPS CPU-side budget, queue duplicate/stale/missing counters stay zero, upload failures stay zero, and current chunk collision readiness remains valid:
+
+```sh
+sh scripts/gpu_collision_refresh_cost_audit.sh logs/gpu_collision_refresh_cost_audit_current
+```
+
+The gate writes `gpu-collision-refresh-cost-audit-summary.txt` and `gpu-collision-refresh-cost-audit-cases.txt`; see `docs/GPU_COLLISION_REFRESH_COST_AUDIT.md`.
+
+Use the shadow proxy refresh cost audit after changing shadow proxy refresh, compact shadow proxy counters, dirty edge scheduling, pressure dirty fixtures, or native-shadow fallback markers. It consumes the same partial dirty edge matrix plus pressure dirty compare movement markers and fails unless the current `godot_proxy` path stays conservative/compact, native-shadow remains inactive, compact proxy savings/reuse are positive, upload failures stay zero, and queue/process/submit budgets stay under the 150 FPS CPU-side budget:
+
+```sh
+sh scripts/gpu_shadow_proxy_refresh_cost_audit.sh logs/gpu_shadow_proxy_refresh_cost_audit_current
+```
+
+The gate writes `gpu-shadow-proxy-refresh-cost-audit-summary.txt` and `gpu-shadow-proxy-refresh-cost-audit-cases.txt`; see `docs/GPU_SHADOW_PROXY_REFRESH_COST_AUDIT.md`.
+
+Use the edit-burst budget gate after changing dirty-edit scheduling, partial dirty upload, collision refresh, shadow proxy refresh, GPU upload budget logic, or world-interaction report plumbing. It composes the current repeated edit benchmark, border edit benchmark, partial dirty edge matrix, collision refresh cost audit, shadow proxy refresh cost audit, and upload budget summary into one required budget artifact:
+
+```sh
+sh scripts/gpu_edit_burst_budget_gate.sh logs/gpu_edit_burst_budget_gate_current
+```
+
+The gate writes `gpu-edit-burst-budget-summary.txt` and `gpu-edit-burst-budget-cases.txt`; see `docs/GPU_EDIT_BURST_BUDGET_GATE.md`.
+
+Use the edit visual parity gate after changing dirty-edit visual output, partial dirty upload, edit screenshot markers, partial dirty edge matrix case definitions, shadow proxy mode, or aggregate report plumbing. It validates the existing full rebuild versus partial dirty screenshots from all eight partial dirty edge/corner cases:
+
+```sh
+sh scripts/gpu_edit_visual_parity_gate.sh logs/gpu_edit_visual_parity_gate_current
+```
+
+The gate writes `gpu-edit-visual-parity-summary.txt` and `gpu-edit-visual-parity-cases.txt`; see `docs/GPU_EDIT_VISUAL_PARITY_GATE.md`.
+
+Use the world interaction checkpoint after changing any dirty-edit gate, collision refresh audit, shadow proxy refresh audit, edit visual parity, upload budget, or aggregate world-interaction report plumbing. It composes the current local world-interaction evidence into one required checkpoint and keeps rollout/default changes blocked until external profiler plus macOS/Windows validation exist:
+
+```sh
+sh scripts/gpu_world_interaction_checkpoint.sh logs/gpu_world_interaction_checkpoint_current
+```
+
+The gate writes `gpu-world-interaction-checkpoint-summary.txt` and `gpu-world-interaction-checkpoint-sources.txt`; see `docs/GPU_WORLD_INTERACTION_CHECKPOINT.md`.
+
+Use the macOS Metal capture pack after refreshing the world interaction checkpoint or before handing macOS evidence to Xcode/Metal profiling. It requires a clean local checkpoint, emits Xcode Metal frame capture, Metal System Trace, memory/resource, and shader-cost rows, and keeps the generated pack as pending handoff state rather than profiler evidence:
+
+```sh
+sh scripts/gpu_macos_metal_capture_pack.sh logs/gpu_macos_metal_capture_pack_current
+```
+
+The gate writes `gpu-macos-metal-capture-pack-summary.txt`, `gpu-macos-metal-capture-manifest.txt`, and `gpu-macos-metal-capture-checklist.txt`; see `docs/GPU_MACOS_METAL_CAPTURE_PACK.md`.
+
+Use the Windows RenderDoc/PIX capture pack after the macOS peer pack is current or before handing Windows evidence to PIX, RenderDoc, or a vendor profiler. It requires the local world-interaction checkpoint plus macOS capture pack to pass, emits PIX GPU capture, PIX timing capture, RenderDoc frame capture, and Windows shader hot-path rows, and keeps the generated pack as pending handoff state rather than profiler evidence:
+
+```sh
+sh scripts/gpu_windows_capture_pack.sh logs/gpu_windows_capture_pack_current
+```
+
+The gate writes `gpu-windows-capture-pack-summary.txt`, `gpu-windows-capture-manifest.txt`, and `gpu-windows-capture-checklist.txt`; see `docs/GPU_WINDOWS_CAPTURE_PACK.md`.
+
+Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
+
+```sh
+sh scripts/gpu_terrain_upload_budget.sh logs/gpu_terrain_upload_budget_current
+```
+
+The gate writes `gpu-terrain-upload-budget-summary.txt`; see `docs/GPU_TERRAIN_UPLOAD_BUDGETING.md` and `docs/GPU_UPLOAD_RETRY_BACKOFF_TELEMETRY.md`.
+
+Use the upload stage pool gate after changing CPU-side GPU upload staging, `PackedByteArray` creation/reuse, or `RenderingDevice::buffer_update` handoff code. It runs baseline and pooled movement plus in-place dirty upload captures against isolated RocksDB paths and fails unless each baseline stays pool-disabled, each pooled run creates fewer stage arrays than total uploads, in-place dirty upload still executes, and upload failure/retry/backoff counters remain clean:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=30000 \
+GODOT_TIMEOUT_SEC=240 \
+sh scripts/gpu_terrain_upload_stage_pool_gate.sh logs/gpu_terrain_upload_stage_pool_current
+```
+
+The gate writes `gpu-terrain-upload-stage-pool-summary.txt`; see `docs/GPU_UPLOAD_STAGE_POOL.md`.
+
+Use the upload stage-pool load-scaling gate after the short stage-pool gate when deciding whether the pool has survived high resident-set pressure. It runs or consumes baseline and pooled `gpu_terrain_load_scaling` summaries, requires the existing resident pressure thresholds and CPU-side budgets, and rejects old summaries that do not expose upload/stage-pool counters:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=36000 \
+GODOT_TIMEOUT_SEC=600 \
+sh scripts/gpu_terrain_upload_stage_pool_load_scaling_gate.sh logs/gpu_terrain_upload_stage_pool_load_scaling_current
+```
+
+The gate writes `gpu-terrain-upload-stage-pool-load-scaling-summary.txt`; current 2026-06-16 runtime probes are negative face-pressure evidence, not default-on evidence.
+
+Use the cutout pressure load-scaling gate after changing the default-off cutout prototype, transparent workload markers, cutout upload metrics, workload-matrix pressure fixtures, or load-scaling summary plumbing. It runs a high resident-set `pressure` workload with `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`, the `chunk_disc` fixture, and leaf block ID `5`, then fails unless the active cutout path reports nonzero transparent workload, nonzero cutout upload counts/bytes/faces, zero fallback, zero upload failures, CPU-side budgets below the 150 FPS frame budget, and aggregate report surfacing:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=36000 \
+GODOT_TIMEOUT_SEC=600 \
+sh scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh logs/gpu_terrain_cutout_pressure_load_scaling_current
+```
+
+The gate writes `gpu-terrain-cutout-pressure-load-scaling-summary.txt`. It is local macOS/Metal cutout-only pressure/upload evidence; do not treat it as blended transparency, sorting/depth parity, Windows validation, external profiler evidence, or default-on approval.
+
+Use the cutout fixture scene smoke after changing visual smoke fixture placement, cutout block role handling, cutout depth/collision evidence, same-material cutout seam policy, or transparent workload report surfacing. It runs a fixed release-profile scene with isolated RocksDB, the default-off cutout prototype, four leaf/cutout roles including one adjacent same-material pair, one opaque occluder, collision rays, an opaque occlusion probe, exact cutout workload checks, and aggregate acceptance:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_TIMEOUT_SEC=240 \
+GODOT_QUIT_AFTER_FRAMES=24000 \
+sh scripts/gpu_terrain_cutout_fixture_scene_smoke.sh logs/gpu_transparent_cutout_fixture_scene_smoke_current
+
+sh scripts/gpu_terrain_cutout_fixture_acceptance_gate.sh logs/gpu_transparent_cutout_fixture_scene_smoke_current
+```
+
+The smoke writes `transparent-cutout-fixture-scene-smoke-summary.txt`; the gate writes `transparent-cutout-fixture-acceptance-summary.txt` and a `transparent_cutout_seam_culling_status=pass` summary line. The smoke and gate also require nonzero cutout upload counts/bytes/faces and enforce `transparent_cutout_upload_bytes >= transparent_cutout_upload_face_bytes`. This is local macOS/Metal cutout depth/collision, upload, and same-material adjacent-pair evidence only; it does not validate blended transparency, sorting, default-on behavior, external profiler cost, or Windows behavior.
+
+Use the transparent cutout sort/build cost gate after changing transparent/cutout workload markers, terrain queue build/upload timing, fixture acceptance, pressure load-scaling, or report surfacing. It consumes the accepted cutout fixture and pressure summaries and fails unless both report the same no-sort cutout policy, zero sort work, a nonzero build/upload envelope, and no default-on approval:
+
+```sh
+sh scripts/transparent_cutout_sort_build_cost_gate.sh logs/transparent_cutout_sort_build_cost_current
+```
+
+The gate writes `transparent-cutout-sort-build-cost-summary.txt`. It is local CPU-side cutout cost evidence only; do not cite it as blended transparency sorting, a separate transparent buffer, Windows validation, or external GPU profiler proof.
+
+Use the upload failure recovery unit guards after touching mesh-build planning, proxy refresh reuse, GPU slot state, or CPU fallback removal:
+
+```sh
+cargo test --manifest-path client/rust_ext/Cargo.toml gpu_upload_failure_recovery_keeps_cpu_fallback_until_slot_exists
+cargo test --manifest-path client/rust_ext/Cargo.toml terrain_mesh_build_plan_preserves_gpu_proxy_and_fallback_paths
+```
+
+These tests lock the current fallback-first recovery contract; see `docs/GPU_UPLOAD_FAILURE_RECOVERY.md`.
+
+Use the upload failure fallback gate after touching GPU upload failure handling, per-subchunk GPU slot state, CPU fallback removal, shadow path decisions, or collision readiness:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+sh scripts/gpu_terrain_upload_failure_fallback_gate.sh logs/gpu_upload_failure_fallback_current
+```
+
+This gate intentionally injects upload failures and therefore expects `gpu_upload_fail` plus `gpu_upload_fail_injected` to be nonzero while capacity/fragmentation failures stay zero. Its terrain queue budget is report-only because the run intentionally forces CPU ArrayMesh fallback; see `docs/GPU_UPLOAD_FAILURE_FALLBACK_GATE.md`.
 
 Use the resource lifecycle audit after upload-pressure, renderer resource ownership, atlas/uniform, native-shadow, repack upload, or shutdown cleanup work. It refreshes a scoped GPU report and fails on dirty error scans, upload failures, unexpected scene-target replacement, missing default terrain resources, or native-shadow resource error counters:
 
@@ -187,6 +520,38 @@ RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 RUMPELMC_GODOT_RUST_EXT_PROFILE=release 
 ```
 
 The gate requires thousands of subchunks/draws/faces and nontrivial draw-command occupancy; see `docs/GPU_TERRAIN_LOAD_SCALING.md`.
+
+Use the grouped draws comparison gate after changing indirect draw record layout, draw buffer rebuild logic, draw count telemetry, or the `RUMPELMC_GPU_TERRAIN_GROUPED_DRAWS` flag:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=42000 \
+GODOT_TIMEOUT_SEC=900 \
+sh scripts/gpu_terrain_grouped_draws_gate.sh logs/gpu_terrain_grouped_draws_current
+```
+
+The gate writes `gpu-terrain-grouped-draws-summary.txt`. Current 2026-06-16 local macOS/Metal evidence keeps grouped draws default-off behind `RUMPELMC_GPU_TERRAIN_GROUPED_DRAWS=1`: baseline and grouped lanes both reached `2289` logical records and `6292` faces, while grouped records dropped to `115` and draw-command bytes dropped from `36624` to `1840` with zero upload failures.
+
+Use the stage-pool load-scaling comparison when validating upload staging under deterministic high face pressure:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_QUIT_AFTER_FRAMES=36000 \
+GODOT_TIMEOUT_SEC=700 \
+sh scripts/gpu_terrain_upload_stage_pool_load_scaling_gate.sh logs/gpu_terrain_upload_stage_pool_load_scaling_current
+```
+
+This gate uses the `pressure` workload case and `chunk_disc` terrain pressure fixture by default, then compares baseline and `RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL=1` lanes. Keep the stage pool default-off until external macOS/Windows profiler evidence supports a rollout.
+
+Use the mass chunk-load gate after refreshing high resident-set and upload-budget evidence. It requires thousands of resident GPU subchunks/draws/faces while preserving the current per-frame upload budget:
+
+```sh
+sh scripts/gpu_terrain_mass_chunk_load_gate.sh logs/gpu_terrain_mass_chunk_load_current
+```
+
+The gate writes `gpu-terrain-mass-chunk-load-summary.txt`; see `docs/GPU_TERRAIN_MASS_CHUNK_LOAD.md`.
 
 Use the resident-set matrix wrapper when planning needs a compact trend summary over resident-set growth artifacts without rerunning heavy captures:
 
@@ -297,6 +662,12 @@ sh scripts/gpu_terrain_shadow_profiler_results_check.sh \
 
 `scripts/gpu_terrain_report.sh` surfaces the latest `shadow-radius-profiler-results-summary.txt` under the log directory when one exists, and also surfaces the latest `shadow-radius-profiler-capture-pack.txt` as pending external-profiler handoff state. Only the validated results summary is profiler evidence; the capture pack remains a checklist until real captured rows are recorded and checked.
 
+Use the shadow proxy cost decision gate before choosing the next shadow optimization. It consumes the shadow quality summary, radius matrix, pending capture pack, and optional validated profiler results summary. Without validated external rows it should pass with `decision=defer_runtime_change`; with captured rows it may only allow a prototype candidate, never a default runtime change:
+
+```sh
+sh scripts/shadow_proxy_cost_decision_gate.sh logs/shadow_proxy_cost_decision_current
+```
+
 ## Shadow Path Design
 
 The current production GPU terrain shadow path is still Godot CPU shadow proxies. `docs/GPU_SHADOW_PATH.md` records the Phase 12 design for a future GPU-native terrain shadow path. Treat `scene_shadows_disabled` and `diagnostic_no_shadow_proxy` as diagnostic controls only; they cannot justify production shadow reductions. A future native path must be behind an explicit rollback flag, flip `native_shadow_implemented` only with a real implementation, report its own `shadow_path`, preserve the existing Godot proxy fallback, and pass visual parity plus an external profiler comparison before becoming default. For marker/lifecycle-only changes that do not alter shader, visual path, scene setup, or parity case definitions, prefer targeted Rust tests plus env-on movement smoke, validate-only over a fresh compatible parity artifact, aggregate report, `./scripts/check.sh fast`, and `./scripts/diff_guard.sh`; reserve full parity recaptures for visual-path, shader, or parity-validator changes.
@@ -328,6 +699,27 @@ sh scripts/transparent_fixture_acceptance_suite.sh logs/transparent_fixture_acce
 ```
 
 The gate writes `transparent-fixture-acceptance-suite-summary.txt`; see `docs/TRANSPARENT_FIXTURE_ACCEPTANCE_SUITE.md`.
+
+Use transparent prototype shape decision before broadening beyond the current cutout-only prototype. The current expected decision is `cutout_only_first`, with default runtime changes still disallowed while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`:
+
+```sh
+sh scripts/transparent_prototype_shape_decision_gate.sh logs/transparent_prototype_shape_decision_current
+```
+
+The gate writes `transparent-prototype-shape-decision-summary.txt`; see `docs/GPU_TRANSPARENT_PATH.md`.
+
+Use the cutout prototype block-edit smoke after touching leaf cutout metadata, packed-face cutout flags, transparent workload markers, or the render shader cutout branch. This is a default-off cutout/alpha-test prototype only; it does not validate blended transparency or sorting:
+
+```sh
+RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1 \
+RUMPELMC_BLOCK_EDIT_STRESS_ACTION=place \
+RUMPELMC_BLOCK_EDIT_STRESS_BLOCK_ID=5 \
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+sh scripts/gpu_terrain_block_edit_stress.sh logs/gpu_transparent_cutout_prototype_current
+```
+
+The block-edit summary must include `block_edit_transparent` with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero transparent workload counts, nonzero `transparent_cutout_uploads` / `transparent_cutout_upload_bytes` / `transparent_cutout_upload_faces` / `transparent_cutout_upload_face_bytes`, and `gpu_upload_fail=0`.
 
 Use the external profiling campaign gate before citing cross-platform GPU profiler state:
 

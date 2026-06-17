@@ -11,7 +11,7 @@ use godot::classes::{
     RenderSceneBuffersRd, RenderingDevice, RenderingServer, ResourceLoader, Texture2D,
 };
 use godot::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -53,6 +53,14 @@ const GPU_TERRAIN_CULL_MODE_ENV: &str = "RUMPELMC_GPU_TERRAIN_CULL_MODE";
 const GPU_TERRAIN_BUFFER_REPACK_ENV: &str = "RUMPELMC_GPU_TERRAIN_BUFFER_REPACK";
 const GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW_ENV: &str =
     "RUMPELMC_GPU_TERRAIN_BUFFER_REPACK_UPLOAD_PREVIEW";
+const GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD_ENV: &str =
+    "RUMPELMC_GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD";
+const GPU_TERRAIN_UPLOAD_STAGE_POOL_ENV: &str = "RUMPELMC_GPU_TERRAIN_UPLOAD_STAGE_POOL";
+const GPU_TERRAIN_GROUPED_DRAWS_ENV: &str = "RUMPELMC_GPU_TERRAIN_GROUPED_DRAWS";
+const GPU_TERRAIN_UPLOAD_RETRY_POLICY_NONE: &str = "none";
+const GPU_TERRAIN_CUTOUT_PROTOTYPE_ENV: &str = "RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE";
+const PACKED_FACE_EXTENT_FLAGS_MASK: u32 = 0x0000_f000;
+const PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG: u32 = 1 << 12;
 
 pub const FACE_LEFT: u32 = 0;
 pub const FACE_RIGHT: u32 = 1;
@@ -86,6 +94,7 @@ struct PackedFaceExtent {
 }
 
 impl PackedFace {
+    #[cfg(test)]
     pub fn new(x: u32, y: u32, z: u32, face: u32, tile: u32, block_id: u32) -> Self {
         Self::with_extent(
             x,
@@ -98,6 +107,7 @@ impl PackedFace {
         )
     }
 
+    #[cfg(test)]
     fn with_extent(
         x: u32,
         y: u32,
@@ -107,6 +117,20 @@ impl PackedFace {
         block_id: u32,
         extent: PackedFaceExtent,
     ) -> Self {
+        Self::with_extent_and_flags(x, y, z, face, tile, block_id, extent, 0)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn with_extent_and_flags(
+        x: u32,
+        y: u32,
+        z: u32,
+        face: u32,
+        tile: u32,
+        block_id: u32,
+        extent: PackedFaceExtent,
+        extent_flags: u32,
+    ) -> Self {
         debug_assert!(x < 64);
         debug_assert!(y < 64);
         debug_assert!(z < 64);
@@ -114,10 +138,11 @@ impl PackedFace {
         debug_assert!(tile < 2048);
         debug_assert!(extent.u > 0 && extent.u < 64);
         debug_assert!(extent.v > 0 && extent.v < 64);
+        debug_assert_eq!(extent_flags & !PACKED_FACE_EXTENT_FLAGS_MASK, 0);
         Self {
             pos_face_tile: x | (y << 6) | (z << 12) | (face << 18) | (tile << 21),
             block_flags: block_id & 0xffff,
-            extent: extent.u | (extent.v << 6),
+            extent: extent.u | (extent.v << 6) | extent_flags,
             _pad: 0,
         }
     }
@@ -153,6 +178,10 @@ impl PackedFace {
     fn extent_v(self) -> u32 {
         (self.extent >> 6) & 0x3f
     }
+
+    fn cutout_alpha_test(self) -> bool {
+        self.extent & PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG != 0
+    }
 }
 
 #[derive(Debug, Default)]
@@ -184,8 +213,19 @@ impl PackedFaceBatch {
         self.faces.len()
     }
 
+    pub fn cutout_face_count(&self) -> usize {
+        self.faces
+            .iter()
+            .filter(|face| face.cutout_alpha_test())
+            .count()
+    }
+
     pub fn byte_len(&self) -> usize {
         self.faces.len() * PACKED_FACE_BYTES
+    }
+
+    pub fn cutout_byte_len(&self) -> usize {
+        self.cutout_face_count() * PACKED_FACE_BYTES
     }
 
     pub fn build_cpu_proxy_mesh(&self) -> CpuProxyMesh {
@@ -367,11 +407,19 @@ impl PackedFaceBatch {
             .min(MAX_CPU_ARRAY_MESH_VERTICES)
     }
 
+    #[cfg(test)]
     fn to_bytes_for_subchunk(&self, key: GpuSubchunkKey) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.byte_len());
+        self.write_bytes_for_subchunk(key, &mut bytes);
+        bytes
+    }
+
+    fn write_bytes_for_subchunk(&self, key: GpuSubchunkKey, bytes: &mut Vec<u8>) {
         let chunk_x_bits = pack_signed_i16(key.chunk_x) << 16;
         let chunk_z_bits = pack_signed_i16(key.chunk_z) << 16;
         let sub_y_bits = pack_signed_i16(key.sub_y);
-        let mut bytes = Vec::with_capacity(self.byte_len());
+        bytes.clear();
+        bytes.reserve(self.byte_len());
         for face in &self.faces {
             let block_flags = (face.block_flags & 0x0000_ffff) | chunk_x_bits;
             let extent = (face.extent & 0x0000_ffff) | chunk_z_bits;
@@ -380,7 +428,6 @@ impl PackedFaceBatch {
             bytes.extend_from_slice(&extent.to_le_bytes());
             bytes.extend_from_slice(&sub_y_bits.to_le_bytes());
         }
-        bytes
     }
 }
 
@@ -1441,10 +1488,16 @@ impl IndirectDrawCommand {
     }
 
     fn append_bytes(self, bytes: &mut Vec<u8>) {
-        bytes.extend_from_slice(&self.vertex_count.to_le_bytes());
-        bytes.extend_from_slice(&self.instance_count.to_le_bytes());
-        bytes.extend_from_slice(&self.first_vertex.to_le_bytes());
-        bytes.extend_from_slice(&self.first_instance.to_le_bytes());
+        bytes.extend_from_slice(&self.to_le_bytes());
+    }
+
+    fn to_le_bytes(self) -> [u8; INDIRECT_DRAW_BYTES] {
+        let mut bytes = [0u8; INDIRECT_DRAW_BYTES];
+        bytes[0..4].copy_from_slice(&self.vertex_count.to_le_bytes());
+        bytes[4..8].copy_from_slice(&self.instance_count.to_le_bytes());
+        bytes[8..12].copy_from_slice(&self.first_vertex.to_le_bytes());
+        bytes[12..16].copy_from_slice(&self.first_instance.to_le_bytes());
+        bytes
     }
 }
 
@@ -1491,15 +1544,62 @@ fn remove_draw_key(
     })
 }
 
+fn sorted_draw_entries_for_grouping(
+    slots: impl Iterator<Item = (GpuSubchunkKey, GpuTerrainSlot)>,
+    max_draws: usize,
+) -> Vec<(GpuSubchunkKey, GpuTerrainSlot)> {
+    let mut entries = slots.collect::<Vec<_>>();
+    entries.sort_by_key(|(key, slot)| (slot.start_face, *key));
+    entries.truncate(max_draws);
+    entries
+}
+
+fn grouped_draw_records_from_sorted_slots(
+    slots: impl Iterator<Item = GpuTerrainSlot>,
+) -> Vec<GpuTerrainSlot> {
+    let mut records: Vec<GpuTerrainSlot> = Vec::new();
+    for slot in slots {
+        if slot.face_count == 0 {
+            continue;
+        }
+        if let Some(last) = records.last_mut()
+            && last.start_face.checked_add(last.face_count) == Some(slot.start_face)
+        {
+            last.face_count = last.face_count.saturating_add(slot.face_count);
+            continue;
+        }
+        records.push(slot);
+    }
+    records
+}
+
+fn should_upload_subchunk_in_place(
+    enabled: bool,
+    existing_slot: Option<GpuTerrainSlot>,
+    face_count: usize,
+) -> bool {
+    enabled
+        && face_count > 0
+        && existing_slot
+            .map(|slot| slot.face_count == face_count)
+            .unwrap_or(false)
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GpuTerrainStats {
     pub subchunks: usize,
     pub faces: usize,
+    pub cutout_faces: usize,
+    pub cutout_subchunks: usize,
     pub bytes: usize,
     pub draw_count: usize,
     pub draw_command_bytes: usize,
     pub draw_command_capacity_bytes: usize,
     pub draw_command_stride_bytes: usize,
+    pub draw_grouped_enabled: u64,
+    pub draw_records_logical: usize,
+    pub draw_records_grouped: usize,
+    pub draw_grouped_saved_records: usize,
     pub compositor_draw_repeat: u32,
     pub compositor_effective_draw_count: usize,
     pub compositor_breadcrumb: u32,
@@ -1528,6 +1628,13 @@ pub struct GpuTerrainStats {
     pub last_upload_staging_bytes: usize,
     pub avg_upload_staging_bytes: f64,
     pub max_upload_staging_bytes: usize,
+    pub cutout_upload_count: u64,
+    pub cutout_upload_bytes: usize,
+    pub cutout_upload_faces: usize,
+    pub cutout_upload_face_bytes: usize,
+    pub last_cutout_upload_bytes: usize,
+    pub last_cutout_upload_faces: usize,
+    pub last_cutout_upload_face_bytes: usize,
     pub last_upload_ms: f64,
     pub avg_upload_ms: f64,
     pub max_upload_ms: f64,
@@ -1540,9 +1647,25 @@ pub struct GpuTerrainStats {
     pub last_upload_update_ms: f64,
     pub avg_upload_update_ms: f64,
     pub max_upload_update_ms: f64,
+    pub upload_stage_pool_enabled: u64,
+    pub upload_stage_pool_entries: usize,
+    pub upload_stage_pool_bytes: usize,
+    pub upload_stage_pba_creates: u64,
+    pub upload_stage_pba_reuses: u64,
     pub upload_failures: u64,
     pub upload_capacity_failures: u64,
     pub upload_fragmentation_failures: u64,
+    pub upload_injected_failures: u64,
+    pub upload_retry_policy: &'static str,
+    pub upload_retry_attempts: u64,
+    pub upload_retry_success: u64,
+    pub upload_retry_giveups: u64,
+    pub upload_backoff_active: u64,
+    pub upload_backoff_frames: u64,
+    pub upload_backoff_max_frames: u64,
+    pub in_place_upload_enabled: u64,
+    pub in_place_uploads: u64,
+    pub in_place_upload_misses: u64,
     pub free_ranges: usize,
     pub free_faces: usize,
     pub largest_free_faces: usize,
@@ -1632,6 +1755,67 @@ pub struct GpuCompositorSubmitBreakdown {
     pub target_ms: f64,
     pub constants_ms: f64,
     pub draw_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct GpuUploadRetryBackoffTelemetry {
+    retry_attempts: u64,
+    retry_success: u64,
+    retry_giveups: u64,
+    backoff_active: u64,
+    backoff_frames: u64,
+    backoff_max_frames: u64,
+}
+
+impl GpuUploadRetryBackoffTelemetry {
+    fn policy_label(self) -> &'static str {
+        GPU_TERRAIN_UPLOAD_RETRY_POLICY_NONE
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct GpuUploadStagePoolStats {
+    entries: usize,
+    bytes: usize,
+    creates: u64,
+    reuses: u64,
+}
+
+#[derive(Debug, Default)]
+struct GpuUploadStagePool {
+    arrays: HashMap<usize, PackedByteArray>,
+    creates: u64,
+    reuses: u64,
+}
+
+impl GpuUploadStagePool {
+    fn stage_bytes(&mut self, bytes: &[u8]) -> &PackedByteArray {
+        let len = bytes.len();
+        match self.arrays.entry(len) {
+            Entry::Occupied(entry) => {
+                let array = entry.into_mut();
+                array.as_mut_slice().copy_from_slice(bytes);
+                self.reuses += 1;
+                array
+            }
+            Entry::Vacant(entry) => {
+                let mut array = PackedByteArray::new();
+                array.resize(len);
+                array.as_mut_slice().copy_from_slice(bytes);
+                self.creates += 1;
+                entry.insert(array)
+            }
+        }
+    }
+
+    fn stats(&self) -> GpuUploadStagePoolStats {
+        GpuUploadStagePoolStats {
+            entries: self.arrays.len(),
+            bytes: self.arrays.keys().copied().sum(),
+            creates: self.creates,
+            reuses: self.reuses,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1820,13 +2004,18 @@ pub struct GpuTerrainBufferPool {
     indirect_buffer_rid: Rid,
     allocator: FaceRangeAllocator,
     slots: HashMap<GpuSubchunkKey, GpuTerrainSlot>,
+    cutout_face_counts: HashMap<GpuSubchunkKey, usize>,
+    cutout_face_count: usize,
     draw_keys: Vec<GpuSubchunkKey>,
     draw_indices: HashMap<GpuSubchunkKey, usize>,
+    upload_scratch: Vec<u8>,
+    upload_stage_pool: GpuUploadStagePool,
     repack_sources: HashMap<GpuSubchunkKey, Vec<u8>>,
     repack_upload_preview_sampled: bool,
     render_pipeline: Option<GpuTerrainRenderPipeline>,
     used_faces: usize,
     draw_count: usize,
+    draw_logical_count: usize,
     draw_dirty: bool,
     debug_offscreen_rendered: bool,
     compositor_frames: u64,
@@ -1845,6 +2034,13 @@ pub struct GpuTerrainBufferPool {
     upload_bytes: usize,
     last_upload_bytes: usize,
     upload_staging: GpuUploadStagingTelemetry,
+    cutout_upload_count: u64,
+    cutout_upload_bytes: usize,
+    cutout_upload_faces: usize,
+    cutout_upload_face_bytes: usize,
+    last_cutout_upload_bytes: usize,
+    last_cutout_upload_faces: usize,
+    last_cutout_upload_face_bytes: usize,
     last_upload_ms: f64,
     avg_upload_ms: f64,
     max_upload_ms: f64,
@@ -1860,6 +2056,10 @@ pub struct GpuTerrainBufferPool {
     upload_failures: u64,
     upload_capacity_failures: u64,
     upload_fragmentation_failures: u64,
+    upload_injected_failures: u64,
+    upload_retry_backoff: GpuUploadRetryBackoffTelemetry,
+    in_place_uploads: u64,
+    in_place_upload_misses: u64,
     repack_telemetry: GpuTerrainRepackTelemetry,
     draw_rebuild_count: u64,
     avg_draw_rebuild_ms: f64,
@@ -1917,13 +2117,18 @@ impl GpuTerrainBufferPool {
             indirect_buffer_rid,
             allocator: FaceRangeAllocator::new(MAX_GPU_TERRAIN_FACES),
             slots: HashMap::new(),
+            cutout_face_counts: HashMap::new(),
+            cutout_face_count: 0,
             draw_keys: Vec::new(),
             draw_indices: HashMap::new(),
+            upload_scratch: Vec::new(),
+            upload_stage_pool: GpuUploadStagePool::default(),
             repack_sources: HashMap::new(),
             repack_upload_preview_sampled: false,
             render_pipeline,
             used_faces: 0,
             draw_count: 0,
+            draw_logical_count: 0,
             draw_dirty: false,
             debug_offscreen_rendered: false,
             compositor_frames: 0,
@@ -1942,6 +2147,13 @@ impl GpuTerrainBufferPool {
             upload_bytes: 0,
             last_upload_bytes: 0,
             upload_staging: GpuUploadStagingTelemetry::default(),
+            cutout_upload_count: 0,
+            cutout_upload_bytes: 0,
+            cutout_upload_faces: 0,
+            cutout_upload_face_bytes: 0,
+            last_cutout_upload_bytes: 0,
+            last_cutout_upload_faces: 0,
+            last_cutout_upload_face_bytes: 0,
             last_upload_ms: 0.0,
             avg_upload_ms: 0.0,
             max_upload_ms: 0.0,
@@ -1957,6 +2169,10 @@ impl GpuTerrainBufferPool {
             upload_failures: 0,
             upload_capacity_failures: 0,
             upload_fragmentation_failures: 0,
+            upload_injected_failures: 0,
+            upload_retry_backoff: GpuUploadRetryBackoffTelemetry::default(),
+            in_place_uploads: 0,
+            in_place_upload_misses: 0,
             repack_telemetry,
             draw_rebuild_count: 0,
             avg_draw_rebuild_ms: 0.0,
@@ -1985,37 +2201,98 @@ impl GpuTerrainBufferPool {
         key: GpuSubchunkKey,
         batch: &PackedFaceBatch,
     ) -> Option<GpuTerrainSlot> {
+        let face_count = batch.face_count();
+        let in_place_enabled = gpu_terrain_in_place_subchunk_upload_enabled();
+        let existing_slot = self.slots.get(&key).copied();
+        if should_upload_subchunk_in_place(in_place_enabled, existing_slot, face_count) {
+            let slot = existing_slot.expect("in-place upload requires an existing slot");
+            self.upload_batch_to_slot(key, batch, slot);
+            self.record_cutout_face_count(key, batch.cutout_face_count());
+            self.in_place_uploads += 1;
+            self.refresh_repack_upload_preview();
+            return Some(slot);
+        }
+        if in_place_enabled && existing_slot.is_some() && face_count > 0 {
+            self.in_place_upload_misses += 1;
+        }
+
         self.remove_subchunk_inner(key);
-        if batch.face_count() == 0 {
+        if face_count == 0 {
             self.refresh_repack_upload_preview();
             return None;
         }
 
-        let upload_start = Instant::now();
-        let Some(range) = self.allocator.allocate(batch.face_count()) else {
-            self.record_upload_failure(batch.face_count());
+        let Some(range) = self.allocator.allocate(face_count) else {
+            self.record_upload_failure(face_count);
             return None;
         };
-        let encode_start = Instant::now();
-        let bytes = batch.to_bytes_for_subchunk(key);
-        let repack_source = if self.repack_source_enabled() {
-            Some(bytes.clone())
-        } else {
-            None
+        let slot = GpuTerrainSlot {
+            start_face: range.start,
+            face_count: range.len,
         };
+        self.upload_batch_to_slot(key, batch, slot);
+        self.slots.insert(key, slot);
+        self.record_cutout_face_count(key, batch.cutout_face_count());
+        self.used_faces += range.len;
+        self.insert_draw_command(key, slot);
+        self.refresh_repack_upload_preview();
+        Some(slot)
+    }
+
+    fn upload_batch_to_slot(
+        &mut self,
+        key: GpuSubchunkKey,
+        batch: &PackedFaceBatch,
+        slot: GpuTerrainSlot,
+    ) {
+        let upload_start = Instant::now();
+        let encode_start = Instant::now();
+        batch.write_bytes_for_subchunk(key, &mut self.upload_scratch);
+        let repack_source = self
+            .repack_source_enabled()
+            .then(|| self.upload_scratch.clone());
         let upload_encode_ms = encode_start.elapsed().as_secs_f64() * 1000.0;
         let stage_start = Instant::now();
-        let pba = PackedByteArray::from(bytes.as_slice());
-        let upload_stage_ms = stage_start.elapsed().as_secs_f64() * 1000.0;
-        self.upload_staging.record_buffer(pba.len());
-        let offset = (range.start * PACKED_FACE_BYTES) as u32;
-        let update_start = Instant::now();
-        self.rd
-            .buffer_update(self.faces_buffer_rid, offset, pba.len() as u32, &pba);
-        let upload_update_ms = update_start.elapsed().as_secs_f64() * 1000.0;
+        let offset = (slot.start_face * PACKED_FACE_BYTES) as u32;
+        let (upload_len, upload_stage_ms, upload_update_ms) =
+            if gpu_terrain_upload_stage_pool_enabled() {
+                let pba = self
+                    .upload_stage_pool
+                    .stage_bytes(self.upload_scratch.as_slice());
+                let upload_stage_ms = stage_start.elapsed().as_secs_f64() * 1000.0;
+                let update_start = Instant::now();
+                self.rd
+                    .buffer_update(self.faces_buffer_rid, offset, pba.len() as u32, pba);
+                let upload_update_ms = update_start.elapsed().as_secs_f64() * 1000.0;
+                (pba.len(), upload_stage_ms, upload_update_ms)
+            } else {
+                let pba = PackedByteArray::from(self.upload_scratch.as_slice());
+                let upload_stage_ms = stage_start.elapsed().as_secs_f64() * 1000.0;
+                let update_start = Instant::now();
+                self.rd
+                    .buffer_update(self.faces_buffer_rid, offset, pba.len() as u32, &pba);
+                let upload_update_ms = update_start.elapsed().as_secs_f64() * 1000.0;
+                (pba.len(), upload_stage_ms, upload_update_ms)
+            };
+        self.upload_staging.record_buffer(upload_len);
         self.upload_count += 1;
-        self.upload_bytes += pba.len();
-        self.last_upload_bytes = pba.len();
+        self.upload_bytes += upload_len;
+        self.last_upload_bytes = upload_len;
+        let cutout_upload_faces = batch.cutout_face_count();
+        let cutout_upload_face_len = batch.cutout_byte_len();
+        if cutout_upload_faces > 0 {
+            self.cutout_upload_count += 1;
+            self.cutout_upload_bytes += upload_len;
+            self.cutout_upload_faces += cutout_upload_faces;
+            self.cutout_upload_face_bytes += cutout_upload_face_len;
+            self.last_cutout_upload_bytes = upload_len;
+            self.last_cutout_upload_faces = cutout_upload_faces;
+            self.last_cutout_upload_face_bytes = cutout_upload_face_len;
+        } else {
+            self.last_cutout_upload_bytes = 0;
+            self.last_cutout_upload_faces = 0;
+            self.last_cutout_upload_face_bytes = 0;
+        }
         self.record_upload_timing(
             upload_start.elapsed().as_secs_f64() * 1000.0,
             upload_encode_ms,
@@ -2023,18 +2300,11 @@ impl GpuTerrainBufferPool {
             upload_update_ms,
         );
 
-        let slot = GpuTerrainSlot {
-            start_face: range.start,
-            face_count: range.len,
-        };
-        self.slots.insert(key, slot);
         if let Some(repack_source) = repack_source {
             self.repack_sources.insert(key, repack_source);
+        } else {
+            self.repack_sources.remove(&key);
         }
-        self.used_faces += range.len;
-        self.insert_draw_command(key, slot);
-        self.refresh_repack_upload_preview();
-        Some(slot)
     }
 
     fn record_upload_timing(
@@ -2064,8 +2334,16 @@ impl GpuTerrainBufferPool {
         self.refresh_repack_upload_preview();
     }
 
+    pub fn record_injected_upload_failure(&mut self, key: GpuSubchunkKey) {
+        self.remove_subchunk_inner(key);
+        self.upload_failures += 1;
+        self.upload_injected_failures += 1;
+        self.refresh_repack_upload_preview();
+    }
+
     fn remove_subchunk_inner(&mut self, key: GpuSubchunkKey) {
         self.repack_sources.remove(&key);
+        self.remove_cutout_face_count(key);
         let Some(slot) = self.slots.remove(&key) else {
             return;
         };
@@ -2078,6 +2356,22 @@ impl GpuTerrainBufferPool {
         });
     }
 
+    fn record_cutout_face_count(&mut self, key: GpuSubchunkKey, face_count: usize) {
+        self.remove_cutout_face_count(key);
+        if face_count == 0 {
+            return;
+        }
+
+        self.cutout_face_counts.insert(key, face_count);
+        self.cutout_face_count = self.cutout_face_count.saturating_add(face_count);
+    }
+
+    fn remove_cutout_face_count(&mut self, key: GpuSubchunkKey) {
+        if let Some(face_count) = self.cutout_face_counts.remove(&key) {
+            self.cutout_face_count = self.cutout_face_count.saturating_sub(face_count);
+        }
+    }
+
     pub fn has_subchunk(&self, key: GpuSubchunkKey) -> bool {
         self.slots.contains_key(&key)
     }
@@ -2085,14 +2379,25 @@ impl GpuTerrainBufferPool {
     pub fn stats(&self) -> GpuTerrainStats {
         let allocator_stats = self.allocator.stats();
         let repack_telemetry = self.repack_telemetry(allocator_stats);
+        let upload_stage_pool_stats = self.upload_stage_pool.stats();
         GpuTerrainStats {
             subchunks: self.slots.len(),
             faces: self.used_faces,
+            cutout_faces: self.cutout_face_count,
+            cutout_subchunks: self.cutout_face_counts.len(),
             bytes: self.used_faces * PACKED_FACE_BYTES,
             draw_count: self.draw_count,
             draw_command_bytes: draw_command_active_bytes(self.draw_count),
             draw_command_capacity_bytes: draw_command_capacity_bytes(MAX_INDIRECT_DRAWS),
             draw_command_stride_bytes: INDIRECT_DRAW_BYTES,
+            draw_grouped_enabled: u64::from(gpu_terrain_grouped_draws_enabled()),
+            draw_records_logical: self.draw_logical_count,
+            draw_records_grouped: self.draw_count,
+            draw_grouped_saved_records: if gpu_terrain_grouped_draws_enabled() {
+                self.draw_logical_count.saturating_sub(self.draw_count)
+            } else {
+                0
+            },
             compositor_draw_repeat: gpu_terrain_compositor_draw_repeat(),
             compositor_effective_draw_count: self
                 .draw_count
@@ -2127,6 +2432,13 @@ impl GpuTerrainBufferPool {
             last_upload_staging_bytes: self.upload_staging.last_bytes,
             avg_upload_staging_bytes: self.upload_staging.avg_bytes,
             max_upload_staging_bytes: self.upload_staging.max_bytes,
+            cutout_upload_count: self.cutout_upload_count,
+            cutout_upload_bytes: self.cutout_upload_bytes,
+            cutout_upload_faces: self.cutout_upload_faces,
+            cutout_upload_face_bytes: self.cutout_upload_face_bytes,
+            last_cutout_upload_bytes: self.last_cutout_upload_bytes,
+            last_cutout_upload_faces: self.last_cutout_upload_faces,
+            last_cutout_upload_face_bytes: self.last_cutout_upload_face_bytes,
             last_upload_ms: self.last_upload_ms,
             avg_upload_ms: self.avg_upload_ms,
             max_upload_ms: self.max_upload_ms,
@@ -2139,9 +2451,25 @@ impl GpuTerrainBufferPool {
             last_upload_update_ms: self.last_upload_update_ms,
             avg_upload_update_ms: self.avg_upload_update_ms,
             max_upload_update_ms: self.max_upload_update_ms,
+            upload_stage_pool_enabled: u64::from(gpu_terrain_upload_stage_pool_enabled()),
+            upload_stage_pool_entries: upload_stage_pool_stats.entries,
+            upload_stage_pool_bytes: upload_stage_pool_stats.bytes,
+            upload_stage_pba_creates: upload_stage_pool_stats.creates,
+            upload_stage_pba_reuses: upload_stage_pool_stats.reuses,
             upload_failures: self.upload_failures,
             upload_capacity_failures: self.upload_capacity_failures,
             upload_fragmentation_failures: self.upload_fragmentation_failures,
+            upload_injected_failures: self.upload_injected_failures,
+            upload_retry_policy: self.upload_retry_backoff.policy_label(),
+            upload_retry_attempts: self.upload_retry_backoff.retry_attempts,
+            upload_retry_success: self.upload_retry_backoff.retry_success,
+            upload_retry_giveups: self.upload_retry_backoff.retry_giveups,
+            upload_backoff_active: self.upload_retry_backoff.backoff_active,
+            upload_backoff_frames: self.upload_retry_backoff.backoff_frames,
+            upload_backoff_max_frames: self.upload_retry_backoff.backoff_max_frames,
+            in_place_upload_enabled: u64::from(gpu_terrain_in_place_subchunk_upload_enabled()),
+            in_place_uploads: self.in_place_uploads,
+            in_place_upload_misses: self.in_place_upload_misses,
             free_ranges: allocator_stats.free_ranges,
             free_faces: allocator_stats.free_faces,
             largest_free_faces: allocator_stats.largest_free_faces,
@@ -2872,6 +3200,7 @@ impl GpuTerrainBufferPool {
         let draw_count = self.slots.len().min(MAX_INDIRECT_DRAWS);
         if draw_count == 0 {
             self.draw_count = 0;
+            self.draw_logical_count = 0;
             self.draw_keys.clear();
             self.draw_indices.clear();
             self.draw_dirty = false;
@@ -2879,13 +3208,34 @@ impl GpuTerrainBufferPool {
             return;
         }
 
-        let mut indirect_bytes = Vec::with_capacity(draw_count * INDIRECT_DRAW_BYTES);
         self.draw_keys.clear();
         self.draw_indices.clear();
-        for (key, slot) in self.slots.iter().take(draw_count) {
-            self.draw_indices.insert(*key, self.draw_keys.len());
-            self.draw_keys.push(*key);
-            IndirectDrawCommand::for_slot(*slot).append_bytes(&mut indirect_bytes);
+        let mut indirect_bytes = Vec::with_capacity(draw_count * INDIRECT_DRAW_BYTES);
+        if gpu_terrain_grouped_draws_enabled() {
+            let entries = sorted_draw_entries_for_grouping(
+                self.slots.iter().map(|(key, slot)| (*key, *slot)),
+                MAX_INDIRECT_DRAWS,
+            );
+            for (key, _) in &entries {
+                self.draw_indices.insert(*key, self.draw_keys.len());
+                self.draw_keys.push(*key);
+            }
+            let grouped_records =
+                grouped_draw_records_from_sorted_slots(entries.iter().map(|(_, slot)| *slot));
+            indirect_bytes.reserve(grouped_records.len() * INDIRECT_DRAW_BYTES);
+            for record in &grouped_records {
+                IndirectDrawCommand::for_slot(*record).append_bytes(&mut indirect_bytes);
+            }
+            self.draw_logical_count = entries.len();
+            self.draw_count = grouped_records.len();
+        } else {
+            for (key, slot) in self.slots.iter().take(draw_count) {
+                self.draw_indices.insert(*key, self.draw_keys.len());
+                self.draw_keys.push(*key);
+                IndirectDrawCommand::for_slot(*slot).append_bytes(&mut indirect_bytes);
+            }
+            self.draw_count = self.draw_keys.len();
+            self.draw_logical_count = self.draw_count;
         }
 
         let indirect_pba = PackedByteArray::from(indirect_bytes.as_slice());
@@ -2896,12 +3246,15 @@ impl GpuTerrainBufferPool {
             &indirect_pba,
         );
 
-        self.draw_count = self.draw_keys.len();
         self.draw_dirty = false;
         self.record_draw_rebuild_ms(rebuild_start.elapsed().as_secs_f64() * 1000.0);
     }
 
     fn insert_draw_command(&mut self, key: GpuSubchunkKey, slot: GpuTerrainSlot) {
+        if gpu_terrain_grouped_draws_enabled() {
+            self.draw_dirty = true;
+            return;
+        }
         let Some(draw_index) = insert_draw_key(
             &mut self.draw_keys,
             &mut self.draw_indices,
@@ -2914,9 +3267,14 @@ impl GpuTerrainBufferPool {
 
         self.write_draw_command(draw_index, slot);
         self.draw_count = self.draw_keys.len();
+        self.draw_logical_count = self.draw_count;
     }
 
     fn remove_draw_command(&mut self, key: GpuSubchunkKey) {
+        if gpu_terrain_grouped_draws_enabled() {
+            self.draw_dirty = true;
+            return;
+        }
         let Some(removal) = remove_draw_key(&mut self.draw_keys, &mut self.draw_indices, key)
         else {
             return;
@@ -2931,6 +3289,7 @@ impl GpuTerrainBufferPool {
         }
 
         self.draw_count = self.draw_keys.len();
+        self.draw_logical_count = self.draw_count;
         if self.slots.len() >= MAX_INDIRECT_DRAWS {
             self.draw_dirty = true;
         }
@@ -2938,8 +3297,7 @@ impl GpuTerrainBufferPool {
 
     fn write_draw_command(&mut self, draw_index: usize, slot: GpuTerrainSlot) {
         let patch_start = Instant::now();
-        let mut indirect_bytes = Vec::with_capacity(INDIRECT_DRAW_BYTES);
-        IndirectDrawCommand::for_slot(slot).append_bytes(&mut indirect_bytes);
+        let indirect_bytes = IndirectDrawCommand::for_slot(slot).to_le_bytes();
         let indirect_pba = PackedByteArray::from(indirect_bytes.as_slice());
         self.rd.buffer_update(
             self.indirect_buffer_rid,
@@ -3500,12 +3858,13 @@ fn push_constant_bytes_from_projection(
     projection: Projection,
     lighting: GpuTerrainLighting,
     atlas_layout: GpuTerrainAtlasLayout,
-) -> Vec<u8> {
+) -> [u8; TERRAIN_PUSH_CONSTANT_BYTES] {
     let lighting = lighting.sanitized();
-    let mut bytes = Vec::with_capacity(TERRAIN_PUSH_CONSTANT_BYTES);
+    let mut bytes = [0u8; TERRAIN_PUSH_CONSTANT_BYTES];
+    let mut offset = 0usize;
     for col in projection.cols {
         for value in [col.x, col.y, col.z, col.w] {
-            bytes.extend_from_slice(&value.to_le_bytes());
+            write_push_constant_f32(&mut bytes, &mut offset, value);
         }
     }
 
@@ -3519,14 +3878,25 @@ fn push_constant_bytes_from_projection(
         lighting.color.b,
         lighting.energy,
     ] {
-        bytes.extend_from_slice(&value.to_le_bytes());
+        write_push_constant_f32(&mut bytes, &mut offset, value);
     }
 
     for value in atlas_layout.push_constant_values() {
-        bytes.extend_from_slice(&value.to_le_bytes());
+        write_push_constant_f32(&mut bytes, &mut offset, value);
     }
 
+    debug_assert_eq!(offset, TERRAIN_PUSH_CONSTANT_BYTES);
     bytes
+}
+
+fn write_push_constant_f32(
+    bytes: &mut [u8; TERRAIN_PUSH_CONSTANT_BYTES],
+    offset: &mut usize,
+    value: f32,
+) {
+    let end = *offset + std::mem::size_of::<f32>();
+    bytes[*offset..end].copy_from_slice(&value.to_le_bytes());
+    *offset = end;
 }
 
 fn default_light_direction_to_light() -> Vector3 {
@@ -3601,6 +3971,36 @@ fn gpu_terrain_buffer_repack_upload_preview_enabled() -> bool {
     })
 }
 
+fn gpu_terrain_in_place_subchunk_upload_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(
+            std::env::var(GPU_TERRAIN_IN_PLACE_SUBCHUNK_UPLOAD_ENV).ok(),
+        )
+    })
+}
+
+fn gpu_terrain_upload_stage_pool_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(std::env::var(GPU_TERRAIN_UPLOAD_STAGE_POOL_ENV).ok())
+    })
+}
+
+fn gpu_terrain_grouped_draws_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(std::env::var(GPU_TERRAIN_GROUPED_DRAWS_ENV).ok())
+    })
+}
+
+fn gpu_terrain_cutout_prototype_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        gpu_terrain_buffer_repack_from_env(std::env::var(GPU_TERRAIN_CUTOUT_PROTOTYPE_ENV).ok())
+    })
+}
+
 fn gpu_terrain_buffer_repack_from_env(value: Option<String>) -> bool {
     matches!(
         value
@@ -3630,7 +4030,11 @@ fn polygon_front_face_label(front_face: PolygonFrontFace) -> &'static str {
 }
 
 pub fn build_packed_faces(padded_blocks: &[u8]) -> PackedFaceBatch {
-    let block_lookup = PackedBlockLookup::from_definitions();
+    build_packed_faces_with_cutout(padded_blocks, gpu_terrain_cutout_prototype_enabled())
+}
+
+fn build_packed_faces_with_cutout(padded_blocks: &[u8], cutout_prototype: bool) -> PackedFaceBatch {
+    let block_lookup = PackedBlockLookup::from_definitions_with_cutout(cutout_prototype);
     let mut faces = Vec::with_capacity(4096);
 
     for y in 0..SUBCHUNK_H {
@@ -3691,7 +4095,7 @@ fn greedy_merge_packed_faces(faces: &[PackedFace]) -> Vec<PackedFace> {
                         face.face() == face_idx && collision_face_plane_uv(**face) == (plane, u, v)
                     })
                     .expect("greedy cell has source face");
-                merged.push(PackedFace::with_extent(
+                merged.push(PackedFace::with_extent_and_flags(
                     x as u32,
                     y as u32,
                     z as u32,
@@ -3702,6 +4106,7 @@ fn greedy_merge_packed_faces(faces: &[PackedFace]) -> Vec<PackedFace> {
                         u: width as u32,
                         v: height as u32,
                     },
+                    sample.extent & PACKED_FACE_EXTENT_FLAGS_MASK,
                 ));
                 true
             },
@@ -3711,7 +4116,7 @@ fn greedy_merge_packed_faces(faces: &[PackedFace]) -> Vec<PackedFace> {
 }
 
 fn greedy_face_merge_key(face: PackedFace) -> u32 {
-    face.block_id() | (face.tile() << 16)
+    face.block_id() | (face.tile() << 16) | ((face.cutout_alpha_test() as u32) << 31)
 }
 
 fn greedy_face_origin(face_idx: u32, plane: usize, u: usize, v: usize) -> (usize, usize, usize) {
@@ -3741,17 +4146,24 @@ fn push_visible_face(
     block_info: PackedBlockInfo,
     candidate: FaceCandidate,
 ) {
-    if block_lookup.is_solid(candidate.neighbor_block_id) {
+    if block_lookup.occludes_neighbor(candidate.neighbor_block_id) {
         return;
     }
 
-    faces.push(PackedFace::new(
+    let extent_flags = if block_info.cutout_alpha_test {
+        PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG
+    } else {
+        0
+    };
+    faces.push(PackedFace::with_extent_and_flags(
         candidate.x as u32,
         candidate.y as u32,
         candidate.z as u32,
         candidate.face,
         block_info.tile_for_face(candidate.face),
         candidate.block_id,
+        PackedFaceExtent { u: 1, v: 1 },
+        extent_flags,
     ));
 }
 
@@ -3760,6 +4172,7 @@ struct PackedBlockInfo {
     top_tile: u32,
     side_tile: u32,
     bottom_tile: u32,
+    cutout_alpha_test: bool,
 }
 
 impl PackedBlockInfo {
@@ -3779,7 +4192,7 @@ struct PackedBlockLookup {
 }
 
 impl PackedBlockLookup {
-    fn from_definitions() -> Self {
+    fn from_definitions_with_cutout(cutout_prototype: bool) -> Self {
         let max_id = blocks::definitions()
             .iter()
             .map(|block| block.id as usize)
@@ -3795,6 +4208,7 @@ impl PackedBlockLookup {
                 top_tile: block.textures.top,
                 side_tile: block.textures.side,
                 bottom_tile: block.textures.bottom,
+                cutout_alpha_test: cutout_prototype && block.cutout_alpha_test,
             });
         }
 
@@ -3807,8 +4221,14 @@ impl PackedBlockLookup {
         self.blocks.get(block_id as usize).copied().flatten()
     }
 
+    #[cfg(test)]
     fn is_solid(&self, block_id: u32) -> bool {
         self.info(block_id).is_some()
+    }
+
+    fn occludes_neighbor(&self, block_id: u32) -> bool {
+        self.info(block_id)
+            .is_some_and(|block| !block.cutout_alpha_test)
     }
 }
 
@@ -3924,6 +4344,27 @@ mod tests {
         assert!(gpu_terrain_buffer_repack_from_env(Some(
             "enabled".to_string()
         )));
+    }
+
+    #[test]
+    fn upload_stage_pool_flag_stays_default_off() {
+        assert!(!gpu_terrain_buffer_repack_from_env(None));
+        assert!(!gpu_terrain_buffer_repack_from_env(Some("0".to_string())));
+        assert!(gpu_terrain_buffer_repack_from_env(Some("1".to_string())));
+    }
+
+    #[test]
+    fn in_place_subchunk_upload_requires_flag_and_same_nonzero_face_count() {
+        let slot = GpuTerrainSlot {
+            start_face: 32,
+            face_count: 8,
+        };
+
+        assert!(!should_upload_subchunk_in_place(false, Some(slot), 8));
+        assert!(!should_upload_subchunk_in_place(true, None, 8));
+        assert!(!should_upload_subchunk_in_place(true, Some(slot), 0));
+        assert!(!should_upload_subchunk_in_place(true, Some(slot), 7));
+        assert!(should_upload_subchunk_in_place(true, Some(slot), 8));
     }
 
     #[test]
@@ -4066,6 +4507,71 @@ mod tests {
     }
 
     #[test]
+    fn cutout_prototype_marks_leaf_faces_without_changing_default_lookup() {
+        let mut blocks_data = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        write_block(&mut blocks_data, 1, 1, 1, blocks::LEAVES as u16);
+
+        let default_lookup = PackedBlockLookup::from_definitions_with_cutout(false);
+        let cutout_lookup = PackedBlockLookup::from_definitions_with_cutout(true);
+        assert!(default_lookup.is_solid(blocks::LEAVES));
+        assert!(default_lookup.occludes_neighbor(blocks::LEAVES));
+        assert!(!cutout_lookup.occludes_neighbor(blocks::LEAVES));
+
+        let default_batch = build_packed_faces_with_cutout(&blocks_data, false);
+        let cutout_batch = build_packed_faces_with_cutout(&blocks_data, true);
+
+        assert_eq!(default_batch.face_count(), 6);
+        assert_eq!(default_batch.cutout_face_count(), 0);
+        assert_eq!(cutout_batch.face_count(), 6);
+        assert_eq!(cutout_batch.cutout_face_count(), 6);
+        assert!(
+            cutout_batch
+                .faces()
+                .iter()
+                .all(|face| face.cutout_alpha_test())
+        );
+    }
+
+    #[test]
+    fn cutout_prototype_keeps_opaque_neighbor_faces_visible() {
+        let mut blocks_data = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        write_block(&mut blocks_data, 1, 1, 1, blocks::STONE as u16);
+        write_block(&mut blocks_data, 2, 1, 1, blocks::LEAVES as u16);
+
+        let default_batch = build_packed_faces_with_cutout(&blocks_data, false);
+        let cutout_batch = build_packed_faces_with_cutout(&blocks_data, true);
+        let stone_right_face =
+            |face: &PackedFace| face.block_id() == blocks::STONE && face.face() == FACE_RIGHT;
+
+        assert!(!default_batch.faces().iter().any(stone_right_face));
+        assert!(cutout_batch.faces().iter().any(stone_right_face));
+        assert!(cutout_batch.cutout_face_count() > 0);
+    }
+
+    #[test]
+    fn cutout_prototype_keeps_same_material_adjacent_seam_faces_visible() {
+        let mut blocks_data = vec![0u8; PADDED_W * PADDED_H * PADDED_D * BLOCK_BYTES];
+        write_block(&mut blocks_data, 1, 1, 1, blocks::LEAVES as u16);
+        write_block(&mut blocks_data, 2, 1, 1, blocks::LEAVES as u16);
+
+        let default_batch = build_packed_faces_with_cutout(&blocks_data, false);
+        let cutout_batch = build_packed_faces_with_cutout(&blocks_data, true);
+        let left_leaf_right_seam = |face: &PackedFace| {
+            face.block_id() == blocks::LEAVES && face.face() == FACE_RIGHT && face.x() == 0
+        };
+        let right_leaf_left_seam = |face: &PackedFace| {
+            face.block_id() == blocks::LEAVES && face.face() == FACE_LEFT && face.x() == 1
+        };
+
+        assert_eq!(default_batch.face_count(), 6);
+        assert_eq!(default_batch.cutout_face_count(), 0);
+        assert_eq!(cutout_batch.face_count(), 8);
+        assert_eq!(cutout_batch.cutout_face_count(), 8);
+        assert!(cutout_batch.faces().iter().any(left_leaf_right_seam));
+        assert!(cutout_batch.faces().iter().any(right_leaf_left_seam));
+    }
+
+    #[test]
     fn subchunk_bytes_preserve_extent_low_bits() {
         let batch = PackedFaceBatch {
             faces: vec![PackedFace::with_extent(
@@ -4087,6 +4593,59 @@ mod tests {
 
         assert_eq!(read_u32(&bytes, 8) & 0xffff, 5 | (6 << 6));
         assert_eq!(read_u32(&bytes, 8) >> 16, pack_signed_i16(-3));
+    }
+
+    #[test]
+    fn subchunk_bytes_preserve_cutout_extent_flag() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::with_extent_and_flags(
+                1,
+                2,
+                3,
+                FACE_TOP,
+                7,
+                blocks::LEAVES,
+                PackedFaceExtent { u: 5, v: 6 },
+                PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG,
+            )],
+        };
+
+        let bytes = batch.to_bytes_for_subchunk(GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: -3,
+        });
+
+        assert_eq!(
+            read_u32(&bytes, 8) & 0xffff,
+            5 | (6 << 6) | PACKED_FACE_CUTOUT_ALPHA_TEST_FLAG
+        );
+        assert_eq!(read_u32(&bytes, 8) >> 16, pack_signed_i16(-3));
+    }
+
+    #[test]
+    fn subchunk_byte_writer_reuses_caller_buffer() {
+        let batch = PackedFaceBatch {
+            faces: vec![PackedFace::new(1, 2, 3, FACE_TOP, 7, blocks::STONE)],
+        };
+        let mut bytes = Vec::with_capacity(128);
+        bytes.extend_from_slice(&[0xff; 32]);
+        let original_capacity = bytes.capacity();
+
+        batch.write_bytes_for_subchunk(
+            GpuSubchunkKey {
+                chunk_x: -4,
+                sub_y: 2,
+                chunk_z: 6,
+            },
+            &mut bytes,
+        );
+
+        assert_eq!(bytes.len(), batch.byte_len());
+        assert_eq!(bytes.capacity(), original_capacity);
+        assert_eq!(read_u32(&bytes, 4) >> 16, pack_signed_i16(-4));
+        assert_eq!(read_u32(&bytes, 8) >> 16, pack_signed_i16(6));
+        assert_eq!(read_u32(&bytes, 12), pack_signed_i16(2));
     }
 
     #[test]
@@ -4150,14 +4709,18 @@ mod tests {
             assert!(blocks::is_solid(block_id));
             assert!(blocks::is_opaque_solid(block_id));
         }
+        assert!(blocks::is_cutout_alpha_test(blocks::LEAVES));
+        assert!(!blocks::is_cutout_alpha_test(blocks::STONE));
     }
 
     #[test]
-    fn solid_gpu_terrain_fragment_forces_opaque_alpha() {
+    fn solid_gpu_terrain_fragment_forces_opaque_alpha_after_cutout_discard() {
         let (_, fragment_source) = split_render_shader_source().expect("render shader stages");
 
         assert!(fragment_source.contains("frag_color = vec4(texel.rgb * lighting_in, 1.0);"));
-        assert!(!fragment_source.contains("texel.a"));
+        assert!(fragment_source.contains("texel.a < CUTOUT_ALPHA_THRESHOLD"));
+        assert!(fragment_source.contains("discard;"));
+        assert!(!fragment_source.contains("frag_color = texel"));
     }
 
     #[test]
@@ -4165,27 +4728,17 @@ mod tests {
         let (vertex_source, fragment_source) =
             split_render_shader_source().expect("render shader stages");
 
-        assert!(vertex_source.contains("layout(location = 1) out vec3 lighting_out;"));
-        assert!(fragment_source.contains("layout(location = 1) in vec3 lighting_in;"));
+        assert!(vertex_source.contains("layout(location = 2) flat out vec3 lighting_out;"));
+        assert!(fragment_source.contains("layout(location = 2) flat in vec3 lighting_in;"));
         assert!(vertex_source.contains("vec3 face_lighting(uint face_idx)"));
         assert!(vertex_source.contains("vec3 normal = face_normal(face_idx);"));
-        assert!(vertex_source.contains(
-            "vec3 direction_to_light = normalize(terrain_push.light_direction_ambient.xyz);"
-        ));
-        assert!(
-            vertex_source.contains(
-                "float ambient = clamp(terrain_push.light_direction_ambient.w, 0.0, 1.0);"
-            )
-        );
-        assert!(
-            vertex_source.contains(
-                "vec3 light_color = max(terrain_push.light_color_energy.rgb, vec3(0.0));"
-            )
-        );
         assert!(
             vertex_source
-                .contains("float light_energy = max(terrain_push.light_color_energy.w, 0.0);")
+                .contains("vec3 direction_to_light = terrain_push.light_direction_ambient.xyz;")
         );
+        assert!(vertex_source.contains("float ambient = terrain_push.light_direction_ambient.w;"));
+        assert!(vertex_source.contains("vec3 light_color = terrain_push.light_color_energy.rgb;"));
+        assert!(vertex_source.contains("float light_energy = terrain_push.light_color_energy.w;"));
         assert!(
             vertex_source.contains("float diffuse = max(dot(normal, direction_to_light), 0.0);")
         );
@@ -4193,6 +4746,10 @@ mod tests {
             vertex_source.contains("return vec3(ambient) + light_color * diffuse * light_energy;")
         );
         assert!(vertex_source.contains("lighting_out = face_lighting(face_idx);"));
+        assert!(!vertex_source.contains("normalize(terrain_push.light_direction_ambient.xyz)"));
+        assert!(!vertex_source.contains("clamp(terrain_push.light_direction_ambient.w"));
+        assert!(!vertex_source.contains("max(terrain_push.light_color_energy.rgb"));
+        assert!(!vertex_source.contains("max(terrain_push.light_color_energy.w"));
         assert!(fragment_source.contains("frag_color = vec4(texel.rgb * lighting_in, 1.0);"));
         assert!(!fragment_source.contains("face_lighting("));
         assert!(!fragment_source.contains("face_normal("));
@@ -4206,23 +4763,57 @@ mod tests {
         let (vertex_source, fragment_source) =
             split_render_shader_source().expect("render shader stages");
 
+        assert!(vertex_source.contains("layout(location = 0) out vec2 uv_out;"));
+        assert!(vertex_source.contains("layout(location = 1) flat out vec2 tile_offset_out;"));
+        assert!(vertex_source.contains("layout(location = 3) flat out uint cutout_flags_out;"));
+        assert!(fragment_source.contains("layout(location = 0) in vec2 uv_in;"));
+        assert!(fragment_source.contains("layout(location = 1) flat in vec2 tile_offset_in;"));
+        assert!(fragment_source.contains("layout(location = 3) flat in uint cutout_flags_in;"));
+        assert!(!vertex_source.contains("out vec4 uv_tile_out"));
+        assert!(!fragment_source.contains("in vec4 uv_tile_in"));
         assert!(
             vertex_source.contains("vec3 face_corner(uint face_idx, uint corner_idx, vec2 extent)")
         );
         assert!(
             vertex_source.contains("vec2 face_uv(uint face_idx, uint corner_idx, vec2 extent)")
         );
+        assert!(vertex_source.contains("vec2 atlas_tile_offset(uint tile)"));
         assert!(vertex_source.contains(
             "vec2 extent = vec2(float(face.extent & 63u), float((face.extent >> 6u) & 63u));"
         ));
+        assert!(vertex_source.contains(
+            "uint cutout_flags = (face.extent >> PACKED_FACE_EXTENT_FLAGS_SHIFT) & PACKED_FACE_EXTENT_FLAGS_MASK;"
+        ));
         assert!(vertex_source.contains("face_corner(face_idx, corner_idx, extent)"));
-        assert!(
-            vertex_source.contains(
-                "uv_tile_out = vec3(face_uv(face_idx, corner_idx, extent), float(tile));"
-            )
-        );
+        assert!(vertex_source.contains("uv_out = face_uv(face_idx, corner_idx, extent);"));
+        assert!(vertex_source.contains("tile_offset_out = atlas_tile_offset(tile);"));
+        assert!(vertex_source.contains("cutout_flags_out = cutout_flags;"));
+        assert!(fragment_source.contains("vec2 atlas_uv(vec2 tile_uv, vec2 tile_offset)"));
         assert!(fragment_source.contains("vec2 tiled_uv = fract(tile_uv);"));
-        assert!(fragment_source.contains("vec2 uv_in = atlas_uv(uv_tile_in.xy, uv_tile_in.z);"));
+        assert!(
+            fragment_source
+                .contains("return (tile_offset + tiled_uv) * terrain_push.atlas_layout.xy;")
+        );
+        assert!(fragment_source.contains("vec2 atlas_uv_in = atlas_uv(uv_in, tile_offset_in);"));
+        assert!(!fragment_source.contains("mod("));
+        assert!(!fragment_source.contains("floor("));
+        assert!(!fragment_source.contains("terrain_push.atlas_layout.z"));
+    }
+
+    #[test]
+    fn render_shader_applies_cutout_without_enabling_alpha_blending() {
+        let (vertex_source, fragment_source) =
+            split_render_shader_source().expect("render shader stages");
+
+        assert!(vertex_source.contains("const uint PACKED_FACE_EXTENT_FLAGS_SHIFT = 12u;"));
+        assert!(vertex_source.contains("const uint PACKED_FACE_EXTENT_FLAGS_MASK = 15u;"));
+        assert!(fragment_source.contains("const uint PACKED_FACE_CUTOUT_ALPHA_TEST = 1u;"));
+        assert!(fragment_source.contains("const float CUTOUT_ALPHA_THRESHOLD = 0.5;"));
+        assert!(fragment_source.contains(
+            "if ((cutout_flags_in & PACKED_FACE_CUTOUT_ALPHA_TEST) != 0u && texel.a < CUTOUT_ALPHA_THRESHOLD) {"
+        ));
+        assert!(fragment_source.contains("discard;"));
+        assert!(fragment_source.contains("frag_color = vec4(texel.rgb * lighting_in, 1.0);"));
     }
 
     #[test]
@@ -4231,7 +4822,12 @@ mod tests {
 
         assert!(vertex_source.contains("uint face_instance = uint(gl_InstanceIndex);"));
         assert!(vertex_source.contains("PackedFace face = face_buffer.faces[face_instance];"));
-        assert!(vertex_source.contains("uint corner_idx = corner_map[uint(gl_VertexIndex) % 6u];"));
+        assert!(vertex_source.contains("const uint TRIANGLE_CORNER_INDICES[6] = uint[6]("));
+        assert!(
+            vertex_source
+                .contains("uint corner_idx = TRIANGLE_CORNER_INDICES[uint(gl_VertexIndex) % 6u];")
+        );
+        assert!(!vertex_source.contains("uint corner_map[6]"));
     }
 
     #[test]
@@ -4252,7 +4848,7 @@ mod tests {
                 .contains("layout(set = 0, binding = 1) uniform sampler2D atlas_texture;")
         );
         assert!(vertex_source.contains("PackedFace face = face_buffer.faces[face_instance];"));
-        assert!(fragment_source.contains("vec4 texel = texture(atlas_texture, uv_in);"));
+        assert!(fragment_source.contains("vec4 texel = texture(atlas_texture, atlas_uv_in);"));
     }
 
     #[test]
@@ -4300,6 +4896,25 @@ mod tests {
         assert!(vertex_source.contains("FACE_CORNER_EXTENT_Y_FACTORS[table_idx] * extent.y"));
         assert!(!vertex_source.contains("vec3 corners[4]"));
         assert!(!vertex_source.contains("if (face_idx == 0u) {"));
+    }
+
+    #[test]
+    fn render_shader_uses_branchless_signed_i16_unpack() {
+        let (vertex_source, _) = split_render_shader_source().expect("render shader stages");
+        let unpack_start = vertex_source
+            .find("int unpack_signed_i16(uint value)")
+            .expect("signed i16 unpack helper");
+        let unpack_end = vertex_source[unpack_start..]
+            .find("}\n\nvoid main()")
+            .map(|idx| unpack_start + idx)
+            .expect("signed i16 unpack helper end");
+        let unpack_source = &vertex_source[unpack_start..unpack_end];
+
+        assert!(unpack_source.contains("uint low = value & 65535u;"));
+        assert!(unpack_source.contains("return int(low & 32767u) - int(low & 32768u);"));
+        assert!(!unpack_source.contains("if ("));
+        assert!(!unpack_source.contains("switch"));
+        assert!(!unpack_source.contains("65536"));
     }
 
     #[test]
@@ -4828,6 +5443,174 @@ mod tests {
     }
 
     #[test]
+    fn grouped_draw_records_merge_contiguous_face_ranges() {
+        let records = grouped_draw_records_from_sorted_slots(
+            [
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 8,
+                },
+                GpuTerrainSlot {
+                    start_face: 8,
+                    face_count: 5,
+                },
+                GpuTerrainSlot {
+                    start_face: 13,
+                    face_count: 2,
+                },
+            ]
+            .into_iter(),
+        );
+
+        assert_eq!(
+            records,
+            vec![GpuTerrainSlot {
+                start_face: 0,
+                face_count: 15,
+            }]
+        );
+        let command = IndirectDrawCommand::for_slot(records[0]);
+        let words = command
+            .to_le_bytes()
+            .chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(words, vec![6, 15, 0, 0]);
+    }
+
+    #[test]
+    fn grouped_draw_records_keep_gaps_and_sort_by_face_range() {
+        let high = GpuSubchunkKey {
+            chunk_x: 2,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let low = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let middle = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let entries = sorted_draw_entries_for_grouping(
+            [
+                (
+                    high,
+                    GpuTerrainSlot {
+                        start_face: 20,
+                        face_count: 3,
+                    },
+                ),
+                (
+                    low,
+                    GpuTerrainSlot {
+                        start_face: 0,
+                        face_count: 4,
+                    },
+                ),
+                (
+                    middle,
+                    GpuTerrainSlot {
+                        start_face: 8,
+                        face_count: 2,
+                    },
+                ),
+            ]
+            .into_iter(),
+            3,
+        );
+        assert_eq!(
+            entries.iter().map(|(key, _)| *key).collect::<Vec<_>>(),
+            vec![low, middle, high]
+        );
+
+        let records = grouped_draw_records_from_sorted_slots(entries.iter().map(|(_, slot)| *slot));
+        assert_eq!(
+            records,
+            vec![
+                GpuTerrainSlot {
+                    start_face: 0,
+                    face_count: 4,
+                },
+                GpuTerrainSlot {
+                    start_face: 8,
+                    face_count: 2,
+                },
+                GpuTerrainSlot {
+                    start_face: 20,
+                    face_count: 3,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn grouped_draw_entries_respect_draw_capacity() {
+        let first = GpuSubchunkKey {
+            chunk_x: 0,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let second = GpuSubchunkKey {
+            chunk_x: 1,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let third = GpuSubchunkKey {
+            chunk_x: 2,
+            sub_y: 0,
+            chunk_z: 0,
+        };
+        let entries = sorted_draw_entries_for_grouping(
+            [
+                (
+                    third,
+                    GpuTerrainSlot {
+                        start_face: 8,
+                        face_count: 4,
+                    },
+                ),
+                (
+                    first,
+                    GpuTerrainSlot {
+                        start_face: 0,
+                        face_count: 4,
+                    },
+                ),
+                (
+                    second,
+                    GpuTerrainSlot {
+                        start_face: 4,
+                        face_count: 4,
+                    },
+                ),
+            ]
+            .into_iter(),
+            2,
+        );
+
+        assert_eq!(
+            entries.iter().map(|(key, _)| *key).collect::<Vec<_>>(),
+            vec![first, second]
+        );
+        assert_eq!(
+            grouped_draw_records_from_sorted_slots(entries.iter().map(|(_, slot)| *slot)),
+            vec![GpuTerrainSlot {
+                start_face: 0,
+                face_count: 8,
+            }]
+        );
+    }
+
+    #[test]
+    fn grouped_draws_flag_stays_default_off() {
+        assert!(!gpu_terrain_grouped_draws_enabled());
+    }
+
+    #[test]
     fn draw_keys_patch_insert_and_swap_remove_commands() {
         let first = GpuSubchunkKey {
             chunk_x: 0,
@@ -4933,6 +5716,19 @@ mod tests {
         assert_eq!(telemetry.last_bytes, 8_192);
         assert!((telemetry.avg_bytes - 8_192.0).abs() < f64::EPSILON);
         assert_eq!(telemetry.max_bytes, 12_288);
+    }
+
+    #[test]
+    fn upload_retry_backoff_telemetry_defaults_to_disabled_policy() {
+        let telemetry = GpuUploadRetryBackoffTelemetry::default();
+
+        assert_eq!(telemetry.policy_label(), "none");
+        assert_eq!(telemetry.retry_attempts, 0);
+        assert_eq!(telemetry.retry_success, 0);
+        assert_eq!(telemetry.retry_giveups, 0);
+        assert_eq!(telemetry.backoff_active, 0);
+        assert_eq!(telemetry.backoff_frames, 0);
+        assert_eq!(telemetry.backoff_max_frames, 0);
     }
 
     #[test]
@@ -5868,6 +6664,35 @@ mod tests {
         assert_eq!(lighting.color.b, 0.25);
         assert_eq!(lighting.energy, DEFAULT_TERRAIN_LIGHT_ENERGY);
         assert_eq!(lighting.ambient, 1.0);
+
+        let bytes = push_constant_bytes_from_projection(
+            Projection::from_cols(
+                Vector4::new(1.0, 0.0, 0.0, 0.0),
+                Vector4::new(0.0, 1.0, 0.0, 0.0),
+                Vector4::new(0.0, 0.0, 1.0, 0.0),
+                Vector4::new(0.0, 0.0, 0.0, 1.0),
+            ),
+            GpuTerrainLighting {
+                direction_to_light: Vector3::ZERO,
+                color: Color::from_rgb(f32::NAN, -1.0, 0.25),
+                energy: f32::INFINITY,
+                ambient: 1.5,
+            },
+            GpuTerrainAtlasLayout {
+                columns: 10,
+                rows: 1,
+            },
+        );
+        let default_light = default_light_direction_to_light();
+
+        assert_eq!(read_f32(&bytes, 64), default_light.x);
+        assert_eq!(read_f32(&bytes, 68), default_light.y);
+        assert_eq!(read_f32(&bytes, 72), default_light.z);
+        assert_eq!(read_f32(&bytes, 76), 1.0);
+        assert_eq!(read_f32(&bytes, 80), 1.0);
+        assert_eq!(read_f32(&bytes, 84), 1.0);
+        assert_eq!(read_f32(&bytes, 88), 0.25);
+        assert_eq!(read_f32(&bytes, 92), DEFAULT_TERRAIN_LIGHT_ENERGY);
     }
 
     #[test]

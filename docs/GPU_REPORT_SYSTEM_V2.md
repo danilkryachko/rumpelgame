@@ -31,7 +31,7 @@ The freshness gate refreshes `logs/gpu-terrain-report.txt` by default, then veri
 ## Evidence Classes
 
 - Fresh scoped metrics: one selected summary file, defaulting to `gpu-upload-pressure-summary.txt` in the input log dir when present.
-- Fail gates: resource lifecycle audit status, memory budget status, and legacy report error scan.
+- Fail gates: resource lifecycle audit status, memory budget status, chunk-boundary stress status, and legacy report error scan.
 - Historical aggregate metrics: values extracted from `gpu_terrain_report.sh`, explicitly labeled as aggregate over the whole log directory.
 - Warning-only local signals: local visual FPS/frame timing and macOS/Metal GPU timestamp fields that remain untrusted without external profiler evidence.
 
@@ -45,6 +45,7 @@ Fresh local evidence:
 - Scoped status: `pass`
 - Resource lifecycle status: `pass`
 - Memory budget status: `pass`
+- Chunk-boundary status: `pass`
 - Legacy error scan: `clean`
 - Historical `gpu_draws`: `1335`
 - Historical `gpu_effective_draws`: `21216`
@@ -52,6 +53,7 @@ Fresh local evidence:
 - Historical draw-command occupancy: `16.296%`
 - Historical upload failures: `0`
 - Historical fragmentation: `0.0%`
+- Transparent workload fields are surfaced as scoped values when present and as historical maxima for `transparent_blocks`, `transparent_faces`, `transparent_draws`, `transparent_subchunks`, `transparent_cutout_uploads`, `transparent_cutout_upload_bytes`, `transparent_cutout_upload_faces`, and `transparent_cutout_upload_face_bytes`.
 - Warning-only local `frame_p95_ms`: `8.368`
 - Warning-only local `fps_p05`: `120`
 - Warning-only local `gpu_compositor_gpu_max_us`: `0.0`
@@ -63,3 +65,4 @@ Fresh local evidence:
 - Do not use warning-only local FPS/GPU timestamp fields as pass/fail gates unless external profiler evidence validates them.
 - Fail gates should stay small and explicit. Add a new gate summary first, then teach V2 to consume it.
 - Keep `gpu_terrain_report_freshness_gate.sh` focused on freshness and aggregate safety. Do not use it as scoped performance evidence.
+- Chunk-boundary stress is a fail gate for movement/current-chunk/readiness/upload/churn coverage; it is not the heavy resident-set gate. Keep `gpu_terrain_load_scaling` and `gpu_terrain_mass_chunk_load_gate` as the strict thousands-of-draws residency evidence.

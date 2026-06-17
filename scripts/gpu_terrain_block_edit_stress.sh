@@ -35,6 +35,8 @@ MIN_PROXY_SHADOW="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_PROXY_SHADOW:-0}"
 MIN_PROXY_SHADOW_ONLY="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_PROXY_SHADOW_ONLY:-0}"
 MIN_COMPACT_SHADOW_PROXY="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_COMPACT_SHADOW_PROXY:-0}"
 MIN_PROXY_REFRESH_REUSE="${RUMPELMC_BLOCK_EDIT_STRESS_MIN_PROXY_REFRESH_REUSE:-0}"
+CUTOUT_PROTOTYPE="${RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE:-0}"
+TRANSPARENT_REQUEST="${RUMPELMC_GPU_TERRAIN_TRANSPARENT:-0}"
 
 fail() {
   echo "gpu_terrain_block_edit_stress: $*" >&2
@@ -45,6 +47,12 @@ metric() {
   key="$1"
   marker_path="$2"
   sed -n "s/.*$key=\([0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
+float_metric() {
+  key="$1"
+  marker_path="$2"
+  sed -n "s/.*$key=\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
 }
 
 text_metric() {
@@ -104,6 +112,14 @@ require_text_metric_contains_all() {
   IFS="$old_ifs"
 }
 
+env_truthy() {
+  value="$1"
+  case "$value" in
+    1|true|TRUE|yes|YES|on|ON|enabled|ENABLED) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 write_summary() {
   summary_path="$OUT_DIR/block-edit-stress-summary.txt"
   {
@@ -138,6 +154,34 @@ write_summary() {
       "$(metric proxy_shadow_only "$marker_path")" \
       "$(metric compact_shadow_proxy "$marker_path")" \
       "$(metric proxy_refresh_reuse "$marker_path")"
+    printf 'block_edit_transparent transparent_requested=%s transparent_active=%s transparent_fallback=%s transparent_blocks=%s transparent_faces=%s transparent_draws=%s transparent_subchunks=%s transparent_cutout_uploads=%s transparent_cutout_upload_bytes=%s transparent_cutout_upload_faces=%s transparent_cutout_upload_face_bytes=%s transparent_cutout_last_upload_bytes=%s transparent_cutout_last_upload_faces=%s transparent_cutout_last_upload_face_bytes=%s transparent_sort_policy=%s transparent_sort_active=%s transparent_sort_keys=%s transparent_sort_ms=%s transparent_build_cost_source=%s transparent_build_faces=%s transparent_build_subchunks=%s transparent_build_envelope_ms=%s transparent_build_uploads=%s transparent_build_upload_bytes=%s transparent_build_upload_faces=%s transparent_build_upload_face_bytes=%s gpu_upload_fail=%s\n' \
+      "$(metric transparent_requested "$marker_path")" \
+      "$(metric transparent_active "$marker_path")" \
+      "$(metric transparent_fallback "$marker_path")" \
+      "$(metric transparent_blocks "$marker_path")" \
+      "$(metric transparent_faces "$marker_path")" \
+      "$(metric transparent_draws "$marker_path")" \
+      "$(metric transparent_subchunks "$marker_path")" \
+      "$(metric transparent_cutout_uploads "$marker_path")" \
+      "$(metric transparent_cutout_upload_bytes "$marker_path")" \
+      "$(metric transparent_cutout_upload_faces "$marker_path")" \
+      "$(metric transparent_cutout_upload_face_bytes "$marker_path")" \
+      "$(metric transparent_cutout_last_upload_bytes "$marker_path")" \
+      "$(metric transparent_cutout_last_upload_faces "$marker_path")" \
+      "$(metric transparent_cutout_last_upload_face_bytes "$marker_path")" \
+      "$(text_metric transparent_sort_policy "$marker_path")" \
+      "$(metric transparent_sort_active "$marker_path")" \
+      "$(metric transparent_sort_keys "$marker_path")" \
+      "$(float_metric transparent_sort_ms "$marker_path")" \
+      "$(text_metric transparent_build_cost_source "$marker_path")" \
+      "$(metric transparent_build_faces "$marker_path")" \
+      "$(metric transparent_build_subchunks "$marker_path")" \
+      "$(float_metric transparent_build_envelope_ms "$marker_path")" \
+      "$(metric transparent_build_uploads "$marker_path")" \
+      "$(metric transparent_build_upload_bytes "$marker_path")" \
+      "$(metric transparent_build_upload_faces "$marker_path")" \
+      "$(metric transparent_build_upload_face_bytes "$marker_path")" \
+      "$(metric gpu_upload_fail "$marker_path")"
   } > "$summary_path"
   cat "$summary_path"
 }
@@ -221,6 +265,55 @@ if [ "$MIN_COMPACT_SHADOW_PROXY" -gt 0 ]; then
 fi
 if [ "$MIN_PROXY_REFRESH_REUSE" -gt 0 ]; then
   require_metric_ge "$marker_path" proxy_refresh_reuse "$MIN_PROXY_REFRESH_REUSE"
+fi
+if env_truthy "$CUTOUT_PROTOTYPE"; then
+    require_metric_eq "$marker_path" transparent_requested 1
+    require_metric_eq "$marker_path" transparent_active 1
+    require_metric_eq "$marker_path" transparent_fallback 0
+    require_metric_ge "$marker_path" transparent_blocks 1
+    require_metric_ge "$marker_path" transparent_faces 1
+    require_metric_ge "$marker_path" transparent_draws 1
+    require_metric_ge "$marker_path" transparent_subchunks 1
+    require_metric_ge "$marker_path" transparent_cutout_uploads 1
+    require_metric_ge "$marker_path" transparent_cutout_upload_bytes 1
+    require_metric_ge "$marker_path" transparent_cutout_upload_faces 1
+    require_metric_ge "$marker_path" transparent_cutout_upload_face_bytes 1
+    require_text_metric_eq "$marker_path" transparent_sort_policy opaque_depth_alpha_test_no_sort
+    require_metric_eq "$marker_path" transparent_sort_active 0
+    require_metric_eq "$marker_path" transparent_sort_keys 0
+    transparent_sort_ms="$(float_metric transparent_sort_ms "$marker_path")"
+    test "$transparent_sort_ms" = "0.000" || fail "transparent_sort_ms=$transparent_sort_ms, expected 0.000 in $marker_path"
+    require_text_metric_eq "$marker_path" transparent_build_cost_source cutout_in_opaque_mesh_phase
+    require_metric_ge "$marker_path" transparent_build_faces 1
+    require_metric_ge "$marker_path" transparent_build_subchunks 1
+    transparent_build_envelope_ms="$(float_metric transparent_build_envelope_ms "$marker_path")"
+    test -n "$transparent_build_envelope_ms" || fail "missing transparent_build_envelope_ms in $marker_path"
+    require_metric_ge "$marker_path" transparent_build_uploads 1
+    require_metric_ge "$marker_path" transparent_build_upload_bytes 1
+    require_metric_ge "$marker_path" transparent_build_upload_faces 1
+    require_metric_ge "$marker_path" transparent_build_upload_face_bytes 1
+elif [ "$EDIT_BLOCK_ID" = "5" ] && ! env_truthy "$TRANSPARENT_REQUEST"; then
+    require_metric_eq "$marker_path" transparent_requested 0
+    require_metric_eq "$marker_path" transparent_active 0
+    require_metric_eq "$marker_path" transparent_fallback 0
+    require_metric_eq "$marker_path" transparent_blocks 0
+    require_metric_eq "$marker_path" transparent_faces 0
+    require_metric_eq "$marker_path" transparent_draws 0
+    require_metric_eq "$marker_path" transparent_subchunks 0
+    require_metric_eq "$marker_path" transparent_cutout_uploads 0
+    require_metric_eq "$marker_path" transparent_cutout_upload_bytes 0
+    require_metric_eq "$marker_path" transparent_cutout_upload_faces 0
+    require_metric_eq "$marker_path" transparent_cutout_upload_face_bytes 0
+    require_text_metric_eq "$marker_path" transparent_sort_policy none
+    require_metric_eq "$marker_path" transparent_sort_active 0
+    require_metric_eq "$marker_path" transparent_sort_keys 0
+    require_text_metric_eq "$marker_path" transparent_build_cost_source inactive
+    require_metric_eq "$marker_path" transparent_build_faces 0
+    require_metric_eq "$marker_path" transparent_build_subchunks 0
+    require_metric_eq "$marker_path" transparent_build_uploads 0
+    require_metric_eq "$marker_path" transparent_build_upload_bytes 0
+    require_metric_eq "$marker_path" transparent_build_upload_faces 0
+    require_metric_eq "$marker_path" transparent_build_upload_face_bytes 0
 fi
 write_summary
 

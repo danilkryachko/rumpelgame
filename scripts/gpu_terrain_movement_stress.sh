@@ -24,6 +24,8 @@ BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_BUDGET_MODE:-enforce}"
 PROCESS_WALL_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_PROCESS_WALL_BUDGET_MODE:-enforce}"
 GPU_COMPOSITOR_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_GPU_COMPOSITOR_BUDGET_MODE:-enforce}"
 GPU_TIMESTAMP_BUDGET_MODE="${RUMPELMC_MOVEMENT_STRESS_GPU_TIMESTAMP_BUDGET_MODE:-report}"
+GPU_UPLOAD_FAILURE_MODE="${RUMPELMC_MOVEMENT_STRESS_GPU_UPLOAD_FAILURE_MODE:-zero}"
+MIN_GPU_UPLOAD_FAILURES="${RUMPELMC_MOVEMENT_STRESS_MIN_GPU_UPLOAD_FAILURES:-1}"
 
 mkdir -p "$OUT_DIR"
 
@@ -38,6 +40,12 @@ metric() {
   key="$1"
   marker_path="$2"
   sed -n "s/.*$key=\([0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
+}
+
+signed_metric() {
+  key="$1"
+  marker_path="$2"
+  sed -n "s/.*$key=\(-\{0,1\}[0-9][0-9]*\).*/\1/p" "$marker_path" | sed -n '1p'
 }
 
 float_metric() {
@@ -176,6 +184,14 @@ write_summary() {
   terrain_queue_uploads_max="$(default_float "$(perf_count_triplet_value terrain_queue_gpu_uploads "$marker_path" 3)")"
   terrain_queue_upload_kb_avg="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_kb "$marker_path" 2)")"
   terrain_queue_upload_kb_max="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_kb "$marker_path" 3)")"
+  terrain_queue_new_slot_uploads_avg="$(default_float "$(perf_count_triplet_value terrain_queue_gpu_upload_new_slots "$marker_path" 2)")"
+  terrain_queue_new_slot_uploads_max="$(default_float "$(perf_count_triplet_value terrain_queue_gpu_upload_new_slots "$marker_path" 3)")"
+  terrain_queue_replace_slot_uploads_avg="$(default_float "$(perf_count_triplet_value terrain_queue_gpu_upload_replace_slots "$marker_path" 2)")"
+  terrain_queue_replace_slot_uploads_max="$(default_float "$(perf_count_triplet_value terrain_queue_gpu_upload_replace_slots "$marker_path" 3)")"
+  terrain_queue_new_slot_upload_kb_avg="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_new_slot_kb "$marker_path" 2)")"
+  terrain_queue_new_slot_upload_kb_max="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_new_slot_kb "$marker_path" 3)")"
+  terrain_queue_replace_slot_upload_kb_avg="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_replace_slot_kb "$marker_path" 2)")"
+  terrain_queue_replace_slot_upload_kb_max="$(default_float "$(perf_triplet_value terrain_queue_gpu_upload_replace_slot_kb "$marker_path" 3)")"
   mesh_avg="$(mesh_triplet_value "$marker_path" 2)"
   mesh_max="$(mesh_triplet_value "$marker_path" 3)"
   coll_avg="$(collision_triplet_value "$marker_path" 2)"
@@ -191,6 +207,9 @@ write_summary() {
   compositor_gpu_us_avg="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 2)")"
   compositor_gpu_us_max="$(default_float "$(perf_triplet_value gpu_compositor_gpu_us "$marker_path" 3)")"
   compositor_gpu_samples="$(metric gpu_compositor_gpu_samples "$marker_path")"
+  terrain_pressure_fixture="$(text_metric terrain_pressure_fixture "$marker_path")"
+  terrain_pressure_fixture_blocks="$(metric terrain_pressure_fixture_blocks "$marker_path")"
+  terrain_pressure_fixture_dirty_observed="$(metric terrain_pressure_fixture_dirty_observed "$marker_path")"
   gpu_effective_draws="$(metric gpu_effective_draws "$marker_path")"
   gpu_draw_repeat="$(metric gpu_draw_repeat "$marker_path")"
   gpu_draw_cmd_bytes="$(metric gpu_draw_cmd_bytes "$marker_path")"
@@ -324,6 +343,19 @@ write_summary() {
   gpu_front_face="$(text_metric gpu_front_face "$marker_path")"
   gpu_upload_fail_capacity="$(metric gpu_upload_fail_capacity "$marker_path")"
   gpu_upload_fail_fragmented="$(metric gpu_upload_fail_fragmented "$marker_path")"
+  gpu_upload_fail_injected="$(metric gpu_upload_fail_injected "$marker_path")"
+  gpu_upload_retry_policy="$(text_metric gpu_upload_retry_policy "$marker_path")"
+  gpu_upload_retry_attempts="$(metric gpu_upload_retry_attempts "$marker_path")"
+  gpu_upload_retry_success="$(metric gpu_upload_retry_success "$marker_path")"
+  gpu_upload_retry_giveups="$(metric gpu_upload_retry_giveups "$marker_path")"
+  gpu_upload_backoff_active="$(metric gpu_upload_backoff_active "$marker_path")"
+  gpu_upload_backoff_frames="$(metric gpu_upload_backoff_frames "$marker_path")"
+  gpu_upload_backoff_max_frames="$(metric gpu_upload_backoff_max_frames "$marker_path")"
+  gpu_upload_stage_pool_enabled="$(metric gpu_upload_stage_pool_enabled "$marker_path")"
+  gpu_upload_stage_pool_entries="$(metric gpu_upload_stage_pool_entries "$marker_path")"
+  gpu_upload_stage_pool_bytes="$(metric gpu_upload_stage_pool_bytes "$marker_path")"
+  gpu_upload_stage_pba_creates="$(metric gpu_upload_stage_pba_creates "$marker_path")"
+  gpu_upload_stage_pba_reuses="$(metric gpu_upload_stage_pba_reuses "$marker_path")"
   gpu_free_ranges="$(metric gpu_free_ranges "$marker_path")"
   gpu_free_faces="$(metric gpu_free_faces "$marker_path")"
   gpu_largest_free="$(metric gpu_largest_free "$marker_path")"
@@ -364,6 +396,14 @@ write_summary() {
   packet_q_decode_work_max="$(default_float "$(perf_triplet_value packet_q_decode_work_ms "$marker_path" 3)")"
   packet_q_reader_elapsed_last="$(default_float "$(perf_pair_value packet_q_reader_elapsed_ms "$marker_path" 1)")"
   packet_q_reader_elapsed_max="$(default_float "$(perf_pair_value packet_q_reader_elapsed_ms "$marker_path" 2)")"
+  stream_scheduler_mode="$(text_metric stream_scheduler_mode "$marker_path")"
+  stream_scheduler_active="$(metric stream_scheduler_active "$marker_path")"
+  stream_scheduler_preview_mismatch="$(metric stream_scheduler_preview_mismatch "$marker_path")"
+  stream_scheduler_direction_x="$(signed_metric stream_scheduler_direction_x "$marker_path")"
+  stream_scheduler_direction_z="$(signed_metric stream_scheduler_direction_z "$marker_path")"
+  mesh_scheduler_directional_ties="$(metric mesh_scheduler_directional_ties "$marker_path")"
+  collision_scheduler_directional_ties="$(metric collision_scheduler_directional_ties "$marker_path")"
+  stream_scheduler_fifo_fallbacks="$(metric stream_scheduler_fifo_fallbacks "$marker_path")"
   chunk_unload_scans="$(metric chunk_unload_scans "$marker_path")"
   chunk_unload_scanned="$(metric chunk_unload_scanned "$marker_path")"
   chunk_unload_grace_kept="$(metric chunk_unload_grace_kept "$marker_path")"
@@ -406,6 +446,19 @@ write_summary() {
   test -n "$gpu_upload_staging_mb" || fail "missing gpu_upload_staging_mb in $marker_path"
   test -n "$gpu_upload_fail_capacity" || fail "missing gpu_upload_fail_capacity in $marker_path"
   test -n "$gpu_upload_fail_fragmented" || fail "missing gpu_upload_fail_fragmented in $marker_path"
+  test -n "$gpu_upload_fail_injected" || fail "missing gpu_upload_fail_injected in $marker_path"
+  test -n "$gpu_upload_retry_policy" || fail "missing gpu_upload_retry_policy in $marker_path"
+  test -n "$gpu_upload_retry_attempts" || fail "missing gpu_upload_retry_attempts in $marker_path"
+  test -n "$gpu_upload_retry_success" || fail "missing gpu_upload_retry_success in $marker_path"
+  test -n "$gpu_upload_retry_giveups" || fail "missing gpu_upload_retry_giveups in $marker_path"
+  test -n "$gpu_upload_backoff_active" || fail "missing gpu_upload_backoff_active in $marker_path"
+  test -n "$gpu_upload_backoff_frames" || fail "missing gpu_upload_backoff_frames in $marker_path"
+  test -n "$gpu_upload_backoff_max_frames" || fail "missing gpu_upload_backoff_max_frames in $marker_path"
+  test -n "$gpu_upload_stage_pool_enabled" || fail "missing gpu_upload_stage_pool_enabled in $marker_path"
+  test -n "$gpu_upload_stage_pool_entries" || fail "missing gpu_upload_stage_pool_entries in $marker_path"
+  test -n "$gpu_upload_stage_pool_bytes" || fail "missing gpu_upload_stage_pool_bytes in $marker_path"
+  test -n "$gpu_upload_stage_pba_creates" || fail "missing gpu_upload_stage_pba_creates in $marker_path"
+  test -n "$gpu_upload_stage_pba_reuses" || fail "missing gpu_upload_stage_pba_reuses in $marker_path"
   test -n "$gpu_free_ranges" || fail "missing gpu_free_ranges in $marker_path"
   test -n "$gpu_free_faces" || fail "missing gpu_free_faces in $marker_path"
   test -n "$gpu_largest_free" || fail "missing gpu_largest_free in $marker_path"
@@ -522,6 +575,14 @@ write_summary() {
   test -n "$packet_q_drained" || fail "missing packet_q_drained in $marker_path"
   test -n "$packet_q_chunk_drained" || fail "missing packet_q_chunk_drained in $marker_path"
   test -n "$packet_q_max_drain" || fail "missing packet_q_max_drain in $marker_path"
+  test -n "$stream_scheduler_mode" || fail "missing stream_scheduler_mode in $marker_path"
+  test -n "$stream_scheduler_active" || fail "missing stream_scheduler_active in $marker_path"
+  test -n "$stream_scheduler_preview_mismatch" || fail "missing stream_scheduler_preview_mismatch in $marker_path"
+  test -n "$stream_scheduler_direction_x" || fail "missing stream_scheduler_direction_x in $marker_path"
+  test -n "$stream_scheduler_direction_z" || fail "missing stream_scheduler_direction_z in $marker_path"
+  test -n "$mesh_scheduler_directional_ties" || fail "missing mesh_scheduler_directional_ties in $marker_path"
+  test -n "$collision_scheduler_directional_ties" || fail "missing collision_scheduler_directional_ties in $marker_path"
+  test -n "$stream_scheduler_fifo_fallbacks" || fail "missing stream_scheduler_fifo_fallbacks in $marker_path"
   test -n "$chunk_unload_scans" || fail "missing chunk_unload_scans in $marker_path"
   test -n "$chunk_unload_scanned" || fail "missing chunk_unload_scanned in $marker_path"
   test -n "$chunk_unload_grace_kept" || fail "missing chunk_unload_grace_kept in $marker_path"
@@ -547,6 +608,14 @@ write_summary() {
     -v terrain_queue_uploads_max="$terrain_queue_uploads_max" \
     -v terrain_queue_upload_kb_avg="$terrain_queue_upload_kb_avg" \
     -v terrain_queue_upload_kb_max="$terrain_queue_upload_kb_max" \
+    -v terrain_queue_new_slot_uploads_avg="$terrain_queue_new_slot_uploads_avg" \
+    -v terrain_queue_new_slot_uploads_max="$terrain_queue_new_slot_uploads_max" \
+    -v terrain_queue_replace_slot_uploads_avg="$terrain_queue_replace_slot_uploads_avg" \
+    -v terrain_queue_replace_slot_uploads_max="$terrain_queue_replace_slot_uploads_max" \
+    -v terrain_queue_new_slot_upload_kb_avg="$terrain_queue_new_slot_upload_kb_avg" \
+    -v terrain_queue_new_slot_upload_kb_max="$terrain_queue_new_slot_upload_kb_max" \
+    -v terrain_queue_replace_slot_upload_kb_avg="$terrain_queue_replace_slot_upload_kb_avg" \
+    -v terrain_queue_replace_slot_upload_kb_max="$terrain_queue_replace_slot_upload_kb_max" \
     -v mesh_avg="$mesh_avg" \
     -v mesh_max="$mesh_max" \
     -v coll_avg="$coll_avg" \
@@ -590,6 +659,19 @@ write_summary() {
     -v gpu_upload_staging_kb_max="$gpu_upload_staging_kb_max" \
     -v gpu_upload_fail_capacity="${gpu_upload_fail_capacity:-0}" \
     -v gpu_upload_fail_fragmented="${gpu_upload_fail_fragmented:-0}" \
+    -v gpu_upload_fail_injected="${gpu_upload_fail_injected:-0}" \
+    -v gpu_upload_retry_policy="${gpu_upload_retry_policy:-n/a}" \
+    -v gpu_upload_retry_attempts="${gpu_upload_retry_attempts:-0}" \
+    -v gpu_upload_retry_success="${gpu_upload_retry_success:-0}" \
+    -v gpu_upload_retry_giveups="${gpu_upload_retry_giveups:-0}" \
+    -v gpu_upload_backoff_active="${gpu_upload_backoff_active:-0}" \
+    -v gpu_upload_backoff_frames="${gpu_upload_backoff_frames:-0}" \
+    -v gpu_upload_backoff_max_frames="${gpu_upload_backoff_max_frames:-0}" \
+    -v gpu_upload_stage_pool_enabled="${gpu_upload_stage_pool_enabled:-0}" \
+    -v gpu_upload_stage_pool_entries="${gpu_upload_stage_pool_entries:-0}" \
+    -v gpu_upload_stage_pool_bytes="${gpu_upload_stage_pool_bytes:-0}" \
+    -v gpu_upload_stage_pba_creates="${gpu_upload_stage_pba_creates:-0}" \
+    -v gpu_upload_stage_pba_reuses="${gpu_upload_stage_pba_reuses:-0}" \
     -v gpu_free_ranges="${gpu_free_ranges:-0}" \
     -v gpu_free_faces="${gpu_free_faces:-0}" \
     -v gpu_largest_free="${gpu_largest_free:-0}" \
@@ -735,6 +817,14 @@ write_summary() {
     -v packet_q_decode_work_max="$packet_q_decode_work_max" \
     -v packet_q_reader_elapsed_last="$packet_q_reader_elapsed_last" \
     -v packet_q_reader_elapsed_max="$packet_q_reader_elapsed_max" \
+    -v stream_scheduler_mode="${stream_scheduler_mode:-n/a}" \
+    -v stream_scheduler_active="${stream_scheduler_active:-0}" \
+    -v stream_scheduler_preview_mismatch="${stream_scheduler_preview_mismatch:-0}" \
+    -v stream_scheduler_direction_x="${stream_scheduler_direction_x:-0}" \
+    -v stream_scheduler_direction_z="${stream_scheduler_direction_z:-0}" \
+    -v mesh_scheduler_directional_ties="${mesh_scheduler_directional_ties:-0}" \
+    -v collision_scheduler_directional_ties="${collision_scheduler_directional_ties:-0}" \
+    -v stream_scheduler_fifo_fallbacks="${stream_scheduler_fifo_fallbacks:-0}" \
     -v chunk_unload_scans="${chunk_unload_scans:-0}" \
     -v chunk_unload_scanned="${chunk_unload_scanned:-0}" \
     -v chunk_unload_grace_kept="${chunk_unload_grace_kept:-0}" \
@@ -772,15 +862,20 @@ write_summary() {
           status = "fail"
         }
         printf("gpu_terrain_movement_stress status=%s target_fps=%.0f budget_ms=%.3f smoke_pose=%s lighting_variant=%s\n", status, 1000.0 / budget, budget, smoke_pose, lighting_variant)
-        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f queue_uploads_avg=%.2f queue_uploads_max=%.0f queue_upload_kb_avg=%.1f queue_upload_kb_max=%.1f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_effective_draws=%d gpu_draw_repeat=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_scene_target_create=%d gpu_scene_target_reuse=%d gpu_scene_target_replace=%d gpu_uniform_set_create=%d gpu_atlas_texture_create=%d gpu_atlas_sampler_create=%d gpu_push_constant_bytes=%d gpu_push_constant_updates=%d gpu_push_constant_total_bytes=%d gpu_push_constant_avg_bytes=%.1f gpu_push_constant_camera_bytes=%d gpu_push_constant_lighting_bytes=%d gpu_push_constant_atlas_bytes=%d gpu_light_dir=%s gpu_light_color=%s gpu_light_energy=%.3f gpu_light_ambient=%.3f gpu_upload_staging_buffers=%d gpu_upload_staging_mb=%.2f gpu_upload_staging_kb_avg=%.1f gpu_upload_staging_kb_max=%.1f gpu_cull=%s gpu_front_face=%s gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d gpu_free_ranges=%d gpu_free_faces=%d gpu_largest_free=%d gpu_fragmented_free_faces=%d gpu_fragmentation_pct=%.1f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, terrain_queue_uploads_avg, terrain_queue_uploads_max, terrain_queue_upload_kb_avg, terrain_queue_upload_kb_max, mesh_avg, mesh_max, coll_avg, coll_max, gpu_effective_draws, gpu_draw_repeat, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_scene_target_create, gpu_scene_target_reuse, gpu_scene_target_replace, gpu_uniform_set_create, gpu_atlas_texture_create, gpu_atlas_sampler_create, gpu_push_constant_bytes, gpu_push_constant_updates, gpu_push_constant_total_bytes, gpu_push_constant_avg_bytes, gpu_push_constant_camera_bytes, gpu_push_constant_lighting_bytes, gpu_push_constant_atlas_bytes, gpu_light_dir, gpu_light_color, gpu_light_energy, gpu_light_ambient, gpu_upload_staging_buffers, gpu_upload_staging_mb, gpu_upload_staging_kb_avg, gpu_upload_staging_kb_max, gpu_cull, gpu_front_face, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, gpu_free_ranges, gpu_free_faces, gpu_largest_free, gpu_fragmented_free_faces, gpu_fragmentation_pct, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
+        printf("movement_terrain_queue avg_ms=%.3f max_ms=%.3f max_mesh_ms=%.3f max_coll_ms=%.3f budget_status=%s over_ms=%.3f queue_uploads_avg=%.2f queue_uploads_max=%.0f queue_upload_kb_avg=%.1f queue_upload_kb_max=%.1f queue_new_slot_uploads_avg=%.2f queue_new_slot_uploads_max=%.0f queue_replace_slot_uploads_avg=%.2f queue_replace_slot_uploads_max=%.0f queue_new_slot_upload_kb_avg=%.1f queue_new_slot_upload_kb_max=%.1f queue_replace_slot_upload_kb_avg=%.1f queue_replace_slot_upload_kb_max=%.1f mesh_avg_ms=%.3f mesh_max_ms=%.3f coll_avg_ms=%.3f coll_max_ms=%.3f gpu_effective_draws=%d gpu_draw_repeat=%d gpu_draw_cmd_bytes=%d gpu_draw_cmd_capacity_bytes=%d gpu_draw_cmd_stride=%d gpu_scene_target_create=%d gpu_scene_target_reuse=%d gpu_scene_target_replace=%d gpu_uniform_set_create=%d gpu_atlas_texture_create=%d gpu_atlas_sampler_create=%d gpu_push_constant_bytes=%d gpu_push_constant_updates=%d gpu_push_constant_total_bytes=%d gpu_push_constant_avg_bytes=%.1f gpu_push_constant_camera_bytes=%d gpu_push_constant_lighting_bytes=%d gpu_push_constant_atlas_bytes=%d gpu_light_dir=%s gpu_light_color=%s gpu_light_energy=%.3f gpu_light_ambient=%.3f gpu_upload_staging_buffers=%d gpu_upload_staging_mb=%.2f gpu_upload_staging_kb_avg=%.1f gpu_upload_staging_kb_max=%.1f gpu_cull=%s gpu_front_face=%s gpu_upload_fail_capacity=%d gpu_upload_fail_fragmented=%d gpu_upload_fail_injected=%d gpu_upload_retry_policy=%s gpu_upload_retry_attempts=%d gpu_upload_retry_success=%d gpu_upload_retry_giveups=%d gpu_upload_backoff_active=%d gpu_upload_backoff_frames=%d gpu_upload_backoff_max_frames=%d gpu_upload_stage_pool_enabled=%d gpu_upload_stage_pool_entries=%d gpu_upload_stage_pool_bytes=%d gpu_upload_stage_pba_creates=%d gpu_upload_stage_pba_reuses=%d gpu_free_ranges=%d gpu_free_faces=%d gpu_largest_free=%d gpu_fragmented_free_faces=%d gpu_fragmentation_pct=%.1f gpu_compositor_submit_avg_ms=%.3f gpu_compositor_submit_max_ms=%.3f gpu_compositor_submit_max_parts_ms=%.3f/%.3f/%.3f/%.3f gpu_compositor_gpu_samples=%d gpu_compositor_gpu_avg_ms=%.3f gpu_compositor_gpu_max_ms=%.3f gpu_compositor_gpu_avg_us=%.1f gpu_compositor_gpu_max_us=%.1f process_wall_p95_ms=%.3f frame_p95_ms=%.3f fps_p05=%.1f\n", terrain_queue_avg, terrain_queue_max, terrain_queue_max_mesh, terrain_queue_max_coll, status, over, terrain_queue_uploads_avg, terrain_queue_uploads_max, terrain_queue_upload_kb_avg, terrain_queue_upload_kb_max, terrain_queue_new_slot_uploads_avg, terrain_queue_new_slot_uploads_max, terrain_queue_replace_slot_uploads_avg, terrain_queue_replace_slot_uploads_max, terrain_queue_new_slot_upload_kb_avg, terrain_queue_new_slot_upload_kb_max, terrain_queue_replace_slot_upload_kb_avg, terrain_queue_replace_slot_upload_kb_max, mesh_avg, mesh_max, coll_avg, coll_max, gpu_effective_draws, gpu_draw_repeat, gpu_draw_cmd_bytes, gpu_draw_cmd_capacity_bytes, gpu_draw_cmd_stride, gpu_scene_target_create, gpu_scene_target_reuse, gpu_scene_target_replace, gpu_uniform_set_create, gpu_atlas_texture_create, gpu_atlas_sampler_create, gpu_push_constant_bytes, gpu_push_constant_updates, gpu_push_constant_total_bytes, gpu_push_constant_avg_bytes, gpu_push_constant_camera_bytes, gpu_push_constant_lighting_bytes, gpu_push_constant_atlas_bytes, gpu_light_dir, gpu_light_color, gpu_light_energy, gpu_light_ambient, gpu_upload_staging_buffers, gpu_upload_staging_mb, gpu_upload_staging_kb_avg, gpu_upload_staging_kb_max, gpu_cull, gpu_front_face, gpu_upload_fail_capacity, gpu_upload_fail_fragmented, gpu_upload_fail_injected, gpu_upload_retry_policy, gpu_upload_retry_attempts, gpu_upload_retry_success, gpu_upload_retry_giveups, gpu_upload_backoff_active, gpu_upload_backoff_frames, gpu_upload_backoff_max_frames, gpu_upload_stage_pool_enabled, gpu_upload_stage_pool_entries, gpu_upload_stage_pool_bytes, gpu_upload_stage_pba_creates, gpu_upload_stage_pba_reuses, gpu_free_ranges, gpu_free_faces, gpu_largest_free, gpu_fragmented_free_faces, gpu_fragmentation_pct, compositor_submit_avg, compositor_submit_max, compositor_submit_max_setup, compositor_submit_max_target, compositor_submit_max_constants, compositor_submit_max_draw, compositor_gpu_samples, compositor_gpu_avg, compositor_gpu_max, compositor_gpu_us_avg, compositor_gpu_us_max, process_wall_p95, frame_p95, fps_p05)
         printf("movement_native_shadow requested=%d active=%d fallback=%d implemented=%d resource_status=%s resource_width=%d resource_height=%d resource_layers=%d resource_bytes_per_texel=%d resource_bytes=%d resource_format=%s resource_usage=%s pass_load_op=%s pass_store_op=%s pass_clear_depth_milli=%d depth_attachment_status=%s depth_attachment_binding_count=%d depth_attachment_clear_count=%d resource_barrier_status=%s resource_transition_count=%d resource_barrier_error_count=%d framebuffer_status=%s framebuffer_rid_allocated=%d framebuffer_attachment_count=%d framebuffer_pass_compat_status=%s framebuffer_pass_compat_error_count=%d framebuffer_depth_only_enabled=%d framebuffer_color_attachment_count=%d framebuffer_attachment_owned=%d framebuffer_attachment_reuse_count=%d framebuffer_descriptor_valid=%d framebuffer_descriptor_error_count=%d framebuffer_bind_ready=%d framebuffer_bind_error_count=%d pass_descriptor_valid=%d pass_descriptor_error_count=%d pass_status=%s pass_rid_allocated=%d pass_submit_status=%s pass_lifecycle_ready=%d pass_lifecycle_error_count=%d pass_begin_count=%d pass_end_count=%d command_buffer_status=%s command_buffer_record_ready=%d command_buffer_record_error_count=%d command_buffer_submit_ready=%d command_buffer_submit_error_count=%d command_buffer_submit_count=%d command_buffer_error_count=%d sampler_filter=%s sampler_address=%s sampler_compare_op=%s sampler_compare_enabled=%d depth_bias_constant_milli=%d depth_bias_slope_milli=%d depth_bias_clamp_milli=%d viewport_x_px=%d viewport_y_px=%d viewport_width_px=%d viewport_height_px=%d viewport_min_depth_milli=%d viewport_max_depth_milli=%d pipeline_depth_test_enabled=%d pipeline_depth_write_enabled=%d pipeline_cull_mode=%s pipeline_front_face=%s draw_source=%s draw_primitive=%s draw_face_stride_bytes=%d draw_command_stride_bytes=%d draw_indirect_enabled=%d draw_status=%s draw_call_count=%d draw_face_count=%d uniform_set_index=%d face_buffer_binding=%d push_constant_bytes=%d texture_sampling_enabled=%d shader_language=%s shader_entry=%s shader_depth_output_enabled=%d shader_color_output_enabled=%d shader_source_bytes=%d shader_source_checksum=%d shader_module_status=%s shader_module_rid_allocated=%d light_source=%s light_space=%s cascade_count=%d light_matrix_bytes=%d depth_clip_space=%s depth_range_source=%s depth_near_milli=%d depth_far_chunks=%d resource_creates=%d resource_reuses=%d resource_replaces=%d resource_releases=%d covered_chunks=%d covered_subchunks=%d native_shadow_requested=%d native_shadow_active=%d native_shadow_fallback=%d native_shadow_implemented=%d native_shadow_resource_width=%d native_shadow_resource_height=%d native_shadow_resource_layers=%d native_shadow_resource_bytes_per_texel=%d native_shadow_resource_bytes=%d native_shadow_pass_clear_depth_milli=%d native_shadow_depth_attachment_binding_count=%d native_shadow_depth_attachment_clear_count=%d native_shadow_resource_transition_count=%d native_shadow_resource_barrier_error_count=%d native_shadow_framebuffer_rid_allocated=%d native_shadow_framebuffer_attachment_count=%d native_shadow_framebuffer_pass_compat_error_count=%d native_shadow_framebuffer_depth_only_enabled=%d native_shadow_framebuffer_color_attachment_count=%d native_shadow_framebuffer_attachment_owned=%d native_shadow_framebuffer_attachment_reuse_count=%d native_shadow_framebuffer_descriptor_valid=%d native_shadow_framebuffer_descriptor_error_count=%d native_shadow_framebuffer_bind_ready=%d native_shadow_framebuffer_bind_error_count=%d native_shadow_pass_descriptor_valid=%d native_shadow_pass_descriptor_error_count=%d native_shadow_pass_lifecycle_ready=%d native_shadow_pass_lifecycle_error_count=%d native_shadow_pass_rid_allocated=%d native_shadow_pass_begin_count=%d native_shadow_pass_end_count=%d native_shadow_command_buffer_record_ready=%d native_shadow_command_buffer_record_error_count=%d native_shadow_command_buffer_submit_ready=%d native_shadow_command_buffer_submit_error_count=%d native_shadow_command_buffer_submit_count=%d native_shadow_command_buffer_error_count=%d native_shadow_sampler_compare_enabled=%d native_shadow_depth_bias_constant_milli=%d native_shadow_depth_bias_slope_milli=%d native_shadow_depth_bias_clamp_milli=%d native_shadow_viewport_x_px=%d native_shadow_viewport_y_px=%d native_shadow_viewport_width_px=%d native_shadow_viewport_height_px=%d native_shadow_viewport_min_depth_milli=%d native_shadow_viewport_max_depth_milli=%d native_shadow_pipeline_depth_test_enabled=%d native_shadow_pipeline_depth_write_enabled=%d native_shadow_draw_face_stride_bytes=%d native_shadow_draw_command_stride_bytes=%d native_shadow_draw_indirect_enabled=%d native_shadow_draw_call_count=%d native_shadow_draw_face_count=%d native_shadow_uniform_set_index=%d native_shadow_face_buffer_binding=%d native_shadow_push_constant_bytes=%d native_shadow_texture_sampling_enabled=%d native_shadow_shader_depth_output_enabled=%d native_shadow_shader_color_output_enabled=%d native_shadow_shader_source_bytes=%d native_shadow_shader_source_checksum=%d native_shadow_shader_module_rid_allocated=%d native_shadow_cascade_count=%d native_shadow_light_matrix_bytes=%d native_shadow_depth_near_milli=%d native_shadow_depth_far_chunks=%d native_shadow_resource_creates=%d native_shadow_resource_reuses=%d native_shadow_resource_replaces=%d native_shadow_resource_releases=%d native_shadow_covered_chunks=%d native_shadow_covered_subchunks=%d\n", native_shadow_requested, native_shadow_active, native_shadow_fallback, native_shadow_implemented, native_shadow_resource_status, native_shadow_resource_width, native_shadow_resource_height, native_shadow_resource_layers, native_shadow_resource_bytes_per_texel, native_shadow_resource_bytes, native_shadow_resource_format, native_shadow_resource_usage, native_shadow_pass_load_op, native_shadow_pass_store_op, native_shadow_pass_clear_depth_milli, native_shadow_depth_attachment_status, native_shadow_depth_attachment_binding_count, native_shadow_depth_attachment_clear_count, native_shadow_resource_barrier_status, native_shadow_resource_transition_count, native_shadow_resource_barrier_error_count, native_shadow_framebuffer_status, native_shadow_framebuffer_rid_allocated, native_shadow_framebuffer_attachment_count, native_shadow_framebuffer_pass_compat_status, native_shadow_framebuffer_pass_compat_error_count, native_shadow_framebuffer_depth_only_enabled, native_shadow_framebuffer_color_attachment_count, native_shadow_framebuffer_attachment_owned, native_shadow_framebuffer_attachment_reuse_count, native_shadow_framebuffer_descriptor_valid, native_shadow_framebuffer_descriptor_error_count, native_shadow_framebuffer_bind_ready, native_shadow_framebuffer_bind_error_count, native_shadow_pass_descriptor_valid, native_shadow_pass_descriptor_error_count, native_shadow_pass_status, native_shadow_pass_rid_allocated, native_shadow_pass_submit_status, native_shadow_pass_lifecycle_ready, native_shadow_pass_lifecycle_error_count, native_shadow_pass_begin_count, native_shadow_pass_end_count, native_shadow_command_buffer_status, native_shadow_command_buffer_record_ready, native_shadow_command_buffer_record_error_count, native_shadow_command_buffer_submit_ready, native_shadow_command_buffer_submit_error_count, native_shadow_command_buffer_submit_count, native_shadow_command_buffer_error_count, native_shadow_sampler_filter, native_shadow_sampler_address, native_shadow_sampler_compare_op, native_shadow_sampler_compare_enabled, native_shadow_depth_bias_constant_milli, native_shadow_depth_bias_slope_milli, native_shadow_depth_bias_clamp_milli, native_shadow_viewport_x_px, native_shadow_viewport_y_px, native_shadow_viewport_width_px, native_shadow_viewport_height_px, native_shadow_viewport_min_depth_milli, native_shadow_viewport_max_depth_milli, native_shadow_pipeline_depth_test_enabled, native_shadow_pipeline_depth_write_enabled, native_shadow_pipeline_cull_mode, native_shadow_pipeline_front_face, native_shadow_draw_source, native_shadow_draw_primitive, native_shadow_draw_face_stride_bytes, native_shadow_draw_command_stride_bytes, native_shadow_draw_indirect_enabled, native_shadow_draw_status, native_shadow_draw_call_count, native_shadow_draw_face_count, native_shadow_uniform_set_index, native_shadow_face_buffer_binding, native_shadow_push_constant_bytes, native_shadow_texture_sampling_enabled, native_shadow_shader_language, native_shadow_shader_entry, native_shadow_shader_depth_output_enabled, native_shadow_shader_color_output_enabled, native_shadow_shader_source_bytes, native_shadow_shader_source_checksum, native_shadow_shader_module_status, native_shadow_shader_module_rid_allocated, native_shadow_light_source, native_shadow_light_space, native_shadow_cascade_count, native_shadow_light_matrix_bytes, native_shadow_depth_clip_space, native_shadow_depth_range_source, native_shadow_depth_near_milli, native_shadow_depth_far_chunks, native_shadow_resource_creates, native_shadow_resource_reuses, native_shadow_resource_replaces, native_shadow_resource_releases, native_shadow_covered_chunks, native_shadow_covered_subchunks, native_shadow_requested, native_shadow_active, native_shadow_fallback, native_shadow_implemented, native_shadow_resource_width, native_shadow_resource_height, native_shadow_resource_layers, native_shadow_resource_bytes_per_texel, native_shadow_resource_bytes, native_shadow_pass_clear_depth_milli, native_shadow_depth_attachment_binding_count, native_shadow_depth_attachment_clear_count, native_shadow_resource_transition_count, native_shadow_resource_barrier_error_count, native_shadow_framebuffer_rid_allocated, native_shadow_framebuffer_attachment_count, native_shadow_framebuffer_pass_compat_error_count, native_shadow_framebuffer_depth_only_enabled, native_shadow_framebuffer_color_attachment_count, native_shadow_framebuffer_attachment_owned, native_shadow_framebuffer_attachment_reuse_count, native_shadow_framebuffer_descriptor_valid, native_shadow_framebuffer_descriptor_error_count, native_shadow_framebuffer_bind_ready, native_shadow_framebuffer_bind_error_count, native_shadow_pass_descriptor_valid, native_shadow_pass_descriptor_error_count, native_shadow_pass_lifecycle_ready, native_shadow_pass_lifecycle_error_count, native_shadow_pass_rid_allocated, native_shadow_pass_begin_count, native_shadow_pass_end_count, native_shadow_command_buffer_record_ready, native_shadow_command_buffer_record_error_count, native_shadow_command_buffer_submit_ready, native_shadow_command_buffer_submit_error_count, native_shadow_command_buffer_submit_count, native_shadow_command_buffer_error_count, native_shadow_sampler_compare_enabled, native_shadow_depth_bias_constant_milli, native_shadow_depth_bias_slope_milli, native_shadow_depth_bias_clamp_milli, native_shadow_viewport_x_px, native_shadow_viewport_y_px, native_shadow_viewport_width_px, native_shadow_viewport_height_px, native_shadow_viewport_min_depth_milli, native_shadow_viewport_max_depth_milli, native_shadow_pipeline_depth_test_enabled, native_shadow_pipeline_depth_write_enabled, native_shadow_draw_face_stride_bytes, native_shadow_draw_command_stride_bytes, native_shadow_draw_indirect_enabled, native_shadow_draw_call_count, native_shadow_draw_face_count, native_shadow_uniform_set_index, native_shadow_face_buffer_binding, native_shadow_push_constant_bytes, native_shadow_texture_sampling_enabled, native_shadow_shader_depth_output_enabled, native_shadow_shader_color_output_enabled, native_shadow_shader_source_bytes, native_shadow_shader_source_checksum, native_shadow_shader_module_rid_allocated, native_shadow_cascade_count, native_shadow_light_matrix_bytes, native_shadow_depth_near_milli, native_shadow_depth_far_chunks, native_shadow_resource_creates, native_shadow_resource_reuses, native_shadow_resource_replaces, native_shadow_resource_releases, native_shadow_covered_chunks, native_shadow_covered_subchunks)
         printf("movement_startup packet_ms=%.3f packet_read_work_ms=%.3f packet_decode_work_ms=%.3f packet_reader_elapsed_ms=%.3f packet_queue_lag_ms=%.3f chunk_decode_work_ms=%.3f chunk_inserted_ms=%.3f chunk_loaded_ms=%.3f mesh_queued_ms=%.3f mesh_dispatched_ms=%.3f first_mesh_ms=%.3f first_mesh_work_ms=%.3f first_mesh_phase_ms=%s first_mesh_collision_work_ms=%.3f collision_ms=%.3f player_spawn_ms=%.3f\n", startup_chunk_packet_ms, startup_packet_read_work_ms, startup_packet_decode_work_ms, startup_packet_reader_elapsed_ms, startup_packet_queue_lag_ms, startup_chunk_decode_work_ms, startup_chunk_inserted_ms, startup_chunk_loaded_ms, startup_mesh_queued_ms, startup_mesh_dispatched_ms, startup_first_mesh_ms, startup_first_mesh_work_ms, startup_first_mesh_phase_ms, startup_first_mesh_collision_work_ms, startup_collision_ms, startup_player_spawn_ms)
         printf("movement_packet_queue frames=%d nonempty_frames=%d drained=%d chunk_drained=%d last_drain=%d max_drain=%d last_chunk_drain=%d max_chunk_drain=%d lag_last_ms=%.3f lag_avg_ms=%.3f lag_max_ms=%.3f read_work_last_ms=%.3f read_work_avg_ms=%.3f read_work_max_ms=%.3f decode_work_last_ms=%.3f decode_work_avg_ms=%.3f decode_work_max_ms=%.3f reader_elapsed_last_ms=%.3f reader_elapsed_max_ms=%.3f\n", packet_q_frames, packet_q_nonempty, packet_q_drained, packet_q_chunk_drained, packet_q_last_drain, packet_q_max_drain, packet_q_last_chunk_drain, packet_q_max_chunk_drain, packet_q_lag_last, packet_q_lag_avg, packet_q_lag_max, packet_q_read_work_last, packet_q_read_work_avg, packet_q_read_work_max, packet_q_decode_work_last, packet_q_decode_work_avg, packet_q_decode_work_max, packet_q_reader_elapsed_last, packet_q_reader_elapsed_max)
+        printf("movement_stream_scheduler mode=%s active=%d preview_mismatch=%d direction_x=%d direction_z=%d mesh_directional_ties=%d collision_directional_ties=%d fifo_fallbacks=%d\n", stream_scheduler_mode, stream_scheduler_active, stream_scheduler_preview_mismatch, stream_scheduler_direction_x, stream_scheduler_direction_z, mesh_scheduler_directional_ties, collision_scheduler_directional_ties, stream_scheduler_fifo_fallbacks)
         printf("movement_chunk_unload scans=%d scanned=%d grace_kept=%d unloaded=%d neighbor_refreshes=%d last_unloaded=%d last_grace_kept=%d last_neighbor_refreshes=%d max_unloaded=%d max_grace_kept=%d max_neighbor_refreshes=%d\n", chunk_unload_scans, chunk_unload_scanned, chunk_unload_grace_kept, chunk_unload_total, chunk_unload_neighbor_refresh, chunk_unload_last, chunk_unload_last_grace_kept, chunk_unload_last_neighbor_refresh, chunk_unload_max, chunk_unload_max_grace_kept, chunk_unload_max_neighbor_refresh)
         printf("movement_popin frames=%d complete_frames=%d missing_frames=%d collision_missing_frames=%d missing_chunks=%d collision_missing_chunks=%d probe_last=%d missing_last=%d collision_missing_last=%d missing_max=%d collision_missing_max=%d probe_radius=%d\n", popin_frames, popin_complete_frames, popin_missing_frames, popin_collision_missing_frames, popin_missing_chunks, popin_collision_missing_chunks, popin_probe_last, popin_missing_last, popin_collision_missing_last, popin_missing_max, popin_collision_missing_max, popin_probe_radius)
         printf("movement_readiness current_chunk_loaded=%d current_render_ready=%d current_chunk_submeshes=%d current_collision_ready=%d current_chunk_collision=%d ground_misses=%d popin_collision_missing_max=%d startup_collision_ms=%.3f startup_player_spawn_ms=%.3f\n", current_chunk_loaded, current_chunk_submeshes > 0, current_chunk_submeshes, current_chunk_collision > 0, current_chunk_collision, ground_misses, popin_collision_missing_max, startup_collision_ms, startup_player_spawn_ms)
       }
     ' > "$summary_path"
+  printf 'movement_terrain_pressure_fixture fixture=%s blocks=%s dirty_observed=%s\n' \
+    "${terrain_pressure_fixture:-none}" \
+    "${terrain_pressure_fixture_blocks:-0}" \
+    "${terrain_pressure_fixture_dirty_observed:-0}" >> "$summary_path"
   cat "$summary_path"
 }
 
@@ -1085,15 +1180,40 @@ require_metric_ge "$marker_path" "queue_drained" 1
 require_metric_ge "$marker_path" "queue_stale" 0
 require_metric_ge "$marker_path" "queue_missing" 0
 require_metric_ge "$marker_path" "proxy_refresh_reuse" 0
-require_metric_ge "$marker_path" "gpu_frames" 1
-require_metric_ge "$marker_path" "gpu_subchunks" 1
-require_metric_ge "$marker_path" "gpu_uploads" 1
-require_metric_eq "$marker_path" "gpu_upload_fail" 0
-require_metric_eq "$marker_path" "gpu_upload_fail_capacity" 0
-require_metric_eq "$marker_path" "gpu_upload_fail_fragmented" 0
+case "$GPU_UPLOAD_FAILURE_MODE" in
+  zero)
+    require_metric_ge "$marker_path" "gpu_frames" 1
+    require_metric_ge "$marker_path" "gpu_subchunks" 1
+    require_metric_ge "$marker_path" "gpu_uploads" 1
+    require_metric_eq "$marker_path" "gpu_upload_fail" 0
+    require_metric_eq "$marker_path" "gpu_upload_fail_capacity" 0
+    require_metric_eq "$marker_path" "gpu_upload_fail_fragmented" 0
+    require_metric_eq "$marker_path" "gpu_upload_fail_injected" 0
+    ;;
+  injected)
+    require_metric_ge "$marker_path" "gpu_upload_fail" "$MIN_GPU_UPLOAD_FAILURES"
+    require_metric_ge "$marker_path" "gpu_upload_fail_injected" "$MIN_GPU_UPLOAD_FAILURES"
+    require_metric_eq "$marker_path" "gpu_upload_fail_capacity" 0
+    require_metric_eq "$marker_path" "gpu_upload_fail_fragmented" 0
+    ;;
+  *)
+    fail "unsupported RUMPELMC_MOVEMENT_STRESS_GPU_UPLOAD_FAILURE_MODE=$GPU_UPLOAD_FAILURE_MODE"
+    ;;
+esac
+grep -q "gpu_upload_retry_policy=none" "$marker_path" || fail "gpu_upload_retry_policy is not none in $marker_path"
+require_metric_eq "$marker_path" "gpu_upload_retry_attempts" 0
+require_metric_eq "$marker_path" "gpu_upload_retry_success" 0
+require_metric_eq "$marker_path" "gpu_upload_retry_giveups" 0
+require_metric_eq "$marker_path" "gpu_upload_backoff_active" 0
+require_metric_eq "$marker_path" "gpu_upload_backoff_frames" 0
+require_metric_eq "$marker_path" "gpu_upload_backoff_max_frames" 0
 require_native_shadow_fallback_marker_if_requested "$marker_path"
 require_transparent_fallback_marker_if_requested "$marker_path"
 test -n "$(perf_triplet_value terrain_queue_work_ms "$marker_path" 3)" || fail "missing terrain_queue_work_ms in $marker_path"
+test -n "$(perf_count_triplet_value terrain_queue_gpu_upload_new_slots "$marker_path" 3)" || fail "missing terrain_queue_gpu_upload_new_slots in $marker_path"
+test -n "$(perf_count_triplet_value terrain_queue_gpu_upload_replace_slots "$marker_path" 3)" || fail "missing terrain_queue_gpu_upload_replace_slots in $marker_path"
+test -n "$(perf_triplet_value terrain_queue_gpu_upload_new_slot_kb "$marker_path" 3)" || fail "missing terrain_queue_gpu_upload_new_slot_kb in $marker_path"
+test -n "$(perf_triplet_value terrain_queue_gpu_upload_replace_slot_kb "$marker_path" 3)" || fail "missing terrain_queue_gpu_upload_replace_slot_kb in $marker_path"
 
 write_summary
 case "$BUDGET_MODE" in

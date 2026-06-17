@@ -1081,6 +1081,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
     visual
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_biomes_avatar_character_part(
     name: &str,
     joint: BiomesAvatarJoint,
@@ -1932,7 +1933,7 @@ impl Player {
             .as_ref()
             .and_then(|catalog| catalog.clips().get(index as usize))
             .map(|clip| clip.file_animation_name.as_str().into())
-            .unwrap_or_else(GString::new)
+            .unwrap_or_default()
     }
 
     #[func]
@@ -1956,7 +1957,7 @@ impl Player {
     fn selected_character_animation_clip_name(&self) -> GString {
         self.selected_character_animation_clip_name_str()
             .map(Into::into)
-            .unwrap_or_else(GString::new)
+            .unwrap_or_default()
     }
 
     #[func]

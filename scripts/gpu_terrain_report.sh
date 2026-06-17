@@ -400,6 +400,40 @@ print_optional_artifact() {
 error_scan() {
   test -s "$summary_index_path" || return 0
   grep -nE 'ERROR|SCRIPT ERROR|panic|ObjectDB|leaked|exceeds|gpu_upload_fail=[1-9]' "$summary_index_path" 2>/dev/null \
+    | awk '
+      function metric(line, key, pattern, value_len) {
+        pattern = key "=[0-9][0-9]*"
+        if (match(line, pattern) == 0) {
+          return ""
+        }
+        value_len = RLENGTH - length(key) - 1
+        return substr(line, RSTART + length(key) + 1, value_len)
+      }
+
+      function expected_injected_upload_failure_line(line, upload_fail, injected, capacity, fragmented) {
+        if (line !~ /gpu_upload_failure_fallback/ && line !~ /gpu_terrain_upload_failure_fallback/) {
+          return 0
+        }
+        if (line !~ /gpu_upload_fail=[1-9]/ || line !~ /gpu_upload_fail_injected=[1-9]/) {
+          return 0
+        }
+        if (line ~ /ERROR|SCRIPT ERROR|panic|ObjectDB|leaked|exceeds/) {
+          return 0
+        }
+
+        upload_fail = metric(line, "gpu_upload_fail")
+        injected = metric(line, "gpu_upload_fail_injected")
+        capacity = metric(line, "gpu_upload_fail_capacity")
+        fragmented = metric(line, "gpu_upload_fail_fragmented")
+        if (upload_fail == "" || injected == "" || capacity == "" || fragmented == "") {
+          return 0
+        }
+        return upload_fail + 0 == injected + 0 && capacity + 0 == 0 && fragmented + 0 == 0
+      }
+
+      expected_injected_upload_failure_line($0) { next }
+      { print }
+    ' \
     | sed -n '1,80p'
 }
 
@@ -418,6 +452,10 @@ error_scan() {
   printf -- '- max `gpu_draw_cmd_bytes`: `%s`\n' "$(metric_max gpu_draw_cmd_bytes)"
   printf -- '- max `gpu_draw_cmd_capacity_bytes`: `%s`\n' "$(metric_max gpu_draw_cmd_capacity_bytes)"
   printf -- '- max `gpu_draw_cmd_stride`: `%s`\n' "$(metric_max gpu_draw_cmd_stride)"
+  printf -- '- max `gpu_draw_grouped_enabled`: `%s`\n' "$(metric_max gpu_draw_grouped_enabled)"
+  printf -- '- max `gpu_draw_records_logical`: `%s`\n' "$(metric_max gpu_draw_records_logical)"
+  printf -- '- max `gpu_draw_records_grouped`: `%s`\n' "$(metric_max gpu_draw_records_grouped)"
+  printf -- '- max `gpu_draw_grouped_saved_records`: `%s`\n' "$(metric_max gpu_draw_grouped_saved_records)"
   printf -- '- max `gpu_draw_cmd_occupancy_pct`: `%s`\n' "$(metric_pair_ratio_max_percent gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes)"
   printf -- '- min `gpu_draw_cmd_headroom_bytes`: `%s`\n' "$(metric_pair_headroom_min gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes)"
   printf -- '- max `gpu_scene_target_create`: `%s`\n' "$(metric_max gpu_scene_target_create)"
@@ -442,12 +480,33 @@ error_scan() {
   printf -- '- max `gpu_upload_staging_buffers`: `%s`\n' "$(metric_max gpu_upload_staging_buffers)"
   printf -- '- max `gpu_upload_staging_mb`: `%s`\n' "$(metric_max gpu_upload_staging_mb)"
   printf -- '- max `gpu_upload_staging_kb` max component: `%s`\n' "$(metric_triplet_max gpu_upload_staging_kb)"
+  printf -- '- sum `gpu_upload_fail_injected`: `%s`\n' "$(metric_sum gpu_upload_fail_injected)"
+  printf -- '- latest `gpu_upload_retry_policy`: `%s`\n' "$(metric_latest_text gpu_upload_retry_policy)"
+  printf -- '- sum `gpu_upload_retry_attempts`: `%s`\n' "$(metric_sum gpu_upload_retry_attempts)"
+  printf -- '- sum `gpu_upload_retry_success`: `%s`\n' "$(metric_sum gpu_upload_retry_success)"
+  printf -- '- sum `gpu_upload_retry_giveups`: `%s`\n' "$(metric_sum gpu_upload_retry_giveups)"
+  printf -- '- max `gpu_upload_backoff_active`: `%s`\n' "$(metric_max gpu_upload_backoff_active)"
+  printf -- '- sum `gpu_upload_backoff_frames`: `%s`\n' "$(metric_sum gpu_upload_backoff_frames)"
+  printf -- '- max `gpu_upload_backoff_max_frames`: `%s`\n' "$(metric_max gpu_upload_backoff_max_frames)"
   printf -- '- max `gpu_upload_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_ms)"
   printf -- '- max `gpu_upload_encode_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_encode_ms)"
   printf -- '- max `gpu_upload_stage_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_stage_ms)"
   printf -- '- max `gpu_upload_update_ms` max component: `%s`\n' "$(metric_triplet_max gpu_upload_update_ms)"
+  printf -- '- max `gpu_upload_stage_pool_enabled`: `%s`\n' "$(metric_max gpu_upload_stage_pool_enabled)"
+  printf -- '- max `gpu_upload_stage_pool_entries`: `%s`\n' "$(metric_max gpu_upload_stage_pool_entries)"
+  printf -- '- max `gpu_upload_stage_pool_bytes`: `%s`\n' "$(metric_max gpu_upload_stage_pool_bytes)"
+  printf -- '- sum `gpu_upload_stage_pba_creates`: `%s`\n' "$(metric_sum gpu_upload_stage_pba_creates)"
+  printf -- '- sum `gpu_upload_stage_pba_reuses`: `%s`\n' "$(metric_sum gpu_upload_stage_pba_reuses)"
   printf -- '- max `terrain_queue_gpu_uploads` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_uploads)"
   printf -- '- max `terrain_queue_gpu_upload_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_kb)"
+  printf -- '- max `terrain_queue_gpu_upload_new_slots` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_new_slots)"
+  printf -- '- max `terrain_queue_gpu_upload_replace_slots` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_replace_slots)"
+  printf -- '- max `terrain_queue_gpu_upload_new_slot_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_new_slot_kb)"
+  printf -- '- max `terrain_queue_gpu_upload_replace_slot_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_replace_slot_kb)"
+  printf -- '- max `terrain_queue_gpu_upload_cutout_slots` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_cutout_slots)"
+  printf -- '- max `terrain_queue_gpu_upload_cutout_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_cutout_kb)"
+  printf -- '- max `terrain_queue_gpu_upload_cutout_faces` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_cutout_faces)"
+  printf -- '- max `terrain_queue_gpu_upload_cutout_face_kb` max component: `%s`\n' "$(metric_triplet_max terrain_queue_gpu_upload_cutout_face_kb)"
   printf -- '- max `chunk_replace`: `%s`\n' "$(metric_max chunk_replace)"
   printf -- '- max `dirty_chunks`: `%s`\n' "$(metric_max dirty_chunks)"
   printf -- '- max `dirty_blocks`: `%s`\n' "$(metric_max dirty_blocks)"
@@ -457,9 +516,35 @@ error_scan() {
   printf -- '- max `dirty_last_edge_neighbor_subchunks`: `%s`\n' "$(metric_max dirty_last_edge_neighbor_subchunks)"
   printf -- '- max `dirty_partial_subchunks`: `%s`\n' "$(metric_max dirty_partial_subchunks)"
   printf -- '- max `dirty_partial_saved_subchunks`: `%s`\n' "$(metric_max dirty_partial_saved_subchunks)"
+  printf -- '- max edit visual `max_avg_luma_delta`: `%s`\n' "$(metric_max max_avg_luma_delta)"
+  printf -- '- max edit visual `max_terrain_luma_range_delta`: `%s`\n' "$(metric_max max_terrain_luma_range_delta)"
+  printf -- '- max edit visual `max_terrain_samples_delta`: `%s`\n' "$(metric_max max_terrain_samples_delta)"
+  printf -- '- max edit visual `max_terrain_color_bucket_delta`: `%s`\n' "$(metric_max max_terrain_color_bucket_delta)"
+  printf -- '- max edit visual `max_partial_dirty_edge_neighbor_subchunks`: `%s`\n' "$(metric_max max_partial_dirty_edge_neighbor_subchunks)"
+  printf -- '- max edit visual `max_partial_dirty_partial_saved_subchunks`: `%s`\n' "$(metric_max max_partial_dirty_partial_saved_subchunks)"
+  printf -- '- latest `checkpoint_status`: `%s`\n' "$(metric_latest_text checkpoint_status)"
+  printf -- '- latest `local_world_interaction_status`: `%s`\n' "$(metric_latest_text local_world_interaction_status)"
+  printf -- '- latest `rollout_status`: `%s`\n' "$(metric_latest_text rollout_status)"
+  printf -- '- latest `macos_metal_capture_status`: `%s`\n' "$(metric_latest_text macos_metal_capture_status)"
+  printf -- '- latest `macos_metal_capture_rows`: `%s`\n' "$(metric_latest_text macos_metal_capture_rows)"
+  printf -- '- latest `windows_gpu_capture_status`: `%s`\n' "$(metric_latest_text windows_gpu_capture_status)"
+  printf -- '- latest `windows_capture_rows`: `%s`\n' "$(metric_latest_text windows_capture_rows)"
+  printf -- '- latest `windows_capture_results_status`: `%s`\n' "$(metric_latest_text windows_capture_results_status)"
+  printf -- '- max `max_windows_gpu_pass_ms`: `%s`\n' "$(metric_max max_windows_gpu_pass_ms)"
+  printf -- '- max `max_windows_shader_pass_ms`: `%s`\n' "$(metric_max max_windows_shader_pass_ms)"
   printf -- '- max `current_chunk_collision`: `%s`\n' "$(metric_max current_chunk_collision)"
   printf -- '- max `collision_refresh_rebuilt`: `%s`\n' "$(metric_max collision_refresh_rebuilt)"
   printf -- '- max `collision_refresh_last_rebuilt`: `%s`\n' "$(metric_max collision_refresh_last_rebuilt)"
+  printf -- '- max `collision_phase_total_ms`: `%s`\n' "$(metric_max collision_phase_total_ms)"
+  printf -- '- max `collision_phase_component_ms`: `%s`\n' "$(metric_max collision_phase_component_ms)"
+  printf -- '- max `max_collision_phase_total_ms`: `%s`\n' "$(metric_max max_collision_phase_total_ms)"
+  printf -- '- max `max_collision_phase_component_ms`: `%s`\n' "$(metric_max max_collision_phase_component_ms)"
+  printf -- '- latest `stream_scheduler_mode`: `%s`\n' "$(metric_latest_text stream_scheduler_mode)"
+  printf -- '- max `stream_scheduler_active`: `%s`\n' "$(metric_max stream_scheduler_active)"
+  printf -- '- max `stream_scheduler_preview_mismatch`: `%s`\n' "$(metric_max stream_scheduler_preview_mismatch)"
+  printf -- '- max `mesh_scheduler_directional_ties`: `%s`\n' "$(metric_max mesh_scheduler_directional_ties)"
+  printf -- '- max `collision_scheduler_directional_ties`: `%s`\n' "$(metric_max collision_scheduler_directional_ties)"
+  printf -- '- max `stream_scheduler_fifo_fallbacks`: `%s`\n' "$(metric_max stream_scheduler_fifo_fallbacks)"
   printf -- '- max `mesh_shadow_only`: `%s`\n' "$(metric_max mesh_shadow_only)"
   printf -- '- max `proxy_shadow`: `%s`\n' "$(metric_max proxy_shadow)"
   printf -- '- max `proxy_shadow_only`: `%s`\n' "$(metric_max proxy_shadow_only)"
@@ -538,6 +623,31 @@ error_scan() {
   printf -- '- max `transparent_requested`: `%s`\n' "$(metric_max transparent_requested)"
   printf -- '- max `transparent_active`: `%s`\n' "$(metric_max transparent_active)"
   printf -- '- max `transparent_fallback`: `%s`\n' "$(metric_max transparent_fallback)"
+  printf -- '- max `transparent_blocks`: `%s`\n' "$(metric_max transparent_blocks)"
+  printf -- '- max `transparent_faces`: `%s`\n' "$(metric_max transparent_faces)"
+  printf -- '- max `transparent_draws`: `%s`\n' "$(metric_max transparent_draws)"
+  printf -- '- max `transparent_subchunks`: `%s`\n' "$(metric_max transparent_subchunks)"
+  printf -- '- max `transparent_cutout_uploads`: `%s`\n' "$(metric_max transparent_cutout_uploads)"
+  printf -- '- max `transparent_cutout_upload_bytes`: `%s`\n' "$(metric_max transparent_cutout_upload_bytes)"
+  printf -- '- max `transparent_cutout_upload_faces`: `%s`\n' "$(metric_max transparent_cutout_upload_faces)"
+  printf -- '- max `transparent_cutout_upload_face_bytes`: `%s`\n' "$(metric_max transparent_cutout_upload_face_bytes)"
+  printf -- '- latest `transparent_sort_policy`: `%s`\n' "$(metric_latest_text transparent_sort_policy)"
+  printf -- '- max `transparent_sort_active`: `%s`\n' "$(metric_max transparent_sort_active)"
+  printf -- '- max `transparent_sort_keys`: `%s`\n' "$(metric_max transparent_sort_keys)"
+  printf -- '- max `transparent_sort_ms`: `%s`\n' "$(metric_max transparent_sort_ms)"
+  printf -- '- latest `transparent_build_cost_source`: `%s`\n' "$(metric_latest_text transparent_build_cost_source)"
+  printf -- '- max `transparent_build_faces`: `%s`\n' "$(metric_max transparent_build_faces)"
+  printf -- '- max `transparent_build_subchunks`: `%s`\n' "$(metric_max transparent_build_subchunks)"
+  printf -- '- max `transparent_build_envelope_ms`: `%s`\n' "$(metric_max transparent_build_envelope_ms)"
+  printf -- '- max `transparent_build_uploads`: `%s`\n' "$(metric_max transparent_build_uploads)"
+  printf -- '- max `transparent_build_upload_bytes`: `%s`\n' "$(metric_max transparent_build_upload_bytes)"
+  printf -- '- max `transparent_build_upload_faces`: `%s`\n' "$(metric_max transparent_build_upload_faces)"
+  printf -- '- max `transparent_build_upload_face_bytes`: `%s`\n' "$(metric_max transparent_build_upload_face_bytes)"
+  printf -- '- max `cutout_fixture_adjacent_pair_blocks`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_blocks)"
+  printf -- '- max `cutout_fixture_adjacent_pair_block_id`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_block_id)"
+  printf -- '- max `cutout_fixture_adjacent_pair_same_material`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_same_material)"
+  printf -- '- max `cutout_fixture_adjacent_pair_neighbor`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_neighbor)"
+  printf -- '- max `cutout_fixture_adjacent_pair_collision_hits`: `%s`\n' "$(metric_max cutout_fixture_adjacent_pair_collision_hits)"
   printf -- '- max `transparent_fixture_overlay_requested`: `%s`\n' "$(metric_max transparent_fixture_overlay_requested)"
   printf -- '- max `transparent_fixture_overlay_active`: `%s`\n' "$(metric_max transparent_fixture_overlay_active)"
   printf -- '- max `transparent_fixture_overlay_fallback`: `%s`\n' "$(metric_max transparent_fixture_overlay_fallback)"
@@ -610,6 +720,9 @@ error_scan() {
   printf '\n## Metric Origins\n\n'
   metric_max_source gpu_effective_draws | sed 's/^/- /'
   metric_max_source gpu_draw_cmd_bytes | sed 's/^/- /'
+  metric_max_source gpu_draw_records_logical | sed 's/^/- /'
+  metric_max_source gpu_draw_records_grouped | sed 's/^/- /'
+  metric_max_source gpu_draw_grouped_saved_records | sed 's/^/- /'
   metric_pair_ratio_max_source gpu_draw_cmd_occupancy_pct gpu_draw_cmd_bytes gpu_draw_cmd_capacity_bytes | sed 's/^/- /'
   metric_max_source gpu_scene_target_create | sed 's/^/- /'
   metric_max_source gpu_scene_target_reuse | sed 's/^/- /'
@@ -624,12 +737,24 @@ error_scan() {
   metric_max_source gpu_faces | sed 's/^/- /'
   metric_max_source gpu_upload_fail_capacity | sed 's/^/- /'
   metric_max_source gpu_upload_fail_fragmented | sed 's/^/- /'
+  metric_max_source gpu_upload_retry_attempts | sed 's/^/- /'
+  metric_max_source gpu_upload_backoff_max_frames | sed 's/^/- /'
   metric_max_source dirty_blocks | sed 's/^/- /'
   metric_max_source dirty_last_blocks | sed 's/^/- /'
   metric_max_source dirty_edge_neighbor_subchunks | sed 's/^/- /'
   metric_max_source dirty_partial_saved_subchunks | sed 's/^/- /'
+  metric_max_source max_avg_luma_delta | sed 's/^/- /'
+  metric_max_source max_terrain_luma_range_delta | sed 's/^/- /'
+  metric_max_source max_terrain_samples_delta | sed 's/^/- /'
+  metric_max_source max_terrain_color_bucket_delta | sed 's/^/- /'
+  metric_max_source max_partial_dirty_edge_neighbor_subchunks | sed 's/^/- /'
+  metric_max_source max_partial_dirty_partial_saved_subchunks | sed 's/^/- /'
   metric_max_source current_chunk_collision | sed 's/^/- /'
   metric_max_source collision_refresh_rebuilt | sed 's/^/- /'
+  metric_max_source collision_phase_total_ms | sed 's/^/- /'
+  metric_max_source collision_phase_component_ms | sed 's/^/- /'
+  metric_max_source max_collision_phase_total_ms | sed 's/^/- /'
+  metric_max_source max_collision_phase_component_ms | sed 's/^/- /'
   metric_max_source mesh_shadow_only | sed 's/^/- /'
   metric_max_source proxy_shadow | sed 's/^/- /'
   metric_max_source proxy_shadow_only | sed 's/^/- /'
@@ -717,6 +842,25 @@ error_scan() {
   metric_max_source transparent_faces | sed 's/^/- /'
   metric_max_source transparent_draws | sed 's/^/- /'
   metric_max_source transparent_subchunks | sed 's/^/- /'
+  metric_max_source transparent_cutout_uploads | sed 's/^/- /'
+  metric_max_source transparent_cutout_upload_bytes | sed 's/^/- /'
+  metric_max_source transparent_cutout_upload_faces | sed 's/^/- /'
+  metric_max_source transparent_cutout_upload_face_bytes | sed 's/^/- /'
+  metric_max_source transparent_sort_active | sed 's/^/- /'
+  metric_max_source transparent_sort_keys | sed 's/^/- /'
+  metric_max_source transparent_sort_ms | sed 's/^/- /'
+  metric_max_source transparent_build_faces | sed 's/^/- /'
+  metric_max_source transparent_build_subchunks | sed 's/^/- /'
+  metric_max_source transparent_build_envelope_ms | sed 's/^/- /'
+  metric_max_source transparent_build_uploads | sed 's/^/- /'
+  metric_max_source transparent_build_upload_bytes | sed 's/^/- /'
+  metric_max_source transparent_build_upload_faces | sed 's/^/- /'
+  metric_max_source transparent_build_upload_face_bytes | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_blocks | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_block_id | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_same_material | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_neighbor | sed 's/^/- /'
+  metric_max_source cutout_fixture_adjacent_pair_collision_hits | sed 's/^/- /'
   metric_max_source compact_shadow_proxy | sed 's/^/- /'
   metric_max_source compact_shadow_normals_saved | sed 's/^/- /'
   metric_max_source compact_collision_proxy | sed 's/^/- /'
@@ -733,11 +877,57 @@ error_scan() {
   metric_max_source frame_p95_ms | sed 's/^/- /'
 
   print_optional_file "Selected Movement Stress Summary" "$(latest_file movement-stress-summary.txt)"
+  print_optional_file "Selected GPU Stress Artifact Index Summary" "$(latest_file gpu-stress-artifact-index-summary.txt)"
+  print_optional_file "Selected GPU Stress Artifact Index" "$(latest_file gpu-stress-artifact-index.txt)"
+  print_optional_file "Selected GPU Streaming Priority Audit Summary" "$(latest_file gpu-streaming-priority-audit-summary.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Prototype Summary" "$(latest_file gpu-streaming-scheduler-prototype-summary.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Workload Matrix Summary" "$(latest_file gpu-streaming-scheduler-workload-matrix-summary.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Workload Matrix Cases" "$(latest_file gpu-streaming-scheduler-workload-matrix-cases.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Tie Probe Summary" "$(latest_file gpu-streaming-scheduler-tie-probe-summary.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Decision Checkpoint Summary" "$(latest_file gpu-streaming-scheduler-decision-checkpoint-summary.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Boundary Matrix Summary" "$(latest_file gpu-streaming-scheduler-boundary-matrix-summary.txt)"
+  print_optional_file "Selected GPU Streaming Scheduler Boundary Matrix Cases" "$(latest_file gpu-streaming-scheduler-boundary-matrix-cases.txt)"
+  print_optional_file "Selected GPU Buffer Residency Budget Summary" "$(latest_file gpu-buffer-residency-budget-summary.txt)"
+  print_optional_file "Selected Rapid Camera-Turn Stress Summary" "$(latest_file rapid-camera-turn-stress-summary.txt)"
+  print_optional_file "Selected Chunk Boundary Stress Summary" "$(latest_file chunk-boundary-stress-summary.txt)"
+  print_optional_file "Selected GPU Chunk Unload Churn Diagnosis Summary" "$(latest_file gpu-chunk-unload-churn-diagnosis-summary.txt)"
+  print_optional_file "Selected GPU Terrain Repeated Edit Benchmark Summary" "$(latest_file gpu-terrain-repeated-edit-benchmark-summary.txt)"
+  print_optional_file "Selected GPU Terrain Repeated Edit Benchmark Cases" "$(latest_file gpu-terrain-repeated-edit-benchmark-cases.txt)"
+  print_optional_file "Selected GPU Terrain Border Edit Benchmark Summary" "$(latest_file gpu-terrain-border-edit-benchmark-summary.txt)"
+  print_optional_file "Selected GPU Terrain Border Edit Benchmark Cases" "$(latest_file gpu-terrain-border-edit-benchmark-cases.txt)"
+  print_optional_file "Selected GPU Terrain Partial Dirty Edge Matrix Summary" "$(latest_file gpu-terrain-partial-dirty-edge-matrix-summary.txt)"
+  print_optional_file "Selected GPU Terrain Partial Dirty Edge Matrix Cases" "$(latest_file gpu-terrain-partial-dirty-edge-matrix-cases.txt)"
+  print_optional_file "Selected GPU Collision Refresh Cost Audit Summary" "$(latest_file gpu-collision-refresh-cost-audit-summary.txt)"
+  print_optional_file "Selected GPU Collision Refresh Cost Audit Cases" "$(latest_file gpu-collision-refresh-cost-audit-cases.txt)"
+  print_optional_file "Selected GPU Shadow Proxy Refresh Cost Audit Summary" "$(latest_file gpu-shadow-proxy-refresh-cost-audit-summary.txt)"
+  print_optional_file "Selected GPU Shadow Proxy Refresh Cost Audit Cases" "$(latest_file gpu-shadow-proxy-refresh-cost-audit-cases.txt)"
+  print_optional_file "Selected GPU Edit Burst Budget Summary" "$(latest_file gpu-edit-burst-budget-summary.txt)"
+  print_optional_file "Selected GPU Edit Burst Budget Cases" "$(latest_file gpu-edit-burst-budget-cases.txt)"
+  print_optional_file "Selected GPU Edit Visual Parity Summary" "$(latest_file gpu-edit-visual-parity-summary.txt)"
+  print_optional_file "Selected GPU Edit Visual Parity Cases" "$(latest_file gpu-edit-visual-parity-cases.txt)"
+  print_optional_file "Selected GPU World Interaction Checkpoint Summary" "$(latest_file gpu-world-interaction-checkpoint-summary.txt)"
+  print_optional_file "Selected GPU World Interaction Checkpoint Sources" "$(latest_file gpu-world-interaction-checkpoint-sources.txt)"
+  print_optional_file "Selected GPU macOS Metal Capture Pack Summary" "$(latest_file gpu-macos-metal-capture-pack-summary.txt)"
+  print_optional_artifact "Selected GPU macOS Metal Capture Manifest" "$(latest_file gpu-macos-metal-capture-manifest.txt)"
+  print_optional_artifact "Selected GPU macOS Metal Capture Checklist" "$(latest_file gpu-macos-metal-capture-checklist.txt)"
+  print_optional_file "Selected GPU Windows Capture Pack Summary" "$(latest_file gpu-windows-capture-pack-summary.txt)"
+  print_optional_artifact "Selected GPU Windows Capture Manifest" "$(latest_file gpu-windows-capture-manifest.txt)"
+  print_optional_artifact "Selected GPU Windows Capture Checklist" "$(latest_file gpu-windows-capture-checklist.txt)"
+  print_optional_file "Selected GPU Windows Capture Results Summary" "$(latest_file gpu-windows-capture-results-summary.txt)"
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
   print_optional_file "Selected Workload Matrix Summary" "$(latest_file workload-matrix-summary.txt)"
   print_optional_file "Selected Perf Baseline Summary" "$(latest_file perf-baseline-summary.txt)"
+  print_optional_file "Selected Shader Profiler Results Summary" "$(latest_file shader-profiler-results-summary.txt)"
+  print_optional_artifact "Selected Shader Profiler Capture Pack" "$(latest_file shader-profiler-capture-pack.txt)"
+  print_optional_file "Selected Shadow Proxy Cost Decision Summary" "$(latest_file shadow-proxy-cost-decision-summary.txt)"
   print_optional_file "Selected Shadow Profiler Results Summary" "$(latest_file shadow-radius-profiler-results-summary.txt)"
   print_optional_artifact "Selected Shadow Profiler Capture Pack" "$(latest_file shadow-radius-profiler-capture-pack.txt)"
+  print_optional_file "Selected Transparent Prototype Shape Decision Summary" "$(latest_file transparent-prototype-shape-decision-summary.txt)"
+  print_optional_file "Selected Transparent Cutout Prototype Acceptance Summary" "$(latest_file transparent-cutout-prototype-acceptance-summary.txt)"
+  print_optional_file "Selected Cutout Pressure Load Scaling Summary" "$(latest_file gpu-terrain-cutout-pressure-load-scaling-summary.txt)"
+  print_optional_file "Selected Cutout Fixture Scene Smoke Summary" "$(latest_file transparent-cutout-fixture-scene-smoke-summary.txt)"
+  print_optional_file "Selected Cutout Fixture Acceptance Summary" "$(latest_file transparent-cutout-fixture-acceptance-summary.txt)"
+  print_optional_file "Selected Transparent Cutout Sort Build Cost Summary" "$(latest_file transparent-cutout-sort-build-cost-summary.txt)"
   print_optional_artifact "Selected Transparent Fixture Plan" "$(latest_file transparent-fixture-plan.txt)"
   print_optional_artifact "Selected Transparent Fixture Harness" "$(latest_file transparent-fixture-harness.txt)"
   print_optional_artifact "Selected Transparent Fixture Check" "$(latest_file transparent-fixture-check.txt)"

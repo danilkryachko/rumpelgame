@@ -121,6 +121,14 @@ append_movement_summary() {
   packet_queue_drained="$(line_metric movement_packet_queue drained "$summary")"
   packet_queue_lag_max="$(line_metric movement_packet_queue lag_max_ms "$summary")"
   packet_queue_decode_work_max="$(line_metric movement_packet_queue decode_work_max_ms "$summary")"
+  stream_scheduler_mode="$(line_metric movement_stream_scheduler mode "$summary")"
+  stream_scheduler_active="$(line_metric movement_stream_scheduler active "$summary")"
+  stream_scheduler_preview_mismatch="$(line_metric movement_stream_scheduler preview_mismatch "$summary")"
+  stream_scheduler_direction_x="$(line_metric movement_stream_scheduler direction_x "$summary")"
+  stream_scheduler_direction_z="$(line_metric movement_stream_scheduler direction_z "$summary")"
+  mesh_scheduler_directional_ties="$(line_metric movement_stream_scheduler mesh_directional_ties "$summary")"
+  collision_scheduler_directional_ties="$(line_metric movement_stream_scheduler collision_directional_ties "$summary")"
+  stream_scheduler_fifo_fallbacks="$(line_metric movement_stream_scheduler fifo_fallbacks "$summary")"
   chunk_unload_total="$(line_metric movement_chunk_unload unloaded "$summary")"
   chunk_unload_grace_kept="$(line_metric movement_chunk_unload grace_kept "$summary")"
   chunk_unload_neighbor_refreshes="$(line_metric movement_chunk_unload neighbor_refreshes "$summary")"
@@ -140,11 +148,14 @@ append_movement_summary() {
   gpu_upload_fail="$(field_metric gpu_upload_fail "$marker")"
   terrain_samples="$(field_metric terrain_samples "$marker")"
 
-  printf 'world_load_suite_case label=%s type=movement status=pass motion=%s motion_steps=%s motion_chunks=%s current_chunk=%s terrain_samples=%s terrain_queue_max_ms=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s queue_upload_kb_max=%s gpu_effective_draws=%s gpu_upload_fail=%s packet_queue_max_drain=%s packet_queue_drained=%s packet_queue_lag_max_ms=%s packet_queue_decode_work_max_ms=%s chunk_unload_total=%s chunk_unload_grace_kept=%s chunk_unload_neighbor_refreshes=%s chunk_unload_max=%s chunk_unload_max_grace_kept=%s popin_missing_chunks=%s popin_collision_missing_chunks=%s popin_missing_max=%s popin_collision_missing_max=%s popin_probe_radius=%s current_render_ready=%s current_collision_ready=%s readiness_ground_misses=%s startup_packet_ms=%s startup_packet_queue_lag_ms=%s startup_chunk_decode_work_ms=%s startup_first_mesh_work_ms=%s startup_first_mesh_collision_work_ms=%s startup_player_spawn_ms=%s summary=%s marker=%s\n' \
+  printf 'world_load_suite_case label=%s type=movement status=pass motion=%s motion_steps=%s motion_chunks=%s current_chunk=%s terrain_samples=%s terrain_queue_max_ms=%s process_wall_p95_ms=%s gpu_compositor_submit_max_ms=%s queue_upload_kb_max=%s gpu_effective_draws=%s gpu_upload_fail=%s packet_queue_max_drain=%s packet_queue_drained=%s packet_queue_lag_max_ms=%s packet_queue_decode_work_max_ms=%s stream_scheduler_mode=%s stream_scheduler_active=%s stream_scheduler_preview_mismatch=%s stream_scheduler_direction_x=%s stream_scheduler_direction_z=%s mesh_scheduler_directional_ties=%s collision_scheduler_directional_ties=%s stream_scheduler_fifo_fallbacks=%s chunk_unload_total=%s chunk_unload_grace_kept=%s chunk_unload_neighbor_refreshes=%s chunk_unload_max=%s chunk_unload_max_grace_kept=%s popin_missing_chunks=%s popin_collision_missing_chunks=%s popin_missing_max=%s popin_collision_missing_max=%s popin_probe_radius=%s current_render_ready=%s current_collision_ready=%s readiness_ground_misses=%s startup_packet_ms=%s startup_packet_queue_lag_ms=%s startup_chunk_decode_work_ms=%s startup_first_mesh_work_ms=%s startup_first_mesh_collision_work_ms=%s startup_player_spawn_ms=%s summary=%s marker=%s\n' \
     "$label" "$motion" "${motion_steps:-0}" "${motion_chunks:-0}" "${current_chunk:-n/a}" "${terrain_samples:-0}" \
     "${terrain_queue_max:-0}" "${process_wall_p95:-0}" "${compositor_submit_max:-0}" "${queue_upload_kb_max:-0}" \
     "${gpu_effective_draws:-0}" "${gpu_upload_fail:-0}" "${packet_queue_max_drain:-0}" "${packet_queue_drained:-0}" \
-    "${packet_queue_lag_max:-0}" "${packet_queue_decode_work_max:-0}" "${chunk_unload_total:-0}" \
+    "${packet_queue_lag_max:-0}" "${packet_queue_decode_work_max:-0}" "${stream_scheduler_mode:-n/a}" \
+    "${stream_scheduler_active:-0}" "${stream_scheduler_preview_mismatch:-0}" "${stream_scheduler_direction_x:-0}" \
+    "${stream_scheduler_direction_z:-0}" "${mesh_scheduler_directional_ties:-0}" \
+    "${collision_scheduler_directional_ties:-0}" "${stream_scheduler_fifo_fallbacks:-0}" "${chunk_unload_total:-0}" \
     "${chunk_unload_grace_kept:-0}" "${chunk_unload_neighbor_refreshes:-0}" "${chunk_unload_max:-0}" \
     "${chunk_unload_max_grace_kept:-0}" "${popin_missing_chunks:-0}" "${popin_collision_missing_chunks:-0}" \
     "${popin_missing_max:-0}" "${popin_collision_missing_max:-0}" "${popin_probe_radius:-0}" \

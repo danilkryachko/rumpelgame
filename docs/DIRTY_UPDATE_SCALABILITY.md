@@ -107,6 +107,14 @@ Existing runtime wrappers remain the correct heavy checks:
 - `scripts/dirty_update_cross_chunk_mass_runtime_smoke.sh`
 - `scripts/dirty_update_persisted_reload_runtime_smoke.sh`
 - `scripts/dirty_update_high_count_runtime_gate.sh`
+- `scripts/gpu_terrain_repeated_edit_benchmark.sh`
+- `scripts/gpu_terrain_border_edit_benchmark.sh`
+- `scripts/gpu_terrain_partial_dirty_edge_matrix.sh`
+- `scripts/gpu_collision_refresh_cost_audit.sh`
+- `scripts/gpu_shadow_proxy_refresh_cost_audit.sh`
+- `scripts/gpu_edit_burst_budget_gate.sh`
+- `scripts/gpu_edit_visual_parity_gate.sh`
+- `scripts/gpu_world_interaction_checkpoint.sh`
 
 The gate does not run them by default because they require Godot runtime capture, a free local server port, and longer execution time. It does verify their shell syntax and required metric tokens.
 
@@ -173,6 +181,22 @@ RUMPELMC_DIRTY_HIGH_COUNT_RUN_PERSISTED_SMOKE=1 \
 ```
 
 The current fresh run passed with `persisted_soak_cycles=5`, `persisted_reload_cycles=6`, `persisted_final_verify_count=20`, `matrix_dirty_blocks=60`, `matrix_chunk_replace=60`, `matrix_edit_count=40`, `persisted_gpu_compositor_submit_max_ms=0.141`, and `persisted_gpu_upload_fail=0`.
+
+Fresh repeated-edit benchmark evidence now lives at `logs/gpu_terrain_repeated_edit_benchmark_current/gpu-terrain-repeated-edit-benchmark-summary.txt`. It composes three single-edge repeats and three corner-edge repeats, passed with max queue/process/submit `2.972/0.050/0.150ms`, zero GPU upload failures, and default/visible-quality changes blocked.
+
+Fresh border-edit benchmark evidence now lives at `logs/gpu_terrain_border_edit_benchmark_current/gpu-terrain-border-edit-benchmark-summary.txt`. It composes the repeated single/corner-edge benchmark with the pressure dirty compare at local `31,31`, passed with `case_count=3`, max dirty blocks `709`, max edge-neighbor subchunks `2836`, max partial saved subchunks `1418`, max queue/process/submit `4.777/0.050/0.171ms`, zero GPU upload failures, zero ground misses, and default/visible-quality changes blocked.
+
+Fresh partial dirty edge matrix evidence now lives at `logs/gpu_terrain_partial_dirty_edge_matrix_current/gpu-terrain-partial-dirty-edge-matrix-summary.txt`. It refreshes full-vs-partial runtime compares for all four single edges and all four corner combinations, passed with `case_count=8`, min/max partial edge-neighbor subchunks `4/8`, min/max partial saved subchunks `2/2`, max queue/process/submit `3.734/0.041/0.102ms`, full rollback partial counters disabled, zero GPU upload failures, and default/visible-quality changes blocked.
+
+Fresh collision refresh cost evidence now lives at `logs/gpu_collision_refresh_cost_audit_current/gpu-collision-refresh-cost-audit-summary.txt`. It consumes the partial dirty edge matrix and pressure dirty compare movement markers, passed with `case_count=18`, max collision refresh rebuilds `132`, max queue depth `17`, max phase total/component `1.950/1.540ms`, zero refresh missing, zero queue duplicate/stale/missing counters, zero GPU upload failures, and zero ground misses.
+
+Fresh shadow proxy refresh cost evidence now lives at `logs/gpu_shadow_proxy_refresh_cost_audit_current/gpu-shadow-proxy-refresh-cost-audit-summary.txt`. It consumes the same partial dirty edge matrix and pressure dirty compare movement markers, passed with `case_count=18`, max proxy shadow `243`, max compact shadow proxy `808`, max compact shadow normals saved `5236`, max proxy refresh reuse `68`, zero native-shadow activation, zero GPU upload failures, and zero ground misses.
+
+Fresh edit-burst budget evidence now lives at `logs/gpu_edit_burst_budget_gate_current/gpu-edit-burst-budget-summary.txt`. It composes repeated, border, partial-matrix, collision-refresh, shadow-refresh, and upload-budget summaries, passed with `source_count=6`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max collision refresh rebuilds `132`, max compact shadow proxy `808`, max proxy refresh reuse `68`, zero GPU upload failures, zero ground misses, and default/visible/scheduler changes blocked.
+
+Fresh edit visual parity evidence now lives at `logs/gpu_edit_visual_parity_gate_current/gpu-edit-visual-parity-summary.txt`. It validates the existing full rebuild versus partial dirty screenshots for all eight partial dirty edge/corner cases, passed with `case_count=8`, max average-luma delta `0.0000`, max terrain-luma-range delta `0.0000`, max terrain sample/color bucket/chroma deltas `0`, max partial edge-neighbor subchunks `8`, max partial saved subchunks `2`, zero GPU upload failures, zero ground misses, and external profiler/macOS/Windows blockers.
+
+Fresh world-interaction checkpoint evidence now lives at `logs/gpu_world_interaction_checkpoint_current/gpu-world-interaction-checkpoint-summary.txt`. It composes the dirty runtime, correctness, collision, shadow, budget, visual parity, and upload-budget summaries, passed with `source_count=8`, `local_world_interaction_status=pass`, `rollout_status=defer_defaults`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max compact shadow proxy `808`, max visual deltas `0.0000/0.0000/0/0`, zero GPU upload failures, zero ground misses, and explicit external profiler/macOS/Windows blockers.
 
 ## Deferred Work
 

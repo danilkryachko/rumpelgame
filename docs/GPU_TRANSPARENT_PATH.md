@@ -1,6 +1,6 @@
 # GPU Transparent Terrain Path
 
-This is the Phase 12 design checkpoint for adding transparent terrain blocks to the GPU terrain renderer. It is a design document only; current runtime behavior remains unchanged.
+This is the Phase 12 design checkpoint for adding transparent terrain blocks to the GPU terrain renderer. The default runtime path remains opaque-only. A default-off cutout alpha-test prototype now exists for leaf-style blocks behind `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`; blended transparency, sorting, and split transparent buffers remain deferred.
 
 ## Technical Brief
 
@@ -25,9 +25,9 @@ Scope:
 
 - Design the rollout order, data contracts, rollback gate, required telemetry, and correctness gates.
 
-Out of scope:
+Out of scope for the default runtime:
 
-- No Rust runtime, shader, Godot scene, protocol, storage, world generation, atlas, or quality changes.
+- No default-on Rust runtime, Godot scene, protocol, storage, world generation, atlas, or quality changes.
 - No new block IDs or transparent assets.
 - No default render behavior changes from local design work alone.
 
@@ -96,13 +96,122 @@ Risk:
 
 - It may preserve visual behavior faster, but it adds CPU/Godot mesh work and needs measurement before becoming more than a compatibility fallback.
 
+## Prototype Shape Decision
+
+Current decision, 2026-06-16: use `cutout_only_first` as the first transparent-family prototype shape.
+
+This started as a planning/runtime-readiness decision. `scripts/transparent_prototype_shape_decision_gate.sh` remains the guard before broadening the prototype shape; split buffers and blended alpha stay blocked while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` and no sorting/depth/profiler evidence exists.
+
+Rationale:
+
+- Cutout/alpha-test blocks keep opaque-depth behavior and avoid the full blended-transparency sorting problem for the first prototype.
+- Split transparent buffers and blended alpha remain deferred until there is nonzero transparent workload, sorting/depth evidence, and external profiler evidence.
+- Godot material fallback remains a compatibility fallback only until its CPU/Godot mesh cost is measured.
+
+External references checked for this decision:
+
+- Godot 3D rendering limitations: transparent geometry is drawn after opaque geometry and sorted back-to-front by `Node3D` position, so complex overlap can sort incorrectly.
+- Godot StandardMaterial3D: alpha scissor/cutout is faster than alpha blending, avoids sorting issues, and can still cast shadows.
+- Khronos Vulkan tutorial: alpha-cut transparency is a common discard-based technique that avoids complex blending/sorting for cutout materials.
+
+Use:
+
+```sh
+sh scripts/transparent_prototype_shape_decision_gate.sh logs/transparent_prototype_shape_decision_current
+```
+
+The gate consumes active-path preflight, sorting/depth, fixture acceptance, and block-material metadata summaries. It rejects unexpected nonzero transparent workload or active implementation changes before another reviewed prototype slice.
+
+## Cutout Prototype Slice
+
+Current default-off prototype, 2026-06-16:
+
+- `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1` enables a leaf-only cutout alpha-test path inside the existing GPU terrain opaque pass.
+- `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1` remains the reserved future full-transparent request and still falls back while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
+- `LEAVES` keeps the existing block ID, atlas tile, `solid=true`, and `opaque=true` default contract, with additional `cutout_alpha_test=true` metadata for the prototype.
+- Packed GPU faces keep their 16-byte layout. Bit `12` in the low `extent` word marks cutout faces; chunk/subchunk packing and indirect draw stride are unchanged.
+- The vertex shader forwards the cutout bit as a `flat uint`; the fragment shader discards texels with `alpha < 0.5` only for marked faces, then still writes `alpha=1.0` for surviving pixels.
+- There is no alpha blending, no transparent pass, and no transparent sorting in this slice.
+- When the prototype is active, opaque faces next to cutout leaves remain visible because cutout leaves do not fully occlude neighbors.
+- Same-material cutout seam policy is conservative in this first slice; full seam/sorting policy remains future work.
+- `transparent_blocks` counts loaded cutout metadata blocks only when the cutout prototype is active; `transparent_faces`, `transparent_draws`, and `transparent_subchunks` come from the GPU packed-face pool.
+- `transparent_cutout_uploads`, `transparent_cutout_upload_bytes`, `transparent_cutout_upload_faces`, and `transparent_cutout_upload_face_bytes` prove that active cutout workloads uploaded GPU payloads containing cutout faces. The byte fields are intentionally split between full upload payload bytes and logical cutout-face bytes because the current prototype still uses the existing packed-face terrain buffer, not a separate transparent buffer.
+- `transparent_sort_policy=opaque_depth_alpha_test_no_sort`, `transparent_sort_active=0`, `transparent_sort_keys=0`, and `transparent_sort_ms=0.000` prove that this cutout prototype does not perform blended-transparent sorting. Build cost is surfaced as an envelope over the existing opaque terrain mesh phase with `transparent_build_cost_source=cutout_in_opaque_mesh_phase`, `transparent_build_faces`, `transparent_build_subchunks`, `transparent_build_envelope_ms`, and matching `transparent_build_upload*` counters. These are local CPU-side cost markers, not external GPU profiler evidence.
+
+Use a leaf block-edit smoke for runtime evidence:
+
+```sh
+RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1 \
+RUMPELMC_BLOCK_EDIT_STRESS_ACTION=place \
+RUMPELMC_BLOCK_EDIT_STRESS_BLOCK_ID=5 \
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+sh scripts/gpu_terrain_block_edit_stress.sh logs/gpu_transparent_cutout_prototype_current
+```
+
+The block-edit stress summary now includes `block_edit_transparent ...`. With the cutout prototype flag enabled it must report `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero transparent workload counts, nonzero cutout upload counts/bytes/faces, and `gpu_upload_fail=0`.
+
+Promote the runtime smoke into an aggregate-report acceptance artifact with:
+
+```sh
+sh scripts/gpu_terrain_cutout_prototype_acceptance_gate.sh logs/gpu_transparent_cutout_prototype_current
+```
+
+The gate validates the leaf placement smoke, source contracts, and report surfacing together. It requires block ID `5`, `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, nonzero cutout workload counts, nonzero cutout upload counts/bytes/faces, `gpu_upload_fail=0`, `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, and no blended/sorted/default-on claim.
+
+Promote the same default-off cutout path into a high resident-set world-loading pressure artifact with:
+
+```sh
+sh scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh logs/gpu_terrain_cutout_pressure_load_scaling_current
+```
+
+The pressure gate runs the existing load-scaling stack with `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`, a `pressure` workload, the `chunk_disc` terrain pressure fixture, and leaf block ID `5`. It requires the load-scaling prerequisite to pass, `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, high nonzero transparent workload, nonzero cutout upload counts/bytes/faces with upload bytes at least logical cutout-face bytes, `gpu_upload_fail=0`, queue/process/submit budgets under `6.667ms`, and aggregate report surfacing. The cutout pressure thresholds are deliberately separate from opaque stone pressure: leaf/cutout faces occupy less of the indirect command buffer in this fixture, so the current gate requires at least `1800` GPU subchunks/draws, `3000` faces, and `22.0%` draw-command occupancy instead of treating the older `25.0%` opaque-pressure floor as a cutout invariant.
+
+Promote accepted fixture plus pressure summaries into a focused sort/build cost artifact with:
+
+```sh
+sh scripts/transparent_cutout_sort_build_cost_gate.sh logs/transparent_cutout_sort_build_cost_current
+```
+
+The gate requires accepted fixture and pressure summaries to agree on `transparent_sort_policy=opaque_depth_alpha_test_no_sort`, zero sort work, `transparent_build_cost_source=cutout_in_opaque_mesh_phase`, nonzero build/upload workload, and full-payload bytes at least logical cutout-face bytes. It is an evidence aggregator for the default-off cutout prototype only; it does not approve blended transparency, split buffers, default-on behavior, external profiler cost, or Windows behavior.
+
+Use a fixed cutout fixture scene smoke for active depth/collision evidence:
+
+```sh
+RUMPELMC_GODOT_RUST_EXT_BUILD_RELEASE=1 \
+RUMPELMC_GODOT_RUST_EXT_PROFILE=release \
+GODOT_TIMEOUT_SEC=240 \
+GODOT_QUIT_AFTER_FRAMES=24000 \
+sh scripts/gpu_terrain_cutout_fixture_scene_smoke.sh logs/gpu_transparent_cutout_fixture_scene_smoke_current
+```
+
+Promote that scene smoke into a report-backed acceptance artifact with:
+
+```sh
+sh scripts/gpu_terrain_cutout_fixture_acceptance_gate.sh logs/gpu_transparent_cutout_fixture_scene_smoke_current
+```
+
+The scene smoke uses an isolated RocksDB path, the existing local server, `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1`, and `RUMPELMC_VISUAL_SMOKE_CUTOUT_FIXTURE=roles` without enabling `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1`. It places four leaf/cutout roles including one same-material adjacent pair plus one opaque occluder, waits for dirty GPU terrain update, exact cutout workload readiness, and collision queue drain, then records per-role collision rays, adjacent-pair markers, an opaque occlusion probe, and cutout upload counts/bytes/faces. The global terrain queue stays a background streaming diagnostic for this fixture, not the fixture readiness signal. The adjacent-pair seam/culling proof is cutout-only: the runtime fixture pins the adjacent pair and exact cutout workload, while the Rust mesher unit test proves same-material cutout pair seam faces stay visible. The occlusion probe is a physics depth/collision guard for this cutout slice; it is not blended transparency, per-pixel sorting, or full transparent-pass evidence.
+
+Fresh local evidence, 2026-06-16:
+
+- `logs/gpu_transparent_cutout_prototype_current/block-edit-stress-summary.txt` placed block ID `5` (`LEAVES`) in release mode with the cutout prototype enabled.
+- `logs/gpu_transparent_cutout_prototype_current/transparent-cutout-prototype-acceptance-summary.txt` passed the acceptance/report gate and links the runtime smoke to `logs/gpu_transparent_cutout_prototype_current/gpu-terrain-cutout-prototype-report.txt`.
+- `logs/gpu_terrain_cutout_pressure_load_scaling_current/gpu-terrain-cutout-pressure-load-scaling-summary.txt` passed the high resident-set cutout pressure gate with `terrain_pressure_fixture=chunk_disc`, `terrain_pressure_fixture_block_id=5`, `max_gpu_subchunks=1859`, `max_gpu_draws=1859`, `max_gpu_faces=3712`, `gpu_draw_cmd_occupancy_pct=22.693`, `transparent_blocks=709`, `transparent_faces=1590`, `transparent_draws=265`, `transparent_subchunks=265`, `transparent_cutout_uploads=265`, `transparent_cutout_upload_bytes=25440`, `transparent_cutout_upload_faces=1590`, `transparent_cutout_upload_face_bytes=25440`, `transparent_sort_policy=opaque_depth_alpha_test_no_sort`, `transparent_sort_ms=0.000`, `transparent_build_cost_source=cutout_in_opaque_mesh_phase`, `transparent_build_faces=1590`, `transparent_build_subchunks=265`, `transparent_build_envelope_ms=1.994`, `max_terrain_queue_ms=1.994`, `max_process_wall_p95_ms=0.009`, `max_gpu_compositor_submit_ms=0.193`, and `gpu_upload_fail=0`.
+- `logs/gpu_transparent_cutout_fixture_scene_smoke_current/transparent-cutout-fixture-scene-smoke-summary.txt` passed the fixed cutout fixture scene smoke with `cutout_fixture=roles`, `cutout_fixture_roles=5`, `cutout_fixture_leaf_blocks=4`, `cutout_fixture_opaque_blocks=1`, `cutout_fixture_dirty_observed=1`, `cutout_fixture_collision_hits=5`, `cutout_fixture_collision_misses=0`, `cutout_fixture_occlusion_probe_hit=1`, `cutout_fixture_queue_drained=1`, `cutout_fixture_adjacent_pair_blocks=2`, `cutout_fixture_adjacent_pair_block_id=5`, `cutout_fixture_adjacent_pair_same_material=1`, `cutout_fixture_adjacent_pair_neighbor=1`, `cutout_fixture_adjacent_pair_collision_hits=2`, `same_material_seam_policy=cutout_pair_visible_faces`, `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=4`, `transparent_faces=17`, `transparent_draws=2`, `transparent_subchunks=2`, `transparent_cutout_uploads=2`, `transparent_cutout_upload_bytes=352`, `transparent_cutout_upload_faces=17`, `transparent_cutout_upload_face_bytes=272`, `transparent_sort_policy=opaque_depth_alpha_test_no_sort`, `transparent_sort_ms=0.000`, `transparent_build_cost_source=cutout_in_opaque_mesh_phase`, `transparent_build_faces=17`, `transparent_build_subchunks=2`, `transparent_build_envelope_ms=2.121`, and `gpu_upload_fail=0`.
+- `logs/gpu_transparent_cutout_fixture_scene_smoke_current/transparent-cutout-fixture-acceptance-summary.txt` passed the report-backed fixture gate and links the scene smoke to `logs/gpu_transparent_cutout_fixture_scene_smoke_current/gpu-terrain-cutout-fixture-report.txt`; it also emits `transparent_cutout_seam_culling_status=pass` for the same-material adjacent cutout pair.
+- `logs/transparent_cutout_sort_build_cost_current/transparent-cutout-sort-build-cost-summary.txt` passed with `transparent_sort_policy=opaque_depth_alpha_test_no_sort`, `transparent_sort_active=0`, `transparent_sort_keys=0`, `transparent_sort_ms=0.000`, fixture build envelope `17/2/2.121ms`, and pressure build envelope `1590/265/1.994ms`.
+- `logs/transparent_fixture_acceptance_suite_current/transparent-fixture-acceptance-suite-summary.txt` passed after refreshing the fixture scene smoke and deferred active/sorting preflight summaries; the legacy full-transparent fixture remains requested-but-fallback while cutout stays the only active prototype path.
+- The runtime smoke passed with `transparent_requested=1`, `transparent_active=1`, `transparent_fallback=0`, `transparent_blocks=1`, `transparent_faces=5`, `transparent_draws=1`, `transparent_subchunks=1`, `gpu_upload_fail=0`, `terrain_samples=384` from the movement marker, and `ground_misses=0` from the movement summary.
+- This is local macOS/Metal cutout-only evidence, not blended transparency, sorting, default-on, Windows validation, or external profiler evidence.
+
 ## Required Telemetry
 
 A future implementation should emit these marker fields before any default-on decision:
 
 - `transparent_requested`, `transparent_active`, and `transparent_fallback`.
 - `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`.
-- transparent upload bytes/counts if separate buffers are used.
+- `transparent_cutout_uploads`, `transparent_cutout_upload_bytes`, `transparent_cutout_upload_faces`, and `transparent_cutout_upload_face_bytes` for cutout uploads inside the current packed terrain buffer. Add separate-buffer upload fields only if a future split transparent buffer is implemented.
 - transparent sort or build cost if sorting is performed on CPU.
 - fallback reason when the transparent path is requested but inactive.
 
@@ -163,7 +272,7 @@ Required future marker fields:
 Acceptance gates:
 
 - With the transparent env flag unset, ordinary opaque terrain markers and parity gates remain unchanged.
-- While `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, the env-on fixture must still report requested-but-fallback markers: `transparent_requested=1`, `transparent_active=0`, and `transparent_fallback=1`.
+- While `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`, the legacy `RUMPELMC_GPU_TERRAIN_TRANSPARENT=1` env-on fixture must still report requested-but-fallback markers: `transparent_requested=1`, `transparent_active=0`, and `transparent_fallback=1`.
 - A future active transparent path must prove `transparent_active=1`, `transparent_fallback=0`, `gpu_upload_fail=0`, non-sky terrain samples, opaque-depth occlusion, explicit collision-by-solidity behavior, and visible opaque faces next to transparent fixture blocks.
 - CPU/GPU parity and external profiler evidence are required before the transparent path can move beyond fixture/prototype status.
 
@@ -174,14 +283,18 @@ Non-goals for this contract:
 
 ## Current Implementation Slice
 
-The current code slice is telemetry/test scaffolding, not blended rendering:
+The current code slice is a default-off cutout prototype, not blended rendering:
 
 - `RUMPELMC_GPU_TERRAIN_TRANSPARENT` is reserved as a future opt-in flag.
 - `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false` keeps the requested flag inactive, so current runtime behavior stays opaque-only even when the env flag is set.
+- `RUMPELMC_GPU_TERRAIN_CUTOUT_PROTOTYPE=1` activates only the cutout alpha-test prototype and does not make blended transparency active.
 - Perf markers expose `transparent_requested`, `transparent_active`, and `transparent_fallback`.
-- Perf markers expose current transparent workload fields: `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`. They are expected to stay `0` while `GPU_TERRAIN_TRANSPARENT_IMPLEMENTED=false`.
+- Perf markers expose current transparent workload fields: `transparent_blocks`, `transparent_faces`, `transparent_draws`, and `transparent_subchunks`. They stay `0` for the legacy transparent fallback path and become nonzero only for active default-off cutout workload.
+- The Rust env flag parser and GPU terrain mesher now share the same cutout truthy contract for `1`, `true`, `yes`, `on`, and `enabled`; `disabled` is explicit false.
 - Perf markers expose client-only fixture overlay metadata counts as `transparent_fixture_overlay_roles` and `transparent_fixture_overlay_blocks`. They are expected to stay `5` only when `RUMPELMC_GPU_TERRAIN_TRANSPARENT_FIXTURE_OVERLAY=1` is requested, and `0` otherwise.
 - `scripts/gpu_terrain_report.sh` aggregates those marker fields and records metric origins.
+- `scripts/gpu_terrain_cutout_prototype_acceptance_gate.sh` validates a default-off cutout block-edit smoke and requires the aggregate report to surface its selected acceptance summary.
+- `scripts/gpu_terrain_cutout_pressure_load_scaling_gate.sh` validates the same default-off cutout path under high resident-set `pressure` world-loading evidence and requires the aggregate report to surface its selected pressure summary.
 - The env-on release movement smoke in `logs/gpu_transparent_fallback_capture` passed with `transparent_requested=1`, `transparent_active=0`, `transparent_fallback=1`, `gpu_upload_fail=0`, `smoke_err=0`, and non-sky terrain samples.
 - `scripts/gpu_terrain_movement_stress.sh` now fails env-on transparent captures unless those same requested/active/fallback marker values are present.
 - `scripts/gpu_terrain_transparent_fixture_plan.sh` validates this fixture contract plus the current movement-stress fallback guard and writes a line-oriented `transparent-fixture-plan.txt` checklist.

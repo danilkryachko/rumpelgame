@@ -159,6 +159,7 @@ pub struct BlockDefinition {
     pub name: &'static str,
     pub solid: bool,
     pub opaque: bool,
+    pub cutout_alpha_test: bool,
     pub placeable: bool,
     pub render_class: RenderClass,
     pub collision_class: CollisionClass,
@@ -186,6 +187,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Air",
         solid: false,
         opaque: false,
+        cutout_alpha_test: false,
         placeable: false,
         render_class: RenderClass::Air,
         collision_class: CollisionClass::None,
@@ -203,6 +205,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Stone",
         solid: true,
         opaque: true,
+        cutout_alpha_test: false,
         placeable: true,
         render_class: RenderClass::Opaque,
         collision_class: CollisionClass::Solid,
@@ -220,6 +223,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Dirt",
         solid: true,
         opaque: true,
+        cutout_alpha_test: false,
         placeable: true,
         render_class: RenderClass::Opaque,
         collision_class: CollisionClass::Solid,
@@ -237,6 +241,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Grass",
         solid: true,
         opaque: true,
+        cutout_alpha_test: false,
         placeable: true,
         render_class: RenderClass::Opaque,
         collision_class: CollisionClass::Solid,
@@ -258,6 +263,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Wood",
         solid: true,
         opaque: true,
+        cutout_alpha_test: false,
         placeable: true,
         render_class: RenderClass::Opaque,
         collision_class: CollisionClass::Solid,
@@ -279,6 +285,7 @@ const BLOCK_DEFINITIONS: [BlockDefinition; 6] = [
         name: "Leaves",
         solid: true,
         opaque: true,
+        cutout_alpha_test: true,
         placeable: true,
         render_class: RenderClass::Opaque,
         collision_class: CollisionClass::Solid,
@@ -347,6 +354,10 @@ pub fn is_opaque_solid(id: BlockId) -> bool {
     is_solid(id)
         && is_opaque(id)
         && definition(id).is_some_and(|block| block.render_class == RenderClass::Opaque)
+}
+
+pub fn is_cutout_alpha_test(id: BlockId) -> bool {
+    definition(id).is_some_and(|block| block.cutout_alpha_test)
 }
 
 pub fn tile_for_face(id: BlockId, face_idx: u32, face_top: u32, face_bottom: u32) -> u32 {

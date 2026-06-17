@@ -151,6 +151,12 @@ Fresh `teleport-snap` checks:
 - Default grace in `logs/world_streaming_high_pressure_suite_teleport_unload_churn_check/world-load-suite-summary.txt` passed with `chunk_unload_total=0`, `chunk_unload_grace_kept=24375`, `chunk_unload_neighbor_refreshes=0`, `chunk_unload_max=0`, `chunk_unload_max_grace_kept=311`, `terrain_queue_max_ms=2.062`, and `gpu_upload_fail=0`.
 - Immediate-unload control in `logs/world_streaming_high_pressure_suite_teleport_unload_churn_grace0_check/world-load-suite-summary.txt` passed with `chunk_unload_total=375`, `chunk_unload_grace_kept=0`, `chunk_unload_neighbor_refreshes=296`, `chunk_unload_max=311`, `terrain_queue_max_ms=2.222`, and `gpu_upload_fail=0`.
 
+Current GPU unload diagnosis:
+
+- `scripts/gpu_chunk_unload_churn_diagnosis.sh` consumes the fresh chunk-boundary summary and emits `gpu-chunk-unload-churn-diagnosis-summary.txt`.
+- `logs/gpu_chunk_unload_churn_diagnosis_current/gpu-chunk-unload-churn-diagnosis-summary.txt` passed with `max_chunk_unload_total=0`, `max_chunk_unload_grace_kept=48984`, `max_chunk_unload_neighbor_refreshes=0`, `max_chunk_unload=0`, max queue/process/submit `2.258/0.049/0.124ms`, packet queue lag max `27.437ms`, `gpu_upload_fail=0`, `ground_misses=0`, and no render/collision not-ready cases.
+- The older teleport-only default/immediate control summaries are missing in this checkout, so the diagnosis records `default_control_status=missing`, `immediate_control_status=missing`, and `controls_required=0`. Set `RUMPELMC_GPU_CHUNK_UNLOAD_REQUIRE_CONTROLS=1` before using this gate to approve any unload policy change.
+
 ## World Pop-In Metrics
 
 The first pop-in metric is a report-only player-neighborhood probe. The default `RUMPELMC_CLIENT_POP_IN_PROBE_RADIUS=1` checks chunks around the current player chunk for loaded data and collision bodies. This is not yet an image-space or camera-occlusion hole detector.
@@ -272,6 +278,99 @@ Fresh check:
 - `logs/dirty_update_cross_chunk_mass_runtime_current/dirty-update-cross-chunk-mass-runtime-summary.txt` reported `status=pass`, `runtime_cross_chunk_mass_edit=godot_guarded`, `cross_chunk_mass_budget=godot_guarded`, `cross_chunk_count=4`, `mass_edit_count=8`, `place_actions=4`, `destroy_actions=4`, `target_fps=100`, sequence `place:127:64:95:1,destroy:127:64:95:0,place:95:64:63:2,destroy:95:64:63:0,place:128:80:64:3,destroy:128:80:64:0,place:96:96:96:4,destroy:96:96:96:0`, `dirty_blocks=8`, `chunk_replace=8`, `dirty_edge_neighbor_subchunks=28`, `dirty_partial_subchunks=12`, `dirty_partial_saved_subchunks=12`, `current_chunk_collision=2`, `terrain_queue_max_ms=2.358` against budget `8.000`, `gpu_compositor_submit_max_ms=0.147` against budget `1.000`, `process_wall_p95_ms=0.051` against budget `1.000`, and zero GPU upload failures.
 - `logs/dirty_update_persisted_reload_runtime_current/dirty-update-persisted-reload-runtime-summary.txt` reported `status=pass`, `soak_status=pass`, `soak_cycles=3`, `reload_cycles=4`, `dirty_after_reload=pass`, `final_reload=pass`, `final_verify_count=12`, `mass_edit_count=4`, `target_fps=100`, seed block id `4`, `soak_dirty_blocks=24`, `soak_chunk_replace=24`, `soak_edge_neighbor_subchunks=48`, `soak_partial_subchunks=36`, `soak_partial_saved_subchunks=36`, `soak_current_chunk_collision=6`, `terrain_queue_max_ms=2.458`, `gpu_compositor_submit_max_ms=0.184`, `process_wall_p95_ms=0.062`, and zero GPU upload failures.
 
+## GPU Terrain Repeated Edit Benchmark
+
+The repeated edit benchmark composes the single-edge and corner-edge dirty repeat runtime summaries into one GPU evidence artifact. It validates repeated dirty updates, collision/proxy refresh evidence, partial saved subchunks, zero upload failures, and CPU-side queue/process/submit budgets without changing visible quality or default runtime policy.
+
+Fresh check:
+
+- `logs/gpu_terrain_repeated_edit_benchmark_current/gpu-terrain-repeated-edit-benchmark-summary.txt` passed with `case_count=2`, `single_edge_runs=3`, `corner_edge_runs=3`, min edge-neighbor subchunks `4`, min partial saved subchunks `2`, max queue/process/submit `2.972/0.050/0.150ms`, `gpu_upload_fail=0`, and `visible_quality_change_allowed=0`.
+
+## GPU Terrain Border Edit Benchmark
+
+The border edit benchmark composes repeated single-edge/corner-edge dirty edit evidence with the high-volume pressure dirty compare at local border `31,31`. It validates border dirty bounds, edge-neighbor refresh, saved partial subchunks, collision readiness, terrain samples, zero upload failures, zero ground misses, and CPU-side queue/process/submit budgets without changing visible quality or default runtime policy.
+
+Fresh check:
+
+- `logs/gpu_terrain_border_edit_benchmark_current/gpu-terrain-border-edit-benchmark-summary.txt` passed with `case_count=3`, `single_edge_runs=3`, `corner_edge_runs=3`, `pressure_fixture=chunk_disc`, pressure local `31,31`, max dirty blocks `709`, max edge-neighbor subchunks `2836`, max partial saved subchunks `1418`, max queue/process/submit `4.777/0.050/0.171ms`, `gpu_upload_fail=0`, `ground_misses=0`, and `visible_quality_change_allowed=0`.
+
+Remaining coverage gap:
+
+- This benchmark is high-volume pressure plus repeated positive-edge evidence. The full directional edge-case matrix lives in the partial dirty edge matrix below.
+
+## GPU Terrain Partial Dirty Edge Matrix
+
+The partial dirty edge matrix refreshes full-vs-partial compare evidence for all four single chunk edges and all four corner combinations. It proves the full rebuild rollback lane keeps partial counters disabled while the partial lane records edge-neighbor refresh and saved subchunks on `pos_x`, `neg_x`, `pos_z`, `neg_z`, and every corner combination.
+
+Fresh check:
+
+- `logs/gpu_terrain_partial_dirty_edge_matrix_current/gpu-terrain-partial-dirty-edge-matrix-summary.txt` passed with `case_count=8`, `single_edge_cases=4`, `corner_edge_cases=4`, min/max partial edge-neighbor subchunks `4/8`, min/max partial saved subchunks `2/2`, max queue/process/submit `3.734/0.041/0.102ms`, `full_partial_disabled=1`, `gpu_upload_fail=0`, and `visible_quality_change_allowed=0`.
+
+Remaining coverage gap:
+
+- Mass-edit runtime, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain future work before claiming complete world-interaction performance coverage. The current edit-burst budget aggregate is tracked by the dedicated gate below.
+
+## GPU Collision Refresh Cost Audit
+
+The collision refresh cost audit consumes movement marker files from the partial dirty edge matrix and pressure dirty compare. It validates collision rebuild evidence, queue duplicate/stale/missing counters, current chunk collision readiness, upload failures, ground misses, and `collision_refresh_phase_max` totals/components under the 150 FPS CPU-side frame budget.
+
+Fresh check:
+
+- `logs/gpu_collision_refresh_cost_audit_current/gpu-collision-refresh-cost-audit-summary.txt` passed with `case_count=18`, `matrix_case_count=16`, `pressure_case_count=2`, max collision refresh rebuilds `132`, max queue depth `17`, max phase total/component `1.950/1.540ms`, max queue/process/submit `4.777/0.041/0.171ms`, `collision_refresh_missing=0`, `collision_q_dup=0`, `collision_q_stale=0`, `collision_q_missing=0`, `gpu_upload_fail=0`, and `ground_misses=0`.
+
+Remaining coverage gap:
+
+- This is local macOS/Metal CPU-side collision refresh evidence. Shadow proxy refresh cost, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain separate.
+
+## GPU Shadow Proxy Refresh Cost Audit
+
+The shadow proxy refresh cost audit consumes movement marker files from the partial dirty edge matrix and pressure dirty compare. It validates the current `godot_proxy` shadow path, conservative compact proxy mode, shadow-only proxy refresh work, compact proxy savings, proxy refresh reuse, native-shadow lockout, upload failures, ground misses, collision readiness, and queue/process/submit budgets under the 150 FPS CPU-side frame budget.
+
+Fresh check:
+
+- `logs/gpu_shadow_proxy_refresh_cost_audit_current/gpu-shadow-proxy-refresh-cost-audit-summary.txt` passed with `case_count=18`, `matrix_case_count=16`, `pressure_case_count=2`, max mesh/proxy shadow `243/243`, max proxy-shadow-only `228`, max compact shadow proxy `808`, max compact shadow normals saved `5236`, max proxy refresh reuse `68`, max queue/process/submit `4.777/0.041/0.171ms`, zero native-shadow activation, `gpu_upload_fail=0`, and `ground_misses=0`.
+- The audit emits `default_runtime_change_allowed=0`, `visible_quality_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
+- `scripts/gpu_stress_artifact_index.sh` requires the shadow proxy refresh cost audit before approving current GPU stress evidence.
+- `scripts/test_strategy_gate.sh` requires the audit summary before the GPU stress artifact index and includes it in the nightly summary chain.
+- `scripts/gpu_terrain_report.sh` surfaces the selected audit summary and case rows.
+- This is local macOS/Metal CPU-side Godot shadow proxy evidence. Visual parity, external profiler rows, GPU-native shadow activation, and Windows/Vulkan/Direct3D validation remain separate.
+
+## GPU Edit Burst Budget Gate
+
+The edit-burst budget gate composes the repeated edit benchmark, border edit benchmark, partial dirty edge matrix, collision refresh cost audit, shadow proxy refresh cost audit, and upload budget summary into one required world-interaction artifact. It validates that dirty-edit burst evidence stays inside the 150 FPS CPU-side queue/process/submit budget, keeps upload failures and ground misses at zero, and blocks default runtime, scheduler, or visible-quality permission changes.
+
+Fresh check:
+
+- `logs/gpu_edit_burst_budget_gate_current/gpu-edit-burst-budget-summary.txt` passed with `source_count=6`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max dirty edge-neighbor subchunks `2836`, max dirty partial saved subchunks `1418`, max partial edge-neighbor subchunks `8`, max collision refresh rebuilds `132`, max collision phase total/component `1.950/1.540ms`, max proxy shadow `243`, max compact shadow proxy `808`, max proxy refresh reuse `68`, `gpu_upload_fail=0`, `ground_misses=0`, and default/visible/scheduler change blockers `0`.
+- `scripts/gpu_stress_artifact_index.sh` requires the edit-burst budget gate as a `world_interaction` row; the current stress index also requires the edit visual parity row below.
+- `scripts/test_strategy_gate.sh` requires the edit-burst budget summary before the GPU stress artifact index and includes it in the nightly summary chain.
+- `scripts/gpu_terrain_report.sh` surfaces the selected edit-burst budget summary and case rows.
+- This is local summary evidence only. Visual parity, external profiler rows, GPU-native shadow activation, and Windows/Vulkan/Direct3D validation remain separate.
+
+## GPU Edit Visual Parity Gate
+
+The edit visual parity gate validates the existing full rebuild versus partial dirty screenshots from the partial dirty edge matrix. It confirms that each edit case has a saved screenshot/marker, observed block edit, current render/collision readiness, conservative compact Godot proxy shadows, zero upload failures, zero ground misses, and tight visual deltas.
+
+Fresh check:
+
+- `logs/gpu_edit_visual_parity_gate_current/gpu-edit-visual-parity-summary.txt` passed with `case_count=8`, `pass_cases=8`, `marker_count=16`, max average-luma delta `0.0000`, max terrain-luma-range delta `0.0000`, max terrain sample delta `0`, max terrain color bucket delta `0`, max partial dirty edge-neighbor subchunks `8`, max partial dirty partial subchunks `4`, max partial dirty saved subchunks `2`, `smoke_err=0`, `gpu_upload_fail=0`, and `ground_misses=0`.
+- `scripts/gpu_stress_artifact_index.sh` requires the edit visual parity gate as a `world_interaction` row; the current stress index now passes with `38` rows and `28` required passes.
+- `scripts/test_strategy_gate.sh` requires the edit visual parity summary before the GPU stress artifact index and includes it in the nightly summary chain.
+- `scripts/gpu_terrain_report.sh` surfaces the selected edit visual parity summary/cases and max visual deltas.
+- This is local screenshot/marker parity evidence only. External profiler rows, GPU-native shadow activation, and Windows/Vulkan/Direct3D validation remain separate.
+
+## GPU World Interaction Checkpoint
+
+The world interaction checkpoint composes the repeated edit benchmark, border edit benchmark, partial dirty edge matrix, collision refresh cost audit, shadow proxy refresh cost audit, edit-burst budget gate, edit visual parity gate, and upload budget gate into one required local readiness artifact. It is the local Week 70 checkpoint for dirty edit world interaction performance.
+
+Fresh check:
+
+- `logs/gpu_world_interaction_checkpoint_current/gpu-world-interaction-checkpoint-summary.txt` passed with `source_count=8`, `pass_sources=8`, `checkpoint_status=local_complete_external_pending`, `local_world_interaction_status=pass`, `rollout_status=defer_defaults`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max dirty edge-neighbor subchunks `2836`, max dirty partial saved subchunks `1418`, max partial edge-neighbor subchunks `8`, max collision refresh rebuilds `132`, max collision phase total/component `1.950/1.540ms`, max compact shadow proxy `808`, max proxy refresh reuse `68`, max visual deltas `0.0000/0.0000/0/0`, max upload count/KiB per frame `1/2.000`, `gpu_upload_fail=0`, and `ground_misses=0`.
+- `scripts/gpu_stress_artifact_index.sh` requires the checkpoint as a `world_interaction` row; the current stress index now passes with `39` rows and `29` required passes.
+- `scripts/test_strategy_gate.sh` requires the checkpoint summary before the GPU stress artifact index and includes it in the nightly summary chain.
+- `scripts/gpu_terrain_report.sh` surfaces checkpoint status, local world-interaction status, rollout status, and selected checkpoint summary/source rows.
+- This is local summary/screenshot evidence only. Default rollout remains blocked by pending external profiler rows and Windows/Vulkan/Direct3D validation.
+
 ## Storage Persistence Foundation
 
 The storage foundation slice keeps RocksDB as the implemented chunk persistence backend and does not add PostgreSQL behavior. It adds focused coverage for missing chunks, save/reopen round-trips, overwrite isolation between neighboring chunk keys, concurrent distinct-key save/load, corrupt persisted payload errors with chunk-coordinate context, missing-parent path creation, regular-file parent/database path rejection with path context, closed-store and nil-save lifecycle errors, and the server config boundary that keeps `RUMPELMC_SERVER_ROCKSDB_PATH` as the only current runtime chunk-store path override.
@@ -287,6 +386,30 @@ The exploration soak wrapper repeats movement stress runs and aggregates long-ru
 Fresh smoke:
 
 - `logs/world_streaming_exploration_soak_smoke/world-streaming-exploration-soak-summary.txt` passed a single fast-turn run with `max_terrain_queue_ms=2.147`, `max_packet_queue_drain=36`, `max_packet_queue_lag_ms=15.330`, `max_chunk_unload_total=0`, `gpu_upload_fail=0`, `ground_misses=0`, and final render/collision readiness.
+
+## Chunk Boundary Stress
+
+`scripts/gpu_terrain_chunk_boundary_stress.sh` is the focused chunk enter/exit gate. It composes `long-move`, `spiral`, `fast-turn`, `teleport-snap`, and a bounded `high-resident` workload from the high-pressure suite, then emits `chunk-boundary-stress-summary.txt`.
+
+Fresh local evidence:
+
+- `logs/gpu_terrain_chunk_boundary_stress_current/chunk-boundary-stress-summary.txt` passed with movement cases `4`, workload cases `1`, max bounded residency `998` GPU subchunks/draws and `1445` faces, max terrain queue `2.258ms`, process wall p95 `0.049ms`, compositor submit `0.124ms`, packet queue max drain `54`, unload total `0`, unload neighbor refreshes `0`, upload failures `0`, ground misses `0`, and all final render/collision readiness checks passing.
+
+## Rapid Camera-Turn Stress
+
+`scripts/gpu_terrain_rapid_camera_turn_stress.sh` is the focused rapid-turn gate. It keeps the player inside chunk `2,2`, runs eight camera target changes via `chunk_fast_turn`, and emits `rapid-camera-turn-stress-summary.txt`.
+
+Fresh local evidence:
+
+- `logs/gpu_terrain_rapid_camera_turn_stress_current/rapid-camera-turn-stress-summary.txt` passed with `motion_steps=8`, `motion_chunks=1`, current chunk `2,2`, max queue/process/submit `1.535/0.049/0.100ms`, GPU effective draws `634`, packet queue max drain `51`, unload total/neighbor refreshes `0/0`, upload failures `0`, ground misses `0`, terrain samples `416`, and final render/collision readiness.
+
+## GPU Stress Artifact Index
+
+`scripts/gpu_stress_artifact_index.sh` is the focused summary index for current GPU world-loading/rendering evidence. It fails on missing or non-passing required GPU core rows, upload-failure violations, ground-miss violations, or default-runtime-change approval, while still listing optional missing governance/profiler rows.
+
+Fresh local evidence:
+
+- `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt` passed with `33` indexed rows, `23` required passes, optional missing rows `9`, max GPU subchunks/draws/faces `2482/2482/6292`, draw-command occupancy `30.298%`, max queue/process/submit `6.174/0.070/5.677ms`, max packet queue lag `67.578ms`, cutout uploads `265`, stage-pool reuses `3128`, grouped draw saved records `2174`, `external_profiler_status=pending_external_profiler`, and `mac_windows_validation_status=pending_external_validation`.
 
 ## GPU Terrain Load Scaling
 
@@ -312,6 +435,61 @@ Fresh check:
 
 - `logs/gpu_terrain_memory_budget_current/gpu-terrain-memory-budget-summary.txt` passed with configured terrain buffers `67,239,936` bytes under the `70,254,592` byte budget, active terrain bytes `52,736` under the `4,194,304` byte budget, `gpu_subchunks=2482`, `gpu_draws=2482`, `gpu_faces=3296`, draw-command occupancy `30.298%`, draw-command headroom `91,360` bytes, fragmentation `0.0%`, and zero upload failures.
 
+## GPU Buffer Residency Budget
+
+The buffer residency budget gate is summary-only. It classifies current GPU buffer pressure across mass chunk-load, upload stage-pool load-scaling, grouped draw, and cutout pressure evidence before any repack, eviction, or default streaming policy change.
+
+Fresh check:
+
+- `logs/gpu_buffer_residency_budget_current/gpu-buffer-residency-budget-summary.txt` passed with `residency_pressure_class=high`, `residency_proof_status=partial`, configured buffers `67,239,936` bytes at `95.709%` of the soft budget, active face bytes `100,672` at `2.400%`, resident subchunks/logical draw records/submitted draw records `2482/2482/2482`, resident faces `6292`, draw-command occupancy/headroom `30.298%/91360` bytes, queue/process/submit `2.214/0.059/5.677ms`, upload failures `0`, and allocator/free-range evidence still missing in this checkout.
+
+## GPU Streaming Priority Audit
+
+The streaming priority audit is summary-only. It checks server chunk ordering, client mesh/collision queue priority, current chunk readiness, unload churn, buffer residency, and diagnostic upload-failure fallback before any scheduler, unload, repack, eviction, or default streaming policy change.
+
+Fresh check:
+
+- `logs/gpu_streaming_priority_audit_current/gpu-streaming-priority-audit-summary.txt` passed with `source_contracts_present=18`, `runtime_priority_status=pass`, `upload_fallback_status=pass`, `priority_proof_status=partial`, packet queue lag `27.437ms`, current chunk `2,2`, render/collision readiness `1/1`, current chunk submeshes/collision `2/2`, normal upload failures `0`, buffer upload failures `0`, diagnostic upload-fallback expected/injected failures `1052/1052`, `upload_fallback_shadow_path=arraymesh`, `residency_pressure_class=high`, and `scheduler_change_allowed=0`.
+
+## GPU Streaming Scheduler Prototype
+
+The streaming scheduler prototype is default-off and client-only. It adds `RUMPELMC_CLIENT_STREAMING_SCHEDULER` modes for `nearest`, `directional_tie_preview`, and `directional_tie`. The default remains nearest/FIFO, preview records equal-distance directional tie mismatches without changing pop order, and active mode changes only equal-distance client queue ties. Collision-refresh backpressure, frame caps, server defaults, quality settings, protocol, storage, worldgen, and chunk serialization remain unchanged.
+
+Fresh check:
+
+- `logs/gpu_streaming_scheduler_prototype_current/gpu-streaming-scheduler-prototype-summary.txt` passed with `source_contracts_present=21`, `priority_audit_status=pass`, `priority_scheduler_change_allowed=0`, `default_scheduler_mode=nearest`, `stream_scheduler_active_default=0`, `collision_backpressure_preserved=1`, `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, and `candidate_scheduler_status=prototype_only`.
+- `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt` passed with `27` indexed rows, `18` required passes, zero upload-failure/ground-miss/default-runtime/scheduler-change violations, and explicit external profiler plus macOS/Windows validation blockers.
+
+## GPU Streaming Scheduler Workload Matrix
+
+The streaming scheduler workload matrix compares `nearest`, `directional_tie_preview`, and `directional_tie` against the same movement workloads. It validates scheduler mode/active markers, current render/collision readiness, zero ground misses, zero normal and injected upload failures, zero unload churn, and baseline-relative queue/process/compositor budgets. It does not authorize a default scheduler change.
+
+Fresh check:
+
+- `logs/gpu_streaming_scheduler_workload_matrix_current/gpu-streaming-scheduler-workload-matrix-summary.txt` is the required matrix summary.
+- `logs/gpu_streaming_scheduler_workload_matrix_current/gpu-streaming-scheduler-workload-matrix-cases.txt` records each mode/motion lane.
+- The current matrix passed as a decision gate with `matrix_harness_status=partial`, `expected_cases=9`, `completed_cases=9`, `runtime_signal=683`, max preview mismatches `117`, mesh/collision directional ties `361/10`, fifo fallbacks `902`, max queue/process/submit `6.174/0.070/0.408ms`, max packet queue lag `67.578ms`, and `candidate_scheduler_status=defer_matrix_harness_unstable`.
+- The matrix always emits `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
+
+## GPU Streaming Scheduler Tie Probe
+
+The scheduler tie probe extracts the stable `chunk_fly_snap_back` lanes from the workload matrix so the decision checkpoint has a deterministic tie-heavy runtime signal before any profiler comparison. It does not authorize a default scheduler change.
+
+Fresh check:
+
+- `logs/gpu_streaming_scheduler_tie_probe_current/gpu-streaming-scheduler-tie-probe-summary.txt` passed with `motion=chunk_fly_snap_back`, `expected_cases=3`, `completed_cases=3`, `runtime_signal=312`, preview mismatches `117`, mesh/collision directional ties `114/6`, fifo fallbacks `867`, max queue/process/submit `5.851/0.048/0.191ms`, max packet queue lag `42.019ms`, and `candidate_scheduler_status=stable_tie_probe_external_profiler_required`.
+- The probe emits `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
+
+## GPU Streaming Scheduler Decision Checkpoint
+
+The scheduler decision checkpoint is the required rollout-status summary. It composes the default-off scheduler prototype, the workload matrix, the deterministic tie probe, the current chunk-boundary baseline, and the buffer residency budget. It records the decision without changing runtime behavior.
+
+Fresh check:
+
+- `logs/gpu_streaming_scheduler_decision_checkpoint_current/gpu-streaming-scheduler-decision-checkpoint-summary.txt` passed with `workload_matrix_harness_status=partial`, `workload_runtime_signal=683`, `tie_probe_status=pass`, `tie_probe_runtime_signal=312`, `chunk_boundary_status=pass`, `chunk_boundary_upload_fail=0`, `chunk_boundary_ground_misses=0`, `chunk_boundary_unload_total=0`, `residency_status=pass`, `residency_pressure_class=high`, and `decision_status=defer_matrix_harness_unstable`.
+- The checkpoint emits `scheduler_change_allowed=0`, `default_runtime_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
+- `scripts/gpu_streaming_scheduler_boundary_matrix.sh` is available as an optional boundary-backed scheduler capture tool. It is not a required default gate until the nested boundary lanes produce stable summaries.
+
 ## GPU Report System V2
 
 The V2 report wrapper keeps the existing aggregate report but explicitly separates fresh scoped metrics, fail gates, historical aggregate maxima, and warning-only local signals.
@@ -334,7 +512,7 @@ The check strategy separates daily `fast`, pre-merge `full`, and heavy/nightly p
 
 Fresh check:
 
-- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, load scaling, upload pressure, resource lifecycle, memory budget, report V2, GPU report freshness, and baseline governance.
+- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, rapid camera-turn, chunk-boundary, dirty edit benchmarks, collision refresh cost audit, shadow proxy refresh cost audit, streaming priority audit, load scaling, upload pressure, resource lifecycle, memory budget, buffer residency budget, report V2, GPU report freshness, baseline governance, and the GPU stress artifact index.
 
 ## GPU Repack Activation Preflight
 
@@ -730,6 +908,9 @@ Set `RUMPELMC_SERVER_CHUNK_ENCODING=raw` for the rollback path.
 - Add round-trip tests for every encoded chunk format before enabling it in networking.
 - For RenderingDevice resource lifecycle checks, use `scripts/gpu_resource_lifecycle_audit.sh`; see `docs/RENDERINGDEVICE_RESOURCE_LIFECYCLE_AUDIT.md`.
 - For GPU terrain memory budget checks, use `scripts/gpu_terrain_memory_budget.sh`; see `docs/GPU_TERRAIN_MEMORY_BUDGETING.md`.
+- For GPU buffer residency budget checks, use `scripts/gpu_buffer_residency_budget.sh`; see `docs/GPU_BUFFER_RESIDENCY_BUDGET.md`.
+- For GPU streaming priority audits, use `scripts/gpu_streaming_priority_audit.sh`; see `docs/GPU_STREAMING_PRIORITY_AUDIT.md`.
+- For default-off client streaming scheduler prototype checks, use `scripts/gpu_streaming_scheduler_prototype.sh`; see `docs/GPU_STREAMING_SCHEDULER_PROTOTYPE.md`.
 - For classified GPU report output, use `scripts/gpu_terrain_report_v2.sh`; see `docs/GPU_REPORT_SYSTEM_V2.md`.
 - For accepted baseline comparison, use `scripts/performance_baseline_governance.sh`; see `docs/PERFORMANCE_BASELINE_GOVERNANCE.md`.
 - For fast/full/nightly strategy checks, use `scripts/test_strategy_gate.sh`; see `docs/TEST_STRATEGY.md`. Current expected status includes `gpu_report_freshness_status=guarded`.
