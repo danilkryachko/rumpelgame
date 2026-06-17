@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -516,12 +517,25 @@ func TestRocksChunkStoreItemEntitiesRoundTrip(t *testing.T) {
 		NextEntityID: 9,
 		Revision:     3,
 		Entities: []itementity.Entity{
-			{EntityID: 8, ItemID: "block:wood", Count: 2, X: 4.5, Y: 65.5, Z: -2.5},
-			{EntityID: 2, ItemID: "block:stone", Count: 1, X: 1.5, Y: 60.5, Z: 1.5},
+			{EntityID: 8, ItemID: "block:wood", Count: 2, X: 4.5, Y: 65.5, Z: -2.5, SpawnedAtUnixMS: 1700000002345},
+			{EntityID: 2, ItemID: "block:stone", Count: 1, X: 1.5, Y: 60.5, Z: 1.5, SpawnedAtUnixMS: 1700000001234},
 		},
 	}
 	if err := store.SaveItemEntities(state); err != nil {
 		t.Fatalf("SaveItemEntities() error = %v", err)
+	}
+	data, ok, err := store.getData(itemEntitiesKey())
+	if err != nil {
+		t.Fatalf("getData(itemEntitiesKey) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("item entity record missing after save")
+	}
+	if !bytes.Contains(data, []byte(`"version":2`)) {
+		t.Fatalf("item entity record = %s, want version 2", data)
+	}
+	if !bytes.Contains(data, []byte(`"spawned_at_unix_ms":1700000001234`)) {
+		t.Fatalf("item entity record = %s, want spawned timestamp", data)
 	}
 	store.Close()
 
@@ -547,11 +561,96 @@ func TestRocksChunkStoreItemEntitiesRoundTrip(t *testing.T) {
 	if len(loaded.Entities) != 2 {
 		t.Fatalf("loaded entities = %d, want 2", len(loaded.Entities))
 	}
-	if loaded.Entities[0] != (itementity.Entity{EntityID: 2, ItemID: "block:stone", Count: 1, X: 1.5, Y: 60.5, Z: 1.5}) {
+	if loaded.Entities[0] != (itementity.Entity{EntityID: 2, ItemID: "block:stone", Count: 1, X: 1.5, Y: 60.5, Z: 1.5, SpawnedAtUnixMS: 1700000001234}) {
 		t.Fatalf("entity 0 = %+v, want sorted Stone drop", loaded.Entities[0])
 	}
-	if loaded.Entities[1] != (itementity.Entity{EntityID: 8, ItemID: "block:wood", Count: 2, X: 4.5, Y: 65.5, Z: -2.5}) {
+	if loaded.Entities[1] != (itementity.Entity{EntityID: 8, ItemID: "block:wood", Count: 2, X: 4.5, Y: 65.5, Z: -2.5, SpawnedAtUnixMS: 1700000002345}) {
 		t.Fatalf("entity 1 = %+v, want sorted Wood drop", loaded.Entities[1])
+	}
+}
+
+func TestEncodeItemEntitiesWritesCurrentRecordVersionAndSpawnTimestamp(t *testing.T) {
+	data, err := encodeItemEntityState(itementity.State{
+		NextEntityID: 2,
+		Entities: []itementity.Entity{
+			{EntityID: 1, ItemID: "block:stone", Count: 3, X: 1.5, Y: 60.5, Z: 1.5, SpawnedAtUnixMS: 1700000001234},
+		},
+	})
+	if err != nil {
+		t.Fatalf("encodeItemEntityState() error = %v", err)
+	}
+
+	var record persistedItemEntities
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if record.Version != itemEntityRecordVersion {
+		t.Fatalf("record version = %d, want %d", record.Version, itemEntityRecordVersion)
+	}
+	if len(record.Entities) != 1 {
+		t.Fatalf("record entities = %d, want 1", len(record.Entities))
+	}
+	if got := record.Entities[0].SpawnedAtUnixMS; got != 1700000001234 {
+		t.Fatalf("spawned_at_unix_ms = %d, want 1700000001234", got)
+	}
+}
+
+func TestRocksChunkStoreItemEntitiesLoadsLegacyV1WithoutSpawnTimestamp(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	if err := store.putData(itemEntitiesKey(), []byte(`{"version":1,"next_entity_id":2,"revision":4,"entities":[{"entity_id":1,"item_id":"block:stone","count":1,"x":1.5,"y":60.5,"z":1.5}]}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, ok, err := store.LoadItemEntities()
+	if err != nil {
+		t.Fatalf("LoadItemEntities() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("LoadItemEntities() ok = false")
+	}
+	if loaded.Revision != 4 || loaded.NextEntityID != 2 {
+		t.Fatalf("loaded state = %+v, want revision 4 next id 2", loaded)
+	}
+	if len(loaded.Entities) != 1 {
+		t.Fatalf("loaded entities = %d, want 1", len(loaded.Entities))
+	}
+	if got := loaded.Entities[0].SpawnedAtUnixMS; got != itementity.LegacySpawnedAtUnixMS {
+		t.Fatalf("legacy spawned timestamp = %d, want %d", got, itementity.LegacySpawnedAtUnixMS)
+	}
+}
+
+func TestRocksChunkStoreItemEntitiesLoadsLegacyVersionOneRecord(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	legacyRecord := []byte(`{"version":1,"next_entity_id":3,"revision":7,"entities":[{"entity_id":2,"item_id":"block:stone","count":1,"x":1.5,"y":60.5,"z":1.5}]}`)
+	if err := store.putData(itemEntitiesKey(), legacyRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, ok, err := store.LoadItemEntities()
+	if err != nil {
+		t.Fatalf("LoadItemEntities() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("LoadItemEntities() ok = false")
+	}
+	if loaded.NextEntityID != 3 || loaded.Revision != 7 {
+		t.Fatalf("loaded legacy state = %+v, want next id 3 revision 7", loaded)
+	}
+	if len(loaded.Entities) != 1 {
+		t.Fatalf("loaded legacy entities = %d, want 1", len(loaded.Entities))
+	}
+	if got := loaded.Entities[0].SpawnedAtUnixMS; got != itementity.LegacySpawnedAtUnixMS {
+		t.Fatalf("legacy spawned timestamp = %d, want %d", got, itementity.LegacySpawnedAtUnixMS)
 	}
 }
 
@@ -645,6 +744,24 @@ func TestRocksChunkStoreItemEntitiesRejectsInvalidRecords(t *testing.T) {
 				NextEntityID: 2,
 				Entities: []itementity.Entity{
 					{EntityID: 1, ItemID: "block:stone", Count: 0, X: 1, Y: 2, Z: 3},
+				},
+			},
+		},
+		{
+			name: "count above stack max",
+			state: itementity.State{
+				NextEntityID: 2,
+				Entities: []itementity.Entity{
+					{EntityID: 1, ItemID: "block:stone", Count: itementity.MaxEntityStackCount + 1, X: 1, Y: 2, Z: 3},
+				},
+			},
+		},
+		{
+			name: "negative spawned timestamp",
+			state: itementity.State{
+				NextEntityID: 2,
+				Entities: []itementity.Entity{
+					{EntityID: 1, ItemID: "block:stone", Count: 1, X: 1, Y: 2, Z: 3, SpawnedAtUnixMS: -1},
 				},
 			},
 		},

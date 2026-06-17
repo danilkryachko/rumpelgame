@@ -96,13 +96,13 @@
 
 - `ItemEntity.entity_id = 1` is the server-authoritative runtime entity id.
 - `ItemEntity.item_id = 2` carries the server gameplay item id such as `block:stone`.
-- `ItemEntity.count = 3` carries the stack count represented by the entity.
+- `ItemEntity.count = 3` carries the stack count represented by the entity; nearby same-item server drops can merge into this count without adding a new protobuf field.
 - `ItemEntity.x = 4`, `y = 5`, and `z = 6` carry the item entity world position.
 - `ItemEntitySnapshot.entities = 1` carries the full current server item entity set visible to connected clients.
-- `ItemEntitySnapshot.revision = 2` increments when the server spawns or removes an item entity.
+- `ItemEntitySnapshot.revision = 2` increments when the server spawns, merges, removes, or despawns item entity state.
 - `ItemPickupAction.entity_id = 1` requests collection of one server item entity.
-- Connected-session `BlockAction DESTROY` of a placeable previous block spawns an item entity and broadcasts `Packet.item_entities = 6`.
-- Server item entities persist outside chunk payloads in the documented RocksDB item-entity record, so reconnecting clients can receive an `ItemEntitySnapshot` for uncollected drops after server restart without any protobuf field change.
+- Connected-session `BlockAction DESTROY` of a placeable previous block spawns or merges an item entity and broadcasts `Packet.item_entities = 6`.
+- Server item entities persist outside chunk payloads in the documented RocksDB item-entity record, so reconnecting clients can receive an `ItemEntitySnapshot` for uncollected non-expired drops after server restart without any protobuf field change.
 - Connected-session `ItemPickupAction` validates recorded client position against the server pickup reach, validates the item-to-block mapping, mutates the server inventory through `CollectBlock`, saves bound player inventory, broadcasts the updated item entity snapshot, and sends the collecting client a fresh `InventorySnapshot`.
 
 ## Sensitive Behavior

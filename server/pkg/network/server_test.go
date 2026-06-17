@@ -267,6 +267,32 @@ func TestConfiguredMaxClientsParsesSupportedValues(t *testing.T) {
 	}
 }
 
+func TestConfiguredItemEntityDespawnParsesSupportedValues(t *testing.T) {
+	t.Setenv(itemEntityDespawnEnv, "")
+	if got := configuredItemEntityDespawn(); got != defaultItemEntityDespawn {
+		t.Fatalf("configuredItemEntityDespawn() = %s, want default %s", got, defaultItemEntityDespawn)
+	}
+
+	t.Setenv(itemEntityDespawnEnv, "1500")
+	if got := configuredItemEntityDespawn(); got != 1500*time.Millisecond {
+		t.Fatalf("configuredItemEntityDespawn() = %s, want 1500ms", got)
+	}
+
+	t.Setenv(itemEntityDespawnEnv, "0")
+	if got := configuredItemEntityDespawn(); got != 0 {
+		t.Fatalf("configuredItemEntityDespawn() = %s, want disabled despawn", got)
+	}
+
+	for _, value := range []string{"-1", "nope"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(itemEntityDespawnEnv, value)
+			if got := configuredItemEntityDespawn(); got != defaultItemEntityDespawn {
+				t.Fatalf("configuredItemEntityDespawn() = %s, want default %s", got, defaultItemEntityDespawn)
+			}
+		})
+	}
+}
+
 func TestConfiguredInventoryModeUsesCreativeDefault(t *testing.T) {
 	t.Setenv(inventoryModeEnv, "")
 
@@ -1675,6 +1701,200 @@ func TestHandleClientPacketDestroySpawnsItemEntityAndSendsSnapshot(t *testing.T)
 	}
 }
 
+func TestSpawnItemEntityMergesNearbyMatchingStacks(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	firstSpawn := time.Unix(1700, 0).UTC()
+	secondSpawn := firstSpawn.Add(time.Second)
+	server.now = func() time.Time { return firstSpawn }
+
+	spawned, err := server.spawnItemEntityForBlock(world.Stone, 1, 60, 1)
+	if err != nil {
+		t.Fatalf("first spawnItemEntityForBlock() error = %v", err)
+	}
+	if !spawned {
+		t.Fatal("first spawnItemEntityForBlock() = false, want true")
+	}
+
+	server.now = func() time.Time { return secondSpawn }
+	spawned, err = server.spawnItemEntityForBlock(world.Stone, 1, 60, 2)
+	if err != nil {
+		t.Fatalf("second spawnItemEntityForBlock() error = %v", err)
+	}
+	if !spawned {
+		t.Fatal("second spawnItemEntityForBlock() = false, want true")
+	}
+
+	snapshot := server.itemEntitySnapshot()
+	if got := len(snapshot.GetEntities()); got != 1 {
+		t.Fatalf("item entities after merge = %d, want 1", got)
+	}
+	entity := snapshot.GetEntities()[0]
+	if got := entity.GetEntityId(); got != 1 {
+		t.Fatalf("merged entity id = %d, want original id 1", got)
+	}
+	if got := entity.GetCount(); got != 2 {
+		t.Fatalf("merged entity count = %d, want 2", got)
+	}
+	if got := snapshot.GetRevision(); got != 2 {
+		t.Fatalf("revision after merge = %d, want 2", got)
+	}
+	if got := server.nextItemEntityID; got != 2 {
+		t.Fatalf("next item entity id after merge = %d, want 2", got)
+	}
+	if got := server.itemEntities[1].spawnedAt; !got.Equal(secondSpawn) {
+		t.Fatalf("merged spawnedAt = %s, want refreshed %s", got, secondSpawn)
+	}
+}
+
+func TestSpawnItemEntityDoesNotMergeAtStackCap(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	spawnedAt := time.Unix(1700, 0).UTC()
+	server.now = func() time.Time { return spawnedAt }
+	server.itemEntities = map[uint64]itemEntity{
+		1: {
+			entityID:  1,
+			itemID:    item.StoneItemID,
+			count:     itementity.MaxEntityStackCount,
+			x:         1.5,
+			y:         60.5,
+			z:         1.5,
+			spawnedAt: spawnedAt,
+		},
+	}
+	server.nextItemEntityID = 2
+
+	spawned, err := server.spawnItemEntityForBlock(world.Stone, 1, 60, 1)
+	if err != nil {
+		t.Fatalf("spawnItemEntityForBlock() error = %v", err)
+	}
+	if !spawned {
+		t.Fatal("spawnItemEntityForBlock() = false, want true")
+	}
+
+	snapshot := server.itemEntitySnapshot()
+	if got := len(snapshot.GetEntities()); got != 2 {
+		t.Fatalf("item entities after capped spawn = %d, want 2", got)
+	}
+	if got := snapshot.GetEntities()[0].GetCount(); got != itementity.MaxEntityStackCount {
+		t.Fatalf("first entity count = %d, want stack cap", got)
+	}
+	if got := snapshot.GetEntities()[1].GetCount(); got != 1 {
+		t.Fatalf("second entity count = %d, want new stack count 1", got)
+	}
+}
+
+func TestSpawnItemEntityDespawnsOldestAtCapacity(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.itemEntityDespawn = 0
+	baseSpawnedAt := time.Unix(1700, 0).UTC()
+	server.now = func() time.Time { return baseSpawnedAt.Add(time.Hour) }
+	server.itemEntities = make(map[uint64]itemEntity, itementity.MaxStateEntities)
+	for index := 0; index < itementity.MaxStateEntities; index++ {
+		entityID := uint64(index + 1)
+		server.itemEntities[entityID] = itemEntity{
+			entityID:  entityID,
+			itemID:    item.DirtItemID,
+			count:     1,
+			x:         float64(1000 + index),
+			y:         60.5,
+			z:         1.5,
+			spawnedAt: baseSpawnedAt.Add(time.Duration(index) * time.Second),
+		}
+	}
+	server.nextItemEntityID = uint64(itementity.MaxStateEntities + 1)
+	server.itemEntityRevision = 10
+
+	spawned, err := server.spawnItemEntityForBlock(world.Stone, 1, 60, 1)
+	if err != nil {
+		t.Fatalf("spawnItemEntityForBlock() error = %v", err)
+	}
+	if !spawned {
+		t.Fatal("spawnItemEntityForBlock() = false, want true")
+	}
+	if got := len(server.itemEntities); got != itementity.MaxStateEntities {
+		t.Fatalf("runtime item entity count = %d, want max %d", got, itementity.MaxStateEntities)
+	}
+	if _, ok := server.itemEntities[1]; ok {
+		t.Fatal("oldest entity id 1 still present after capacity despawn")
+	}
+	newID := uint64(itementity.MaxStateEntities + 1)
+	if got := server.itemEntities[newID].itemID; got != item.StoneItemID {
+		t.Fatalf("new capacity replacement item id = %q, want %q", got, item.StoneItemID)
+	}
+	if got := server.itemEntityRevision; got != 11 {
+		t.Fatalf("revision after capacity spawn = %d, want 11", got)
+	}
+}
+
+func TestPruneExpiredItemEntitiesPersistsDespawn(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	now := time.Unix(1700, 0).UTC()
+	server.itemEntityDespawn = time.Second
+	server.itemEntities = map[uint64]itemEntity{
+		1: {entityID: 1, itemID: item.StoneItemID, count: 1, x: 1.5, y: 60.5, z: 1.5, spawnedAt: now.Add(-2 * time.Second)},
+		2: {entityID: 2, itemID: item.WoodItemID, count: 1, x: 2.5, y: 60.5, z: 1.5, spawnedAt: now},
+	}
+	server.nextItemEntityID = 3
+	server.itemEntityRevision = 7
+
+	if err := server.pruneExpiredItemEntities(now); err != nil {
+		t.Fatalf("pruneExpiredItemEntities() error = %v", err)
+	}
+	if got := len(server.itemEntities); got != 1 {
+		t.Fatalf("runtime item entities after despawn = %d, want 1", got)
+	}
+	if _, ok := server.itemEntities[1]; ok {
+		t.Fatal("expired entity id 1 still present")
+	}
+	if got := store.itemSaveCount; got != 1 {
+		t.Fatalf("item save count after despawn = %d, want 1", got)
+	}
+	if got := store.itemState.Revision; got != 8 {
+		t.Fatalf("persisted revision after despawn = %d, want 8", got)
+	}
+	if got := len(store.itemState.Entities); got != 1 {
+		t.Fatalf("persisted item entities after despawn = %d, want 1", got)
+	}
+	if got := store.itemState.Entities[0].EntityID; got != 2 {
+		t.Fatalf("persisted entity id after despawn = %d, want 2", got)
+	}
+}
+
+func TestLoadItemEntitiesFromStorePrunesExpiredBeforeListen(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	now := time.Unix(1700, 0).UTC()
+	store.itemFound = true
+	store.itemState = itementity.State{
+		NextEntityID: 3,
+		Revision:     4,
+		Entities: []itementity.Entity{
+			{EntityID: 1, ItemID: string(item.StoneItemID), Count: 1, X: 1.5, Y: 60.5, Z: 1.5, SpawnedAtUnixMS: itemEntitySpawnedAtUnixMS(now.Add(-2 * time.Second))},
+			{EntityID: 2, ItemID: string(item.WoodItemID), Count: 1, X: 2.5, Y: 60.5, Z: 1.5, SpawnedAtUnixMS: itemEntitySpawnedAtUnixMS(now)},
+		},
+	}
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.itemEntityDespawn = time.Second
+	server.now = func() time.Time { return now }
+
+	if err := server.loadItemEntitiesFromStore(); err != nil {
+		t.Fatalf("loadItemEntitiesFromStore() error = %v", err)
+	}
+	snapshot := server.itemEntitySnapshot()
+	if got := len(snapshot.GetEntities()); got != 1 {
+		t.Fatalf("loaded item entities after prune = %d, want 1", got)
+	}
+	if got := snapshot.GetEntities()[0].GetEntityId(); got != 2 {
+		t.Fatalf("loaded entity after prune = %d, want id 2", got)
+	}
+	if got := store.itemSaveCount; got != 1 {
+		t.Fatalf("item save count after load prune = %d, want 1", got)
+	}
+	if got := store.itemState.Revision; got != 5 {
+		t.Fatalf("persisted revision after load prune = %d, want 5", got)
+	}
+}
+
 func TestLoadItemEntitiesFromStoreRestoresSnapshotAndNextID(t *testing.T) {
 	store := newMemoryPlayerInventoryStore()
 	store.itemFound = true
@@ -1715,6 +1935,135 @@ func TestLoadItemEntitiesFromStoreRestoresSnapshotAndNextID(t *testing.T) {
 	snapshot = server.itemEntitySnapshot()
 	if got := snapshot.GetEntities()[2].GetEntityId(); got != 9 {
 		t.Fatalf("spawned entity id after load = %d, want next persisted id 9", got)
+	}
+}
+
+func TestLoadItemEntitiesFromStorePrunesExpiredDrops(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	store.itemFound = true
+	spawnedAt := time.Unix(1700, 0).UTC()
+	store.itemState = itementity.State{
+		NextEntityID: 3,
+		Revision:     4,
+		Entities: []itementity.Entity{
+			{EntityID: 2, ItemID: string(item.StoneItemID), Count: 1, X: 1.5, Y: 60.5, Z: 1.5, SpawnedAtUnixMS: itemEntitySpawnedAtUnixMS(spawnedAt)},
+		},
+	}
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.itemEntityDespawn = time.Second
+	server.now = func() time.Time { return spawnedAt.Add(2 * time.Second) }
+
+	if err := server.loadItemEntitiesFromStore(); err != nil {
+		t.Fatalf("loadItemEntitiesFromStore() error = %v", err)
+	}
+	if got := len(server.itemEntitySnapshot().GetEntities()); got != 0 {
+		t.Fatalf("loaded item entities after despawn = %d, want 0", got)
+	}
+	if got := store.itemSaveCount; got != 1 {
+		t.Fatalf("item save count after load despawn = %d, want 1", got)
+	}
+	if got := len(store.itemState.Entities); got != 0 {
+		t.Fatalf("persisted item entities after load despawn = %d, want 0", got)
+	}
+	if got := store.itemState.Revision; got != 5 {
+		t.Fatalf("persisted revision after load despawn = %d, want 5", got)
+	}
+}
+
+func TestLoadItemEntitiesFromStoreTreatsLegacyTimestampAsFresh(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	store.itemFound = true
+	now := time.Unix(1800, 0).UTC()
+	store.itemState = itementity.State{
+		NextEntityID: 3,
+		Revision:     4,
+		Entities: []itementity.Entity{
+			{EntityID: 2, ItemID: string(item.StoneItemID), Count: 1, X: 1.5, Y: 60.5, Z: 1.5, SpawnedAtUnixMS: itementity.LegacySpawnedAtUnixMS},
+		},
+	}
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.itemEntityDespawn = time.Second
+	server.now = func() time.Time { return now }
+
+	if err := server.loadItemEntitiesFromStore(); err != nil {
+		t.Fatalf("loadItemEntitiesFromStore() error = %v", err)
+	}
+	if got := len(server.itemEntitySnapshot().GetEntities()); got != 1 {
+		t.Fatalf("loaded legacy item entities = %d, want 1", got)
+	}
+	if got := store.itemSaveCount; got != 0 {
+		t.Fatalf("item save count for legacy fresh load = %d, want 0", got)
+	}
+}
+
+func TestSpawnItemEntityMergesNearbySameItemStack(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	now := time.Unix(1900, 0).UTC()
+	server.now = func() time.Time { return now }
+
+	if spawned, err := server.spawnItemEntityForBlock(world.Stone, 1, 60, 1); err != nil {
+		t.Fatalf("first spawnItemEntityForBlock() error = %v", err)
+	} else if !spawned {
+		t.Fatal("first spawnItemEntityForBlock() = false, want true")
+	}
+	if spawned, err := server.spawnItemEntityForBlock(world.Stone, 1, 60, 1); err != nil {
+		t.Fatalf("second spawnItemEntityForBlock() error = %v", err)
+	} else if !spawned {
+		t.Fatal("second spawnItemEntityForBlock() = false, want true")
+	}
+
+	snapshot := server.itemEntitySnapshot()
+	if got := len(snapshot.GetEntities()); got != 1 {
+		t.Fatalf("item entities after nearby merge = %d, want 1", got)
+	}
+	entity := snapshot.GetEntities()[0]
+	if got := entity.GetEntityId(); got != 1 {
+		t.Fatalf("merged entity id = %d, want original id 1", got)
+	}
+	if got := entity.GetCount(); got != 2 {
+		t.Fatalf("merged entity count = %d, want 2", got)
+	}
+	if got := store.itemState.NextEntityID; got != 2 {
+		t.Fatalf("next entity id after merge = %d, want 2", got)
+	}
+	if got := store.itemState.Revision; got != 2 {
+		t.Fatalf("item revision after merge = %d, want 2", got)
+	}
+	if got := store.itemSaveCount; got != 2 {
+		t.Fatalf("item save count after merge = %d, want 2", got)
+	}
+}
+
+func TestSpawnItemEntityDoesNotMergeFullStack(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.itemEntityDespawn = 0
+	server.itemEntities[1] = itemEntity{
+		entityID:  1,
+		itemID:    item.StoneItemID,
+		count:     itementity.MaxEntityStackCount,
+		x:         1.5,
+		y:         60.5,
+		z:         1.5,
+		spawnedAt: time.Unix(2000, 0).UTC(),
+	}
+	server.nextItemEntityID = 2
+
+	if spawned, err := server.spawnItemEntityForBlock(world.Stone, 1, 60, 1); err != nil {
+		t.Fatalf("spawnItemEntityForBlock() error = %v", err)
+	} else if !spawned {
+		t.Fatal("spawnItemEntityForBlock() = false, want true")
+	}
+
+	snapshot := server.itemEntitySnapshot()
+	if got := len(snapshot.GetEntities()); got != 2 {
+		t.Fatalf("item entities after full-stack spawn = %d, want 2", got)
+	}
+	if got := snapshot.GetEntities()[0].GetCount(); got != itementity.MaxEntityStackCount {
+		t.Fatalf("full stack count = %d, want %d", got, itementity.MaxEntityStackCount)
+	}
+	if got := snapshot.GetEntities()[1].GetCount(); got != 1 {
+		t.Fatalf("new stack count = %d, want 1", got)
 	}
 }
 
@@ -2004,6 +2353,68 @@ func TestHandleClientPacketPickupRejectsOutOfReachEntity(t *testing.T) {
 	}
 }
 
+func TestHandleClientPacketPickupRejectsExpiredEntityAndPersistsDespawn(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.itemEntityDespawn = time.Second
+	spawnedAt := time.Unix(2100, 0).UTC()
+	now := spawnedAt
+	server.now = func() time.Time { return now }
+
+	client := newClientSession(&recordingConn{})
+	recordReachableStoneDestroyPosition(client)
+	client.bindPlayerID("local_player")
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+	})
+
+	if spawned, err := server.spawnItemEntityForBlock(world.Stone, 1, 60, 1); err != nil {
+		t.Fatalf("spawnItemEntityForBlock() error = %v", err)
+	} else if !spawned {
+		t.Fatal("spawnItemEntityForBlock() = false, want true")
+	}
+	entityID := server.itemEntitySnapshot().GetEntities()[0].GetEntityId()
+	now = spawnedAt.Add(2 * time.Second)
+
+	packet := &api.Packet{
+		Payload: &api.Packet_ItemPickup{
+			ItemPickup: &api.ItemPickupAction{EntityId: entityID},
+		},
+	}
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if got := client.inventory.Slots()[0].Count; got != 0 {
+		t.Fatalf("stone count after expired pickup = %d, want 0", got)
+	}
+	if got := len(server.itemEntitySnapshot().GetEntities()); got != 0 {
+		t.Fatalf("server item entities after expired pickup = %d, want 0", got)
+	}
+	if got := store.saveCount; got != 0 {
+		t.Fatalf("inventory save count after expired pickup = %d, want 0", got)
+	}
+	if got := store.itemSaveCount; got != 2 {
+		t.Fatalf("item save count after expired pickup = %d, want spawn and despawn saves", got)
+	}
+	if got := len(store.itemState.Entities); got != 0 {
+		t.Fatalf("persisted item entities after expired pickup = %d, want 0", got)
+	}
+	if got := store.itemState.Revision; got != 2 {
+		t.Fatalf("persisted item revision after expired pickup = %d, want 2", got)
+	}
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 1 {
+		t.Fatalf("frames after expired pickup = %d, want current empty item snapshot", got)
+	}
+	snapshot := decodedPacket(t, frames[0]).GetItemEntities()
+	if snapshot == nil {
+		t.Fatal("expired pickup response item entity snapshot = nil")
+	}
+	if got := len(snapshot.GetEntities()); got != 0 {
+		t.Fatalf("expired pickup response item entities = %d, want 0", got)
+	}
+}
+
 func TestHandleClientPacketDestroyRejectsMiningCooldown(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
@@ -2121,8 +2532,11 @@ func TestHandleClientPacketDestroyAllowsAfterMiningCooldown(t *testing.T) {
 	if snapshot == nil {
 		t.Fatal("fourth frame item entity snapshot = nil")
 	}
-	if got := len(snapshot.GetEntities()); got != 2 {
-		t.Fatalf("item entities after cooldown elapsed = %d, want 2", got)
+	if got := len(snapshot.GetEntities()); got != 1 {
+		t.Fatalf("item entities after cooldown elapsed = %d, want merged stack", got)
+	}
+	if got := snapshot.GetEntities()[0].GetCount(); got != 2 {
+		t.Fatalf("merged item count after cooldown elapsed = %d, want 2", got)
 	}
 }
 
@@ -2307,8 +2721,11 @@ func TestHandleClientPacketDestroyUsesSelectedToolMiningDuration(t *testing.T) {
 	if snapshot == nil {
 		t.Fatal("fourth frame item entity snapshot = nil")
 	}
-	if got := len(snapshot.GetEntities()); got != 2 {
-		t.Fatalf("item entities after tool-adjusted cooldown = %d, want 2", got)
+	if got := len(snapshot.GetEntities()); got != 1 {
+		t.Fatalf("item entities after tool-adjusted cooldown = %d, want merged stack", got)
+	}
+	if got := snapshot.GetEntities()[0].GetCount(); got != 2 {
+		t.Fatalf("merged item count after tool-adjusted cooldown = %d, want 2", got)
 	}
 }
 

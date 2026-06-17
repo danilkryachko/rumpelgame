@@ -60,7 +60,7 @@ Out of scope:
 - Invalid or missing `player_id` values keep session-local inventory behavior and do not touch player inventory storage.
 - `BlockAction DESTROY` still maps to `world.Air` and does not require an inventory slot.
 - Connected-session destroy uses `World.ReplaceBlockGlobal` so the previous block is read atomically with the world edit.
-- After successful destroy of a placeable previous block, the server spawns a server-owned item entity at the destroyed block center and broadcasts a fresh `ItemEntitySnapshot`.
+- After successful destroy of a placeable previous block, the server spawns or merges a server-owned item entity at the destroyed block center and broadcasts a fresh `ItemEntitySnapshot`.
 - Server-owned item entities are persisted through the approved RocksDB store so uncollected destroyed-block drops survive restart without changing chunk payload bytes.
 - `ItemPickupAction` validates the requested item entity id, recorded client position, server pickup reach, item-to-block mapping, and `CollectBlock()` inventory acceptance before mutating inventory.
 - Successful pickup removes the item entity, saves the bound player inventory state, broadcasts a fresh item entity snapshot, and sends the collecting client a fresh inventory snapshot.
@@ -104,6 +104,7 @@ The gate checks that:
 - The counted smoke summary proves a real counted-mode server decrements a placed stack and reloads the decremented count after restart.
 - The break-drop smoke summary proves a real counted-mode server spawns a destroyed-block item entity, picks it up through the protocol path, saves the collected count, and reloads the added count after restart.
 - The item entity persistence smoke summary proves a real counted-mode server reloads an uncollected destroyed-block item entity after restart, accepts pickup after restart, persists the collected inventory count, and restarts with the item entity absent.
+- The item entity policy smoke summary proves a real counted-mode server merges nearby same-item destroyed-block drops into one stack and removes expired drops after restart through the documented item entity persistence path.
 - `server/pkg/network/server.go` keeps the existing block registry placeability check, adds the session inventory placement check, spawns item entities after successful destroys, validates `ItemPickupAction`, and validates `InventoryAction SELECT_SLOT` through session inventory.
 - Storage tests cover player inventory record round-trip, key separation from chunk records, corrupt record rejection, and empty id rejection.
 - The gameplay loop foundation consumes the live player-inventory reconnect smoke and reports `player_inventory_reconnect=live_server_guarded`.

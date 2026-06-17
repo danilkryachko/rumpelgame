@@ -7,7 +7,10 @@ import (
 	"rumpelmc/server/pkg/itementity"
 )
 
-const itemEntityRecordVersion = 1
+const (
+	itemEntityRecordVersion       = 2
+	legacyItemEntityRecordVersion = 1
+)
 
 type persistedItemEntities struct {
 	Version      uint32                `json:"version"`
@@ -17,12 +20,13 @@ type persistedItemEntities struct {
 }
 
 type persistedItemEntity struct {
-	EntityID uint64  `json:"entity_id"`
-	ItemID   string  `json:"item_id"`
-	Count    uint32  `json:"count"`
-	X        float64 `json:"x"`
-	Y        float64 `json:"y"`
-	Z        float64 `json:"z"`
+	EntityID        uint64  `json:"entity_id"`
+	ItemID          string  `json:"item_id"`
+	Count           uint32  `json:"count"`
+	X               float64 `json:"x"`
+	Y               float64 `json:"y"`
+	Z               float64 `json:"z"`
+	SpawnedAtUnixMS int64   `json:"spawned_at_unix_ms,omitempty"`
 }
 
 func (s *RocksChunkStore) LoadItemEntities() (itementity.State, bool, error) {
@@ -66,12 +70,13 @@ func encodeItemEntityState(state itementity.State) ([]byte, error) {
 	}
 	for index, entity := range normalized.Entities {
 		record.Entities[index] = persistedItemEntity{
-			EntityID: entity.EntityID,
-			ItemID:   string(entity.ItemID),
-			Count:    entity.Count,
-			X:        entity.X,
-			Y:        entity.Y,
-			Z:        entity.Z,
+			EntityID:        entity.EntityID,
+			ItemID:          string(entity.ItemID),
+			Count:           entity.Count,
+			X:               entity.X,
+			Y:               entity.Y,
+			Z:               entity.Z,
+			SpawnedAtUnixMS: entity.SpawnedAtUnixMS,
 		}
 	}
 	return json.Marshal(record)
@@ -82,7 +87,7 @@ func decodeItemEntityState(data []byte) (itementity.State, error) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		return itementity.State{}, err
 	}
-	if record.Version != itemEntityRecordVersion {
+	if record.Version != itemEntityRecordVersion && record.Version != legacyItemEntityRecordVersion {
 		return itementity.State{}, fmt.Errorf("unsupported version %d", record.Version)
 	}
 
@@ -93,12 +98,13 @@ func decodeItemEntityState(data []byte) (itementity.State, error) {
 	}
 	for index, entity := range record.Entities {
 		state.Entities[index] = itementity.Entity{
-			EntityID: entity.EntityID,
-			ItemID:   entity.ItemID,
-			Count:    entity.Count,
-			X:        entity.X,
-			Y:        entity.Y,
-			Z:        entity.Z,
+			EntityID:        entity.EntityID,
+			ItemID:          entity.ItemID,
+			Count:           entity.Count,
+			X:               entity.X,
+			Y:               entity.Y,
+			Z:               entity.Z,
+			SpawnedAtUnixMS: entity.SpawnedAtUnixMS,
 		}
 	}
 	return itementity.NormalizeState(state)

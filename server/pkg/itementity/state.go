@@ -8,15 +8,20 @@ import (
 	"rumpelmc/server/pkg/item"
 )
 
-const MaxStateEntities = 4096
+const (
+	MaxStateEntities      = 4096
+	MaxEntityStackCount   = 64
+	LegacySpawnedAtUnixMS = 0
+)
 
 type Entity struct {
-	EntityID uint64
-	ItemID   string
-	Count    uint32
-	X        float64
-	Y        float64
-	Z        float64
+	EntityID        uint64
+	ItemID          string
+	Count           uint32
+	X               float64
+	Y               float64
+	Z               float64
+	SpawnedAtUnixMS int64
 }
 
 type State struct {
@@ -54,8 +59,14 @@ func NormalizeState(state State) (State, error) {
 		if entity.Count == 0 {
 			return State{}, fmt.Errorf("item entity %d count cannot be zero", entity.EntityID)
 		}
+		if entity.Count > MaxEntityStackCount {
+			return State{}, fmt.Errorf("item entity %d count %d exceeds max %d", entity.EntityID, entity.Count, MaxEntityStackCount)
+		}
 		if !finiteCoordinate(entity.X) || !finiteCoordinate(entity.Y) || !finiteCoordinate(entity.Z) {
 			return State{}, fmt.Errorf("item entity %d has non-finite position", entity.EntityID)
+		}
+		if entity.SpawnedAtUnixMS < LegacySpawnedAtUnixMS {
+			return State{}, fmt.Errorf("item entity %d has negative spawned timestamp", entity.EntityID)
 		}
 		if entity.EntityID > maxEntityID {
 			maxEntityID = entity.EntityID

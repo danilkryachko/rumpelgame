@@ -40,6 +40,7 @@ const clientWriteTimeoutEnv = "RUMPELMC_SERVER_CLIENT_WRITE_TIMEOUT_MS"
 const maxClientsEnv = "RUMPELMC_SERVER_MAX_CLIENTS"
 const inventoryModeEnv = "RUMPELMC_SERVER_INVENTORY_MODE"
 const miningCooldownEnv = "RUMPELMC_SERVER_MINING_COOLDOWN_MS"
+const itemEntityDespawnEnv = "RUMPELMC_SERVER_ITEM_ENTITY_DESPAWN_MS"
 const initialClientPacketTimeout = 250 * time.Millisecond
 const maxPlayerIDLength = 64
 const serverBlockActionReach = 7.0
@@ -48,6 +49,9 @@ const serverPlayerCollisionHalfWidth = 0.4
 const serverPlayerCollisionHeight = 1.8
 const serverItemPickupReach = 6.0
 const serverItemPickupReachSquared = serverItemPickupReach * serverItemPickupReach
+const serverItemEntityMergeRadius = 1.25
+const serverItemEntityMergeRadiusSquared = serverItemEntityMergeRadius * serverItemEntityMergeRadius
+const defaultItemEntityDespawn = 5 * time.Minute
 const defaultCountedMiningCooldown = time.Duration(world.DefaultBlockMiningMS) * time.Millisecond
 
 type networkErrorClass string
@@ -95,12 +99,13 @@ const (
 )
 
 type itemEntity struct {
-	entityID uint64
-	itemID   item.ID
-	count    uint32
-	x        float64
-	y        float64
-	z        float64
+	entityID  uint64
+	itemID    item.ID
+	count     uint32
+	x         float64
+	y         float64
+	z         float64
+	spawnedAt time.Time
 }
 
 type Server struct {
@@ -116,6 +121,7 @@ type Server struct {
 	inventoryMode          inventoryMode
 	miningCooldown         time.Duration
 	miningCooldownOverride bool
+	itemEntityDespawn      time.Duration
 	miningDurations        map[world.BlockID]time.Duration
 	now                    func() time.Time
 	inventoryStore         playerInventoryStore
@@ -145,6 +151,7 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		inventoryMode:          inventoryMode,
 		miningCooldown:         miningCooldown,
 		miningCooldownOverride: miningCooldownOverride,
+		itemEntityDespawn:      configuredItemEntityDespawn(),
 		miningDurations:        configuredMiningDurations(inventoryMode, miningCooldown, miningCooldownOverride),
 		now:                    time.Now,
 		itemEntities:           make(map[uint64]itemEntity),
@@ -663,14 +670,16 @@ func (s *Server) loadItemEntitiesFromStore() error {
 
 	entities := make(map[uint64]itemEntity, len(state.Entities))
 	var maxEntityID uint64
+	now := s.currentTime()
 	for _, entity := range state.Entities {
 		entities[entity.EntityID] = itemEntity{
-			entityID: entity.EntityID,
-			itemID:   item.ID(entity.ItemID),
-			count:    entity.Count,
-			x:        entity.X,
-			y:        entity.Y,
-			z:        entity.Z,
+			entityID:  entity.EntityID,
+			itemID:    item.ID(entity.ItemID),
+			count:     entity.Count,
+			x:         entity.X,
+			y:         entity.Y,
+			z:         entity.Z,
+			spawnedAt: itemEntitySpawnedAtFromUnixMS(entity.SpawnedAtUnixMS, now),
 		}
 		if entity.EntityID > maxEntityID {
 			maxEntityID = entity.EntityID
@@ -690,6 +699,11 @@ func (s *Server) loadItemEntitiesFromStore() error {
 	s.itemEntities = entities
 	s.nextItemEntityID = nextEntityID
 	s.itemEntityRevision = state.Revision
+	if s.pruneExpiredItemEntitiesLocked(now) {
+		if err := s.saveItemEntitiesLocked(); err != nil {
+			return fmt.Errorf("save item entities after load despawn: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -1336,6 +1350,19 @@ func configuredMaxClients() int {
 	return parsed
 }
 
+func configuredItemEntityDespawn() time.Duration {
+	value := strings.TrimSpace(os.Getenv(itemEntityDespawnEnv))
+	if value == "" {
+		return defaultItemEntityDespawn
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		log.Printf("Ignoring invalid %s=%q; using %s", itemEntityDespawnEnv, value, defaultItemEntityDespawn)
+		return defaultItemEntityDespawn
+	}
+	return time.Duration(parsed) * time.Millisecond
+}
+
 func configuredInventoryMode() inventoryMode {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv(inventoryModeEnv)))
 	switch value {
@@ -1451,6 +1478,9 @@ func (s *Server) sendInventorySnapshotToSession(client *clientSession) error {
 }
 
 func (s *Server) sendItemEntitySnapshotToSessionIfNotEmpty(client *clientSession) error {
+	if err := s.pruneExpiredItemEntities(s.currentTime()); err != nil {
+		return err
+	}
 	if !s.hasItemEntities() {
 		return nil
 	}
@@ -1458,10 +1488,16 @@ func (s *Server) sendItemEntitySnapshotToSessionIfNotEmpty(client *clientSession
 }
 
 func (s *Server) sendItemEntitySnapshotToSession(client *clientSession) error {
+	if err := s.pruneExpiredItemEntities(s.currentTime()); err != nil {
+		return err
+	}
 	return s.sendPacketToSession(client, itemEntitySnapshotPacket(s.itemEntitySnapshot()))
 }
 
 func (s *Server) broadcastItemEntitySnapshot(origin *clientSession) error {
+	if err := s.pruneExpiredItemEntities(s.currentTime()); err != nil {
+		return err
+	}
 	packet := itemEntitySnapshotPacket(s.itemEntitySnapshot())
 
 	targets := s.itemEntitySnapshotTargets(origin)
@@ -1623,12 +1659,13 @@ func (s *Server) itemEntityStateLocked() itementity.State {
 	for _, id := range ids {
 		entity := s.itemEntities[id]
 		entities = append(entities, itementity.Entity{
-			EntityID: entity.entityID,
-			ItemID:   string(entity.itemID),
-			Count:    entity.count,
-			X:        entity.x,
-			Y:        entity.y,
-			Z:        entity.z,
+			EntityID:        entity.entityID,
+			ItemID:          string(entity.itemID),
+			Count:           entity.count,
+			X:               entity.x,
+			Y:               entity.y,
+			Z:               entity.z,
+			SpawnedAtUnixMS: itemEntitySpawnedAtUnixMS(entity.spawnedAt),
 		})
 	}
 	nextEntityID := s.nextItemEntityID
@@ -1654,6 +1691,10 @@ func (s *Server) spawnItemEntityForBlock(block world.BlockID, x, y, z int32) (bo
 	if !ok {
 		return false, nil
 	}
+	spawnedAt := s.currentTime()
+	spawnX := float64(x) + 0.5
+	spawnY := float64(y) + 0.5
+	spawnZ := float64(z) + 0.5
 
 	s.itemEntitiesMu.Lock()
 	defer s.itemEntitiesMu.Unlock()
@@ -1664,27 +1705,69 @@ func (s *Server) spawnItemEntityForBlock(block world.BlockID, x, y, z int32) (bo
 	if s.nextItemEntityID == 0 {
 		s.nextItemEntityID = 1
 	}
+
+	previousEntities := cloneRuntimeItemEntities(s.itemEntities)
+	previousNextEntityID := s.nextItemEntityID
+	previousRevision := s.itemEntityRevision
+
+	s.pruneExpiredItemEntitiesLocked(spawnedAt)
+	if s.mergeItemEntityLocked(itemID, 1, spawnX, spawnY, spawnZ, spawnedAt) {
+		s.itemEntityRevision++
+		if err := s.saveItemEntitiesLocked(); err != nil {
+			s.restoreRuntimeItemEntitiesLocked(previousEntities, previousNextEntityID, previousRevision)
+			return false, fmt.Errorf("save item entities after merge: %w", err)
+		}
+		return true, nil
+	}
+	s.removeOldestItemEntityIfAtCapacityLocked()
+
 	entityID, ok := s.allocateItemEntityIDLocked()
 	if !ok {
+		s.restoreRuntimeItemEntitiesLocked(previousEntities, previousNextEntityID, previousRevision)
 		return false, errors.New("item entity id space exhausted")
 	}
 
 	s.itemEntities[entityID] = itemEntity{
-		entityID: entityID,
-		itemID:   itemID,
-		count:    1,
-		x:        float64(x) + 0.5,
-		y:        float64(y) + 0.5,
-		z:        float64(z) + 0.5,
+		entityID:  entityID,
+		itemID:    itemID,
+		count:     1,
+		x:         spawnX,
+		y:         spawnY,
+		z:         spawnZ,
+		spawnedAt: spawnedAt,
 	}
 	s.itemEntityRevision++
 	if err := s.saveItemEntitiesLocked(); err != nil {
-		delete(s.itemEntities, entityID)
-		s.itemEntityRevision--
-		s.nextItemEntityID = entityID
+		s.restoreRuntimeItemEntitiesLocked(previousEntities, previousNextEntityID, previousRevision)
 		return false, fmt.Errorf("save item entities after spawn: %w", err)
 	}
 	return true, nil
+}
+
+func (s *Server) removeOldestItemEntityIfAtCapacityLocked() bool {
+	if len(s.itemEntities) < itementity.MaxStateEntities {
+		return false
+	}
+
+	var (
+		oldestID        uint64
+		oldestSpawnedAt time.Time
+		found           bool
+	)
+	for entityID, entity := range s.itemEntities {
+		if !found ||
+			entity.spawnedAt.Before(oldestSpawnedAt) ||
+			(entity.spawnedAt.Equal(oldestSpawnedAt) && entityID < oldestID) {
+			oldestID = entityID
+			oldestSpawnedAt = entity.spawnedAt
+			found = true
+		}
+	}
+	if !found {
+		return false
+	}
+	delete(s.itemEntities, oldestID)
+	return true
 }
 
 func (s *Server) allocateItemEntityIDLocked() (uint64, bool) {
@@ -1708,6 +1791,119 @@ func (s *Server) allocateItemEntityIDLocked() (uint64, bool) {
 	}
 }
 
+func (s *Server) pruneExpiredItemEntities(now time.Time) error {
+	s.itemEntitiesMu.Lock()
+	defer s.itemEntitiesMu.Unlock()
+
+	previousEntities := cloneRuntimeItemEntities(s.itemEntities)
+	previousNextEntityID := s.nextItemEntityID
+	previousRevision := s.itemEntityRevision
+	if !s.pruneExpiredItemEntitiesLocked(now) {
+		return nil
+	}
+	if err := s.saveItemEntitiesLocked(); err != nil {
+		s.restoreRuntimeItemEntitiesLocked(previousEntities, previousNextEntityID, previousRevision)
+		return fmt.Errorf("save item entities after despawn: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) pruneExpiredItemEntitiesLocked(now time.Time) bool {
+	if s.itemEntityDespawn <= 0 || len(s.itemEntities) == 0 {
+		return false
+	}
+
+	changed := false
+	for entityID, entity := range s.itemEntities {
+		if entity.spawnedAt.IsZero() {
+			entity.spawnedAt = now
+			s.itemEntities[entityID] = entity
+			continue
+		}
+		if now.Before(entity.spawnedAt.Add(s.itemEntityDespawn)) {
+			continue
+		}
+		delete(s.itemEntities, entityID)
+		changed = true
+	}
+	if changed {
+		s.itemEntityRevision++
+	}
+	return changed
+}
+
+func (s *Server) mergeItemEntityLocked(itemID item.ID, count uint32, x, y, z float64, spawnedAt time.Time) bool {
+	if count == 0 || count > itementity.MaxEntityStackCount {
+		return false
+	}
+
+	var (
+		bestID       uint64
+		bestDistance float64
+		found        bool
+	)
+	for entityID, entity := range s.itemEntities {
+		if entity.itemID != itemID || entity.count > itementity.MaxEntityStackCount-count {
+			continue
+		}
+		distance := itemEntityDistanceSquared(entity, x, y, z)
+		if distance > serverItemEntityMergeRadiusSquared {
+			continue
+		}
+		if !found || distance < bestDistance || (distance == bestDistance && entityID < bestID) {
+			bestID = entityID
+			bestDistance = distance
+			found = true
+		}
+	}
+	if !found {
+		return false
+	}
+
+	entity := s.itemEntities[bestID]
+	entity.count += count
+	if entity.spawnedAt.IsZero() || entity.spawnedAt.Before(spawnedAt) {
+		entity.spawnedAt = spawnedAt
+	}
+	s.itemEntities[bestID] = entity
+	return true
+}
+
+func itemEntityDistanceSquared(entity itemEntity, x, y, z float64) float64 {
+	dx := entity.x - x
+	dy := entity.y - y
+	dz := entity.z - z
+	return dx*dx + dy*dy + dz*dz
+}
+
+func itemEntitySpawnedAtFromUnixMS(unixMS int64, fallback time.Time) time.Time {
+	if unixMS <= itementity.LegacySpawnedAtUnixMS {
+		return fallback
+	}
+	return time.Unix(unixMS/1000, (unixMS%1000)*int64(time.Millisecond)).UTC()
+}
+
+func itemEntitySpawnedAtUnixMS(spawnedAt time.Time) int64 {
+	if spawnedAt.IsZero() {
+		return itementity.LegacySpawnedAtUnixMS
+	}
+	return spawnedAt.UTC().UnixNano() / int64(time.Millisecond)
+}
+
+func cloneRuntimeItemEntities(entities map[uint64]itemEntity) map[uint64]itemEntity {
+	cloned := make(map[uint64]itemEntity, len(entities))
+	for entityID, entity := range entities {
+		cloned[entityID] = entity
+	}
+	return cloned
+}
+
+func (s *Server) restoreRuntimeItemEntitiesLocked(entities map[uint64]itemEntity, nextEntityID uint64, revision uint64) {
+	s.itemEntities = cloneRuntimeItemEntities(entities)
+	s.nextItemEntityID = nextEntityID
+	s.itemEntityRevision = revision
+}
+
 func (s *Server) collectItemEntityForSession(client *clientSession, entityID uint64) (bool, error) {
 	if entityID == 0 {
 		return false, nil
@@ -1716,20 +1912,37 @@ func (s *Server) collectItemEntityForSession(client *clientSession, entityID uin
 	s.itemEntitiesMu.Lock()
 	defer s.itemEntitiesMu.Unlock()
 
+	previousEntities := cloneRuntimeItemEntities(s.itemEntities)
+	previousNextEntityID := s.nextItemEntityID
+	previousRevision := s.itemEntityRevision
+	pruned := s.pruneExpiredItemEntitiesLocked(s.currentTime())
+
 	entity, ok := s.itemEntities[entityID]
 	if !ok {
+		if err := s.saveItemEntityPruneIfNeededLocked(pruned, previousEntities, previousNextEntityID, previousRevision); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	if !itemEntityWithinPickupReach(client.recordedPosition(), entity) {
+		if err := s.saveItemEntityPruneIfNeededLocked(pruned, previousEntities, previousNextEntityID, previousRevision); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	block, ok := item.BlockForItem(entity.itemID)
 	if !ok {
+		if err := s.saveItemEntityPruneIfNeededLocked(pruned, previousEntities, previousNextEntityID, previousRevision); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	playerID := client.boundPlayerID()
 	previousInventoryState := client.currentInventoryState()
 	if !client.collectInventoryBlock(block, entity.count) {
+		if err := s.saveItemEntityPruneIfNeededLocked(pruned, previousEntities, previousNextEntityID, previousRevision); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	collectedInventoryState := client.currentInventoryState()
@@ -1737,14 +1950,12 @@ func (s *Server) collectItemEntityForSession(client *clientSession, entityID uin
 	delete(s.itemEntities, entityID)
 	s.itemEntityRevision++
 	if err := s.saveClientInventoryState(playerID, collectedInventoryState); err != nil {
-		s.itemEntities[entityID] = entity
-		s.itemEntityRevision--
+		s.restoreRuntimeItemEntitiesLocked(previousEntities, previousNextEntityID, previousRevision)
 		client.applyInventoryState(previousInventoryState)
 		return false, err
 	}
 	if err := s.saveItemEntitiesLocked(); err != nil {
-		s.itemEntities[entityID] = entity
-		s.itemEntityRevision--
+		s.restoreRuntimeItemEntitiesLocked(previousEntities, previousNextEntityID, previousRevision)
 		client.applyInventoryState(previousInventoryState)
 		if rollbackErr := s.saveClientInventoryState(playerID, previousInventoryState); rollbackErr != nil {
 			return false, fmt.Errorf("save item entities after pickup: %w; rollback player inventory: %v", err, rollbackErr)
@@ -1752,6 +1963,17 @@ func (s *Server) collectItemEntityForSession(client *clientSession, entityID uin
 		return false, fmt.Errorf("save item entities after pickup: %w", err)
 	}
 	return true, nil
+}
+
+func (s *Server) saveItemEntityPruneIfNeededLocked(pruned bool, previousEntities map[uint64]itemEntity, previousNextEntityID uint64, previousRevision uint64) error {
+	if !pruned {
+		return nil
+	}
+	if err := s.saveItemEntitiesLocked(); err != nil {
+		s.restoreRuntimeItemEntitiesLocked(previousEntities, previousNextEntityID, previousRevision)
+		return fmt.Errorf("save item entities after despawn: %w", err)
+	}
+	return nil
 }
 
 func itemEntityWithinPickupReach(position clientPositionState, entity itemEntity) bool {

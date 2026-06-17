@@ -21,7 +21,7 @@ Do not introduce, expand, or migrate to another database engine without explicit
 - RocksDB chunk keys use a `c` byte prefix followed by sortable big-endian signed `int32` `x` and `z` coordinates. Preserve this key format unless a migration is explicitly planned.
 - Persisted chunk payloads use the exact byte output of `world.Chunk.Serialize()` and must match the current serialized chunk size when loaded.
 - RocksDB player inventory records use a separate `p i NUL` byte prefix followed by a bounded player id. These records store JSON version `1` with placement policy, selected slot, and copied inventory slots; they must not reuse chunk keys or alter chunk payload bytes.
-- RocksDB item entity records use a separate `i e NUL` byte prefix. The current record is one JSON version `1` document containing `next_entity_id`, `revision`, and the sorted full item entity set; it must not reuse chunk keys, player inventory keys, or alter chunk payload bytes.
+- RocksDB item entity records use a separate `i e NUL` byte prefix. The current record is one JSON version `2` document containing `next_entity_id`, `revision`, and the sorted full item entity set with per-entity `spawned_at_unix_ms`; the loader still accepts legacy JSON version `1` records without timestamps and treats them as fresh on server load. Item entity records must not reuse chunk keys, player inventory keys, or alter chunk payload bytes.
 - RocksDB path/config behavior is guarded: empty RocksDB chunk store paths are rejected before the C API, missing parent directories are created, and existing regular-file parent/database paths are rejected.
 - RocksDB concurrent access is guarded for distinct chunk keys: concurrent save/load operations on one open store must preserve each chunk payload.
 - RocksDB open/read/write/decode errors include path or chunk-coordinate context so failures are actionable from logs and test output.
@@ -35,7 +35,7 @@ Do not introduce, expand, or migrate to another database engine without explicit
 
 - RocksDB owns current server chunk persistence.
 - RocksDB also owns current local-player inventory persistence for clients that send `ClientPosition.player_id`.
-- RocksDB also owns current server item-entity persistence for uncollected destroyed-block drops.
+- RocksDB also owns current server item-entity persistence for uncollected destroyed-block drops, bounded dropped stack merge state, and despawn timestamps.
 - `server/cmd/server/main.go` opens `storage.OpenRocksChunkStore(defaultRocksDBPath())`, validates world generator config, and passes the store to `world.NewWorldWithGeneratorConfig`.
 - The same RocksDB store is passed to `network.NewServerWithPlayerInventoryStore` so player inventory state, item entity state, and chunk data share the approved backend while keeping separate key prefixes.
 - `RUMPELMC_SERVER_ROCKSDB_PATH` is the only current runtime chunk-store path override.

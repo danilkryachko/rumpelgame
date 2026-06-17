@@ -18,6 +18,8 @@ NETWORK_SOURCE="${RUMPELMC_ITEM_ENTITY_NETWORK_SOURCE:-"$ROOT_DIR/server/pkg/net
 NETWORK_TEST="${RUMPELMC_ITEM_ENTITY_NETWORK_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
 SMOKE_SCRIPT="${RUMPELMC_ITEM_ENTITY_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/player_item_entity_persistence_smoke.sh"}"
 SMOKE_SUMMARY="${RUMPELMC_ITEM_ENTITY_SMOKE_SUMMARY:-"$ROOT_DIR/logs/player_item_entity_persistence_smoke_current/player-item-entity-persistence-smoke-summary.txt"}"
+POLICY_SMOKE_SCRIPT="${RUMPELMC_ITEM_ENTITY_POLICY_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/item_entity_policy_smoke.sh"}"
+POLICY_SMOKE_SUMMARY="${RUMPELMC_ITEM_ENTITY_POLICY_SMOKE_SUMMARY:-"$ROOT_DIR/logs/item_entity_policy_current/item-entity-policy-summary.txt"}"
 RUN_GO_TESTS="${RUMPELMC_ITEM_ENTITY_RUN_GO_TESTS:-1}"
 
 mkdir -p "$OUT_DIR"
@@ -53,7 +55,7 @@ field_metric() {
   ' "$path"
 }
 
-for path in "$DESIGN_DOC" "$STORAGE_DOC" "$STORAGE_SOURCE" "$STORAGE_TEST" "$STATE_SOURCE" "$NETWORK_SOURCE" "$NETWORK_TEST" "$SMOKE_SCRIPT"; do
+for path in "$DESIGN_DOC" "$STORAGE_DOC" "$STORAGE_SOURCE" "$STORAGE_TEST" "$STATE_SOURCE" "$NETWORK_SOURCE" "$NETWORK_TEST" "$SMOKE_SCRIPT" "$POLICY_SMOKE_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -61,21 +63,29 @@ for token in \
   'Item Entity Persistence' \
   'Current Contract' \
   'Restart Flow' \
+  'Dropped Stack Merge And Despawn' \
   'item_entity_persistence=rocksdb_guarded' \
   'uncollected_drop_restart=live_server_guarded' \
-  'pickup_after_restart=live_server_guarded'; do
+  'pickup_after_restart=live_server_guarded' \
+  'item_entity_policy=merge_despawn_guarded'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
 require_token "$STORAGE_DOC" 'RocksDB item entity records use a separate `i e NUL` byte prefix'
+require_token "$STORAGE_DOC" 'JSON version `2`'
 require_token "$STATE_SOURCE" 'type State struct'
 require_token "$STATE_SOURCE" 'type Entity struct'
+require_token "$STATE_SOURCE" 'MaxEntityStackCount'
+require_token "$STATE_SOURCE" 'SpawnedAtUnixMS'
 require_token "$STORAGE_SOURCE" 'func (s *RocksChunkStore) LoadItemEntities'
 require_token "$STORAGE_SOURCE" 'func (s *RocksChunkStore) SaveItemEntities'
 require_token "$STORAGE_SOURCE" 'itemEntityRecordVersion'
+require_token "$STORAGE_SOURCE" 'legacyItemEntityRecordVersion'
+require_token "$STORAGE_SOURCE" 'SpawnedAtUnixMS'
 require_token "$STORAGE_SOURCE" "[]byte{'i', 'e', 0}"
 require_token "$STATE_SOURCE" 'MaxStateEntities'
 require_token "$STORAGE_TEST" 'TestRocksChunkStoreItemEntitiesRoundTrip'
+require_token "$STORAGE_TEST" 'TestRocksChunkStoreItemEntitiesLoadsLegacyVersionOneRecord'
 require_token "$STORAGE_TEST" 'TestRocksChunkStoreItemEntitiesKeyIsSeparateFromChunkAndPlayerInventoryKey'
 require_token "$STORAGE_TEST" 'TestRocksChunkStoreItemEntitiesRejectsCorruptPayload'
 require_token "$STORAGE_TEST" 'TestRocksChunkStoreItemEntitiesRejectsInvalidRecords'
@@ -84,11 +94,20 @@ require_token "$NETWORK_SOURCE" 'LoadItemEntities'
 require_token "$NETWORK_SOURCE" 'SaveItemEntities'
 require_token "$NETWORK_SOURCE" 'loadItemEntitiesFromStore'
 require_token "$NETWORK_SOURCE" 'saveItemEntitiesLocked'
+require_token "$NETWORK_SOURCE" 'configuredItemEntityDespawn'
+require_token "$NETWORK_SOURCE" 'mergeItemEntityLocked'
+require_token "$NETWORK_SOURCE" 'pruneExpiredItemEntitiesLocked'
+require_token "$NETWORK_SOURCE" 'removeOldestItemEntityIfAtCapacityLocked'
 require_token "$NETWORK_SOURCE" 'spawnItemEntityForBlock(previousBlock'
 require_token "$NETWORK_SOURCE" 'collectItemEntityForSession(client, action.EntityId)'
 require_token "$NETWORK_TEST" 'TestLoadItemEntitiesFromStoreRestoresSnapshotAndNextID'
+require_token "$NETWORK_TEST" 'TestLoadItemEntitiesFromStorePrunesExpiredDrops'
+require_token "$NETWORK_TEST" 'TestLoadItemEntitiesFromStoreTreatsLegacyTimestampAsFresh'
+require_token "$NETWORK_TEST" 'TestSpawnItemEntityMergesNearbySameItemStack'
+require_token "$NETWORK_TEST" 'TestSpawnItemEntityDoesNotMergeFullStack'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroyPersistsItemEntityState'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketPickupPersistsCollectedCountedDrop'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketPickupRejectsExpiredEntityAndPersistsDespawn'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketPickupRollsBackWhenInventorySaveFails'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketPickupRollsBackInventoryWhenItemEntitySaveFails'
 require_token "$SMOKE_SCRIPT" 'item_entity_persistence=live_server_guarded'
@@ -96,6 +115,9 @@ require_token "$SMOKE_SCRIPT" 'destroy-drop-expect'
 require_token "$SMOKE_SCRIPT" 'item-entity-expect'
 require_token "$SMOKE_SCRIPT" 'item-pickup-expect'
 require_token "$SMOKE_SCRIPT" 'item-absent-expect'
+require_token "$POLICY_SMOKE_SCRIPT" 'item_entity_policy=merge_despawn_guarded'
+require_token "$POLICY_SMOKE_SCRIPT" 'destroy-merge-expect'
+require_token "$POLICY_SMOKE_SCRIPT" 'RUMPELMC_SERVER_ITEM_ENTITY_DESPAWN_MS="$despawn_ms"'
 
 test -s "$SMOKE_SUMMARY" || fail "missing required input $SMOKE_SUMMARY"
 smoke_status="$(field_metric status "$SMOKE_SUMMARY")"
@@ -110,6 +132,18 @@ smoke_verify_inventory_status="$(field_metric verify_inventory_restart_status "$
 smoke_verify_empty_status="$(field_metric verify_empty_restart_status "$SMOKE_SUMMARY")"
 smoke_restarts="$(field_metric server_restarts "$SMOKE_SUMMARY")"
 smoke_protocol_change="$(field_metric protocol_change "$SMOKE_SUMMARY")"
+
+test -s "$POLICY_SMOKE_SUMMARY" || fail "missing required input $POLICY_SMOKE_SUMMARY"
+policy_smoke_status="$(field_metric status "$POLICY_SMOKE_SUMMARY")"
+policy_guard="$(field_metric item_entity_policy "$POLICY_SMOKE_SUMMARY")"
+policy_merge="$(field_metric dropped_stack_merge "$POLICY_SMOKE_SUMMARY")"
+policy_despawn="$(field_metric despawn_restart "$POLICY_SMOKE_SUMMARY")"
+policy_merge_status="$(field_metric merge_status "$POLICY_SMOKE_SUMMARY")"
+policy_despawn_spawn_status="$(field_metric despawn_spawn_status "$POLICY_SMOKE_SUMMARY")"
+policy_despawn_absent_status="$(field_metric despawn_absent_status "$POLICY_SMOKE_SUMMARY")"
+policy_merged_count="$(field_metric expected_merged_count "$POLICY_SMOKE_SUMMARY")"
+policy_restarts="$(field_metric server_restarts "$POLICY_SMOKE_SUMMARY")"
+policy_protocol_change="$(field_metric protocol_change "$POLICY_SMOKE_SUMMARY")"
 
 protocol_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
 chunk_payload_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- server/pkg/world api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
@@ -140,9 +174,20 @@ awk \
   -v smoke_verify_empty_status="${smoke_verify_empty_status:-missing}" \
   -v smoke_restarts="${smoke_restarts:-0}" \
   -v smoke_protocol_change="${smoke_protocol_change:-1}" \
+  -v policy_smoke_status="${policy_smoke_status:-missing}" \
+  -v policy_guard="${policy_guard:-missing}" \
+  -v policy_merge="${policy_merge:-missing}" \
+  -v policy_despawn="${policy_despawn:-missing}" \
+  -v policy_merge_status="${policy_merge_status:-missing}" \
+  -v policy_despawn_spawn_status="${policy_despawn_spawn_status:-missing}" \
+  -v policy_despawn_absent_status="${policy_despawn_absent_status:-missing}" \
+  -v policy_merged_count="${policy_merged_count:-0}" \
+  -v policy_restarts="${policy_restarts:-0}" \
+  -v policy_protocol_change="${policy_protocol_change:-1}" \
   -v design_doc="$DESIGN_DOC" \
   -v storage_doc="$STORAGE_DOC" \
-  -v smoke_summary="$SMOKE_SUMMARY" '
+  -v smoke_summary="$SMOKE_SUMMARY" \
+  -v policy_smoke_summary="$POLICY_SMOKE_SUMMARY" '
   BEGIN {
     status = "pass"
     reason = "ok"
@@ -150,6 +195,9 @@ awk \
     uncollected_drop_restart = "live_server_guarded"
     pickup_after_restart = "live_server_guarded"
     empty_after_pickup_restart = "live_server_guarded"
+    item_entity_policy = "merge_despawn_guarded"
+    dropped_stack_merge = "live_server_guarded"
+    despawn_restart = "live_server_guarded"
     storage_status = "json_record_guarded"
     go_ok = go_tests == "pass" || go_tests == "skipped"
     smoke_ok = smoke_status == "pass" &&
@@ -164,6 +212,16 @@ awk \
       smoke_verify_empty_status == "pass" &&
       smoke_restarts + 0 >= 4 &&
       smoke_protocol_change + 0 == 0
+    policy_ok = policy_smoke_status == "pass" &&
+      policy_guard == "merge_despawn_guarded" &&
+      policy_merge == "live_server_guarded" &&
+      policy_despawn == "live_server_guarded" &&
+      policy_merge_status == "pass" &&
+      policy_despawn_spawn_status == "pass" &&
+      policy_despawn_absent_status == "pass" &&
+      policy_merged_count + 0 == 2 &&
+      policy_restarts + 0 >= 1 &&
+      policy_protocol_change + 0 == 0
 
     if (protocol_diff_count + 0 != 0) {
       status = "fail"
@@ -177,9 +235,12 @@ awk \
     } else if (!smoke_ok) {
       status = "fail"
       reason = "smoke_not_clean"
+    } else if (!policy_ok) {
+      status = "fail"
+      reason = "policy_smoke_not_clean"
     }
 
-    printf("item_entity_persistence_gate status=%s reason=%s item_entity_persistence=%s storage_status=%s uncollected_drop_restart=%s pickup_after_restart=%s empty_after_pickup_restart=%s active_protocol_change=%d active_chunk_payload_change=%d go_tests=%s smoke_status=%s design_doc=%s storage_doc=%s smoke_summary=%s\n", status, reason, item_entity_persistence, storage_status, uncollected_drop_restart, pickup_after_restart, empty_after_pickup_restart, protocol_diff_count, chunk_payload_diff_count, go_tests, smoke_status, design_doc, storage_doc, smoke_summary)
+    printf("item_entity_persistence_gate status=%s reason=%s item_entity_persistence=%s item_entity_policy=%s dropped_stack_merge=%s despawn_restart=%s storage_status=%s uncollected_drop_restart=%s pickup_after_restart=%s empty_after_pickup_restart=%s active_protocol_change=%d active_chunk_payload_change=%d go_tests=%s smoke_status=%s policy_smoke_status=%s design_doc=%s storage_doc=%s smoke_summary=%s policy_smoke_summary=%s\n", status, reason, item_entity_persistence, item_entity_policy, dropped_stack_merge, despawn_restart, storage_status, uncollected_drop_restart, pickup_after_restart, empty_after_pickup_restart, protocol_diff_count, chunk_payload_diff_count, go_tests, smoke_status, policy_smoke_status, design_doc, storage_doc, smoke_summary, policy_smoke_summary)
     exit(status == "pass" ? 0 : 1)
   }
 ' > "$SUMMARY_PATH"

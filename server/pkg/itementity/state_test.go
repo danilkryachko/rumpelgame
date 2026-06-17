@@ -76,10 +76,24 @@ func TestNormalizeStateRejectsInvalidEntities(t *testing.T) {
 			},
 		},
 		{
+			name: "count over stack max",
+			state: State{
+				NextEntityID: 2,
+				Entities:     []Entity{{EntityID: 1, ItemID: string(item.StoneItemID), Count: MaxEntityStackCount + 1}},
+			},
+		},
+		{
 			name: "non-finite coordinate",
 			state: State{
 				NextEntityID: 2,
 				Entities:     []Entity{{EntityID: 1, ItemID: string(item.StoneItemID), Count: 1, X: math.NaN()}},
+			},
+		},
+		{
+			name: "negative spawned timestamp",
+			state: State{
+				NextEntityID: 2,
+				Entities:     []Entity{{EntityID: 1, ItemID: string(item.StoneItemID), Count: 1, SpawnedAtUnixMS: -1}},
 			},
 		},
 		{
