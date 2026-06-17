@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	playerinventory "rumpelmc/server/pkg/inventory"
+	"rumpelmc/server/pkg/itementity"
 	"rumpelmc/server/pkg/world"
 )
 
@@ -499,6 +501,161 @@ func TestRocksChunkStorePlayerInventoryRejectsEmptyID(t *testing.T) {
 		t.Fatalf("LoadPlayerInventory(empty) error = %v, want empty id error", err)
 	} else if ok {
 		t.Fatal("LoadPlayerInventory(empty) ok = true, want false")
+	}
+}
+
+func TestRocksChunkStoreItemEntitiesRoundTrip(t *testing.T) {
+	path := t.TempDir()
+
+	store, err := OpenRocksChunkStore(path)
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+
+	state := itementity.State{
+		NextEntityID: 9,
+		Revision:     3,
+		Entities: []itementity.Entity{
+			{EntityID: 8, ItemID: "block:wood", Count: 2, X: 4.5, Y: 65.5, Z: -2.5},
+			{EntityID: 2, ItemID: "block:stone", Count: 1, X: 1.5, Y: 60.5, Z: 1.5},
+		},
+	}
+	if err := store.SaveItemEntities(state); err != nil {
+		t.Fatalf("SaveItemEntities() error = %v", err)
+	}
+	store.Close()
+
+	store, err = OpenRocksChunkStore(path)
+	if err != nil {
+		t.Fatalf("reopen OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	loaded, ok, err := store.LoadItemEntities()
+	if err != nil {
+		t.Fatalf("LoadItemEntities() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("LoadItemEntities() ok = false")
+	}
+	if loaded.NextEntityID != 9 {
+		t.Fatalf("next entity id = %d, want 9", loaded.NextEntityID)
+	}
+	if loaded.Revision != 3 {
+		t.Fatalf("revision = %d, want 3", loaded.Revision)
+	}
+	if len(loaded.Entities) != 2 {
+		t.Fatalf("loaded entities = %d, want 2", len(loaded.Entities))
+	}
+	if loaded.Entities[0] != (itementity.Entity{EntityID: 2, ItemID: "block:stone", Count: 1, X: 1.5, Y: 60.5, Z: 1.5}) {
+		t.Fatalf("entity 0 = %+v, want sorted Stone drop", loaded.Entities[0])
+	}
+	if loaded.Entities[1] != (itementity.Entity{EntityID: 8, ItemID: "block:wood", Count: 2, X: 4.5, Y: 65.5, Z: -2.5}) {
+		t.Fatalf("entity 1 = %+v, want sorted Wood drop", loaded.Entities[1])
+	}
+}
+
+func TestRocksChunkStoreItemEntitiesKeyIsSeparateFromChunkAndPlayerInventoryKey(t *testing.T) {
+	itemKey := itemEntitiesKey()
+	chunkKey := chunkKey(0, 0)
+	playerKey, err := playerInventoryKey("local_player")
+	if err != nil {
+		t.Fatalf("playerInventoryKey() error = %v", err)
+	}
+
+	if bytes.Equal(itemKey, chunkKey) {
+		t.Fatalf("item entity key % x matches chunk key % x", itemKey, chunkKey)
+	}
+	if bytes.Equal(itemKey, playerKey) {
+		t.Fatalf("item entity key % x matches player key % x", itemKey, playerKey)
+	}
+	if !bytes.Equal(itemKey, []byte{'i', 'e', 0}) {
+		t.Fatalf("item entity key prefix = % x, want 69 65 00", itemKey)
+	}
+}
+
+func TestRocksChunkStoreItemEntitiesRejectsCorruptPayload(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	if err := store.putData(itemEntitiesKey(), []byte(`{"version":99,"entities":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, ok, err := store.LoadItemEntities()
+	if err == nil {
+		t.Fatal("LoadItemEntities() error = nil, want corrupt payload error")
+	}
+	if !strings.Contains(err.Error(), "decode RocksDB item entities") {
+		t.Fatalf("LoadItemEntities() error = %q, want decode context", err)
+	}
+	if ok {
+		t.Fatal("LoadItemEntities() ok = true, want false for corrupt payload")
+	}
+	if len(loaded.Entities) != 0 {
+		t.Fatalf("LoadItemEntities() loaded = %+v, want zero state", loaded)
+	}
+}
+
+func TestRocksChunkStoreItemEntitiesRejectsInvalidRecords(t *testing.T) {
+	store, err := OpenRocksChunkStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenRocksChunkStore() error = %v", err)
+	}
+	defer store.Close()
+
+	tests := []struct {
+		name  string
+		state itementity.State
+	}{
+		{
+			name: "duplicate entity id",
+			state: itementity.State{
+				NextEntityID: 3,
+				Entities: []itementity.Entity{
+					{EntityID: 1, ItemID: "block:stone", Count: 1, X: 1, Y: 2, Z: 3},
+					{EntityID: 1, ItemID: "block:wood", Count: 1, X: 1, Y: 2, Z: 3},
+				},
+			},
+		},
+		{
+			name: "non-finite position",
+			state: itementity.State{
+				NextEntityID: 2,
+				Entities: []itementity.Entity{
+					{EntityID: 1, ItemID: "block:stone", Count: 1, X: math.Inf(1), Y: 2, Z: 3},
+				},
+			},
+		},
+		{
+			name: "next id not above max",
+			state: itementity.State{
+				NextEntityID: 1,
+				Entities: []itementity.Entity{
+					{EntityID: 1, ItemID: "block:stone", Count: 1, X: 1, Y: 2, Z: 3},
+				},
+			},
+		},
+		{
+			name: "zero count",
+			state: itementity.State{
+				NextEntityID: 2,
+				Entities: []itementity.Entity{
+					{EntityID: 1, ItemID: "block:stone", Count: 0, X: 1, Y: 2, Z: 3},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := store.SaveItemEntities(tt.state); err == nil {
+				t.Fatal("SaveItemEntities() error = nil, want invalid record error")
+			}
+		})
 	}
 }
 

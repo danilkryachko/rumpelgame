@@ -20,7 +20,14 @@ PLAYER_ID="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_PLAYER_ID:-break_drop_pl
 SELECTED_SLOT="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_SLOT:-0}"
 DESTROYED_BLOCK_ID="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_BLOCK_ID:-1}"
 EXPECTED_COUNT="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_EXPECTED_COUNT:-9}"
+PERSISTED_EXPECTED_COUNT="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_PERSISTED_EXPECTED_COUNT:-10}"
 DESTROY_POSITION_Y="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_POSITION_Y:-65.5}"
+PERSIST_DESTROY_X="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_PERSIST_DESTROY_X:-2}"
+PERSIST_DESTROY_Y="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_PERSIST_DESTROY_Y:-60}"
+PERSIST_DESTROY_Z="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_PERSIST_DESTROY_Z:-1}"
+PERSIST_POSITION_X="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_PERSIST_POSITION_X:-2.5}"
+PERSIST_POSITION_Y="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_PERSIST_POSITION_Y:-65.5}"
+PERSIST_POSITION_Z="${RUMPELMC_PLAYER_INVENTORY_BREAK_DROP_SMOKE_PERSIST_POSITION_Z:-1.5}"
 SERVER_PID=""
 
 mkdir -p "$OUT_DIR"
@@ -147,18 +154,33 @@ rm -f "$SUMMARY_PATH"
 rm -rf "$SMOKE_DB"
 
 start_server "destroy-pickup"
-destroy_summary="$(run_phase destroy-pickup -action destroy-pickup-expect -position-y "$DESTROY_POSITION_Y" -expect-count "$EXPECTED_COUNT")"
+destroy_summary="$(run_phase destroy-pickup -action destroy-pickup-expect -position-y "$DESTROY_POSITION_Y" -block-y 60 -expect-count "$EXPECTED_COUNT")"
 cleanup_server
 
 start_server "verify-restart"
 verify_restart_summary="$(run_phase verify-restart -action expect -expect-count "$EXPECTED_COUNT")"
 cleanup_server
 
+start_server "destroy-drop"
+destroy_drop_summary="$(run_phase destroy-drop -action destroy-drop-expect -position-x "$PERSIST_POSITION_X" -position-y "$PERSIST_POSITION_Y" -position-z "$PERSIST_POSITION_Z" -block-x "$PERSIST_DESTROY_X" -block-y "$PERSIST_DESTROY_Y" -block-z "$PERSIST_DESTROY_Z")"
+cleanup_server
+
+start_server "pickup-persisted"
+pickup_persisted_summary="$(run_phase pickup-persisted -action item-pickup-expect -position-x "$PERSIST_POSITION_X" -position-y "$PERSIST_POSITION_Y" -position-z "$PERSIST_POSITION_Z" -expect-count "$PERSISTED_EXPECTED_COUNT")"
+cleanup_server
+
+start_server "verify-item-absent"
+verify_item_absent_summary="$(run_phase verify-item-absent -action item-absent-expect -position-x "$PERSIST_POSITION_X" -position-y "$PERSIST_POSITION_Y" -position-z "$PERSIST_POSITION_Z")"
+cleanup_server
+
 {
-  printf 'player_inventory_break_drop_smoke status=pass break_drop_inventory=live_server_guarded break_drop_pickup=live_server_guarded phases=2 destroy_status=pass pickup_status=pass verify_restart_status=pass player_id=%s selected_slot=%s destroyed_block_id=%s expected_count=%s server_restarts=1 protocol_change=0 db_path=%s\n' \
-    "$PLAYER_ID" "$SELECTED_SLOT" "$DESTROYED_BLOCK_ID" "$EXPECTED_COUNT" "$SMOKE_DB"
+  printf 'player_inventory_break_drop_smoke status=pass break_drop_inventory=live_server_guarded break_drop_pickup=live_server_guarded item_entity_persistence=live_server_guarded phases=5 destroy_status=pass pickup_status=pass verify_restart_status=pass destroy_drop_status=pass persisted_pickup_status=pass item_absent_status=pass player_id=%s selected_slot=%s destroyed_block_id=%s expected_count=%s persisted_expected_count=%s server_restarts=4 protocol_change=0 db_path=%s\n' \
+    "$PLAYER_ID" "$SELECTED_SLOT" "$DESTROYED_BLOCK_ID" "$EXPECTED_COUNT" "$PERSISTED_EXPECTED_COUNT" "$SMOKE_DB"
   printf 'phase_destroy_pickup %s\n' "$destroy_summary"
   printf 'phase_verify_restart %s\n' "$verify_restart_summary"
+  printf 'phase_destroy_drop %s\n' "$destroy_drop_summary"
+  printf 'phase_pickup_persisted %s\n' "$pickup_persisted_summary"
+  printf 'phase_verify_item_absent %s\n' "$verify_item_absent_summary"
 } > "$SUMMARY_PATH"
 
 cat "$SUMMARY_PATH"

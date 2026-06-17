@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,6 +24,10 @@ const (
 	actionPlaceExpect         smokeAction = "place-expect"
 	actionDestroyExpect       smokeAction = "destroy-expect"
 	actionDestroyPickupExpect smokeAction = "destroy-pickup-expect"
+	actionDestroyDropExpect   smokeAction = "destroy-drop-expect"
+	actionItemEntityExpect    smokeAction = "item-entity-expect"
+	actionItemPickupExpect    smokeAction = "item-pickup-expect"
+	actionItemAbsentExpect    smokeAction = "item-absent-expect"
 )
 
 type smokeClient struct {
@@ -40,18 +45,22 @@ type inventoryObservation struct {
 func main() {
 	addr := flag.String("addr", "127.0.0.1:25565", "server TCP address")
 	timeout := flag.Duration("timeout", 3*time.Second, "per-read/write timeout")
-	action := flag.String("action", string(actionExpect), "smoke action: select, expect, place-expect, destroy-expect, or destroy-pickup-expect")
+	action := flag.String("action", string(actionExpect), "smoke action: select, expect, place-expect, destroy-expect, destroy-pickup-expect, destroy-drop-expect, item-entity-expect, item-pickup-expect, or item-absent-expect")
 	playerID := flag.String("player-id", "local_player", "player id to send in ClientPosition")
 	positionX := flag.Float64("position-x", 1.5, "client position x to send in ClientPosition")
 	positionY := flag.Float64("position-y", 68, "client position y to send in ClientPosition")
 	positionZ := flag.Float64("position-z", 1.5, "client position z to send in ClientPosition")
+	blockX := flag.Int("block-x", 1, "block action x coordinate")
+	blockY := flag.Int("block-y", 64, "block action y coordinate")
+	blockZ := flag.Int("block-z", 1, "block action z coordinate")
 	slot := flag.Uint("slot", 1, "selected inventory slot to persist or expect")
 	blockID := flag.Uint("block-id", 1, "block id to place for place-expect")
 	expectCount := flag.Int("expect-count", -1, "expected selected slot count; negative disables count check")
 	flag.Parse()
 
 	position := clientPosition{x: *positionX, y: *positionY, z: *positionZ}
-	if err := run(*addr, *timeout, smokeAction(*action), *playerID, position, uint32(*slot), uint32(*blockID), *expectCount); err != nil {
+	blockPosition := blockActionPosition{x: int32(*blockX), y: int32(*blockY), z: int32(*blockZ)}
+	if err := run(*addr, *timeout, smokeAction(*action), *playerID, position, blockPosition, uint32(*slot), uint32(*blockID), *expectCount); err != nil {
 		fmt.Fprintf(os.Stderr, "player_inventory_reconnect_smoke status=fail action=%s player_id=%q slot=%d error=%q\n", *action, *playerID, *slot, err)
 		os.Exit(1)
 	}
@@ -63,7 +72,13 @@ type clientPosition struct {
 	z float64
 }
 
-func run(addr string, timeout time.Duration, action smokeAction, playerID string, position clientPosition, slot uint32, blockID uint32, expectCount int) error {
+type blockActionPosition struct {
+	x int32
+	y int32
+	z int32
+}
+
+func run(addr string, timeout time.Duration, action smokeAction, playerID string, position clientPosition, blockPosition blockActionPosition, slot uint32, blockID uint32, expectCount int) error {
 	client, err := dialClient(addr, timeout)
 	if err != nil {
 		return err
@@ -82,14 +97,71 @@ func run(addr string, timeout time.Duration, action smokeAction, playerID string
 			return err
 		}
 	case actionExpect:
+	case actionItemAbsentExpect:
+		itemSnapshots, chunks, err := client.readNoItemEntity(timeout)
+		if err != nil {
+			return err
+		}
+		fmt.Printf(
+			"player_inventory_reconnect_smoke status=pass action=%s player_id=%s selected_slot=%d slot_count=0 snapshots=0 item_snapshots=%d chunks=%d protocol_change=0\n",
+			action,
+			playerID,
+			slot,
+			itemSnapshots,
+			chunks,
+		)
+		return nil
 	case actionPlaceExpect:
-		if err := client.sendBlockPlace(blockID, timeout); err != nil {
+		if err := client.sendBlockPlace(blockPosition, blockID, timeout); err != nil {
 			return err
 		}
+	case actionItemEntityExpect:
+		entityID, itemSnapshots, chunks, err := client.readFirstItemEntity(timeout)
+		if err != nil {
+			return err
+		}
+		fmt.Printf(
+			"player_inventory_reconnect_smoke status=pass action=%s player_id=%s selected_slot=%d slot_count=0 snapshots=0 item_snapshots=%d chunks=%d entity_id=%d protocol_change=0\n",
+			action,
+			playerID,
+			slot,
+			itemSnapshots,
+			chunks,
+			entityID,
+		)
+		return nil
+	case actionDestroyDropExpect:
+		if err := client.sendBlockDestroy(blockPosition, timeout); err != nil {
+			return err
+		}
+		entityID, itemSnapshots, chunks, err := client.readFirstItemEntity(timeout)
+		if err != nil {
+			return err
+		}
+		fmt.Printf(
+			"player_inventory_reconnect_smoke status=pass action=%s player_id=%s selected_slot=%d slot_count=0 snapshots=0 item_snapshots=%d chunks=%d entity_id=%d protocol_change=0\n",
+			action,
+			playerID,
+			slot,
+			itemSnapshots,
+			chunks,
+			entityID,
+		)
+		return nil
 	case actionDestroyExpect, actionDestroyPickupExpect:
-		if err := client.sendBlockDestroy(timeout); err != nil {
+		if err := client.sendBlockDestroy(blockPosition, timeout); err != nil {
 			return err
 		}
+		entityID, itemSnapshots, chunks, err := client.readFirstItemEntity(timeout)
+		if err != nil {
+			return err
+		}
+		if err := client.sendItemPickup(entityID, timeout); err != nil {
+			return err
+		}
+		preInventoryItemSnapshots = itemSnapshots
+		preInventoryChunks = chunks
+	case actionItemPickupExpect:
 		entityID, itemSnapshots, chunks, err := client.readFirstItemEntity(timeout)
 		if err != nil {
 			return err
@@ -154,28 +226,28 @@ func (c *smokeClient) sendInventorySelect(slot uint32, timeout time.Duration) er
 	}, timeout)
 }
 
-func (c *smokeClient) sendBlockPlace(blockID uint32, timeout time.Duration) error {
+func (c *smokeClient) sendBlockPlace(position blockActionPosition, blockID uint32, timeout time.Duration) error {
 	return c.writePacket(&api.Packet{
 		Payload: &api.Packet_BlockAction{
 			BlockAction: &api.BlockAction{
 				Action:  api.BlockAction_PLACE,
-				X:       1,
-				Y:       64,
-				Z:       1,
+				X:       position.x,
+				Y:       position.y,
+				Z:       position.z,
 				BlockId: blockID,
 			},
 		},
 	}, timeout)
 }
 
-func (c *smokeClient) sendBlockDestroy(timeout time.Duration) error {
+func (c *smokeClient) sendBlockDestroy(position blockActionPosition, timeout time.Duration) error {
 	return c.writePacket(&api.Packet{
 		Payload: &api.Packet_BlockAction{
 			BlockAction: &api.BlockAction{
 				Action: api.BlockAction_DESTROY,
-				X:      1,
-				Y:      60,
-				Z:      1,
+				X:      position.x,
+				Y:      position.y,
+				Z:      position.z,
 			},
 		},
 	}, timeout)
@@ -305,6 +377,42 @@ func (c *smokeClient) readFirstItemEntity(timeout time.Duration) (uint64, int, i
 		}
 		return entityID, itemSnapshots, chunks, nil
 	}
+}
+
+func (c *smokeClient) readNoItemEntity(timeout time.Duration) (int, int, error) {
+	deadline := time.Now().Add(timeout)
+	itemSnapshots := 0
+	chunks := 0
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return itemSnapshots, chunks, nil
+		}
+		packet, err := c.readPacket(remaining)
+		if err != nil {
+			if isTimeoutError(err) {
+				return itemSnapshots, chunks, nil
+			}
+			return itemSnapshots, chunks, err
+		}
+		if packet.GetChunk() != nil {
+			chunks++
+			continue
+		}
+		snapshot := packet.GetItemEntities()
+		if snapshot == nil {
+			continue
+		}
+		itemSnapshots++
+		if len(snapshot.GetEntities()) != 0 {
+			return itemSnapshots, chunks, fmt.Errorf("unexpected item entity snapshot with %d entities", len(snapshot.GetEntities()))
+		}
+	}
+}
+
+func isTimeoutError(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func (c *smokeClient) readPacket(timeout time.Duration) (*api.Packet, error) {

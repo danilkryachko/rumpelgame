@@ -16,6 +16,7 @@ import (
 	"rumpelmc/server/pkg/api"
 	playerinventory "rumpelmc/server/pkg/inventory"
 	"rumpelmc/server/pkg/item"
+	"rumpelmc/server/pkg/itementity"
 	"rumpelmc/server/pkg/world"
 )
 
@@ -1674,6 +1675,98 @@ func TestHandleClientPacketDestroySpawnsItemEntityAndSendsSnapshot(t *testing.T)
 	}
 }
 
+func TestLoadItemEntitiesFromStoreRestoresSnapshotAndNextID(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	store.itemFound = true
+	store.itemState = itementity.State{
+		NextEntityID: 9,
+		Revision:     4,
+		Entities: []itementity.Entity{
+			{EntityID: 8, ItemID: string(item.WoodItemID), Count: 2, X: 3.5, Y: 64.5, Z: -1.5},
+			{EntityID: 2, ItemID: string(item.StoneItemID), Count: 1, X: 1.5, Y: 60.5, Z: 1.5},
+		},
+	}
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+
+	if err := server.loadItemEntitiesFromStore(); err != nil {
+		t.Fatalf("loadItemEntitiesFromStore() error = %v", err)
+	}
+	if got := store.itemLoadCount; got != 1 {
+		t.Fatalf("item load count = %d, want 1", got)
+	}
+	snapshot := server.itemEntitySnapshot()
+	if got := snapshot.GetRevision(); got != 4 {
+		t.Fatalf("loaded item revision = %d, want 4", got)
+	}
+	if got := len(snapshot.GetEntities()); got != 2 {
+		t.Fatalf("loaded item entities = %d, want 2", got)
+	}
+	if got := snapshot.GetEntities()[0].GetEntityId(); got != 2 {
+		t.Fatalf("first loaded entity id = %d, want sorted id 2", got)
+	}
+
+	spawned, err := server.spawnItemEntityForBlock(world.Stone, 2, 60, 2)
+	if err != nil {
+		t.Fatalf("spawnItemEntityForBlock() error = %v", err)
+	}
+	if !spawned {
+		t.Fatal("spawnItemEntityForBlock() = false, want true")
+	}
+	snapshot = server.itemEntitySnapshot()
+	if got := snapshot.GetEntities()[2].GetEntityId(); got != 9 {
+		t.Fatalf("spawned entity id after load = %d, want next persisted id 9", got)
+	}
+}
+
+func TestHandleClientPacketDestroyPersistsItemEntityState(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+
+	client := newClientSession(&recordingConn{})
+	recordReachableStoneDestroyPosition(client)
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+	})
+
+	packet := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action: api.BlockAction_DESTROY,
+				X:      1,
+				Y:      60,
+				Z:      1,
+			},
+		},
+	}
+
+	if err := server.handleClientPacketForSession(client, packet); err != nil {
+		t.Fatalf("handleClientPacketForSession() error = %v", err)
+	}
+	if got := store.itemSaveCount; got != 1 {
+		t.Fatalf("item save count after destroy = %d, want 1", got)
+	}
+	if !store.itemFound {
+		t.Fatal("item entity store itemFound = false, want true")
+	}
+	if got := store.itemState.NextEntityID; got != 2 {
+		t.Fatalf("persisted next entity id = %d, want 2", got)
+	}
+	if got := store.itemState.Revision; got != 1 {
+		t.Fatalf("persisted item revision = %d, want 1", got)
+	}
+	if got := len(store.itemState.Entities); got != 1 {
+		t.Fatalf("persisted item entities = %d, want 1", got)
+	}
+	entity := store.itemState.Entities[0]
+	if entity.EntityID != 1 || entity.ItemID != string(item.StoneItemID) || entity.Count != 1 {
+		t.Fatalf("persisted entity = %+v, want stone entity id 1 count 1", entity)
+	}
+	if entity.X != 1.5 || entity.Y != 60.5 || entity.Z != 1.5 {
+		t.Fatalf("persisted entity position = %.1f,%.1f,%.1f; want 1.5,60.5,1.5", entity.X, entity.Y, entity.Z)
+	}
+}
+
 func TestHandleClientPacketPickupPersistsCollectedCountedDrop(t *testing.T) {
 	store := newMemoryPlayerInventoryStore()
 	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
@@ -1729,6 +1822,15 @@ func TestHandleClientPacketPickupPersistsCollectedCountedDrop(t *testing.T) {
 	if got := store.saveCount; got != 1 {
 		t.Fatalf("save count = %d, want 1", got)
 	}
+	if got := store.itemSaveCount; got != 2 {
+		t.Fatalf("item save count = %d, want destroy and pickup saves", got)
+	}
+	if got := len(store.itemState.Entities); got != 0 {
+		t.Fatalf("persisted item entities after pickup = %d, want 0", got)
+	}
+	if got := store.itemState.Revision; got != 2 {
+		t.Fatalf("persisted item revision after pickup = %d, want 2", got)
+	}
 	frames = recordedFrames(t, client.conn.(*recordingConn))
 	if got := len(frames); got != 4 {
 		t.Fatalf("frames after pickup = %d, want destroy chunk, drop snapshot, empty snapshot, inventory snapshot", got)
@@ -1749,6 +1851,117 @@ func TestHandleClientPacketPickupPersistsCollectedCountedDrop(t *testing.T) {
 	}
 }
 
+func TestHandleClientPacketPickupRollsBackWhenInventorySaveFails(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	client := newClientSession(&recordingConn{})
+	recordReachableStoneDestroyPosition(client)
+	client.bindPlayerID("local_player")
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+	})
+
+	destroy := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action: api.BlockAction_DESTROY,
+				X:      1,
+				Y:      60,
+				Z:      1,
+			},
+		},
+	}
+	if err := server.handleClientPacketForSession(client, destroy); err != nil {
+		t.Fatalf("destroy handleClientPacketForSession() error = %v", err)
+	}
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	entityID := decodedPacket(t, frames[1]).GetItemEntities().GetEntities()[0].GetEntityId()
+
+	store.saveErr = errors.New("inventory save failed")
+	pickup := &api.Packet{
+		Payload: &api.Packet_ItemPickup{
+			ItemPickup: &api.ItemPickupAction{EntityId: entityID},
+		},
+	}
+	err := server.handleClientPacketForSession(client, pickup)
+	if err == nil {
+		t.Fatal("pickup handleClientPacketForSession() error = nil, want inventory save error")
+	}
+	if !strings.Contains(err.Error(), "inventory save failed") {
+		t.Fatalf("pickup error = %q, want inventory save failure", err)
+	}
+	if got := store.itemSaveCount; got != 1 {
+		t.Fatalf("item save count after failed inventory save = %d, want only destroy save", got)
+	}
+	if got := len(store.itemState.Entities); got != 1 {
+		t.Fatalf("persisted item entities after failed inventory save = %d, want 1", got)
+	}
+	if got := len(server.itemEntitySnapshot().GetEntities()); got != 1 {
+		t.Fatalf("runtime item entities after failed inventory save = %d, want 1", got)
+	}
+	if got := client.currentInventoryState().Slots[0].Count; got != 0 {
+		t.Fatalf("client inventory count after failed inventory save = %d, want rollback to 0", got)
+	}
+}
+
+func TestHandleClientPacketPickupRollsBackInventoryWhenItemEntitySaveFails(t *testing.T) {
+	store := newMemoryPlayerInventoryStore()
+	server := NewServerWithPlayerInventoryStore(":0", world.NewWorld(nil), store)
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	client := newClientSession(&recordingConn{})
+	recordReachableStoneDestroyPosition(client)
+	client.bindPlayerID("local_player")
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+	})
+
+	destroy := &api.Packet{
+		Payload: &api.Packet_BlockAction{
+			BlockAction: &api.BlockAction{
+				Action: api.BlockAction_DESTROY,
+				X:      1,
+				Y:      60,
+				Z:      1,
+			},
+		},
+	}
+	if err := server.handleClientPacketForSession(client, destroy); err != nil {
+		t.Fatalf("destroy handleClientPacketForSession() error = %v", err)
+	}
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	entityID := decodedPacket(t, frames[1]).GetItemEntities().GetEntities()[0].GetEntityId()
+
+	store.itemSaveErr = errors.New("item entity save failed")
+	pickup := &api.Packet{
+		Payload: &api.Packet_ItemPickup{
+			ItemPickup: &api.ItemPickupAction{EntityId: entityID},
+		},
+	}
+	err := server.handleClientPacketForSession(client, pickup)
+	if err == nil {
+		t.Fatal("pickup handleClientPacketForSession() error = nil, want item entity save error")
+	}
+	if !strings.Contains(err.Error(), "item entity save failed") {
+		t.Fatalf("pickup error = %q, want item entity save failure", err)
+	}
+	if got := store.saveCount; got != 2 {
+		t.Fatalf("player inventory save count after item save failure = %d, want collect save plus rollback save", got)
+	}
+	if got := store.states["local_player"].Slots[0].Count; got != 0 {
+		t.Fatalf("persisted player inventory count after item save failure = %d, want rollback to 0", got)
+	}
+	if got := len(store.itemState.Entities); got != 1 {
+		t.Fatalf("persisted item entities after failed item save = %d, want original entity", got)
+	}
+	if got := len(server.itemEntitySnapshot().GetEntities()); got != 1 {
+		t.Fatalf("runtime item entities after failed item save = %d, want rollback to 1", got)
+	}
+	if got := client.currentInventoryState().Slots[0].Count; got != 0 {
+		t.Fatalf("client inventory count after item save failure = %d, want rollback to 0", got)
+	}
+}
+
 func TestHandleClientPacketPickupRejectsOutOfReachEntity(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	client := newClientSession(&recordingConn{})
@@ -1757,7 +1970,9 @@ func TestHandleClientPacketPickupRejectsOutOfReachEntity(t *testing.T) {
 		{BlockID: world.Stone, Count: 0},
 	})
 
-	if !server.spawnItemEntityForBlock(world.Stone, 1, 60, 1) {
+	if spawned, err := server.spawnItemEntityForBlock(world.Stone, 1, 60, 1); err != nil {
+		t.Fatalf("spawnItemEntityForBlock(Stone) error = %v", err)
+	} else if !spawned {
 		t.Fatal("spawnItemEntityForBlock(Stone) = false, want true")
 	}
 	entityID := server.itemEntitySnapshot().GetEntities()[0].GetEntityId()
@@ -2655,9 +2870,15 @@ func (c *deadlineRecordingConn) SetWriteDeadline(deadline time.Time) error {
 }
 
 type memoryPlayerInventoryStore struct {
-	states    map[string]playerinventory.State
-	loadCount int
-	saveCount int
+	states        map[string]playerinventory.State
+	loadCount     int
+	saveCount     int
+	saveErr       error
+	itemState     itementity.State
+	itemFound     bool
+	itemLoadCount int
+	itemSaveCount int
+	itemSaveErr   error
 }
 
 func newMemoryPlayerInventoryStore() *memoryPlayerInventoryStore {
@@ -2677,7 +2898,28 @@ func (s *memoryPlayerInventoryStore) LoadPlayerInventory(playerID string) (playe
 
 func (s *memoryPlayerInventoryStore) SavePlayerInventory(playerID string, state playerinventory.State) error {
 	s.saveCount++
+	if s.saveErr != nil {
+		return s.saveErr
+	}
 	s.states[playerID] = cloneInventoryState(state)
+	return nil
+}
+
+func (s *memoryPlayerInventoryStore) LoadItemEntities() (itementity.State, bool, error) {
+	s.itemLoadCount++
+	if !s.itemFound {
+		return itementity.State{}, false, nil
+	}
+	return cloneItemEntityState(s.itemState), true, nil
+}
+
+func (s *memoryPlayerInventoryStore) SaveItemEntities(state itementity.State) error {
+	s.itemSaveCount++
+	if s.itemSaveErr != nil {
+		return s.itemSaveErr
+	}
+	s.itemState = cloneItemEntityState(state)
+	s.itemFound = true
 	return nil
 }
 
@@ -2686,5 +2928,13 @@ func cloneInventoryState(state playerinventory.State) playerinventory.State {
 		Slots:           append([]playerinventory.Slot(nil), state.Slots...),
 		PlacementPolicy: state.PlacementPolicy,
 		SelectedSlot:    state.SelectedSlot,
+	}
+}
+
+func cloneItemEntityState(state itementity.State) itementity.State {
+	return itementity.State{
+		NextEntityID: state.NextEntityID,
+		Revision:     state.Revision,
+		Entities:     append([]itementity.Entity(nil), state.Entities...),
 	}
 }

@@ -102,6 +102,7 @@
 - `ItemEntitySnapshot.revision = 2` increments when the server spawns or removes an item entity.
 - `ItemPickupAction.entity_id = 1` requests collection of one server item entity.
 - Connected-session `BlockAction DESTROY` of a placeable previous block spawns an item entity and broadcasts `Packet.item_entities = 6`.
+- Server item entities persist outside chunk payloads in the documented RocksDB item-entity record, so reconnecting clients can receive an `ItemEntitySnapshot` for uncollected drops after server restart without any protobuf field change.
 - Connected-session `ItemPickupAction` validates recorded client position against the server pickup reach, validates the item-to-block mapping, mutates the server inventory through `CollectBlock`, saves bound player inventory, broadcasts the updated item entity snapshot, and sends the collecting client a fresh `InventorySnapshot`.
 
 ## Sensitive Behavior

@@ -25,7 +25,7 @@ Scope:
 
 Out of scope:
 
-- No crafting rules, stored item entities, item entity persistence, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or new database engines. Inventory action, snapshot, item entity snapshot, and pickup compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`.
+- No crafting rules, Godot scene/resource/import changes, block IDs, chunk serialization changes, world generation changes, or new database engines. Inventory action, snapshot, item entity snapshot, and pickup compatibility is owned by `docs/INVENTORY_PROTOCOL_COMPATIBILITY.md`; item entity restart persistence is owned by `docs/ITEM_ENTITY_PERSISTENCE.md`.
 
 ## Current Contract
 
@@ -61,6 +61,7 @@ Out of scope:
 - `BlockAction DESTROY` still maps to `world.Air` and does not require an inventory slot.
 - Connected-session destroy uses `World.ReplaceBlockGlobal` so the previous block is read atomically with the world edit.
 - After successful destroy of a placeable previous block, the server spawns a server-owned item entity at the destroyed block center and broadcasts a fresh `ItemEntitySnapshot`.
+- Server-owned item entities are persisted through the approved RocksDB store so uncollected destroyed-block drops survive restart without changing chunk payload bytes.
 - `ItemPickupAction` validates the requested item entity id, recorded client position, server pickup reach, item-to-block mapping, and `CollectBlock()` inventory acceptance before mutating inventory.
 - Successful pickup removes the item entity, saves the bound player inventory state, broadcasts a fresh item entity snapshot, and sends the collecting client a fresh inventory snapshot.
 - Creative retained inventories accept pickup without changing counts.
@@ -85,7 +86,9 @@ Use:
 ```sh
 sh scripts/player_inventory_counted_smoke.sh logs/player_inventory_counted_smoke_current
 sh scripts/player_inventory_break_drop_smoke.sh logs/player_inventory_break_drop_smoke_current
+sh scripts/player_item_entity_persistence_smoke.sh logs/player_item_entity_persistence_smoke_current
 sh scripts/server_inventory_foundation_gate.sh logs/server_inventory_foundation_current
+sh scripts/item_entity_persistence_gate.sh logs/item_entity_persistence_current
 sh scripts/inventory_protocol_compatibility_gate.sh logs/inventory_protocol_compatibility_current
 ```
 
@@ -100,6 +103,7 @@ The gate checks that:
 - Network tests cover session creative inventory, counted inventory mode, selected-slot action handling, player inventory load/save binding from `ClientPosition.player_id`, rejected placement when the session inventory lacks the requested block, retained counted inventory after a failed world edit, snapshot refresh after counted placement, destroy spawning item entity snapshots, pickup persistence, out-of-reach pickup rejection, no Air item spawn, and no item spawn after failed block edits.
 - The counted smoke summary proves a real counted-mode server decrements a placed stack and reloads the decremented count after restart.
 - The break-drop smoke summary proves a real counted-mode server spawns a destroyed-block item entity, picks it up through the protocol path, saves the collected count, and reloads the added count after restart.
+- The item entity persistence smoke summary proves a real counted-mode server reloads an uncollected destroyed-block item entity after restart, accepts pickup after restart, persists the collected inventory count, and restarts with the item entity absent.
 - `server/pkg/network/server.go` keeps the existing block registry placeability check, adds the session inventory placement check, spawns item entities after successful destroys, validates `ItemPickupAction`, and validates `InventoryAction SELECT_SLOT` through session inventory.
 - Storage tests cover player inventory record round-trip, key separation from chunk records, corrupt record rejection, and empty id rejection.
 - The gameplay loop foundation consumes the live player-inventory reconnect smoke and reports `player_inventory_reconnect=live_server_guarded`.

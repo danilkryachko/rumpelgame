@@ -17,6 +17,8 @@ NETWORK_TEST="${RUMPELMC_SERVER_INVENTORY_NETWORK_TEST:-"$ROOT_DIR/server/pkg/ne
 WORLD_SOURCE="${RUMPELMC_SERVER_INVENTORY_WORLD_SOURCE:-"$ROOT_DIR/server/pkg/world/world.go"}"
 WORLD_TEST="${RUMPELMC_SERVER_INVENTORY_WORLD_TEST:-"$ROOT_DIR/server/pkg/world/world_test.go"}"
 STORAGE_SOURCE="${RUMPELMC_SERVER_INVENTORY_STORAGE_SOURCE:-"$ROOT_DIR/server/pkg/storage/player_inventory.go"}"
+ITEM_ENTITY_SOURCE="${RUMPELMC_SERVER_INVENTORY_ITEM_ENTITY_SOURCE:-"$ROOT_DIR/server/pkg/itementity/state.go"}"
+ITEM_ENTITY_STORAGE_SOURCE="${RUMPELMC_SERVER_INVENTORY_ITEM_ENTITY_STORAGE_SOURCE:-"$ROOT_DIR/server/pkg/storage/item_entities.go"}"
 STORAGE_TEST="${RUMPELMC_SERVER_INVENTORY_STORAGE_TEST:-"$ROOT_DIR/server/pkg/storage/rocksdb_test.go"}"
 PROTOCOL_DOC="${RUMPELMC_SERVER_INVENTORY_PROTOCOL_DOC:-"$ROOT_DIR/docs/PROTOCOL.md"}"
 COUNTED_SMOKE_SCRIPT="${RUMPELMC_SERVER_INVENTORY_COUNTED_SMOKE_SCRIPT:-"$ROOT_DIR/scripts/player_inventory_counted_smoke.sh"}"
@@ -58,7 +60,7 @@ field_metric() {
   ' "$path"
 }
 
-for path in "$DESIGN_DOC" "$INVENTORY_SOURCE" "$INVENTORY_TEST" "$NETWORK_SOURCE" "$NETWORK_TEST" "$WORLD_SOURCE" "$WORLD_TEST" "$STORAGE_SOURCE" "$STORAGE_TEST" "$PROTOCOL_DOC" "$COUNTED_SMOKE_SCRIPT" "$BREAK_DROP_SMOKE_SCRIPT"; do
+for path in "$DESIGN_DOC" "$INVENTORY_SOURCE" "$INVENTORY_TEST" "$NETWORK_SOURCE" "$NETWORK_TEST" "$WORLD_SOURCE" "$WORLD_TEST" "$STORAGE_SOURCE" "$ITEM_ENTITY_SOURCE" "$ITEM_ENTITY_STORAGE_SOURCE" "$STORAGE_TEST" "$PROTOCOL_DOC" "$COUNTED_SMOKE_SCRIPT" "$BREAK_DROP_SMOKE_SCRIPT"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -124,6 +126,8 @@ require_token "$NETWORK_SOURCE" 'spawnItemEntityForBlock(previousBlock'
 require_token "$NETWORK_SOURCE" 'broadcastItemEntitySnapshot(client)'
 require_token "$NETWORK_SOURCE" 'collectItemEntityForSession(client, action.EntityId)'
 require_token "$NETWORK_SOURCE" 'client.collectInventoryBlock(block, entity.count)'
+require_token "$NETWORK_SOURCE" 'loadItemEntitiesFromStore'
+require_token "$NETWORK_SOURCE" 'SaveItemEntities'
 require_token "$NETWORK_SOURCE" 's.saveClientInventory(client)'
 require_token "$NETWORK_SOURCE" 'client.inventory.CanPlaceBlock'
 require_token "$NETWORK_SOURCE" 'normalizedPlayerID'
@@ -137,9 +141,18 @@ require_token "$STORAGE_SOURCE" 'func (s *RocksChunkStore) LoadPlayerInventory'
 require_token "$STORAGE_SOURCE" 'func (s *RocksChunkStore) SavePlayerInventory'
 require_token "$STORAGE_SOURCE" 'playerInventoryRecordVersion'
 require_token "$STORAGE_SOURCE" "[]byte{'p', 'i', 0}"
+require_token "$ITEM_ENTITY_SOURCE" 'type State struct'
+require_token "$ITEM_ENTITY_SOURCE" 'func NormalizeState'
+require_token "$ITEM_ENTITY_STORAGE_SOURCE" 'func (s *RocksChunkStore) LoadItemEntities'
+require_token "$ITEM_ENTITY_STORAGE_SOURCE" 'func (s *RocksChunkStore) SaveItemEntities'
+require_token "$ITEM_ENTITY_STORAGE_SOURCE" 'itemEntityRecordVersion'
+require_token "$ITEM_ENTITY_STORAGE_SOURCE" "[]byte{'i', 'e', 0}"
 require_token "$STORAGE_TEST" 'TestRocksChunkStorePlayerInventoryRoundTrip'
 require_token "$STORAGE_TEST" 'TestRocksChunkStorePlayerInventoryKeyIsSeparateFromChunkKey'
 require_token "$STORAGE_TEST" 'TestRocksChunkStorePlayerInventoryRejectsCorruptPayload'
+require_token "$STORAGE_TEST" 'TestRocksChunkStoreItemEntitiesRoundTrip'
+require_token "$STORAGE_TEST" 'TestRocksChunkStoreItemEntitiesKeyIsSeparateFromChunkAndPlayerInventoryKey'
+require_token "$STORAGE_TEST" 'TestRocksChunkStoreItemEntitiesRejectsCorruptPayload'
 require_token "$NETWORK_TEST" 'TestNewClientSessionStartsWithServerAuthoritativeCreativeInventory'
 require_token "$NETWORK_TEST" 'TestConfiguredInventoryModeUsesCountedEnv'
 require_token "$NETWORK_TEST" 'TestServerCountedInventoryModeStartsSessionWithCountedHotbar'
@@ -154,6 +167,8 @@ require_token "$NETWORK_TEST" 'TestHandleClientPacketInventoryActionSelectsSlotA
 require_token "$NETWORK_TEST" 'TestHandleClientPacketInventoryActionRejectsUnavailableSlot'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketPlaceSendsInventorySnapshotAfterCountedPlacement'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroySpawnsItemEntityAndSendsSnapshot'
+require_token "$NETWORK_TEST" 'TestLoadItemEntitiesFromStoreRestoresSnapshotAndNextID'
+require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroyPersistsItemEntityState'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketPickupPersistsCollectedCountedDrop'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketPickupRejectsOutOfReachEntity'
 require_token "$NETWORK_TEST" 'TestHandleClientPacketDestroyDoesNotSpawnItemEntityForAir'
@@ -165,7 +180,11 @@ require_token "$COUNTED_SMOKE_SCRIPT" 'counted_inventory_runtime=live_server_gua
 require_token "$BREAK_DROP_SMOKE_SCRIPT" 'RUMPELMC_SERVER_INVENTORY_MODE=counted'
 require_token "$BREAK_DROP_SMOKE_SCRIPT" 'break_drop_inventory=live_server_guarded'
 require_token "$BREAK_DROP_SMOKE_SCRIPT" 'break_drop_pickup=live_server_guarded'
+require_token "$BREAK_DROP_SMOKE_SCRIPT" 'item_entity_persistence=live_server_guarded'
 require_token "$BREAK_DROP_SMOKE_SCRIPT" 'destroy-pickup-expect'
+require_token "$BREAK_DROP_SMOKE_SCRIPT" 'destroy-drop-expect'
+require_token "$BREAK_DROP_SMOKE_SCRIPT" 'item-pickup-expect'
+require_token "$BREAK_DROP_SMOKE_SCRIPT" 'item-absent-expect'
 
 test -s "$COUNTED_SMOKE_SUMMARY" || fail "missing required input $COUNTED_SMOKE_SUMMARY"
 counted_smoke_status="$(field_metric status "$COUNTED_SMOKE_SUMMARY")"
@@ -179,9 +198,13 @@ test -s "$BREAK_DROP_SMOKE_SUMMARY" || fail "missing required input $BREAK_DROP_
 break_drop_smoke_status="$(field_metric status "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_runtime="$(field_metric break_drop_inventory "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_pickup="$(field_metric break_drop_pickup "$BREAK_DROP_SMOKE_SUMMARY")"
+item_entity_persistence="$(field_metric item_entity_persistence "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_destroy_status="$(field_metric destroy_status "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_pickup_status="$(field_metric pickup_status "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_verify_restart_status="$(field_metric verify_restart_status "$BREAK_DROP_SMOKE_SUMMARY")"
+break_drop_destroy_drop_status="$(field_metric destroy_drop_status "$BREAK_DROP_SMOKE_SUMMARY")"
+break_drop_persisted_pickup_status="$(field_metric persisted_pickup_status "$BREAK_DROP_SMOKE_SUMMARY")"
+break_drop_item_absent_status="$(field_metric item_absent_status "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_restarts="$(field_metric server_restarts "$BREAK_DROP_SMOKE_SUMMARY")"
 break_drop_protocol_change="$(field_metric protocol_change "$BREAK_DROP_SMOKE_SUMMARY")"
 
@@ -190,7 +213,7 @@ storage_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- server/pkg/storage 
 
 go_tests="skipped"
 if [ "$RUN_GO_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/server" && go test ./pkg/inventory ./pkg/world ./pkg/storage ./pkg/network > "$OUT_DIR/go-test-server-inventory.txt" 2>&1); then
+  if (cd "$ROOT_DIR/server" && go test ./pkg/inventory ./pkg/itementity ./pkg/world ./pkg/storage ./pkg/network > "$OUT_DIR/go-test-server-inventory.txt" 2>&1); then
     go_tests="pass"
   else
     cat "$OUT_DIR/go-test-server-inventory.txt" >&2 || true
@@ -210,9 +233,13 @@ awk \
   -v break_drop_smoke_status="${break_drop_smoke_status:-missing}" \
   -v break_drop_runtime="${break_drop_runtime:-missing}" \
   -v break_drop_pickup="${break_drop_pickup:-missing}" \
+  -v item_entity_persistence="${item_entity_persistence:-missing}" \
   -v break_drop_destroy_status="${break_drop_destroy_status:-missing}" \
   -v break_drop_pickup_status="${break_drop_pickup_status:-missing}" \
   -v break_drop_verify_restart_status="${break_drop_verify_restart_status:-missing}" \
+  -v break_drop_destroy_drop_status="${break_drop_destroy_drop_status:-missing}" \
+  -v break_drop_persisted_pickup_status="${break_drop_persisted_pickup_status:-missing}" \
+  -v break_drop_item_absent_status="${break_drop_item_absent_status:-missing}" \
   -v break_drop_restarts="${break_drop_restarts:-0}" \
   -v break_drop_protocol_change="${break_drop_protocol_change:-1}" \
   -v go_tests="$go_tests" \
@@ -230,6 +257,7 @@ awk \
     counted_runtime_status = "live_server_guarded"
     break_drop_inventory = "live_server_guarded"
     item_entity_pickup = "live_server_guarded"
+    item_entity_persistence_guard = "live_server_guarded"
     block_action_inventory = "session_guarded"
     player_inventory_persistence = "rocksdb_guarded"
     go_ok = go_tests == "pass" || go_tests == "skipped"
@@ -242,10 +270,14 @@ awk \
     break_drop_ok = break_drop_smoke_status == "pass" &&
       break_drop_runtime == "live_server_guarded" &&
       break_drop_pickup == "live_server_guarded" &&
+      item_entity_persistence == "live_server_guarded" &&
       break_drop_destroy_status == "pass" &&
       break_drop_pickup_status == "pass" &&
       break_drop_verify_restart_status == "pass" &&
-      break_drop_restarts + 0 >= 1 &&
+      break_drop_destroy_drop_status == "pass" &&
+      break_drop_persisted_pickup_status == "pass" &&
+      break_drop_item_absent_status == "pass" &&
+      break_drop_restarts + 0 >= 4 &&
       break_drop_protocol_change + 0 == 0
 
     if (protocol_diff_count + 0 != 0) {
@@ -265,7 +297,7 @@ awk \
       reason = "go_tests_failed"
     }
 
-    printf("server_inventory_foundation status=%s reason=%s server_inventory_status=%s creative_inventory=%s counted_inventory=%s counted_inventory_runtime=%s counted_inventory_runtime_status=%s counted_inventory_restarts=%d break_drop_inventory=%s break_drop_inventory_status=%s break_drop_inventory_restarts=%d item_entity_pickup=%s item_entity_pickup_status=%s block_action_inventory=%s player_inventory_persistence=%s active_protocol_change=%d active_storage_change=%d go_tests=%s design_doc=%s inventory_source=%s network_source=%s counted_smoke_summary=%s break_drop_smoke_summary=%s\n", status, reason, server_inventory_status, creative_inventory, counted_inventory, counted_runtime_status, counted_smoke_status, counted_restarts, break_drop_inventory, break_drop_smoke_status, break_drop_restarts, item_entity_pickup, break_drop_pickup_status, block_action_inventory, player_inventory_persistence, protocol_diff_count, storage_diff_count, go_tests, design_doc, inventory_source, network_source, counted_smoke_summary, break_drop_smoke_summary)
+    printf("server_inventory_foundation status=%s reason=%s server_inventory_status=%s creative_inventory=%s counted_inventory=%s counted_inventory_runtime=%s counted_inventory_runtime_status=%s counted_inventory_restarts=%d break_drop_inventory=%s break_drop_inventory_status=%s break_drop_inventory_restarts=%d item_entity_pickup=%s item_entity_pickup_status=%s item_entity_persistence=%s item_entity_persistence_status=%s block_action_inventory=%s player_inventory_persistence=%s active_protocol_change=%d active_storage_change=%d go_tests=%s design_doc=%s inventory_source=%s network_source=%s counted_smoke_summary=%s break_drop_smoke_summary=%s\n", status, reason, server_inventory_status, creative_inventory, counted_inventory, counted_runtime_status, counted_smoke_status, counted_restarts, break_drop_inventory, break_drop_smoke_status, break_drop_restarts, item_entity_pickup, break_drop_pickup_status, item_entity_persistence_guard, break_drop_persisted_pickup_status, block_action_inventory, player_inventory_persistence, protocol_diff_count, storage_diff_count, go_tests, design_doc, inventory_source, network_source, counted_smoke_summary, break_drop_smoke_summary)
     if (status != "pass") {
       exit 1
     }

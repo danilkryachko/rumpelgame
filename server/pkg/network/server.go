@@ -19,6 +19,7 @@ import (
 	"rumpelmc/server/pkg/api"
 	playerinventory "rumpelmc/server/pkg/inventory"
 	"rumpelmc/server/pkg/item"
+	"rumpelmc/server/pkg/itementity"
 	"rumpelmc/server/pkg/world"
 )
 
@@ -74,6 +75,11 @@ type playerInventoryStore interface {
 	SavePlayerInventory(playerID string, state playerinventory.State) error
 }
 
+type itemEntityStore interface {
+	LoadItemEntities() (itementity.State, bool, error)
+	SaveItemEntities(state itementity.State) error
+}
+
 type chunkOrderMode string
 
 const (
@@ -113,6 +119,7 @@ type Server struct {
 	miningDurations        map[world.BlockID]time.Duration
 	now                    func() time.Time
 	inventoryStore         playerInventoryStore
+	itemEntityStore        itemEntityStore
 	itemEntitiesMu         sync.Mutex
 	itemEntities           map[uint64]itemEntity
 	nextItemEntityID       uint64
@@ -149,10 +156,17 @@ func NewServer(address string, gameWorld *world.World) *Server {
 func NewServerWithPlayerInventoryStore(address string, gameWorld *world.World, inventoryStore playerInventoryStore) *Server {
 	server := NewServer(address, gameWorld)
 	server.inventoryStore = inventoryStore
+	if itemStore, ok := inventoryStore.(itemEntityStore); ok {
+		server.itemEntityStore = itemStore
+	}
 	return server
 }
 
 func (s *Server) Start() error {
+	if err := s.loadItemEntitiesFromStore(); err != nil {
+		return err
+	}
+
 	listener, err := net.Listen("tcp", s.address)
 	if err != nil {
 		return err
@@ -491,8 +505,14 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			inventoryChanged = true
 		}
 		if action.Action == api.BlockAction_DESTROY && world.IsPlaceable(previousBlock) {
+			itemEntitiesChanged, err = s.spawnItemEntityForBlock(previousBlock, action.X, action.Y, action.Z)
+			if err != nil {
+				if _, _, rollbackErr := s.world.ReplaceBlockGlobal(action.X, action.Y, action.Z, previousBlock); rollbackErr != nil {
+					return fmt.Errorf("spawn item entity: %w; rollback block edit: %v", err, rollbackErr)
+				}
+				return err
+			}
 			client.recordSuccessfulDestroy(actionTime)
-			itemEntitiesChanged = s.spawnItemEntityForBlock(previousBlock, action.X, action.Y, action.Z)
 		}
 
 		if err := s.broadcastChunkUpdate(client, snapshot); err != nil {
@@ -556,14 +576,15 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 		}
 		log.Printf("Received ItemPickupAction: entity_id=%d", action.EntityId)
 
-		if !s.collectItemEntityForSession(client, action.EntityId) {
+		collected, err := s.collectItemEntityForSession(client, action.EntityId)
+		if err != nil {
+			return err
+		}
+		if !collected {
 			if err := s.sendItemEntitySnapshotToSession(client); err != nil {
 				return fmt.Errorf("send item entity snapshot: %w", err)
 			}
 			return nil
-		}
-		if err := s.saveClientInventory(client); err != nil {
-			return err
 		}
 		if err := s.broadcastItemEntitySnapshot(client); err != nil {
 			return fmt.Errorf("send item entity snapshot: %w", err)
@@ -614,9 +635,61 @@ func (s *Server) saveClientInventory(client *clientSession) error {
 	if !ok {
 		return nil
 	}
+	return s.saveClientInventoryState(playerID, state)
+}
+
+func (s *Server) saveClientInventoryState(playerID string, state playerinventory.State) error {
+	if s.inventoryStore == nil || playerID == "" {
+		return nil
+	}
 	if err := s.inventoryStore.SavePlayerInventory(playerID, state); err != nil {
 		return fmt.Errorf("save player inventory %q: %w", playerID, err)
 	}
+	return nil
+}
+
+func (s *Server) loadItemEntitiesFromStore() error {
+	if s.itemEntityStore == nil {
+		return nil
+	}
+
+	state, found, err := s.itemEntityStore.LoadItemEntities()
+	if err != nil {
+		return fmt.Errorf("load item entities: %w", err)
+	}
+	if !found {
+		return nil
+	}
+
+	entities := make(map[uint64]itemEntity, len(state.Entities))
+	var maxEntityID uint64
+	for _, entity := range state.Entities {
+		entities[entity.EntityID] = itemEntity{
+			entityID: entity.EntityID,
+			itemID:   item.ID(entity.ItemID),
+			count:    entity.Count,
+			x:        entity.X,
+			y:        entity.Y,
+			z:        entity.Z,
+		}
+		if entity.EntityID > maxEntityID {
+			maxEntityID = entity.EntityID
+		}
+	}
+
+	nextEntityID := state.NextEntityID
+	if nextEntityID == 0 || nextEntityID <= maxEntityID {
+		nextEntityID = maxEntityID + 1
+		if nextEntityID == 0 {
+			nextEntityID = 1
+		}
+	}
+
+	s.itemEntitiesMu.Lock()
+	defer s.itemEntitiesMu.Unlock()
+	s.itemEntities = entities
+	s.nextItemEntityID = nextEntityID
+	s.itemEntityRevision = state.Revision
 	return nil
 }
 
@@ -922,6 +995,20 @@ func (c *clientSession) collectInventoryBlock(block world.BlockID, count uint32)
 	}
 	c.normalizeSelectedInventorySlotLocked()
 	return true
+}
+
+func (c *clientSession) currentInventoryState() playerinventory.State {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	return c.inventory.State(c.selectedInventorySlot)
+}
+
+func (c *clientSession) boundPlayerID() string {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	return c.playerID
 }
 
 func (c *clientSession) normalizeSelectedInventorySlot() {
@@ -1507,34 +1594,65 @@ func (s *Server) itemEntitySnapshot() *api.ItemEntitySnapshot {
 	s.itemEntitiesMu.Lock()
 	defer s.itemEntitiesMu.Unlock()
 
+	state := s.itemEntityStateLocked()
+	entities := make([]*api.ItemEntity, 0, len(state.Entities))
+	for _, entity := range state.Entities {
+		entities = append(entities, &api.ItemEntity{
+			EntityId: entity.EntityID,
+			ItemId:   entity.ItemID,
+			Count:    entity.Count,
+			X:        float32(entity.X),
+			Y:        float32(entity.Y),
+			Z:        float32(entity.Z),
+		})
+	}
+	return &api.ItemEntitySnapshot{
+		Entities: entities,
+		Revision: state.Revision,
+	}
+}
+
+func (s *Server) itemEntityStateLocked() itementity.State {
 	ids := make([]uint64, 0, len(s.itemEntities))
 	for id := range s.itemEntities {
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
-	entities := make([]*api.ItemEntity, 0, len(ids))
+	entities := make([]itementity.Entity, 0, len(ids))
 	for _, id := range ids {
 		entity := s.itemEntities[id]
-		entities = append(entities, &api.ItemEntity{
-			EntityId: entity.entityID,
-			ItemId:   string(entity.itemID),
+		entities = append(entities, itementity.Entity{
+			EntityID: entity.entityID,
+			ItemID:   string(entity.itemID),
 			Count:    entity.count,
-			X:        float32(entity.x),
-			Y:        float32(entity.y),
-			Z:        float32(entity.z),
+			X:        entity.x,
+			Y:        entity.y,
+			Z:        entity.z,
 		})
 	}
-	return &api.ItemEntitySnapshot{
-		Entities: entities,
-		Revision: s.itemEntityRevision,
+	nextEntityID := s.nextItemEntityID
+	if nextEntityID == 0 {
+		nextEntityID = 1
+	}
+	return itementity.State{
+		NextEntityID: nextEntityID,
+		Revision:     s.itemEntityRevision,
+		Entities:     entities,
 	}
 }
 
-func (s *Server) spawnItemEntityForBlock(block world.BlockID, x, y, z int32) bool {
+func (s *Server) saveItemEntitiesLocked() error {
+	if s.itemEntityStore == nil {
+		return nil
+	}
+	return s.itemEntityStore.SaveItemEntities(s.itemEntityStateLocked())
+}
+
+func (s *Server) spawnItemEntityForBlock(block world.BlockID, x, y, z int32) (bool, error) {
 	itemID, ok := item.BlockItemID(block)
 	if !ok {
-		return false
+		return false, nil
 	}
 
 	s.itemEntitiesMu.Lock()
@@ -1546,10 +1664,9 @@ func (s *Server) spawnItemEntityForBlock(block world.BlockID, x, y, z int32) boo
 	if s.nextItemEntityID == 0 {
 		s.nextItemEntityID = 1
 	}
-	entityID := s.nextItemEntityID
-	s.nextItemEntityID++
-	if s.nextItemEntityID == 0 {
-		s.nextItemEntityID = 1
+	entityID, ok := s.allocateItemEntityIDLocked()
+	if !ok {
+		return false, errors.New("item entity id space exhausted")
 	}
 
 	s.itemEntities[entityID] = itemEntity{
@@ -1561,12 +1678,39 @@ func (s *Server) spawnItemEntityForBlock(block world.BlockID, x, y, z int32) boo
 		z:        float64(z) + 0.5,
 	}
 	s.itemEntityRevision++
-	return true
+	if err := s.saveItemEntitiesLocked(); err != nil {
+		delete(s.itemEntities, entityID)
+		s.itemEntityRevision--
+		s.nextItemEntityID = entityID
+		return false, fmt.Errorf("save item entities after spawn: %w", err)
+	}
+	return true, nil
 }
 
-func (s *Server) collectItemEntityForSession(client *clientSession, entityID uint64) bool {
+func (s *Server) allocateItemEntityIDLocked() (uint64, bool) {
+	start := s.nextItemEntityID
+	if start == 0 {
+		start = 1
+		s.nextItemEntityID = 1
+	}
+	for {
+		entityID := s.nextItemEntityID
+		s.nextItemEntityID++
+		if s.nextItemEntityID == 0 {
+			s.nextItemEntityID = 1
+		}
+		if _, exists := s.itemEntities[entityID]; !exists {
+			return entityID, true
+		}
+		if s.nextItemEntityID == start {
+			return 0, false
+		}
+	}
+}
+
+func (s *Server) collectItemEntityForSession(client *clientSession, entityID uint64) (bool, error) {
 	if entityID == 0 {
-		return false
+		return false, nil
 	}
 
 	s.itemEntitiesMu.Lock()
@@ -1574,22 +1718,40 @@ func (s *Server) collectItemEntityForSession(client *clientSession, entityID uin
 
 	entity, ok := s.itemEntities[entityID]
 	if !ok {
-		return false
+		return false, nil
 	}
 	if !itemEntityWithinPickupReach(client.recordedPosition(), entity) {
-		return false
+		return false, nil
 	}
 	block, ok := item.BlockForItem(entity.itemID)
 	if !ok {
-		return false
+		return false, nil
 	}
+	playerID := client.boundPlayerID()
+	previousInventoryState := client.currentInventoryState()
 	if !client.collectInventoryBlock(block, entity.count) {
-		return false
+		return false, nil
 	}
+	collectedInventoryState := client.currentInventoryState()
 
 	delete(s.itemEntities, entityID)
 	s.itemEntityRevision++
-	return true
+	if err := s.saveClientInventoryState(playerID, collectedInventoryState); err != nil {
+		s.itemEntities[entityID] = entity
+		s.itemEntityRevision--
+		client.applyInventoryState(previousInventoryState)
+		return false, err
+	}
+	if err := s.saveItemEntitiesLocked(); err != nil {
+		s.itemEntities[entityID] = entity
+		s.itemEntityRevision--
+		client.applyInventoryState(previousInventoryState)
+		if rollbackErr := s.saveClientInventoryState(playerID, previousInventoryState); rollbackErr != nil {
+			return false, fmt.Errorf("save item entities after pickup: %w; rollback player inventory: %v", err, rollbackErr)
+		}
+		return false, fmt.Errorf("save item entities after pickup: %w", err)
+	}
+	return true, nil
 }
 
 func itemEntityWithinPickupReach(position clientPositionState, entity itemEntity) bool {
