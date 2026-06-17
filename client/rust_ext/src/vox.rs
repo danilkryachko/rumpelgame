@@ -465,6 +465,14 @@ pub(crate) fn model_palette_color(model: &VoxModel, color_index: u8) -> Color {
     palette_color(model.palette, color_index)
 }
 
+pub(crate) fn model_raw_palette_color(model: &VoxModel, color_index: u8) -> Color {
+    model
+        .palette
+        .get(color_index as usize)
+        .copied()
+        .unwrap_or(Color::WHITE)
+}
+
 fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, String> {
     let slice = bytes
         .get(offset..offset + 4)
@@ -502,6 +510,26 @@ mod tests {
     #[test]
     fn parse_vox_models_rejects_truncated_input() {
         assert!(parse_vox_models(b"VOX ").is_err());
+    }
+
+    #[test]
+    fn palette_helpers_keep_magica_vox_and_veloren_index_semantics_separate() {
+        let mut model = VoxModel {
+            size: (1, 1, 1),
+            voxels: Vec::new(),
+            palette: [Color::BLACK; 256],
+        };
+        model.palette[0] = Color::from_rgba8(10, 20, 30, 255);
+        model.palette[1] = Color::from_rgba8(40, 50, 60, 255);
+
+        assert_eq!(
+            model_palette_color(&model, 1),
+            Color::from_rgba8(10, 20, 30, 255)
+        );
+        assert_eq!(
+            model_raw_palette_color(&model, 1),
+            Color::from_rgba8(40, 50, 60, 255)
+        );
     }
 
     fn test_vox_bytes() -> Vec<u8> {
