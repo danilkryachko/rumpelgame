@@ -3,23 +3,29 @@ use godot::prelude::*;
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct VoxCoord {
-    x: u8,
-    y: u8,
-    z: u8,
+pub(crate) struct VoxCoord {
+    pub(crate) x: u8,
+    pub(crate) y: u8,
+    pub(crate) z: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct VoxVoxel {
-    coord: VoxCoord,
-    color_index: u8,
+pub(crate) struct VoxVoxel {
+    pub(crate) coord: VoxCoord,
+    pub(crate) color_index: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct VoxModel {
-    size: (u32, u32, u32),
-    voxels: Vec<VoxVoxel>,
-    palette: [Color; 256],
+pub(crate) struct VoxModel {
+    pub(crate) size: (u32, u32, u32),
+    pub(crate) voxels: Vec<VoxVoxel>,
+    pub(crate) palette: [Color; 256],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ColoredVoxel {
+    pub(crate) position: (i32, i32, i32),
+    pub(crate) color: Color,
 }
 
 #[derive(Clone, Copy)]
@@ -92,20 +98,30 @@ const VOX_FACE_SPECS: [VoxFace; 6] = [
     },
 ];
 
+#[allow(dead_code)]
 pub fn load_vox_mesh_from_res(path: &str, scale: f32) -> Result<Gd<godot::classes::Mesh>, String> {
-    let absolute_path = ProjectSettings::singleton().globalize_path(path);
-    let bytes = std::fs::read(absolute_path.to_string())
-        .map_err(|err| format!("failed to read {path}: {err}"))?;
-    let model = parse_first_vox_model(&bytes)?;
+    let model = load_vox_model_from_res(path, 0)?;
     Ok(build_vox_mesh(&model, scale).upcast::<godot::classes::Mesh>())
 }
 
+pub(crate) fn load_vox_model_from_res(path: &str, model_index: usize) -> Result<VoxModel, String> {
+    let absolute_path = ProjectSettings::singleton().globalize_path(path);
+    let bytes = std::fs::read(absolute_path.to_string())
+        .map_err(|err| format!("failed to read {path}: {err}"))?;
+    parse_vox_model_index(&bytes, model_index)
+}
+
+#[allow(dead_code)]
 fn parse_first_vox_model(bytes: &[u8]) -> Result<VoxModel, String> {
+    parse_vox_model_index(bytes, 0)
+}
+
+fn parse_vox_model_index(bytes: &[u8], model_index: usize) -> Result<VoxModel, String> {
     let models = parse_vox_models(bytes)?;
     models
         .into_iter()
-        .next()
-        .ok_or_else(|| "vox file has no XYZI model".to_string())
+        .nth(model_index)
+        .ok_or_else(|| format!("vox file has no XYZI model at index {model_index}"))
 }
 
 fn parse_vox_models(bytes: &[u8]) -> Result<Vec<VoxModel>, String> {
@@ -254,6 +270,7 @@ impl VoxParser<'_> {
     }
 }
 
+#[allow(dead_code)]
 fn build_vox_mesh(model: &VoxModel, scale: f32) -> Gd<ArrayMesh> {
     let mut vertices = PackedVector3Array::new();
     let mut normals = PackedVector3Array::new();
@@ -290,6 +307,69 @@ fn build_vox_mesh(model: &VoxModel, scale: f32) -> Gd<ArrayMesh> {
     mesh
 }
 
+pub(crate) fn build_colored_voxels_mesh(voxels: &[ColoredVoxel], scale: f32) -> Gd<ArrayMesh> {
+    let mut vertices = PackedVector3Array::new();
+    let mut normals = PackedVector3Array::new();
+    let mut colors = PackedColorArray::new();
+    let occupied: HashSet<(i32, i32, i32)> = voxels.iter().map(|voxel| voxel.position).collect();
+    let origin = colored_voxel_mesh_origin(voxels);
+
+    for voxel in voxels {
+        for face in VOX_FACE_SPECS {
+            let neighbor = (
+                voxel.position.0 + face.neighbor.0,
+                voxel.position.1 + face.neighbor.1,
+                voxel.position.2 + face.neighbor.2,
+            );
+            if occupied.contains(&neighbor) {
+                continue;
+            }
+            push_colored_voxel_face(
+                voxel.position,
+                origin,
+                face,
+                scale,
+                voxel.color,
+                &mut vertices,
+                &mut normals,
+                &mut colors,
+            );
+        }
+    }
+
+    let mut arrays = Array::new();
+    arrays.resize(13, &Variant::nil());
+    arrays.set(0, &vertices.to_variant());
+    arrays.set(1, &normals.to_variant());
+    arrays.set(3, &colors.to_variant());
+
+    let mut mesh = ArrayMesh::new_gd();
+    mesh.add_surface_from_arrays(godot::classes::mesh::PrimitiveType::TRIANGLES, &arrays);
+    mesh
+}
+
+fn colored_voxel_mesh_origin(voxels: &[ColoredVoxel]) -> (f32, f32, f32) {
+    let Some(first) = voxels.first() else {
+        return (0.0, 0.0, 0.0);
+    };
+    let (mut min_x, mut min_y, mut min_z) = first.position;
+    let (mut max_x, mut max_y, _) = first.position;
+    for voxel in voxels {
+        let (x, y, z) = voxel.position;
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        min_z = min_z.min(z);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+    (
+        (min_x + max_x + 1) as f32 * 0.5,
+        (min_y + max_y + 1) as f32 * 0.5,
+        min_z as f32,
+    )
+}
+
+#[allow(dead_code)]
 fn push_vox_face(
     size: (u32, u32, u32),
     coord: VoxCoord,
@@ -313,6 +393,35 @@ fn push_vox_face(
     }
 }
 
+fn push_colored_voxel_face(
+    position: (i32, i32, i32),
+    origin: (f32, f32, f32),
+    face: VoxFace,
+    scale: f32,
+    color: Color,
+    vertices: &mut PackedVector3Array,
+    normals: &mut PackedVector3Array,
+    colors: &mut PackedColorArray,
+) {
+    let p = |corner: (f32, f32, f32)| -> Vector3 {
+        Vector3::new(
+            (position.0 as f32 + corner.0 - origin.0) * scale,
+            (position.2 as f32 + corner.2 - origin.2) * scale,
+            (position.1 as f32 + corner.1 - origin.1) * scale,
+        )
+    };
+    let p0 = p(face.corners[0]);
+    let p1 = p(face.corners[1]);
+    let p2 = p(face.corners[2]);
+    let p3 = p(face.corners[3]);
+    for point in [p0, p1, p2, p0, p2, p3] {
+        vertices.push(point);
+        normals.push(face.normal);
+        colors.push(color);
+    }
+}
+
+#[allow(dead_code)]
 fn vox_corner_to_godot(
     size: (u32, u32, u32),
     coord: VoxCoord,
@@ -326,6 +435,7 @@ fn vox_corner_to_godot(
     Vector3::new(x, y, z)
 }
 
+#[allow(dead_code)]
 fn has_voxel_neighbor(
     occupied: &HashSet<VoxCoord>,
     coord: VoxCoord,
@@ -349,6 +459,10 @@ fn palette_color(palette: [Color; 256], color_index: u8) -> Color {
         .get(color_index.saturating_sub(1) as usize)
         .copied()
         .unwrap_or(Color::WHITE)
+}
+
+pub(crate) fn model_palette_color(model: &VoxModel, color_index: u8) -> Color {
+    palette_color(model.palette, color_index)
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, String> {

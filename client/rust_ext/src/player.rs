@@ -6,6 +6,8 @@ use godot::classes::{
 use godot::global::{Key, MouseButton};
 use godot::prelude::*;
 
+use crate::veloren_composer::VelorenHumanoidPart;
+
 const BLOCK_REACH: f32 = 5.0;
 const SELECTION_OUTLINE_PADDING: f32 = 0.01;
 const GRAVITY: f32 = 24.0;
@@ -35,7 +37,7 @@ const CHARACTER_RUN_ANIMATION_RATE: f32 = 9.0;
 const CHARACTER_JUMP_ANIMATION_RATE: f32 = 4.0;
 const CHARACTER_ROOT_YAW_DEGREES: f32 = 0.0;
 const CHARACTER_VOXEL_SCALE: f32 = 0.065;
-const CHARACTER_HEAD_VOXEL_HEIGHT: f32 = 8.0;
+const CHARACTER_HEAD_VOXEL_HEIGHT: f32 = 11.0;
 const CHARACTER_HEAD_Y: f32 =
     PLAYER_HEIGHT_METERS - CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE;
 const CHARACTER_CHEST_Y: f32 = 0.96;
@@ -45,14 +47,6 @@ const CHARACTER_SHOULDER_Y: f32 = 1.23;
 const CHARACTER_HIP_Y: f32 = 0.42;
 const CHARACTER_LIMB_X: f32 = 0.36;
 const CHARACTER_LEG_X: f32 = 0.17;
-const CHARACTER_FACE_DETAIL_Y: f32 = PLAYER_EYE_HEIGHT_METERS - CHARACTER_HEAD_Y;
-const CHARACTER_FACE_DETAIL_Z: f32 = -0.30;
-const VELOREN_CHEST_PATH: &str = "res://assets/veloren/figure/body/chest_male.vox";
-const VELOREN_BELT_PATH: &str = "res://assets/veloren/figure/body/belt_male.vox";
-const VELOREN_PANTS_PATH: &str = "res://assets/veloren/figure/body/pants_male.vox";
-const VELOREN_HAND_PATH: &str = "res://assets/veloren/figure/body/hand.vox";
-const VELOREN_FOOT_PATH: &str = "res://assets/veloren/figure/body/foot.vox";
-const VELOREN_HEAD_PATH: &str = "res://assets/veloren/figure/head/human/male.vox";
 
 struct BlockHit {
     block: (i32, i32, i32),
@@ -730,86 +724,72 @@ fn create_voxel_character_visual() -> VoxelCharacterVisual {
     root.set_rotation_degrees(Vector3::new(0.0, CHARACTER_ROOT_YAW_DEGREES, 0.0));
     root.set_visible(false);
 
-    let mut head = create_veloren_character_part(
+    let head = create_veloren_composed_character_part(
         "Head",
-        VELOREN_HEAD_PATH,
+        VelorenHumanoidPart::Head,
         Vector3::new(0.0, CHARACTER_HEAD_Y, 0.0),
         Vector3::ZERO,
         Vector3::new(0.76, 0.44, 0.44),
         Vector3::ZERO,
         Color::from_rgb(0.78, 0.55, 0.38),
     );
-    add_box_character_detail(
-        &mut head,
-        "EyeL",
-        Vector3::new(-0.16, CHARACTER_FACE_DETAIL_Y, CHARACTER_FACE_DETAIL_Z),
-        Vector3::new(0.08, 0.045, 0.025),
-        Color::from_rgb(0.08, 0.12, 0.18),
-    );
-    add_box_character_detail(
-        &mut head,
-        "EyeR",
-        Vector3::new(0.16, CHARACTER_FACE_DETAIL_Y, CHARACTER_FACE_DETAIL_Z),
-        Vector3::new(0.08, 0.045, 0.025),
-        Color::from_rgb(0.08, 0.12, 0.18),
-    );
-    let chest = create_veloren_character_part(
+    let chest = create_veloren_composed_character_part(
         "Chest",
-        VELOREN_CHEST_PATH,
+        VelorenHumanoidPart::Chest,
         Vector3::new(0.0, CHARACTER_CHEST_Y, 0.0),
         Vector3::ZERO,
         Vector3::new(0.68, 0.68, 0.34),
         Vector3::ZERO,
         Color::from_rgb(0.18, 0.45, 0.78),
     );
-    let belt = create_veloren_character_part(
+    let belt = create_veloren_composed_character_part(
         "Belt",
-        VELOREN_BELT_PATH,
+        VelorenHumanoidPart::Belt,
         Vector3::new(0.0, CHARACTER_BELT_Y, 0.0),
         Vector3::ZERO,
         Vector3::new(0.58, 0.28, 0.34),
         Vector3::ZERO,
         Color::from_rgb(0.12, 0.16, 0.20),
     );
-    let pants = create_veloren_character_part(
+    let pants = create_veloren_composed_character_part(
         "Pants",
-        VELOREN_PANTS_PATH,
+        VelorenHumanoidPart::Pants,
         Vector3::new(0.0, CHARACTER_PANTS_Y, 0.0),
         Vector3::ZERO,
         Vector3::new(0.58, 0.24, 0.34),
         Vector3::ZERO,
         Color::from_rgb(0.10, 0.16, 0.25),
     );
-    let hand_l = create_veloren_character_part(
+    let hand_l = create_veloren_composed_character_part(
         "HandL",
-        VELOREN_HAND_PATH,
+        VelorenHumanoidPart::LeftHand,
         Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
         Vector3::new(0.0, -0.26, 0.0),
         Vector3::new(0.20, 0.62, 0.20),
         Vector3::new(0.0, -0.31, 0.0),
         Color::from_rgb(0.78, 0.55, 0.38),
     );
-    let hand_r = create_veloren_character_part(
+    let hand_r = create_veloren_composed_character_part(
         "HandR",
-        VELOREN_HAND_PATH,
+        VelorenHumanoidPart::RightHand,
         Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
         Vector3::new(0.0, -0.26, 0.0),
         Vector3::new(0.20, 0.62, 0.20),
         Vector3::new(0.0, -0.31, 0.0),
         Color::from_rgb(0.78, 0.55, 0.38),
     );
-    let foot_l = create_veloren_character_part(
+    let foot_l = create_veloren_composed_character_part(
         "FootL",
-        VELOREN_FOOT_PATH,
+        VelorenHumanoidPart::LeftFoot,
         Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
         Vector3::new(0.0, -0.18, 0.0),
         Vector3::new(0.22, 0.72, 0.24),
         Vector3::new(0.0, -0.36, 0.0),
         Color::from_rgb(0.16, 0.22, 0.32),
     );
-    let foot_r = create_veloren_character_part(
+    let foot_r = create_veloren_composed_character_part(
         "FootR",
-        VELOREN_FOOT_PATH,
+        VelorenHumanoidPart::RightFoot,
         Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
         Vector3::new(0.0, -0.18, 0.0),
         Vector3::new(0.22, 0.72, 0.24),
@@ -841,9 +821,9 @@ fn create_voxel_character_visual() -> VoxelCharacterVisual {
     visual
 }
 
-fn create_veloren_character_part(
+fn create_veloren_composed_character_part(
     name: &str,
-    vox_path: &str,
+    part: VelorenHumanoidPart,
     pivot_position: Vector3,
     mesh_offset: Vector3,
     fallback_mesh_size: Vector3,
@@ -856,13 +836,13 @@ fn create_veloren_character_part(
 
     let mut mesh = MeshInstance3D::new_alloc();
     mesh.set_position(mesh_offset);
-    match crate::vox::load_vox_mesh_from_res(vox_path, CHARACTER_VOXEL_SCALE) {
-        Ok(vox_mesh) => {
-            mesh.set_mesh(&vox_mesh);
+    match crate::veloren_composer::load_default_humanoid_part_mesh(part, CHARACTER_VOXEL_SCALE) {
+        Ok(composed_mesh) => {
+            mesh.set_mesh(&composed_mesh);
             mesh.set_material_override(&create_vox_vertex_color_material());
         }
         Err(err) => {
-            godot_print!("Veloren character part fallback for {vox_path}: {err}");
+            godot_print!("Veloren composed character part fallback for {name}: {err}");
             let mut box_mesh = BoxMesh::new_gd();
             box_mesh.set_size(fallback_mesh_size);
             mesh.set_position(fallback_mesh_offset);
@@ -873,25 +853,6 @@ fn create_veloren_character_part(
 
     pivot.add_child(&mesh.upcast::<godot::classes::Node>());
     pivot
-}
-
-fn add_box_character_detail(
-    parent: &mut Gd<Node3D>,
-    name: &str,
-    position: Vector3,
-    size: Vector3,
-    color: Color,
-) {
-    let mut mesh_node = MeshInstance3D::new_alloc();
-    mesh_node.set_name(&StringName::from(name));
-    mesh_node.set_position(position);
-
-    let mut mesh = BoxMesh::new_gd();
-    mesh.set_size(size);
-    mesh_node.set_mesh(&mesh.upcast::<godot::classes::Mesh>());
-    mesh_node.set_material_override(&create_voxel_character_material(color));
-
-    parent.add_child(&mesh_node.upcast::<godot::classes::Node>());
 }
 
 fn create_voxel_character_material(color: Color) -> Gd<godot::classes::Material> {
@@ -1245,10 +1206,9 @@ mod tests {
     #[test]
     fn character_visual_scale_tracks_player_height_and_eye_height() {
         let head_top_y = CHARACTER_HEAD_Y + CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE;
-        let eye_center_y = CHARACTER_HEAD_Y + CHARACTER_FACE_DETAIL_Y;
 
         assert!((head_top_y - PLAYER_HEIGHT_METERS).abs() < 0.001);
-        assert!((eye_center_y - PLAYER_EYE_HEIGHT_METERS).abs() < 0.001);
+        assert_eq!(first_person_camera_position().y, PLAYER_EYE_HEIGHT_METERS);
     }
 
     #[test]
