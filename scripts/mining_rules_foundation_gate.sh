@@ -12,6 +12,7 @@ SUMMARY_PATH="$OUT_DIR/mining-rules-foundation-summary.txt"
 DESIGN_DOC="${RUMPELMC_MINING_RULES_DOC:-"$ROOT_DIR/docs/MINING_RULES_FOUNDATION.md"}"
 NETWORK_SOURCE="${RUMPELMC_MINING_RULES_NETWORK_SOURCE:-"$ROOT_DIR/server/pkg/network/server.go"}"
 NETWORK_TEST="${RUMPELMC_MINING_RULES_NETWORK_TEST:-"$ROOT_DIR/server/pkg/network/server_test.go"}"
+WORLD_BLOCKS="${RUMPELMC_MINING_RULES_WORLD_BLOCKS:-"$ROOT_DIR/server/pkg/world/blocks.go"}"
 PROTOCOL_DOC="${RUMPELMC_MINING_RULES_PROTOCOL_DOC:-"$ROOT_DIR/docs/PROTOCOL.md"}"
 RUN_GO_TESTS="${RUMPELMC_MINING_RULES_RUN_GO_TESTS:-1}"
 
@@ -29,7 +30,7 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-for path in "$DESIGN_DOC" "$NETWORK_SOURCE" "$NETWORK_TEST" "$PROTOCOL_DOC"; do
+for path in "$DESIGN_DOC" "$NETWORK_SOURCE" "$NETWORK_TEST" "$WORLD_BLOCKS" "$PROTOCOL_DOC"; do
   test -s "$path" || fail "missing required input $path"
 done
 
@@ -46,8 +47,6 @@ done
 for token in \
   'const miningCooldownEnv = "RUMPELMC_SERVER_MINING_COOLDOWN_MS"' \
   'const defaultCountedMiningCooldown' \
-  'const defaultSoftBlockMiningCooldown' \
-  'const defaultWoodBlockMiningCooldown' \
   'miningCooldown  time.Duration' \
   'miningDurations map[world.BlockID]time.Duration' \
   'lastDestroyAt         time.Time' \
@@ -56,11 +55,20 @@ for token in \
   'configuredMiningDurations' \
   'defaultMiningCooldownForMode' \
   'defaultMiningDurationsForMode' \
+  'definition.MiningDurationMS' \
   'miningDurationForBlock' \
   'destroyCooldownReady' \
   'recordSuccessfulDestroy' \
   'Ignored mining cooldown block action'; do
   require_token "$NETWORK_SOURCE" "$token"
+done
+
+for token in \
+  'MiningDurationMS' \
+  'StoneBlockMiningMS' \
+  'SoftBlockMiningMS' \
+  'WoodBlockMiningMS'; do
+  require_token "$WORLD_BLOCKS" "$token"
 done
 
 for token in \

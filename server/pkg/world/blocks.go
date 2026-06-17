@@ -11,6 +11,16 @@ const (
 	Leaves
 )
 
+const (
+	NoMiningDurationMS   = 0
+	SoftBlockMiningMS    = 150
+	WoodBlockMiningMS    = 250
+	StoneBlockMiningMS   = 300
+	DefaultBlockMiningMS = StoneBlockMiningMS
+	UnknownBlockMiningMS = NoMiningDurationMS
+	NonPlaceableMiningMS = NoMiningDurationMS
+)
+
 type BlockTextures struct {
 	Top    string
 	Side   string
@@ -88,90 +98,95 @@ const (
 )
 
 type BlockDefinition struct {
-	ID             BlockID
-	Name           string
-	Solid          bool
-	Opaque         bool
-	Placeable      bool
-	RenderClass    RenderClass
-	CollisionClass CollisionClass
-	OcclusionClass OcclusionClass
-	ShadowPolicy   ShadowPolicy
-	DepthPolicy    DepthPolicy
-	StoragePolicy  StoragePolicy
-	LiquidPolicy   LiquidPolicy
-	SortPolicy     SortPolicy
-	LightEmission  uint8
-	Textures       BlockTextures
+	ID               BlockID
+	Name             string
+	Solid            bool
+	Opaque           bool
+	Placeable        bool
+	RenderClass      RenderClass
+	CollisionClass   CollisionClass
+	OcclusionClass   OcclusionClass
+	ShadowPolicy     ShadowPolicy
+	DepthPolicy      DepthPolicy
+	StoragePolicy    StoragePolicy
+	LiquidPolicy     LiquidPolicy
+	SortPolicy       SortPolicy
+	LightEmission    uint8
+	MiningDurationMS int
+	Textures         BlockTextures
 }
 
 var blockDefinitions = []BlockDefinition{
 	{
-		ID:             Air,
-		Name:           "Air",
-		Solid:          false,
-		Opaque:         false,
-		Placeable:      false,
-		RenderClass:    RenderClassAir,
-		CollisionClass: CollisionClassNone,
-		OcclusionClass: OcclusionClassNone,
-		ShadowPolicy:   ShadowPolicyNone,
-		DepthPolicy:    DepthPolicyNone,
-		StoragePolicy:  StoragePolicyNetworked,
-		LiquidPolicy:   LiquidPolicyNone,
-		SortPolicy:     SortPolicyNone,
-		LightEmission:  0,
-		Textures:       BlockTextures{},
+		ID:               Air,
+		Name:             "Air",
+		Solid:            false,
+		Opaque:           false,
+		Placeable:        false,
+		RenderClass:      RenderClassAir,
+		CollisionClass:   CollisionClassNone,
+		OcclusionClass:   OcclusionClassNone,
+		ShadowPolicy:     ShadowPolicyNone,
+		DepthPolicy:      DepthPolicyNone,
+		StoragePolicy:    StoragePolicyNetworked,
+		LiquidPolicy:     LiquidPolicyNone,
+		SortPolicy:       SortPolicyNone,
+		LightEmission:    0,
+		MiningDurationMS: NoMiningDurationMS,
+		Textures:         BlockTextures{},
 	},
 	{
-		ID:             Stone,
-		Name:           "Stone",
-		Solid:          true,
-		Opaque:         true,
-		Placeable:      true,
-		RenderClass:    RenderClassOpaque,
-		CollisionClass: CollisionClassSolid,
-		OcclusionClass: OcclusionClassOpaque,
-		ShadowPolicy:   ShadowPolicyOpaque,
-		DepthPolicy:    DepthPolicyOpaqueWrite,
-		StoragePolicy:  StoragePolicyNetworked,
-		LiquidPolicy:   LiquidPolicyNone,
-		SortPolicy:     SortPolicyNone,
-		LightEmission:  0,
-		Textures:       sameTexture("stone"),
+		ID:               Stone,
+		Name:             "Stone",
+		Solid:            true,
+		Opaque:           true,
+		Placeable:        true,
+		RenderClass:      RenderClassOpaque,
+		CollisionClass:   CollisionClassSolid,
+		OcclusionClass:   OcclusionClassOpaque,
+		ShadowPolicy:     ShadowPolicyOpaque,
+		DepthPolicy:      DepthPolicyOpaqueWrite,
+		StoragePolicy:    StoragePolicyNetworked,
+		LiquidPolicy:     LiquidPolicyNone,
+		SortPolicy:       SortPolicyNone,
+		LightEmission:    0,
+		MiningDurationMS: StoneBlockMiningMS,
+		Textures:         sameTexture("stone"),
 	},
 	{
-		ID:             Dirt,
-		Name:           "Dirt",
-		Solid:          true,
-		Opaque:         true,
-		Placeable:      true,
-		RenderClass:    RenderClassOpaque,
-		CollisionClass: CollisionClassSolid,
-		OcclusionClass: OcclusionClassOpaque,
-		ShadowPolicy:   ShadowPolicyOpaque,
-		DepthPolicy:    DepthPolicyOpaqueWrite,
-		StoragePolicy:  StoragePolicyNetworked,
-		LiquidPolicy:   LiquidPolicyNone,
-		SortPolicy:     SortPolicyNone,
-		LightEmission:  0,
-		Textures:       sameTexture("soil"),
+		ID:               Dirt,
+		Name:             "Dirt",
+		Solid:            true,
+		Opaque:           true,
+		Placeable:        true,
+		RenderClass:      RenderClassOpaque,
+		CollisionClass:   CollisionClassSolid,
+		OcclusionClass:   OcclusionClassOpaque,
+		ShadowPolicy:     ShadowPolicyOpaque,
+		DepthPolicy:      DepthPolicyOpaqueWrite,
+		StoragePolicy:    StoragePolicyNetworked,
+		LiquidPolicy:     LiquidPolicyNone,
+		SortPolicy:       SortPolicyNone,
+		LightEmission:    0,
+		MiningDurationMS: SoftBlockMiningMS,
+		Textures:         sameTexture("soil"),
 	},
 	{
-		ID:             Grass,
-		Name:           "Grass",
-		Solid:          true,
-		Opaque:         true,
-		Placeable:      true,
-		RenderClass:    RenderClassOpaque,
-		CollisionClass: CollisionClassSolid,
-		OcclusionClass: OcclusionClassOpaque,
-		ShadowPolicy:   ShadowPolicyOpaque,
-		DepthPolicy:    DepthPolicyOpaqueWrite,
-		StoragePolicy:  StoragePolicyNetworked,
-		LiquidPolicy:   LiquidPolicyNone,
-		SortPolicy:     SortPolicyNone,
-		LightEmission:  0,
+		ID:               Grass,
+		Name:             "Grass",
+		Solid:            true,
+		Opaque:           true,
+		Placeable:        true,
+		RenderClass:      RenderClassOpaque,
+		CollisionClass:   CollisionClassSolid,
+		OcclusionClass:   OcclusionClassOpaque,
+		ShadowPolicy:     ShadowPolicyOpaque,
+		DepthPolicy:      DepthPolicyOpaqueWrite,
+		StoragePolicy:    StoragePolicyNetworked,
+		LiquidPolicy:     LiquidPolicyNone,
+		SortPolicy:       SortPolicyNone,
+		LightEmission:    0,
+		MiningDurationMS: SoftBlockMiningMS,
 		Textures: BlockTextures{
 			Top:    "grass_top",
 			Side:   "grass_side",
@@ -179,20 +194,21 @@ var blockDefinitions = []BlockDefinition{
 		},
 	},
 	{
-		ID:             Wood,
-		Name:           "Wood",
-		Solid:          true,
-		Opaque:         true,
-		Placeable:      true,
-		RenderClass:    RenderClassOpaque,
-		CollisionClass: CollisionClassSolid,
-		OcclusionClass: OcclusionClassOpaque,
-		ShadowPolicy:   ShadowPolicyOpaque,
-		DepthPolicy:    DepthPolicyOpaqueWrite,
-		StoragePolicy:  StoragePolicyNetworked,
-		LiquidPolicy:   LiquidPolicyNone,
-		SortPolicy:     SortPolicyNone,
-		LightEmission:  0,
+		ID:               Wood,
+		Name:             "Wood",
+		Solid:            true,
+		Opaque:           true,
+		Placeable:        true,
+		RenderClass:      RenderClassOpaque,
+		CollisionClass:   CollisionClassSolid,
+		OcclusionClass:   OcclusionClassOpaque,
+		ShadowPolicy:     ShadowPolicyOpaque,
+		DepthPolicy:      DepthPolicyOpaqueWrite,
+		StoragePolicy:    StoragePolicyNetworked,
+		LiquidPolicy:     LiquidPolicyNone,
+		SortPolicy:       SortPolicyNone,
+		LightEmission:    0,
+		MiningDurationMS: WoodBlockMiningMS,
 		Textures: BlockTextures{
 			Top:    "wood_top",
 			Side:   "wood_side",
@@ -200,21 +216,22 @@ var blockDefinitions = []BlockDefinition{
 		},
 	},
 	{
-		ID:             Leaves,
-		Name:           "Leaves",
-		Solid:          true,
-		Opaque:         true,
-		Placeable:      true,
-		RenderClass:    RenderClassOpaque,
-		CollisionClass: CollisionClassSolid,
-		OcclusionClass: OcclusionClassOpaque,
-		ShadowPolicy:   ShadowPolicyOpaque,
-		DepthPolicy:    DepthPolicyOpaqueWrite,
-		StoragePolicy:  StoragePolicyNetworked,
-		LiquidPolicy:   LiquidPolicyNone,
-		SortPolicy:     SortPolicyNone,
-		LightEmission:  0,
-		Textures:       sameTexture("leaves"),
+		ID:               Leaves,
+		Name:             "Leaves",
+		Solid:            true,
+		Opaque:           true,
+		Placeable:        true,
+		RenderClass:      RenderClassOpaque,
+		CollisionClass:   CollisionClassSolid,
+		OcclusionClass:   OcclusionClassOpaque,
+		ShadowPolicy:     ShadowPolicyOpaque,
+		DepthPolicy:      DepthPolicyOpaqueWrite,
+		StoragePolicy:    StoragePolicyNetworked,
+		LiquidPolicy:     LiquidPolicyNone,
+		SortPolicy:       SortPolicyNone,
+		LightEmission:    0,
+		MiningDurationMS: SoftBlockMiningMS,
+		Textures:         sameTexture("leaves"),
 	},
 }
 

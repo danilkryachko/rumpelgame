@@ -53,7 +53,7 @@ Checks:
 - `BlockAction.block_id` is a `uint32` protocol field, but the server casts it to `world.BlockID` and validates placeability through the server registry.
 - The Rust client receives `u16` block IDs from chunk bytes and stores them in wider local types for renderer work.
 - Rust `BlockDefinition` now has a client material registry foundation for existing block IDs: `solid`, `opaque`, `placeable`, render/collision/occlusion/shadow/depth/storage/liquid/sort policies, bounded light emission, and texture fields.
-- Go `BlockDefinition` now has a server material registry foundation for existing block IDs: `Solid`, `Opaque`, `Placeable`, render/collision/occlusion/shadow/depth/storage/liquid/sort policies, bounded light emission, and texture fields.
+- Go `BlockDefinition` now has a server material registry foundation for existing block IDs: `Solid`, `Opaque`, `Placeable`, render/collision/occlusion/shadow/depth/storage/liquid/sort policies, bounded light emission, server mining duration metadata, and texture fields.
 - The GPU compute mesher only emits faces for blocks that are both solid and opaque.
 - `PackedBlockLookup::from_definitions` only includes `blocks::is_opaque_solid` definitions.
 - The GPU terrain fragment shader writes alpha `1.0`; it does not consume atlas alpha.

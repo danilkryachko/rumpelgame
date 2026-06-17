@@ -59,7 +59,7 @@ func buildSummary() (string, error) {
 			liquid++
 		}
 		rows.WriteString(fmt.Sprintf(
-			"%d|%s|solid=%t|opaque=%t|placeable=%t|render=%s|collision=%s|occlusion=%s|shadow=%s|depth=%s|storage=%s|liquid=%s|sort=%s|emission=%d|textures=%s,%s,%s\n",
+			"%d|%s|solid=%t|opaque=%t|placeable=%t|render=%s|collision=%s|occlusion=%s|shadow=%s|depth=%s|storage=%s|liquid=%s|sort=%s|emission=%d|mining_ms=%d|textures=%s,%s,%s\n",
 			block.ID,
 			block.Name,
 			block.Solid,
@@ -74,6 +74,7 @@ func buildSummary() (string, error) {
 			block.LiquidPolicy,
 			block.SortPolicy,
 			block.LightEmission,
+			block.MiningDurationMS,
 			block.Textures.Top,
 			block.Textures.Side,
 			block.Textures.Bottom,
@@ -82,7 +83,7 @@ func buildSummary() (string, error) {
 	sum := sha256.Sum256([]byte(rows.String()))
 
 	return fmt.Sprintf(
-		"block_material_registry_matrix status=pass block_count=%d registry_hash=%x networked_blocks=%d opaque_solid_blocks=%d placeable_blocks=%d air_blocks=%d emissive_blocks=%d liquid_blocks=%d active_block_id_change=0 active_protocol_change=0 active_storage_change=0 renderer_change=0",
+		"block_material_registry_matrix status=pass block_count=%d registry_hash=%x networked_blocks=%d opaque_solid_blocks=%d placeable_blocks=%d air_blocks=%d emissive_blocks=%d liquid_blocks=%d mining_duration_metadata=guarded active_block_id_change=0 active_protocol_change=0 active_storage_change=0 renderer_change=0",
 		len(definitions),
 		sum,
 		networked,

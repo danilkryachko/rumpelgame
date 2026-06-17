@@ -43,9 +43,7 @@ const serverBlockActionReach = 7.0
 const serverBlockActionReachSquared = serverBlockActionReach * serverBlockActionReach
 const serverPlayerCollisionHalfWidth = 0.4
 const serverPlayerCollisionHeight = 1.8
-const defaultCountedMiningCooldown = 300 * time.Millisecond
-const defaultSoftBlockMiningCooldown = 150 * time.Millisecond
-const defaultWoodBlockMiningCooldown = 250 * time.Millisecond
+const defaultCountedMiningCooldown = time.Duration(world.DefaultBlockMiningMS) * time.Millisecond
 
 type networkErrorClass string
 
@@ -1176,11 +1174,12 @@ func defaultMiningDurationsForMode(mode inventoryMode) map[world.BlockID]time.Du
 		return miningDurationsForPlaceableBlocks(0)
 	}
 
-	durations := miningDurationsForPlaceableBlocks(defaultCountedMiningCooldown)
-	durations[world.Dirt] = defaultSoftBlockMiningCooldown
-	durations[world.Grass] = defaultSoftBlockMiningCooldown
-	durations[world.Leaves] = defaultSoftBlockMiningCooldown
-	durations[world.Wood] = defaultWoodBlockMiningCooldown
+	durations := make(map[world.BlockID]time.Duration)
+	for _, definition := range world.BlockDefinitions() {
+		if definition.Placeable {
+			durations[definition.ID] = time.Duration(definition.MiningDurationMS) * time.Millisecond
+		}
+	}
 	return durations
 }
 

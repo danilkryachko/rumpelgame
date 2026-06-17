@@ -335,11 +335,11 @@ func TestConfiguredMiningDurationsUseModeDefaults(t *testing.T) {
 	if got := counted[world.Stone]; got != defaultCountedMiningCooldown {
 		t.Fatalf("counted Stone mining duration = %s, want %s", got, defaultCountedMiningCooldown)
 	}
-	if got := counted[world.Dirt]; got != defaultSoftBlockMiningCooldown {
-		t.Fatalf("counted Dirt mining duration = %s, want %s", got, defaultSoftBlockMiningCooldown)
+	if got := counted[world.Dirt]; got != time.Duration(world.SoftBlockMiningMS)*time.Millisecond {
+		t.Fatalf("counted Dirt mining duration = %s, want %dms", got, world.SoftBlockMiningMS)
 	}
-	if got := counted[world.Wood]; got != defaultWoodBlockMiningCooldown {
-		t.Fatalf("counted Wood mining duration = %s, want %s", got, defaultWoodBlockMiningCooldown)
+	if got := counted[world.Wood]; got != time.Duration(world.WoodBlockMiningMS)*time.Millisecond {
+		t.Fatalf("counted Wood mining duration = %s, want %dms", got, world.WoodBlockMiningMS)
 	}
 	if got := counted[world.Air]; got != 0 {
 		t.Fatalf("Air mining duration = %s, want disabled", got)

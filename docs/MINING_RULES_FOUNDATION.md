@@ -27,12 +27,13 @@ Out of scope:
 
 - `RUMPELMC_SERVER_MINING_COOLDOWN_MS` configures server mining cooldown in milliseconds.
 - Empty `RUMPELMC_SERVER_MINING_COOLDOWN_MS` keeps creative mode at `0ms`.
-- Empty `RUMPELMC_SERVER_MINING_COOLDOWN_MS` gives counted/survival mode server-owned target-block durations.
+- Empty `RUMPELMC_SERVER_MINING_COOLDOWN_MS` gives counted/survival mode target-block durations from server block registry metadata.
 - Explicit `RUMPELMC_SERVER_MINING_COOLDOWN_MS=0` disables the cooldown for all placeable blocks in operator-controlled checks.
 - Explicit valid `RUMPELMC_SERVER_MINING_COOLDOWN_MS=<n>` applies the same override duration to all placeable blocks.
 - Invalid or negative cooldown values fall back to the mode's target-block defaults.
 - Cooldown is checked after block-action reach validation and before world mutation.
 - The server reads the current target block with `World.BlockAtGlobal` before the destroy mutation, then chooses the mining duration from that block ID.
+- The source duration for known placeable blocks is `world.BlockDefinition.MiningDurationMS`; network code applies it as milliseconds.
 - Cooldown rejection emits no chunk update, no inventory mutation, no player inventory save, and no inventory snapshot.
 - Cooldown is recorded only after `World.ReplaceBlockGlobal` succeeds and the previous block was placeable.
 - Destroying Air keeps the existing no-drop behavior and does not start the mining cooldown.
@@ -60,7 +61,7 @@ The summary also reports `mining_block_durations=target_block_guarded`.
 The gate checks that:
 
 - This document records current contract and compatibility rules.
-- Server source contains the mining cooldown env, counted target-block defaults, parser, session cooldown state, read-only target block lookup, and destroy cooldown methods.
+- Server source contains the mining cooldown env, counted target-block metadata consumption, parser, session cooldown state, read-only target block lookup, and destroy cooldown methods.
 - Network tests cover mode defaults, env override, invalid env fallback, target-block duration selection, cooldown rejection, and cooldown expiry.
 - World tests cover `World.BlockAtGlobal` read behavior without save-side effects.
 - Protocol docs still keep mining on the existing `BlockAction` packet shape.

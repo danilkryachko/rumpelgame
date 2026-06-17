@@ -69,6 +69,7 @@ for token in \
   'liquid_policy' \
   'depth_policy' \
   'storage_policy' \
+  'server mining duration metadata' \
   '`block_id` remains the only wire/storage identity' \
   'Do not add material fields to `ChunkData.blocks`' \
   'No new block IDs'; do
@@ -107,6 +108,7 @@ require_pattern "$SERVER_BLOCKS" '^[[:space:]]+Placeable[[:space:]]+bool$'
 require_token "$SERVER_BLOCKS" "RenderClass"
 require_token "$SERVER_BLOCKS" "CollisionClass"
 require_token "$SERVER_BLOCKS" "StoragePolicy"
+require_token "$SERVER_BLOCKS" "MiningDurationMS"
 require_token "$PARITY_GATE" "client/server material parity gate"
 require_token "$PARITY_GATE" "client_server_counts_mismatch"
 
@@ -145,7 +147,7 @@ awk \
     migration_gate = "required"
     wire_identity = "block_id_u16"
     client_flags = "solid_opaque_placeable_material_policies_textures"
-    server_flags = "solid_opaque_placeable_material_policies_textures"
+    server_flags = "solid_opaque_placeable_material_policies_textures_mining_duration"
 
     transparent_ok = transparent_status == "pass" &&
       transparent_active_acceptance == "deferred" &&
