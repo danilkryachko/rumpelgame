@@ -62,6 +62,7 @@ func _ready():
 	# Хотбар
 	var hbox = HBoxContainer.new()
 	hbox.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	hbox.set_offset(SIDE_TOP, -86)
 	hbox.set_offset(SIDE_BOTTOM, -20)
 	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
 
