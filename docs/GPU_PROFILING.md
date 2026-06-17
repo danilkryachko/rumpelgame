@@ -28,7 +28,7 @@ This document defines how GPU terrain performance should be measured. The goal i
 - `transparent_sort_policy`, `transparent_sort_active`, `transparent_sort_keys`, and `transparent_sort_ms`: useful to prove that the current default-off cutout prototype remains alpha-test/no-sort inside the opaque-depth terrain path. For the accepted cutout prototype these must stay `opaque_depth_alpha_test_no_sort`, `0`, `0`, and `0.000`.
 - `transparent_build_cost_source`, `transparent_build_faces`, `transparent_build_subchunks`, `transparent_build_envelope_ms`, and `transparent_build_upload*`: useful to carry the CPU-side cutout build/upload cost envelope through runtime markers, fixture/pressure gates, and reports. The current source must be `cutout_in_opaque_mesh_phase`; these fields are not a separate transparent buffer/pass timing and do not replace external profiler evidence.
 - `gpu_draws`, `gpu_effective_draws`, `gpu_faces`, `gpu_subchunks`: useful for workload size.
-- `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, and `compact_shadow_normals_saved`: useful local signals for shadow proxy load and compact proxy savings.
+- `proxy_shadow`, `proxy_shadow_only`, `compact_shadow_proxy`, `compact_shadow_normals_saved`, and `proxy_refresh_reuse`: useful local signals for shadow proxy load, compact proxy savings, and refresh reuse.
 - `smoke_err`, `terrain_samples`, color buckets, and marker generation: useful for visual correctness gates.
 
 ## Shader Findings
@@ -289,6 +289,14 @@ sh scripts/gpu_collision_refresh_cost_audit.sh logs/gpu_collision_refresh_cost_a
 ```
 
 The gate writes `gpu-collision-refresh-cost-audit-summary.txt` and `gpu-collision-refresh-cost-audit-cases.txt`; see `docs/GPU_COLLISION_REFRESH_COST_AUDIT.md`.
+
+Use the shadow proxy refresh cost audit after changing shadow proxy refresh, compact shadow proxy counters, dirty edge scheduling, pressure dirty fixtures, or native-shadow fallback markers. It consumes the same partial dirty edge matrix plus pressure dirty compare movement markers and fails unless the current `godot_proxy` path stays conservative/compact, native-shadow remains inactive, compact proxy savings/reuse are positive, upload failures stay zero, and queue/process/submit budgets stay under the 150 FPS CPU-side budget:
+
+```sh
+sh scripts/gpu_shadow_proxy_refresh_cost_audit.sh logs/gpu_shadow_proxy_refresh_cost_audit_current
+```
+
+The gate writes `gpu-shadow-proxy-refresh-cost-audit-summary.txt` and `gpu-shadow-proxy-refresh-cost-audit-cases.txt`; see `docs/GPU_SHADOW_PROXY_REFRESH_COST_AUDIT.md`.
 
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 

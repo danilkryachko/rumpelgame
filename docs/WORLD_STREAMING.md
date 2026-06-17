@@ -273,7 +273,7 @@ Fresh check:
 
 Remaining coverage gap:
 
-- Mass-edit runtime, edit-burst budget gates, shadow proxy refresh cost audit, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain future work before claiming complete world-interaction performance coverage.
+- Mass-edit runtime, edit-burst budget gates, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain future work before claiming complete world-interaction performance coverage.
 
 ## GPU Collision Refresh Cost Audit
 
@@ -286,6 +286,19 @@ Fresh check:
 Remaining coverage gap:
 
 - This is local macOS/Metal CPU-side collision refresh evidence. Shadow proxy refresh cost, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain separate.
+
+## GPU Shadow Proxy Refresh Cost Audit
+
+The shadow proxy refresh cost audit consumes movement marker files from the partial dirty edge matrix and pressure dirty compare. It validates the current `godot_proxy` shadow path, conservative compact proxy mode, shadow-only proxy refresh work, compact proxy savings, proxy refresh reuse, native-shadow lockout, upload failures, ground misses, collision readiness, and queue/process/submit budgets under the 150 FPS CPU-side frame budget.
+
+Fresh check:
+
+- `logs/gpu_shadow_proxy_refresh_cost_audit_current/gpu-shadow-proxy-refresh-cost-audit-summary.txt` passed with `case_count=18`, `matrix_case_count=16`, `pressure_case_count=2`, max mesh/proxy shadow `243/243`, max proxy-shadow-only `228`, max compact shadow proxy `808`, max compact shadow normals saved `5236`, max proxy refresh reuse `68`, max queue/process/submit `4.777/0.041/0.171ms`, zero native-shadow activation, `gpu_upload_fail=0`, and `ground_misses=0`.
+- The audit emits `default_runtime_change_allowed=0`, `visible_quality_change_allowed=0`, `external_profile_status=pending_external_profiler`, and `requires_mac_windows_validation=1`.
+- `scripts/gpu_stress_artifact_index.sh` requires the shadow proxy refresh cost audit before approving current GPU stress evidence.
+- `scripts/test_strategy_gate.sh` requires the audit summary before the GPU stress artifact index and includes it in the nightly summary chain.
+- `scripts/gpu_terrain_report.sh` surfaces the selected audit summary and case rows.
+- This is local macOS/Metal CPU-side Godot shadow proxy evidence. Visual parity, external profiler rows, GPU-native shadow activation, and Windows/Vulkan/Direct3D validation remain separate.
 
 ## Storage Persistence Foundation
 
@@ -428,7 +441,7 @@ The check strategy separates daily `fast`, pre-merge `full`, and heavy/nightly p
 
 Fresh check:
 
-- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, rapid camera-turn, chunk-boundary, dirty edit benchmarks, collision refresh cost audit, streaming priority audit, load scaling, upload pressure, resource lifecycle, memory budget, buffer residency budget, report V2, baseline governance, and the GPU stress artifact index.
+- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, rapid camera-turn, chunk-boundary, dirty edit benchmarks, collision refresh cost audit, shadow proxy refresh cost audit, streaming priority audit, load scaling, upload pressure, resource lifecycle, memory budget, buffer residency budget, report V2, baseline governance, and the GPU stress artifact index.
 
 ## GPU Repack Activation Preflight
 

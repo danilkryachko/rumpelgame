@@ -95,6 +95,7 @@ Existing runtime wrappers remain the correct heavy checks:
 - `scripts/gpu_terrain_border_edit_benchmark.sh`
 - `scripts/gpu_terrain_partial_dirty_edge_matrix.sh`
 - `scripts/gpu_collision_refresh_cost_audit.sh`
+- `scripts/gpu_shadow_proxy_refresh_cost_audit.sh`
 
 The gate does not run them by default because they require Godot runtime capture, a free local server port, and longer execution time. It does verify their shell syntax and required metric tokens.
 
@@ -106,6 +107,8 @@ Fresh partial dirty edge matrix evidence now lives at `logs/gpu_terrain_partial_
 
 Fresh collision refresh cost evidence now lives at `logs/gpu_collision_refresh_cost_audit_current/gpu-collision-refresh-cost-audit-summary.txt`. It consumes the partial dirty edge matrix and pressure dirty compare movement markers, passed with `case_count=18`, max collision refresh rebuilds `132`, max queue depth `17`, max phase total/component `1.950/1.540ms`, zero refresh missing, zero queue duplicate/stale/missing counters, zero GPU upload failures, and zero ground misses.
 
+Fresh shadow proxy refresh cost evidence now lives at `logs/gpu_shadow_proxy_refresh_cost_audit_current/gpu-shadow-proxy-refresh-cost-audit-summary.txt`. It consumes the same partial dirty edge matrix and pressure dirty compare movement markers, passed with `case_count=18`, max proxy shadow `243`, max compact shadow proxy `808`, max compact shadow normals saved `5236`, max proxy refresh reuse `68`, zero native-shadow activation, zero GPU upload failures, and zero ground misses.
+
 ## Deferred Work
 
 Still needed:
@@ -114,6 +117,7 @@ Still needed:
 - Chunk-edge mass-edit runtime smoke with both full and partial dirty controls.
 - Repeated persisted reload plus dirty update runtime smoke from Block 41 follow-up.
 - Collision refresh budget under mass edits beyond the current edge-matrix and pressure dirty lanes.
+- Shadow proxy refresh budget under mass edits beyond the current edge-matrix and pressure dirty lanes.
 - GPU upload budget under mass edits.
 - Multi-client block edit fanout once server broadcast exists.
 

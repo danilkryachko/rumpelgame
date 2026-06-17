@@ -874,6 +874,8 @@ error_scan() {
   print_optional_file "Selected GPU Terrain Partial Dirty Edge Matrix Cases" "$(latest_file gpu-terrain-partial-dirty-edge-matrix-cases.txt)"
   print_optional_file "Selected GPU Collision Refresh Cost Audit Summary" "$(latest_file gpu-collision-refresh-cost-audit-summary.txt)"
   print_optional_file "Selected GPU Collision Refresh Cost Audit Cases" "$(latest_file gpu-collision-refresh-cost-audit-cases.txt)"
+  print_optional_file "Selected GPU Shadow Proxy Refresh Cost Audit Summary" "$(latest_file gpu-shadow-proxy-refresh-cost-audit-summary.txt)"
+  print_optional_file "Selected GPU Shadow Proxy Refresh Cost Audit Cases" "$(latest_file gpu-shadow-proxy-refresh-cost-audit-cases.txt)"
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
   print_optional_file "Selected Workload Matrix Summary" "$(latest_file workload-matrix-summary.txt)"
   print_optional_file "Selected Perf Baseline Summary" "$(latest_file perf-baseline-summary.txt)"
