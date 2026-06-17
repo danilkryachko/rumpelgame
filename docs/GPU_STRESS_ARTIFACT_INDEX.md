@@ -1,6 +1,6 @@
 # GPU Stress Artifact Index
 
-Date: 2026-06-16
+Date: 2026-06-17
 
 Scope: summary-only index for current GPU terrain stress evidence. The index keeps world loading, residency, upload, draw submission, transparent/cutout, shader-profiler handoff, and governance artifacts visible in one compact file. It does not change rendering behavior, draw distance, camera far plane, lighting, shadows, texture quality, visible quality, protocol, storage, world generation, or chunk serialization.
 
@@ -27,6 +27,7 @@ The current required GPU core rows are:
 - repeated edit benchmark
 - border edit benchmark
 - partial dirty edge matrix
+- collision refresh cost audit
 - streaming priority audit
 - streaming scheduler prototype preflight
 - streaming scheduler workload matrix
@@ -68,7 +69,7 @@ Fresh local evidence:
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt`
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index.txt`
 
-The current index passed with `34` rows, `24` required rows, `24` required passes, `9` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
+The current index passed with `35` rows, `25` required rows, `25` required passes, `9` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
 
 Current normalized maxima:
 
@@ -81,6 +82,7 @@ Current normalized maxima:
 - Repeated edit benchmark: `case_count=2`, `single_edge_runs=3`, `corner_edge_runs=3`, `gpu_upload_fail=0`
 - Border edit benchmark: `case_count=3`, `pressure_local=31,31`, `max_dirty_blocks=709`, `max_dirty_edge_neighbor_subchunks=2836`, `gpu_upload_fail=0`
 - Partial dirty edge matrix: `case_count=8`, `single_edge_cases=4`, `corner_edge_cases=4`, `max_partial_edge_neighbor_subchunks=8`, `gpu_upload_fail=0`
+- Collision refresh cost audit: `case_count=18`, `matrix_case_count=16`, `pressure_case_count=2`, `max_collision_refresh_rebuilt=132`, `max_collision_q_max=17`, `max_collision_phase_total_ms=1.950`, `max_collision_phase_component_ms=1.540`, `gpu_upload_fail=0`
 - Streaming scheduler prototype: `prototype_only`
 - Streaming scheduler workload matrix: `matrix_harness_status=partial`, `candidate_scheduler_status=defer_matrix_harness_unstable`, `scheduler_change_allowed=0`
 - Streaming scheduler tie probe: `runtime_signal=312`, `candidate_scheduler_status=stable_tie_probe_external_profiler_required`, `scheduler_change_allowed=0`
@@ -94,6 +96,7 @@ Current normalized maxima:
 - Terrain queue max: `6.174ms`
 - Process wall p95: `0.070ms`
 - Compositor submit max: `5.677ms`
+- Collision refresh phase total/component max: `1.950/1.540ms`
 - Packet queue lag max: `67.578ms`
 - Cutout uploads: `265`
 - Cutout build envelope: `2.121ms`
@@ -108,6 +111,7 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU terrain repeated edit benchmark summary and case rows when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU terrain border edit benchmark summary and case rows when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU terrain partial dirty edge matrix summary and case rows when present.
+- `scripts/gpu_terrain_report.sh` surfaces the selected GPU collision refresh cost audit summary and case rows when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming priority audit summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler prototype summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler workload matrix summary and case rows when present.
@@ -119,13 +123,14 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 - `scripts/test_strategy_gate.sh` requires the repeated edit benchmark summary before the index.
 - `scripts/test_strategy_gate.sh` requires the border edit benchmark summary before the index.
 - `scripts/test_strategy_gate.sh` requires the partial dirty edge matrix summary before the index.
+- `scripts/test_strategy_gate.sh` requires the collision refresh cost audit summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming priority audit summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler prototype summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler workload matrix summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler tie probe summary before the index.
 - `scripts/test_strategy_gate.sh` requires the streaming scheduler decision checkpoint summary before the index.
 - `scripts/test_strategy_gate.sh` requires the buffer residency budget summary before the index.
-- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, repeated edit benchmark, border edit benchmark, partial dirty edge matrix, streaming priority audit, streaming scheduler prototype, streaming scheduler workload matrix, streaming scheduler decision checkpoint, upload-failure fallback, and buffer residency budget visible as required rows.
+- `docs/GPU_ROADMAP.md` uses this to close the Phase 3 stress artifact index item and keeps the residency/streaming unload diagnosis, repeated edit benchmark, border edit benchmark, partial dirty edge matrix, collision refresh cost audit, streaming priority audit, streaming scheduler prototype, streaming scheduler workload matrix, streaming scheduler decision checkpoint, upload-failure fallback, and buffer residency budget visible as required rows.
 
 ## External Context
 

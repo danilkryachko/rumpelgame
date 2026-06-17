@@ -516,6 +516,10 @@ error_scan() {
   printf -- '- max `current_chunk_collision`: `%s`\n' "$(metric_max current_chunk_collision)"
   printf -- '- max `collision_refresh_rebuilt`: `%s`\n' "$(metric_max collision_refresh_rebuilt)"
   printf -- '- max `collision_refresh_last_rebuilt`: `%s`\n' "$(metric_max collision_refresh_last_rebuilt)"
+  printf -- '- max `collision_phase_total_ms`: `%s`\n' "$(metric_max collision_phase_total_ms)"
+  printf -- '- max `collision_phase_component_ms`: `%s`\n' "$(metric_max collision_phase_component_ms)"
+  printf -- '- max `max_collision_phase_total_ms`: `%s`\n' "$(metric_max max_collision_phase_total_ms)"
+  printf -- '- max `max_collision_phase_component_ms`: `%s`\n' "$(metric_max max_collision_phase_component_ms)"
   printf -- '- latest `stream_scheduler_mode`: `%s`\n' "$(metric_latest_text stream_scheduler_mode)"
   printf -- '- max `stream_scheduler_active`: `%s`\n' "$(metric_max stream_scheduler_active)"
   printf -- '- max `stream_scheduler_preview_mismatch`: `%s`\n' "$(metric_max stream_scheduler_preview_mismatch)"
@@ -722,6 +726,10 @@ error_scan() {
   metric_max_source dirty_partial_saved_subchunks | sed 's/^/- /'
   metric_max_source current_chunk_collision | sed 's/^/- /'
   metric_max_source collision_refresh_rebuilt | sed 's/^/- /'
+  metric_max_source collision_phase_total_ms | sed 's/^/- /'
+  metric_max_source collision_phase_component_ms | sed 's/^/- /'
+  metric_max_source max_collision_phase_total_ms | sed 's/^/- /'
+  metric_max_source max_collision_phase_component_ms | sed 's/^/- /'
   metric_max_source mesh_shadow_only | sed 's/^/- /'
   metric_max_source proxy_shadow | sed 's/^/- /'
   metric_max_source proxy_shadow_only | sed 's/^/- /'
@@ -864,6 +872,8 @@ error_scan() {
   print_optional_file "Selected GPU Terrain Border Edit Benchmark Cases" "$(latest_file gpu-terrain-border-edit-benchmark-cases.txt)"
   print_optional_file "Selected GPU Terrain Partial Dirty Edge Matrix Summary" "$(latest_file gpu-terrain-partial-dirty-edge-matrix-summary.txt)"
   print_optional_file "Selected GPU Terrain Partial Dirty Edge Matrix Cases" "$(latest_file gpu-terrain-partial-dirty-edge-matrix-cases.txt)"
+  print_optional_file "Selected GPU Collision Refresh Cost Audit Summary" "$(latest_file gpu-collision-refresh-cost-audit-summary.txt)"
+  print_optional_file "Selected GPU Collision Refresh Cost Audit Cases" "$(latest_file gpu-collision-refresh-cost-audit-cases.txt)"
   print_optional_file "Selected Fill Stress Summary" "$(latest_file fill-stress-summary.txt)"
   print_optional_file "Selected Workload Matrix Summary" "$(latest_file workload-matrix-summary.txt)"
   print_optional_file "Selected Perf Baseline Summary" "$(latest_file perf-baseline-summary.txt)"

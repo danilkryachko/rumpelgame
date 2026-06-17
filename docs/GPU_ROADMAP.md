@@ -261,7 +261,7 @@ This long-horizon plan is a rolling GPU program, not a promise to follow stale d
 62. Done 2026-06-16: added `scripts/gpu_terrain_repeated_edit_benchmark.sh` and `docs/GPU_TERRAIN_REPEATED_EDIT_BENCHMARK.md` to benchmark repeated single-edge and corner-edge dirty edits over three fresh runs each, requiring zero GPU upload failures and CPU-side queue/process/submit budgets without changing default runtime or visible quality.
 63. Done 2026-06-16: added `scripts/gpu_terrain_border_edit_benchmark.sh` and `docs/GPU_TERRAIN_BORDER_EDIT_BENCHMARK.md` to compose repeated single/corner-edge dirty edit evidence with the pressure dirty compare at local border `31,31`, requiring zero upload/ground failures and CPU-side budgets while keeping default runtime and visible quality unchanged.
 64. Done 2026-06-16: added `scripts/gpu_terrain_partial_dirty_edge_matrix.sh` and `docs/GPU_TERRAIN_PARTIAL_DIRTY_EDGE_MATRIX.md` to refresh full-vs-partial runtime evidence for all four single chunk edges plus all four corner edge combinations, requiring zero upload failures and CPU-side budgets while keeping rollback, default runtime, and visible quality unchanged.
-65. Audit collision refresh cost.
+65. Done 2026-06-17: added `scripts/gpu_collision_refresh_cost_audit.sh` and `docs/GPU_COLLISION_REFRESH_COST_AUDIT.md` to gate collision refresh rebuild churn and `collision_refresh_phase_max` over the 16-case partial dirty edge matrix plus 2 pressure dirty lanes, requiring zero queue duplicate/stale/missing counters, zero upload failures, collision readiness, and CPU-side phase totals under the 150 FPS budget.
 66. Audit shadow proxy refresh cost.
 67. Add edit-burst budget gates.
 68. Add edit visual parity where needed.

@@ -282,6 +282,14 @@ RUMPELMC_PARTIAL_DIRTY_EDGE_MATRIX_RUN_CASES=1 \
 
 The gate writes `gpu-terrain-partial-dirty-edge-matrix-summary.txt` and `gpu-terrain-partial-dirty-edge-matrix-cases.txt`; see `docs/GPU_TERRAIN_PARTIAL_DIRTY_EDGE_MATRIX.md`.
 
+Use the collision refresh cost audit after changing collision refresh, dirty edge scheduling, pressure dirty fixtures, or collision queue accounting. It consumes the partial dirty edge matrix plus pressure dirty compare movement markers and fails unless collision rebuilds happen, `collision_refresh_phase_max` stays under the 150 FPS CPU-side budget, queue duplicate/stale/missing counters stay zero, upload failures stay zero, and current chunk collision readiness remains valid:
+
+```sh
+sh scripts/gpu_collision_refresh_cost_audit.sh logs/gpu_collision_refresh_cost_audit_current
+```
+
+The gate writes `gpu-collision-refresh-cost-audit-summary.txt` and `gpu-collision-refresh-cost-audit-cases.txt`; see `docs/GPU_COLLISION_REFRESH_COST_AUDIT.md`.
+
 Use the upload budget gate after movement and in-place upload lane captures. It fails on per-frame total/new-slot/replacement-slot upload count or payload regressions, on any upload failure counters, and on any retry/backoff activity under the current `gpu_upload_retry_policy=none` contract:
 
 ```sh

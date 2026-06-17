@@ -273,7 +273,19 @@ Fresh check:
 
 Remaining coverage gap:
 
-- Mass-edit runtime, edit-burst budget gates, collision refresh cost audit, shadow proxy refresh cost audit, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain future work before claiming complete world-interaction performance coverage.
+- Mass-edit runtime, edit-burst budget gates, shadow proxy refresh cost audit, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain future work before claiming complete world-interaction performance coverage.
+
+## GPU Collision Refresh Cost Audit
+
+The collision refresh cost audit consumes movement marker files from the partial dirty edge matrix and pressure dirty compare. It validates collision rebuild evidence, queue duplicate/stale/missing counters, current chunk collision readiness, upload failures, ground misses, and `collision_refresh_phase_max` totals/components under the 150 FPS CPU-side frame budget.
+
+Fresh check:
+
+- `logs/gpu_collision_refresh_cost_audit_current/gpu-collision-refresh-cost-audit-summary.txt` passed with `case_count=18`, `matrix_case_count=16`, `pressure_case_count=2`, max collision refresh rebuilds `132`, max queue depth `17`, max phase total/component `1.950/1.540ms`, max queue/process/submit `4.777/0.041/0.171ms`, `collision_refresh_missing=0`, `collision_q_dup=0`, `collision_q_stale=0`, `collision_q_missing=0`, `gpu_upload_fail=0`, and `ground_misses=0`.
+
+Remaining coverage gap:
+
+- This is local macOS/Metal CPU-side collision refresh evidence. Shadow proxy refresh cost, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain separate.
 
 ## Storage Persistence Foundation
 
@@ -416,7 +428,7 @@ The check strategy separates daily `fast`, pre-merge `full`, and heavy/nightly p
 
 Fresh check:
 
-- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, rapid camera-turn, chunk-boundary, streaming priority audit, load scaling, upload pressure, resource lifecycle, memory budget, buffer residency budget, report V2, baseline governance, and the GPU stress artifact index.
+- `logs/test_strategy_gate_current/test-strategy-gate-summary.txt` passed with fast command `./scripts/check.sh fast`, full command `./scripts/check.sh full && git diff --check && ./scripts/diff_guard.sh`, and summary/nightly gates for exploration soak, rapid camera-turn, chunk-boundary, dirty edit benchmarks, collision refresh cost audit, streaming priority audit, load scaling, upload pressure, resource lifecycle, memory budget, buffer residency budget, report V2, baseline governance, and the GPU stress artifact index.
 
 ## GPU Repack Activation Preflight
 

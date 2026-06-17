@@ -8,6 +8,12 @@ Use this file for durable GPU optimization checkpoints. Keep entries short and f
 - `gpu_time` is report-only on the current macOS/Metal path because Godot timestamp samples report `0.0us`.
 - Prefer `terrain_queue_max_ms`, `process_wall_p95_ms`, `gpu_compositor_submit_max_ms`, `gpu_upload_fail`, draw counts, and external GPU profiler captures for decisions.
 
+## 2026-06-17
+
+| Commit | Slice | Artifact | Key Result | Caveat |
+| --- | --- | --- | --- | --- |
+| `workspace` | GPU collision refresh cost audit | `logs/gpu_collision_refresh_cost_audit_current/gpu-collision-refresh-cost-audit-summary.txt`, `logs/gpu_collision_refresh_cost_audit_current/gpu-collision-refresh-cost-audit-cases.txt`, `scripts/gpu_collision_refresh_cost_audit.sh` | Added a required collision refresh cost audit over the full-vs-partial edge matrix and pressure dirty lanes. Fresh evidence passed with `case_count=18`, `matrix_case_count=16`, `pressure_case_count=2`, max collision refresh rebuilds `132`, max queue depth `17`, max phase total/component `1.950/1.540ms`, max queue/process/submit `4.777/0.041/0.171ms`, `collision_refresh_missing=0`, `collision_q_dup=0`, `collision_q_stale=0`, `collision_q_missing=0`, `gpu_upload_fail=0`, and `ground_misses=0`. Stress index now passes with `35` rows and `25` required passes. | local macOS/Metal CPU-side collision refresh evidence only; shadow refresh cost, visual parity, external profiler rows, and Windows/Vulkan/Direct3D validation remain separate |
+
 ## 2026-06-16
 
 | Commit | Slice | Artifact | Key Result | Caveat |

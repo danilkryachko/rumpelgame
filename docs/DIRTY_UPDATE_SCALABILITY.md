@@ -94,6 +94,7 @@ Existing runtime wrappers remain the correct heavy checks:
 - `scripts/gpu_terrain_repeated_edit_benchmark.sh`
 - `scripts/gpu_terrain_border_edit_benchmark.sh`
 - `scripts/gpu_terrain_partial_dirty_edge_matrix.sh`
+- `scripts/gpu_collision_refresh_cost_audit.sh`
 
 The gate does not run them by default because they require Godot runtime capture, a free local server port, and longer execution time. It does verify their shell syntax and required metric tokens.
 
@@ -103,6 +104,8 @@ Fresh border-edit benchmark evidence now lives at `logs/gpu_terrain_border_edit_
 
 Fresh partial dirty edge matrix evidence now lives at `logs/gpu_terrain_partial_dirty_edge_matrix_current/gpu-terrain-partial-dirty-edge-matrix-summary.txt`. It refreshes full-vs-partial runtime compares for all four single edges and all four corner combinations, passed with `case_count=8`, min/max partial edge-neighbor subchunks `4/8`, min/max partial saved subchunks `2/2`, max queue/process/submit `3.734/0.041/0.102ms`, full rollback partial counters disabled, zero GPU upload failures, and default/visible-quality changes blocked.
 
+Fresh collision refresh cost evidence now lives at `logs/gpu_collision_refresh_cost_audit_current/gpu-collision-refresh-cost-audit-summary.txt`. It consumes the partial dirty edge matrix and pressure dirty compare movement markers, passed with `case_count=18`, max collision refresh rebuilds `132`, max queue depth `17`, max phase total/component `1.950/1.540ms`, zero refresh missing, zero queue duplicate/stale/missing counters, zero GPU upload failures, and zero ground misses.
+
 ## Deferred Work
 
 Still needed:
@@ -110,7 +113,7 @@ Still needed:
 - Multi-edit runtime smoke that applies many block edits in one session.
 - Chunk-edge mass-edit runtime smoke with both full and partial dirty controls.
 - Repeated persisted reload plus dirty update runtime smoke from Block 41 follow-up.
-- Collision refresh budget under mass edits.
+- Collision refresh budget under mass edits beyond the current edge-matrix and pressure dirty lanes.
 - GPU upload budget under mass edits.
 - Multi-client block edit fanout once server broadcast exists.
 
