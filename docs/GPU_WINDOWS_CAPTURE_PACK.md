@@ -31,7 +31,7 @@ Optional:
 
 - `logs/gpu_shader_profiler_capture_pack_current/shader-profiler-capture-pack.txt`
 
-The gate fails unless the world-interaction checkpoint and macOS peer pack both pass while keeping default rollout blocked.
+The gate fails unless the world-interaction checkpoint and macOS peer pack both pass while keeping default rollout blocked. It also writes validation commands for `scripts/gpu_windows_capture_results_check.sh`.
 
 ## Capture Rows
 
@@ -42,7 +42,7 @@ The generated manifest prepares four Windows rows:
 - `renderdoc_frame_world_interaction`: RenderDoc frame capture for draw event count, pipeline state, texture atlas sampling, buffer update events, resource lifetime, and counter evidence.
 - `windows_shader_hot_path`: PIX, RenderDoc, or vendor shader capture for vertex stage time, fragment stage time, shader cost, occupancy or invocations, texture sampling, and counter evidence.
 
-These rows are pending handoff state. They become evidence only after an external Windows machine records non-placeholder artifacts and captured rows through a future results validator.
+These rows are pending handoff state. They become evidence only after an external Windows machine records non-placeholder artifacts and captured rows through `scripts/gpu_windows_capture_results_check.sh`; see `docs/GPU_WINDOWS_CAPTURE_RESULTS.md`.
 
 ## External Tooling Context
 

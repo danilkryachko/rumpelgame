@@ -109,6 +109,15 @@ Summary/gate nightly command:
 ./scripts/gpu_stress_artifact_index.sh logs/gpu_stress_artifact_index_current
 ```
 
+Optional external profiler result validation after real Windows PIX/RenderDoc rows are recorded:
+
+```sh
+sh scripts/gpu_windows_capture_results_check.sh \
+  logs/gpu_windows_capture_pack_current/gpu-windows-capture-manifest.txt \
+  logs/gpu_windows_capture_pack_current/gpu-windows-capture-results.txt \
+  logs/gpu_windows_capture_pack_current/gpu-windows-capture-results-summary.txt
+```
+
 Nightly runtime artifacts should then feed the summary/gate steps by overriding the documented `RUMPELMC_*_SUMMARY` env vars when using new artifact locations.
 
 Optional scheduler boundary capture:

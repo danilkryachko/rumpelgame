@@ -64,6 +64,7 @@ The index also lists optional governance and profiler rows even when they are mi
 - test strategy
 - external profiling campaign
 - shader profiler capture pack
+- Windows RenderDoc/PIX capture results
 - streaming scheduler boundary matrix
 
 Missing optional rows keep the index visible but do not fail it. This prevents silent evidence gaps while still allowing focused GPU work on a checkout that does not have every historical log.
@@ -75,7 +76,7 @@ Fresh local evidence:
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index-summary.txt`
 - `logs/gpu_stress_artifact_index_current/gpu-stress-artifact-index.txt`
 
-The current index passed with `41` rows, `31` required rows, `31` required passes, `8` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
+The current index passed with `42` rows, `31` required rows, `31` required passes, `9` optional missing rows, zero upload-failure violations, zero ground-miss violations, zero default-runtime-change violations, and zero scheduler-change violations.
 
 Current normalized maxima:
 
@@ -95,6 +96,7 @@ Current normalized maxima:
 - World interaction checkpoint: `source_count=8`, `pass_sources=8`, `checkpoint_status=local_complete_external_pending`, `local_world_interaction_status=pass`, `rollout_status=defer_defaults`, max queue/process/submit `4.777/0.050/0.171ms`, max dirty blocks `709`, max compact shadow proxy `808`, max visual deltas `0.0000/0.0000/0/0`, max upload count/KiB per frame `1/2.000`, `gpu_upload_fail=0`, and `ground_misses=0`
 - macOS Metal capture pack: `capture_pack_status=pending_external_profiler`, `macos_metal_capture_status=pending_external_profiler`, `macos_metal_capture_rows=4`, `captured_rows=0`, `missing_rows=4`, `external_profile_status=pending_external_profiler`, and `default_runtime_change_allowed=0`
 - Windows RenderDoc/PIX capture pack: `capture_pack_status=pending_external_profiler`, `windows_gpu_capture_status=pending_external_profiler`, `windows_capture_rows=4`, `captured_rows=0`, `missing_rows=4`, `external_profile_status=pending_external_profiler`, and `default_runtime_change_allowed=0`
+- Windows RenderDoc/PIX capture results: optional captured-results row is visible in the index and currently missing until real Windows sidecar rows validate through `scripts/gpu_windows_capture_results_check.sh`
 - Streaming scheduler prototype: `prototype_only`
 - Streaming scheduler workload matrix: `matrix_harness_status=partial`, `candidate_scheduler_status=defer_matrix_harness_unstable`, `scheduler_change_allowed=0`
 - Streaming scheduler tie probe: `runtime_signal=312`, `candidate_scheduler_status=stable_tie_probe_external_profiler_required`, `scheduler_change_allowed=0`
@@ -132,6 +134,7 @@ The summary explicitly records `external_profiler_status=pending_external_profil
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU world interaction checkpoint summary and source rows when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU macOS Metal capture pack summary, manifest, and checklist when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU Windows capture pack summary, manifest, and checklist when present.
+- `scripts/gpu_terrain_report.sh` surfaces the selected GPU Windows capture results summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming priority audit summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler prototype summary when present.
 - `scripts/gpu_terrain_report.sh` surfaces the selected GPU streaming scheduler workload matrix summary and case rows when present.

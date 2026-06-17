@@ -93,6 +93,21 @@ sh scripts/gpu_shader_profiler_results_check.sh \
   logs/gpu_shader_profiler_capture_pack_current/shader-profiler-results-summary.txt
 ```
 
+Use the Windows RenderDoc/PIX capture pack after the local world-interaction checkpoint is clean and before external Windows capture:
+
+```sh
+sh scripts/gpu_windows_capture_pack.sh logs/gpu_windows_capture_pack_current
+```
+
+Record Windows PIX/RenderDoc rows separately from the pending pack. Each result row must start with `external_profile_status=captured`, match a planned manifest row, include Windows machine/backend/driver context, point to non-placeholder profiler artifacts and counter evidence, and include the row-specific timings/counters documented in `docs/GPU_WINDOWS_CAPTURE_RESULTS.md`. Validate rows before citing them:
+
+```sh
+sh scripts/gpu_windows_capture_results_check.sh \
+  logs/gpu_windows_capture_pack_current/gpu-windows-capture-manifest.txt \
+  logs/gpu_windows_capture_pack_current/gpu-windows-capture-results.txt \
+  logs/gpu_windows_capture_pack_current/gpu-windows-capture-results-summary.txt
+```
+
 Use the low-angle lighting pose when comparing directional-light behavior without changing the default scene:
 
 ```sh

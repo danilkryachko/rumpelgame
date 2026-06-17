@@ -206,7 +206,15 @@ fi
   printf 'step=pix_timing_capture tool=pix_timing_capture artifact=external_timing_capture_required source_manifest=%s\n' "$(relative_path "$MANIFEST_PATH")"
   printf 'step=renderdoc_frame_capture tool=renderdoc_frame_capture artifact=external_rdc_required source_manifest=%s\n' "$(relative_path "$MANIFEST_PATH")"
   printf 'step=record_machine_context fields=windows_version,gpu_vendor,gpu_model,driver_version,godot_version,backend,rendering_driver,pix_version,renderdoc_version,display_refresh,hybrid_gpu_mode\n'
-  printf 'step=record_profiler_rows requirement=external_profile_status=captured validation=future_results_checker_required\n'
+  printf 'step=record_profiler_rows requirement=external_profile_status=captured validation=scripts/gpu_windows_capture_results_check.sh\n'
+  printf 'command_validate_results=sh scripts/gpu_windows_capture_results_check.sh %s %s %s\n' \
+    "$(relative_path "$MANIFEST_PATH")" \
+    "$(relative_path "$(dirname -- "$MANIFEST_PATH")/gpu-windows-capture-results.txt")" \
+    "$(relative_path "$(dirname -- "$MANIFEST_PATH")/gpu-windows-capture-results-summary.txt")"
+  printf 'command_validate_partial=RUMPELMC_WINDOWS_CAPTURE_RESULTS_ALLOW_PARTIAL=1 sh scripts/gpu_windows_capture_results_check.sh %s %s %s\n' \
+    "$(relative_path "$MANIFEST_PATH")" \
+    "$(relative_path "$(dirname -- "$MANIFEST_PATH")/gpu-windows-capture-results.txt")" \
+    "$(relative_path "$(dirname -- "$MANIFEST_PATH")/gpu-windows-capture-results-summary.txt")"
   printf 'policy generated_pack_is_not_profiler_evidence=1 default_runtime_change_allowed=0 requires_mac_windows_validation=1\n'
 } > "$CHECKLIST_PATH"
 
