@@ -323,6 +323,44 @@ func TestConfiguredMiningCooldownIgnoresInvalidEnv(t *testing.T) {
 	}
 }
 
+func TestConfiguredMiningDurationsUseModeDefaults(t *testing.T) {
+	t.Setenv(miningCooldownEnv, "")
+
+	creative := configuredMiningDurations(inventoryModeCreative, configuredMiningCooldown(inventoryModeCreative), false)
+	if got := creative[world.Stone]; got != 0 {
+		t.Fatalf("creative Stone mining duration = %s, want disabled", got)
+	}
+
+	counted := configuredMiningDurations(inventoryModeCounted, configuredMiningCooldown(inventoryModeCounted), false)
+	if got := counted[world.Stone]; got != defaultCountedMiningCooldown {
+		t.Fatalf("counted Stone mining duration = %s, want %s", got, defaultCountedMiningCooldown)
+	}
+	if got := counted[world.Dirt]; got != defaultSoftBlockMiningCooldown {
+		t.Fatalf("counted Dirt mining duration = %s, want %s", got, defaultSoftBlockMiningCooldown)
+	}
+	if got := counted[world.Wood]; got != defaultWoodBlockMiningCooldown {
+		t.Fatalf("counted Wood mining duration = %s, want %s", got, defaultWoodBlockMiningCooldown)
+	}
+	if got := counted[world.Air]; got != 0 {
+		t.Fatalf("Air mining duration = %s, want disabled", got)
+	}
+}
+
+func TestConfiguredMiningDurationsUseEnvOverride(t *testing.T) {
+	t.Setenv(miningCooldownEnv, "125")
+	cooldown, override := configuredMiningCooldownWithOverride(inventoryModeCounted)
+	if !override {
+		t.Fatal("configuredMiningCooldownWithOverride() override = false, want true")
+	}
+	durations := configuredMiningDurations(inventoryModeCounted, cooldown, override)
+
+	for _, block := range []world.BlockID{world.Stone, world.Dirt, world.Grass, world.Wood, world.Leaves} {
+		if got := durations[block]; got != 125*time.Millisecond {
+			t.Fatalf("duration for block %d = %s, want 125ms", block, got)
+		}
+	}
+}
+
 func TestTryRegisterClientHonorsMaxClients(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.maxClients = 1
@@ -1590,6 +1628,7 @@ func TestHandleClientPacketDestroyRejectsMiningCooldown(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 	server.miningCooldown = time.Second
+	server.miningDurations = miningDurationsForPlaceableBlocks(time.Second)
 	now := time.Unix(1000, 0)
 	server.now = func() time.Time { return now }
 
@@ -1655,6 +1694,7 @@ func TestHandleClientPacketDestroyAllowsAfterMiningCooldown(t *testing.T) {
 	server := NewServer(":0", world.NewWorld(nil))
 	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
 	server.miningCooldown = time.Second
+	server.miningDurations = miningDurationsForPlaceableBlocks(time.Second)
 	now := time.Unix(1000, 0)
 	server.now = func() time.Time { return now }
 
@@ -1703,6 +1743,62 @@ func TestHandleClientPacketDestroyAllowsAfterMiningCooldown(t *testing.T) {
 	}
 	if got := snapshot.GetSlots()[0].GetCount(); got != 2 {
 		t.Fatalf("stone count after cooldown elapsed = %d, want 2", got)
+	}
+}
+
+func TestHandleClientPacketDestroyUsesTargetBlockMiningDuration(t *testing.T) {
+	server := NewServer(":0", world.NewWorld(nil))
+	server.chunkEncoding = api.ChunkEncoding_CHUNK_ENCODING_RAW
+	server.miningDurations = map[world.BlockID]time.Duration{
+		world.Stone: time.Second,
+		world.Dirt:  100 * time.Millisecond,
+	}
+	now := time.Unix(1000, 0)
+	server.now = func() time.Time { return now }
+	if _, err := server.world.SetBlockGlobal(2, 60, 1, world.Dirt); err != nil {
+		t.Fatalf("SetBlockGlobal(Dirt) error = %v", err)
+	}
+
+	client := newClientSession(&recordingConn{})
+	recordReachableStoneDestroyPosition(client)
+	client.inventory = playerinventory.NewCounted([]playerinventory.Slot{
+		{BlockID: world.Stone, Count: 0},
+		{BlockID: world.Dirt, Count: 0},
+	})
+	destroyPacket := func(x, y, z int32) *api.Packet {
+		return &api.Packet{
+			Payload: &api.Packet_BlockAction{
+				BlockAction: &api.BlockAction{
+					Action: api.BlockAction_DESTROY,
+					X:      x,
+					Y:      y,
+					Z:      z,
+				},
+			},
+		}
+	}
+
+	if err := server.handleClientPacketForSession(client, destroyPacket(1, 60, 1)); err != nil {
+		t.Fatalf("first handleClientPacketForSession() error = %v", err)
+	}
+	now = now.Add(100 * time.Millisecond)
+	if err := server.handleClientPacketForSession(client, destroyPacket(2, 60, 1)); err != nil {
+		t.Fatalf("second handleClientPacketForSession() error = %v", err)
+	}
+
+	frames := recordedFrames(t, client.conn.(*recordingConn))
+	if got := len(frames); got != 4 {
+		t.Fatalf("frames after block-specific cooldown elapsed = %d, want two destroy chunks and snapshots", got)
+	}
+	snapshot := decodedPacket(t, frames[3]).GetInventorySnapshot()
+	if snapshot == nil {
+		t.Fatal("fourth frame inventory snapshot = nil")
+	}
+	if got := snapshot.GetSlots()[0].GetCount(); got != 1 {
+		t.Fatalf("stone count after block-specific cooldown = %d, want 1", got)
+	}
+	if got := snapshot.GetSlots()[1].GetCount(); got != 1 {
+		t.Fatalf("dirt count after block-specific cooldown = %d, want 1", got)
 	}
 }
 

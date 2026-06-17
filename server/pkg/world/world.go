@@ -66,6 +66,24 @@ func (w *World) ChunkSnapshot(x, z int32) (ChunkSnapshot, error) {
 	return snapshotChunk(chunk), nil
 }
 
+func (w *World) BlockAtGlobal(x, y, z int32) (BlockID, error) {
+	if y < 0 || y >= int32(ChunkHeight) {
+		return Air, fmt.Errorf("block y coordinate %d out of range [0,%d)", y, ChunkHeight)
+	}
+
+	chunkX, localX := GlobalToChunkLocal(x, ChunkWidth)
+	chunkZ, localZ := GlobalToChunkLocal(z, ChunkDepth)
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	chunk, err := w.getOrCreateLocked(chunkX, chunkZ)
+	if err != nil {
+		return Air, err
+	}
+	return chunk.GetBlock(localX, int(y), localZ), nil
+}
+
 func (w *World) ChunksAround(centerX, centerZ, radius int32, alreadySent map[ChunkCoord]bool, limit int) ([]ChunkSnapshot, error) {
 	return w.ChunksAroundOrdered(centerX, centerZ, radius, alreadySent, limit, ChunkOrder{})
 }

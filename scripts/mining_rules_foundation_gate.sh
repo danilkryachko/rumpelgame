@@ -38,6 +38,7 @@ for token in \
   'Current Contract' \
   'Compatibility Rules' \
   'mining_rules_status=cooldown_guarded' \
+  'mining_block_durations=target_block_guarded' \
   'RUMPELMC_SERVER_MINING_COOLDOWN_MS'; do
   require_token "$DESIGN_DOC" "$token"
 done
@@ -45,10 +46,17 @@ done
 for token in \
   'const miningCooldownEnv = "RUMPELMC_SERVER_MINING_COOLDOWN_MS"' \
   'const defaultCountedMiningCooldown' \
+  'const defaultSoftBlockMiningCooldown' \
+  'const defaultWoodBlockMiningCooldown' \
   'miningCooldown  time.Duration' \
+  'miningDurations map[world.BlockID]time.Duration' \
   'lastDestroyAt         time.Time' \
+  'BlockAtGlobal' \
   'configuredMiningCooldown' \
+  'configuredMiningDurations' \
   'defaultMiningCooldownForMode' \
+  'defaultMiningDurationsForMode' \
+  'miningDurationForBlock' \
   'destroyCooldownReady' \
   'recordSuccessfulDestroy' \
   'Ignored mining cooldown block action'; do
@@ -59,8 +67,11 @@ for token in \
   'TestConfiguredMiningCooldownUsesModeDefault' \
   'TestConfiguredMiningCooldownUsesEnvOverride' \
   'TestConfiguredMiningCooldownIgnoresInvalidEnv' \
+  'TestConfiguredMiningDurationsUseModeDefaults' \
+  'TestConfiguredMiningDurationsUseEnvOverride' \
   'TestHandleClientPacketDestroyRejectsMiningCooldown' \
-  'TestHandleClientPacketDestroyAllowsAfterMiningCooldown'; do
+  'TestHandleClientPacketDestroyAllowsAfterMiningCooldown' \
+  'TestHandleClientPacketDestroyUsesTargetBlockMiningDuration'; do
   require_token "$NETWORK_TEST" "$token"
 done
 
@@ -71,7 +82,7 @@ protocol_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets
 
 go_tests="skipped"
 if [ "$RUN_GO_TESTS" = "1" ]; then
-  if (cd "$ROOT_DIR/server" && go test ./pkg/network > "$OUT_DIR/go-test-mining-rules.txt" 2>&1); then
+  if (cd "$ROOT_DIR/server" && go test ./pkg/world ./pkg/network > "$OUT_DIR/go-test-mining-rules.txt" 2>&1); then
     go_tests="pass"
   else
     cat "$OUT_DIR/go-test-mining-rules.txt" >&2 || true
@@ -88,6 +99,7 @@ awk \
     status = "pass"
     reason = "ok"
     mining_rules_status = "cooldown_guarded"
+    mining_block_durations = "target_block_guarded"
     creative_default = "unchanged"
     counted_mining_cooldown = "server_guarded"
     go_ok = go_tests == "pass" || go_tests == "skipped"
@@ -100,7 +112,7 @@ awk \
       reason = "go_tests_failed"
     }
 
-    printf("mining_rules_foundation status=%s reason=%s mining_rules_status=%s creative_default=%s counted_mining_cooldown=%s active_protocol_change=%d go_tests=%s design_doc=%s network_source=%s\n", status, reason, mining_rules_status, creative_default, counted_mining_cooldown, protocol_diff_count, go_tests, design_doc, network_source)
+    printf("mining_rules_foundation status=%s reason=%s mining_rules_status=%s mining_block_durations=%s creative_default=%s counted_mining_cooldown=%s active_protocol_change=%d go_tests=%s design_doc=%s network_source=%s\n", status, reason, mining_rules_status, mining_block_durations, creative_default, counted_mining_cooldown, protocol_diff_count, go_tests, design_doc, network_source)
     if (status != "pass") {
       exit 1
     }

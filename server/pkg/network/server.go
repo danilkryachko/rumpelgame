@@ -44,6 +44,8 @@ const serverBlockActionReachSquared = serverBlockActionReach * serverBlockAction
 const serverPlayerCollisionHalfWidth = 0.4
 const serverPlayerCollisionHeight = 1.8
 const defaultCountedMiningCooldown = 300 * time.Millisecond
+const defaultSoftBlockMiningCooldown = 150 * time.Millisecond
+const defaultWoodBlockMiningCooldown = 250 * time.Millisecond
 
 type networkErrorClass string
 
@@ -96,6 +98,7 @@ type Server struct {
 	maxClients      int
 	inventoryMode   inventoryMode
 	miningCooldown  time.Duration
+	miningDurations map[world.BlockID]time.Duration
 	now             func() time.Time
 	inventoryStore  playerInventoryStore
 	clientsMu       sync.Mutex
@@ -105,6 +108,7 @@ type Server struct {
 func NewServer(address string, gameWorld *world.World) *Server {
 	viewDistance := configuredViewDistance()
 	inventoryMode := configuredInventoryMode()
+	miningCooldown, miningCooldownOverride := configuredMiningCooldownWithOverride(inventoryMode)
 	return &Server{
 		address:         address,
 		world:           gameWorld,
@@ -116,7 +120,8 @@ func NewServer(address string, gameWorld *world.World) *Server {
 		writeTimeout:    configuredClientWriteTimeout(),
 		maxClients:      configuredMaxClients(),
 		inventoryMode:   inventoryMode,
-		miningCooldown:  configuredMiningCooldown(inventoryMode),
+		miningCooldown:  miningCooldown,
+		miningDurations: configuredMiningDurations(inventoryMode, miningCooldown, miningCooldownOverride),
 		now:             time.Now,
 		clients:         make(map[*clientSession]struct{}),
 	}
@@ -428,9 +433,16 @@ func (s *Server) handleClientPacketForSession(client *clientSession, clientPacke
 			return nil
 		}
 		actionTime := s.currentTime()
-		if action.Action == api.BlockAction_DESTROY && !client.destroyCooldownReady(actionTime, s.miningCooldown) {
-			log.Printf("Ignored mining cooldown block action x=%d, y=%d, z=%d cooldown=%s", action.X, action.Y, action.Z, s.miningCooldown)
-			return nil
+		if action.Action == api.BlockAction_DESTROY {
+			targetBlock, err := s.world.BlockAtGlobal(action.X, action.Y, action.Z)
+			if err != nil {
+				return fmt.Errorf("read block for destroy cooldown: %w", err)
+			}
+			miningDuration := s.miningDurationForBlock(targetBlock)
+			if !client.destroyCooldownReady(actionTime, miningDuration) {
+				log.Printf("Ignored mining cooldown block action x=%d, y=%d, z=%d block_id=%d cooldown=%s", action.X, action.Y, action.Z, targetBlock, miningDuration)
+				return nil
+			}
 		}
 
 		snapshot, previousBlock, err := s.world.ReplaceBlockGlobal(action.X, action.Y, action.Z, block)
@@ -726,6 +738,19 @@ func (c *clientSession) recordSuccessfulDestroy(now time.Time) {
 	defer c.stateMu.Unlock()
 
 	c.lastDestroyAt = now
+}
+
+func (s *Server) miningDurationForBlock(block world.BlockID) time.Duration {
+	if s.miningDurations != nil {
+		if duration, ok := s.miningDurations[block]; ok {
+			return duration
+		}
+		return 0
+	}
+	if world.IsPlaceable(block) {
+		return s.miningCooldown
+	}
+	return 0
 }
 
 func (c *clientSession) hasSentChunk(coord world.ChunkCoord) bool {
@@ -1114,17 +1139,22 @@ func configuredInventoryMode() inventoryMode {
 }
 
 func configuredMiningCooldown(mode inventoryMode) time.Duration {
+	cooldown, _ := configuredMiningCooldownWithOverride(mode)
+	return cooldown
+}
+
+func configuredMiningCooldownWithOverride(mode inventoryMode) (time.Duration, bool) {
 	defaultCooldown := defaultMiningCooldownForMode(mode)
 	value := strings.TrimSpace(os.Getenv(miningCooldownEnv))
 	if value == "" {
-		return defaultCooldown
+		return defaultCooldown, false
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed < 0 {
 		log.Printf("Ignoring invalid %s=%q; using %s", miningCooldownEnv, value, defaultCooldown)
-		return defaultCooldown
+		return defaultCooldown, false
 	}
-	return time.Duration(parsed) * time.Millisecond
+	return time.Duration(parsed) * time.Millisecond, true
 }
 
 func defaultMiningCooldownForMode(mode inventoryMode) time.Duration {
@@ -1132,6 +1162,36 @@ func defaultMiningCooldownForMode(mode inventoryMode) time.Duration {
 		return defaultCountedMiningCooldown
 	}
 	return 0
+}
+
+func configuredMiningDurations(mode inventoryMode, globalCooldown time.Duration, globalOverride bool) map[world.BlockID]time.Duration {
+	if globalOverride {
+		return miningDurationsForPlaceableBlocks(globalCooldown)
+	}
+	return defaultMiningDurationsForMode(mode)
+}
+
+func defaultMiningDurationsForMode(mode inventoryMode) map[world.BlockID]time.Duration {
+	if mode != inventoryModeCounted {
+		return miningDurationsForPlaceableBlocks(0)
+	}
+
+	durations := miningDurationsForPlaceableBlocks(defaultCountedMiningCooldown)
+	durations[world.Dirt] = defaultSoftBlockMiningCooldown
+	durations[world.Grass] = defaultSoftBlockMiningCooldown
+	durations[world.Leaves] = defaultSoftBlockMiningCooldown
+	durations[world.Wood] = defaultWoodBlockMiningCooldown
+	return durations
+}
+
+func miningDurationsForPlaceableBlocks(duration time.Duration) map[world.BlockID]time.Duration {
+	durations := make(map[world.BlockID]time.Duration)
+	for _, definition := range world.BlockDefinitions() {
+		if definition.Placeable {
+			durations[definition.ID] = duration
+		}
+	}
+	return durations
 }
 
 func (s *Server) currentTime() time.Time {

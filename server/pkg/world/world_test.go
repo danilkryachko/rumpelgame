@@ -366,6 +366,51 @@ func TestReplaceBlockGlobalReturnsPreviousGeneratedAndEditedBlocks(t *testing.T)
 	assertSnapshotBlock(t, destroyedSnapshot, int(blockX), int(blockY), int(blockZ), Air)
 }
 
+func TestBlockAtGlobalReturnsGeneratedAndEditedBlocksWithoutSaving(t *testing.T) {
+	store := newSerializedChunkStore()
+	w := NewWorld(store)
+	blockX, blockY, blockZ := int32(1), int32(60), int32(1)
+
+	generatedBlock, err := w.BlockAtGlobal(blockX, blockY, blockZ)
+	if err != nil {
+		t.Fatalf("BlockAtGlobal(generated) error = %v", err)
+	}
+	if generatedBlock != Stone {
+		t.Fatalf("BlockAtGlobal(generated) = %v, want Stone", generatedBlock)
+	}
+	if store.saves != 0 {
+		t.Fatalf("store saves after read = %d, want 0", store.saves)
+	}
+
+	if _, err := w.SetBlockGlobal(blockX, blockY, blockZ, Wood); err != nil {
+		t.Fatalf("SetBlockGlobal() error = %v", err)
+	}
+	editedBlock, err := w.BlockAtGlobal(blockX, blockY, blockZ)
+	if err != nil {
+		t.Fatalf("BlockAtGlobal(edited) error = %v", err)
+	}
+	if editedBlock != Wood {
+		t.Fatalf("BlockAtGlobal(edited) = %v, want Wood", editedBlock)
+	}
+	if store.saves != 1 {
+		t.Fatalf("store saves after edited read = %d, want 1", store.saves)
+	}
+}
+
+func TestBlockAtGlobalRejectsOutOfRangeYWithoutSaving(t *testing.T) {
+	store := newSerializedChunkStore()
+	w := NewWorld(store)
+
+	for _, y := range []int32{-1, ChunkHeight} {
+		if _, err := w.BlockAtGlobal(1, y, 1); err == nil {
+			t.Fatalf("BlockAtGlobal(y=%d) error = nil, want out-of-range error", y)
+		}
+	}
+	if store.saves != 0 {
+		t.Fatalf("store saves = %d, want 0", store.saves)
+	}
+}
+
 func TestHeightV1EditedChunkPersistsThroughStoreReload(t *testing.T) {
 	store := newSerializedChunkStore()
 	config := GeneratorConfig{

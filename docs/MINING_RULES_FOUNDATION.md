@@ -13,7 +13,7 @@ Scope:
 - Keep `BlockAction_DESTROY` on the existing packet shape.
 - Add a server mining cooldown configuration boundary.
 - Keep creative sessions at zero mining cooldown by default.
-- Give counted/survival sessions a default mining cooldown.
+- Give counted/survival sessions target-block mining durations.
 - Reject destroy actions that arrive before the session cooldown has elapsed.
 - Record cooldown only after a successful destroy of a placeable previous block.
 - Guard cooldown parsing and runtime behavior with Go network tests.
@@ -27,10 +27,12 @@ Out of scope:
 
 - `RUMPELMC_SERVER_MINING_COOLDOWN_MS` configures server mining cooldown in milliseconds.
 - Empty `RUMPELMC_SERVER_MINING_COOLDOWN_MS` keeps creative mode at `0ms`.
-- Empty `RUMPELMC_SERVER_MINING_COOLDOWN_MS` gives counted/survival mode the server default cooldown.
-- Explicit `RUMPELMC_SERVER_MINING_COOLDOWN_MS=0` disables the cooldown for operator-controlled checks.
-- Invalid or negative cooldown values fall back to the mode default.
+- Empty `RUMPELMC_SERVER_MINING_COOLDOWN_MS` gives counted/survival mode server-owned target-block durations.
+- Explicit `RUMPELMC_SERVER_MINING_COOLDOWN_MS=0` disables the cooldown for all placeable blocks in operator-controlled checks.
+- Explicit valid `RUMPELMC_SERVER_MINING_COOLDOWN_MS=<n>` applies the same override duration to all placeable blocks.
+- Invalid or negative cooldown values fall back to the mode's target-block defaults.
 - Cooldown is checked after block-action reach validation and before world mutation.
+- The server reads the current target block with `World.BlockAtGlobal` before the destroy mutation, then chooses the mining duration from that block ID.
 - Cooldown rejection emits no chunk update, no inventory mutation, no player inventory save, and no inventory snapshot.
 - Cooldown is recorded only after `World.ReplaceBlockGlobal` succeeds and the previous block was placeable.
 - Destroying Air keeps the existing no-drop behavior and does not start the mining cooldown.
@@ -53,16 +55,18 @@ sh scripts/mining_rules_foundation_gate.sh logs/mining_rules_foundation_current
 ```
 
 The expected current result is `status=pass`, `mining_rules_status=cooldown_guarded`, `creative_default=unchanged`, `counted_mining_cooldown=server_guarded`, `active_protocol_change=0`, and `go_tests=pass`.
+The summary also reports `mining_block_durations=target_block_guarded`.
 
 The gate checks that:
 
 - This document records current contract and compatibility rules.
-- Server source contains the mining cooldown env, counted default, parser, session cooldown state, and destroy cooldown methods.
-- Network tests cover mode defaults, env override, invalid env fallback, cooldown rejection, and cooldown expiry.
+- Server source contains the mining cooldown env, counted target-block defaults, parser, session cooldown state, read-only target block lookup, and destroy cooldown methods.
+- Network tests cover mode defaults, env override, invalid env fallback, target-block duration selection, cooldown rejection, and cooldown expiry.
+- World tests cover `World.BlockAtGlobal` read behavior without save-side effects.
 - Protocol docs still keep mining on the existing `BlockAction` packet shape.
 - Protocol schema/generated files are unchanged.
-- Focused Go network tests pass.
+- Focused Go world and network tests pass.
 
 ## Current Status
 
-This checkpoint is complete when the gate reports `mining_rules_status=cooldown_guarded`. It is the first server-owned mining-time rule: counted/survival sessions cannot instantly mine multiple placeable blocks, while default creative sessions remain unrestricted. Tool tiers, tool durability, block-specific mining durations, item entities, pickup behavior, and client mining feedback remain separate gameplay checkpoints.
+This checkpoint is complete when the gate reports `mining_rules_status=cooldown_guarded` and `mining_block_durations=target_block_guarded`. It is the first server-owned mining-time rule: counted/survival sessions cannot instantly mine multiple placeable blocks, target block IDs choose the required interval, and default creative sessions remain unrestricted. Tool tiers, tool durability, item entities, pickup behavior, and client mining feedback remain separate gameplay checkpoints.

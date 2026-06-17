@@ -69,7 +69,7 @@
 - `DESTROY = 0` removes a block; `block_id` is ignored.
 - `PLACE = 1` sets the block to `block_id`.
 - Action coordinates are block coordinates in the active server chunk implementation.
-- Current connected-session handling validates `DESTROY` through server reach and mining cooldown rules before applying `World.ReplaceBlockGlobal`.
+- Current connected-session handling validates `DESTROY` through server reach and target-block mining cooldown rules before applying `World.ReplaceBlockGlobal`.
 - Current server handling validates `PLACE` through the server block registry and the session inventory before applying `World.SetBlockGlobal`.
 - A `Packet_BlockAction` wrapper with no `BlockAction` body is treated as an ignored unsupported packet shape and must not emit chunk updates.
 
