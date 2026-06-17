@@ -9,14 +9,11 @@ case "$OUT_DIR" in
 esac
 
 SUMMARY_PATH="$OUT_DIR/third-person-character-visual-summary.txt"
-DESIGN_DOC="${RUMPELMC_THIRD_PERSON_CHARACTER_VISUAL_DOC:-"$ROOT_DIR/docs/THIRD_PERSON_CHARACTER_VISUAL.md"}"
-PLAYER_SOURCE="${RUMPELMC_THIRD_PERSON_PLAYER_SOURCE:-"$ROOT_DIR/client/rust_ext/src/player.rs"}"
-SCENE_PATH="${RUMPELMC_THIRD_PERSON_SCENE_PATH:-"$ROOT_DIR/client/kenney_character_preview.tscn"}"
-SCRIPT_PATH="${RUMPELMC_THIRD_PERSON_SCRIPT_PATH:-"$ROOT_DIR/client/kenney_character_preview.gd"}"
-ASSET_ROOT="${RUMPELMC_THIRD_PERSON_ASSET_ROOT:-"$ROOT_DIR/client/assets/characters/kenney_animated_characters_3"}"
-GODOT_BIN="${GODOT_BIN:-/opt/homebrew/bin/godot}"
-RUN_RUST_TESTS="${RUMPELMC_THIRD_PERSON_RUN_RUST_TESTS:-1}"
-RUN_GODOT_CHECKS="${RUMPELMC_THIRD_PERSON_RUN_GODOT_CHECKS:-1}"
+DESIGN_DOC="${RUMPELMC_THIRD_PERSON_VISUAL_DOC:-${RUMPELMC_THIRD_PERSON_CHARACTER_VISUAL_DOC:-"$ROOT_DIR/docs/THIRD_PERSON_CHARACTER_VISUAL.md"}}"
+PLAYER_SOURCE="${RUMPELMC_THIRD_PERSON_VISUAL_PLAYER_SOURCE:-${RUMPELMC_THIRD_PERSON_PLAYER_SOURCE:-"$ROOT_DIR/client/rust_ext/src/player.rs"}}"
+GODOT_BIN="${GODOT_BIN:-godot}"
+RUN_RUST_TESTS="${RUMPELMC_THIRD_PERSON_VISUAL_RUN_RUST_TESTS:-${RUMPELMC_THIRD_PERSON_RUN_RUST_TESTS:-1}}"
+RUN_GODOT_SMOKE="${RUMPELMC_THIRD_PERSON_VISUAL_RUN_GODOT_SMOKE:-${RUMPELMC_THIRD_PERSON_RUN_GODOT_CHECKS:-1}}"
 
 mkdir -p "$OUT_DIR"
 
@@ -32,101 +29,57 @@ require_token() {
   grep -Fq "$token" "$path" || fail "missing token '$token' in $path"
 }
 
-require_file() {
-  path="$1"
-  test -s "$path" || fail "missing required asset $path"
-}
-
-for path in "$DESIGN_DOC" "$PLAYER_SOURCE" "$SCENE_PATH" "$SCRIPT_PATH"; do
+for path in "$DESIGN_DOC" "$PLAYER_SOURCE"; do
   test -s "$path" || fail "missing required input $path"
 done
 
 for token in \
-  'Technical Brief' \
-  'Runtime Contract' \
-  'Asset Contract' \
-  'Compatibility Rules' \
-  'No packet, storage, world generation, chunk serialization, server gameplay, GPU terrain renderer' \
-  'Do not make third-person mode affect server reach validation'; do
+  'Attach a visible modular voxel character only in third-person mode' \
+  'Drive procedural idle/run/jump poses' \
+  'PlayerVoxelCharacter' \
+  'No FBX, PNG, Godot scene, Godot script, `.import`, `.uid`, external asset pack, or runtime resource loader path is required'; do
   require_token "$DESIGN_DOC" "$token"
 done
 
 for token in \
-  'PLAYER_CHARACTER_SCENE_PATH' \
-  'PlayerCharacterVisual' \
-  'THIRD_PERSON_CAMERA_DISTANCE' \
-  'THIRD_PERSON_BLOCK_REACH_PADDING' \
-  'third_person_camera: bool' \
-  'character_visual: Option<Gd<Node3D>>' \
-  'CharacterMotionState' \
-  'fn attach_character_visual' \
-  'fn set_third_person_camera' \
-  'fn apply_camera_mode' \
-  'fn update_character_motion_state' \
+  'const PLAYER_CHARACTER_VISUAL_NAME: &str = "PlayerVoxelCharacter"' \
+  'struct VoxelCharacterVisual' \
+  'character_visual: Option<VoxelCharacterVisual>' \
+  'fn create_voxel_character_visual' \
+  'BoxMesh::new_gd()' \
+  'fn update_character_visual' \
+  'fn next_character_animation_time' \
+  'fn apply_voxel_character_pose' \
+  'CharacterMotionState::Idle' \
+  'CharacterMotionState::Run' \
+  'CharacterMotionState::Jump' \
+  'Key::V' \
   'fn is_third_person_camera_enabled' \
-  'fn third_person_camera_position' \
-  'fn block_raycast_target' \
-  'third_person_raycast_extends_reach_by_camera_offset' \
-  'camera_positions_are_mode_specific' \
-  'character_motion_state_follows_velocity' \
-  'character_motion_state_labels_are_stable_for_godot_script'; do
+  'third_person_camera_position()' \
+  'block_raycast_target(self.third_person_camera)' \
+  'voxel_character_animation_time_wraps_and_ignores_invalid_delta' \
+  'voxel_character_visual_name_is_stable_for_godot_smoke'; do
   require_token "$PLAYER_SOURCE" "$token"
 done
 
-for token in \
-  'res://assets/characters/kenney_animated_characters_3/Model/characterMedium.fbx' \
-  'res://assets/characters/kenney_animated_characters_3/Skins/humanMaleA.png' \
-  'ANIMATION_SCENES' \
-  '"idle"' \
-  '"run"' \
-  '"jump"' \
-  'func set_motion_state' \
-  'func apply_skin' \
-  'func find_animation_player'; do
-  require_token "$SCRIPT_PATH" "$token"
-done
+if grep -Fq 'ResourceLoader' "$PLAYER_SOURCE" || grep -Fq 'PackedScene' "$PLAYER_SOURCE"; then
+  fail "player visual must not depend on Godot resource loading"
+fi
 
-require_token "$SCENE_PATH" 'KenneyCharacterPreview'
-require_token "$SCENE_PATH" 'res://kenney_character_preview.gd'
-
-for asset in \
-  "$ASSET_ROOT/License.txt" \
-  "$ASSET_ROOT/Model/characterMedium.fbx" \
-  "$ASSET_ROOT/Animations/idle.fbx" \
-  "$ASSET_ROOT/Animations/run.fbx" \
-  "$ASSET_ROOT/Animations/jump.fbx" \
-  "$ASSET_ROOT/Skins/humanMaleA.png" \
-  "$ASSET_ROOT/Preview.png"; do
-  require_file "$asset"
-done
-
-active_protocol_change="$(git -C "$ROOT_DIR" diff --name-only -- api/schema/packets.proto server/pkg/api/packets.pb.go | awk 'END { print NR + 0 }')"
-active_storage_change="$(git -C "$ROOT_DIR" diff --name-only -- server/pkg/storage | awk 'END { print NR + 0 }')"
-active_worldgen_change="$(git -C "$ROOT_DIR" diff --name-only -- server/pkg/world/chunk.go server/pkg/world/generator.go server/pkg/world/biome.go server/pkg/world/cave.go server/pkg/world/resource.go | awk 'END { print NR + 0 }')"
-
-changed_client_paths="$(mktemp)"
-trap 'rm -f "$changed_client_paths"' EXIT
-{
-  git -C "$ROOT_DIR" diff --name-only -- client
-  git -C "$ROOT_DIR" diff --cached --name-only -- client
-  git -C "$ROOT_DIR" ls-files --others --exclude-standard -- client
-} | sed '/^$/d' | sort -u > "$changed_client_paths"
-
-unexpected_client_paths="$(awk '
-  $0 == "client/rust_ext/src/player.rs" { next }
-  $0 == "client/kenney_character_preview.gd" { next }
-  $0 == "client/kenney_character_preview.tscn" { next }
-  index($0, "client/assets/characters/kenney_animated_characters_3/") == 1 { next }
-  { print }
-' "$changed_client_paths" | tr '\n' ' ')"
+if [ -e "$ROOT_DIR/client/kenney_character_preview.gd" ] || \
+  [ -e "$ROOT_DIR/client/kenney_character_preview.tscn" ] || \
+  [ -e "$ROOT_DIR/client/assets/characters/kenney_animated_characters_3" ]; then
+  fail "Kenney character scene/assets are still present"
+fi
 
 rust_tests="skipped"
 if [ "$RUN_RUST_TESTS" = "1" ]; then
   if (
-    cd "$ROOT_DIR/client/rust_ext"
-    cargo test --lib third_person > "$OUT_DIR/cargo-test-third-person.txt" 2>&1
-    cargo test --lib camera_positions >> "$OUT_DIR/cargo-test-third-person.txt" 2>&1
-    cargo test --lib character_motion_state >> "$OUT_DIR/cargo-test-third-person.txt" 2>&1
+    cd "$ROOT_DIR" &&
+      cargo test --manifest-path client/rust_ext/Cargo.toml --lib third_person > "$OUT_DIR/cargo-test-third-person.txt" 2>&1 &&
+      cargo test --manifest-path client/rust_ext/Cargo.toml --lib camera_positions >> "$OUT_DIR/cargo-test-third-person.txt" 2>&1 &&
+      cargo test --manifest-path client/rust_ext/Cargo.toml --lib character_motion_state >> "$OUT_DIR/cargo-test-third-person.txt" 2>&1 &&
+      cargo test --manifest-path client/rust_ext/Cargo.toml --lib voxel_character >> "$OUT_DIR/cargo-test-third-person.txt" 2>&1
   ); then
     rust_tests="pass"
   else
@@ -135,76 +88,113 @@ if [ "$RUN_RUST_TESTS" = "1" ]; then
   fi
 fi
 
-godot_parse="skipped"
-godot_scene_load="skipped"
-if [ "$RUN_GODOT_CHECKS" = "1" ]; then
+godot_smoke="skipped"
+if [ "$RUN_GODOT_SMOKE" = "1" ]; then
   if ! command -v "$GODOT_BIN" >/dev/null 2>&1; then
-    fail "missing Godot binary $GODOT_BIN"
-  fi
-  if "$GODOT_BIN" --headless --path "$ROOT_DIR/client" --check-only --script res://kenney_character_preview.gd > "$OUT_DIR/godot-gdscript-check.txt" 2>&1; then
-    godot_parse="pass"
+    godot_smoke="missing_godot"
   else
-    cat "$OUT_DIR/godot-gdscript-check.txt" >&2 || true
-    godot_parse="fail"
-  fi
-  if "$GODOT_BIN" --headless --path "$ROOT_DIR/client" --scene res://kenney_character_preview.tscn --quit-after 2 > "$OUT_DIR/godot-scene-load.txt" 2>&1; then
-    godot_scene_load="pass"
-  else
-    cat "$OUT_DIR/godot-scene-load.txt" >&2 || true
-    godot_scene_load="fail"
+    SMOKE_SCRIPT="$OUT_DIR/player-voxel-smoke.gd"
+    cat > "$SMOKE_SCRIPT" <<'GDSCRIPT'
+extends SceneTree
+
+func _init():
+	call_deferred("_run")
+
+func _run():
+	var player = ClassDB.instantiate("Player")
+	if player == null:
+		push_error("Player class is not available")
+		quit(1)
+		return
+
+	root.add_child(player)
+	await process_frame
+
+	var visual = player.get_node_or_null("PlayerVoxelCharacter")
+	if visual == null:
+		push_error("PlayerVoxelCharacter node is missing")
+		quit(1)
+		return
+	if visual.visible:
+		push_error("PlayerVoxelCharacter must start hidden in first person")
+		quit(1)
+		return
+
+	var event = InputEventKey.new()
+	event.physical_keycode = KEY_V
+	event.keycode = KEY_V
+	event.pressed = true
+	root.get_viewport().push_input(event)
+	await process_frame
+
+	if not player.is_third_person_camera_enabled():
+		push_error("V did not enable third-person camera")
+		quit(1)
+		return
+	if not visual.visible:
+		push_error("PlayerVoxelCharacter did not become visible in third person")
+		quit(1)
+		return
+
+	print("player voxel smoke ok")
+	quit(0)
+GDSCRIPT
+
+    if (
+      cd "$ROOT_DIR" &&
+        cargo build --manifest-path client/rust_ext/Cargo.toml > "$OUT_DIR/cargo-build-gdextension.txt" 2>&1 &&
+        "$GODOT_BIN" --headless --path client --script "$SMOKE_SCRIPT" > "$OUT_DIR/godot-player-voxel-smoke.txt" 2>&1
+    ); then
+      godot_smoke="pass"
+    else
+      cat "$OUT_DIR/cargo-build-gdextension.txt" >&2 || true
+      cat "$OUT_DIR/godot-player-voxel-smoke.txt" >&2 || true
+      godot_smoke="fail"
+    fi
   fi
 fi
 
+protocol_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- api/schema server/pkg/api client/proto | awk 'END { print NR + 0 }')"
+storage_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- server/pkg/storage docs/STORAGE.md | awk 'END { print NR + 0 }')"
+worldgen_diff_count="$(git -C "$ROOT_DIR" diff --name-only -- server/pkg/world docs/WORLDGEN_DETERMINISM.md | awk 'END { print NR + 0 }')"
+
 awk \
-  -v active_protocol_change="$active_protocol_change" \
-  -v active_storage_change="$active_storage_change" \
-  -v active_worldgen_change="$active_worldgen_change" \
-  -v unexpected_client_paths="$unexpected_client_paths" \
   -v rust_tests="$rust_tests" \
-  -v godot_parse="$godot_parse" \
-  -v godot_scene_load="$godot_scene_load" \
+  -v godot_smoke="$godot_smoke" \
+  -v protocol_diff_count="$protocol_diff_count" \
+  -v storage_diff_count="$storage_diff_count" \
+  -v worldgen_diff_count="$worldgen_diff_count" \
   -v design_doc="$DESIGN_DOC" \
-  '
+  -v player_source="$PLAYER_SOURCE" '
   BEGIN {
     status = "pass"
     reason = "ok"
-    third_person_visual = "guarded"
-    camera_toggle = "rust_guarded"
-    character_assets = "kenney_guarded"
-    character_animation = "idle_run_jump_guarded"
-
-    if (active_protocol_change + 0 != 0) {
+    if (rust_tests != "pass") {
       status = "fail"
-      reason = "protocol_diff_present"
-    } else if (active_storage_change + 0 != 0) {
+      reason = "rust_tests_not_pass"
+    } else if (godot_smoke != "pass") {
       status = "fail"
-      reason = "storage_diff_present"
-    } else if (active_worldgen_change + 0 != 0) {
+      reason = "godot_smoke_not_pass"
+    } else if (protocol_diff_count != 0) {
       status = "fail"
-      reason = "worldgen_diff_present"
-    } else if (unexpected_client_paths != "") {
+      reason = "protocol_diff"
+    } else if (storage_diff_count != 0) {
       status = "fail"
-      reason = "unexpected_client_paths"
-    } else if (!(rust_tests == "pass" || rust_tests == "skipped")) {
+      reason = "storage_diff"
+    } else if (worldgen_diff_count != 0) {
       status = "fail"
-      reason = "rust_tests_failed"
-    } else if (!(godot_parse == "pass" || godot_parse == "skipped")) {
-      status = "fail"
-      reason = "godot_parse_failed"
-    } else if (!(godot_scene_load == "pass" || godot_scene_load == "skipped")) {
-      status = "fail"
-      reason = "godot_scene_load_failed"
+      reason = "worldgen_diff"
     }
 
-    printf("third_person_character_visual status=%s reason=%s third_person_visual=%s camera_toggle=%s character_assets=%s character_animation=%s godot_parse=%s godot_scene_load=%s rust_tests=%s active_protocol_change=%d active_storage_change=%d active_worldgen_change=%d unexpected_client_paths=\"%s\" design_doc=%s\n", status, reason, third_person_visual, camera_toggle, character_assets, character_animation, godot_parse, godot_scene_load, rust_tests, active_protocol_change, active_storage_change, active_worldgen_change, unexpected_client_paths, design_doc)
+    printf("third_person_character_visual status=%s reason=%s third_person_visual=guarded camera_toggle=rust_guarded character_visual=voxel_rust_guarded character_assets=not_required character_animation=procedural_idle_run_jump_guarded rust_tests=%s godot_smoke=%s active_protocol_change=%d active_storage_change=%d active_worldgen_change=%d design_doc=%s player_source=%s\n", status, reason, rust_tests, godot_smoke, protocol_diff_count, storage_diff_count, worldgen_diff_count, design_doc, player_source)
     if (status != "pass") {
       exit 1
     }
   }
 ' > "$SUMMARY_PATH" || {
   cat "$SUMMARY_PATH" >&2 || true
-  fail "third person character visual gate failed"
+  fail "third-person character visual gate failed"
 }
 
 cat "$SUMMARY_PATH"
-echo "Third person character visual artifacts: $OUT_DIR"
+echo "Third-person character visual artifacts: $OUT_DIR"

@@ -7,16 +7,15 @@ This checkpoint owns the first finished third-person player visual slice.
 Goal:
 
 - Add a player-controlled first-person/third-person camera toggle.
-- Attach a visible character model only in third-person mode.
-- Drive idle/run/jump animation state from the player movement state.
+- Attach a visible modular voxel character only in third-person mode.
+- Drive procedural idle/run/jump poses from the player movement state.
 - Keep block targeting functional in both camera modes.
 
 Scope:
 
-- Client Rust `Player` camera toggle, character visual attachment, raycast reach adjustment, and motion-state dispatch.
-- Godot `kenney_character_preview.tscn` and `kenney_character_preview.gd` as the character visual scene.
-- Kenney Animated Characters model, idle/run/jump clips, skins, preview image, and license under `client/assets/characters/kenney_animated_characters_3`.
-- Focused Rust unit tests and headless Godot parse/scene-load checks.
+- Client Rust `Player` camera toggle, character visual construction, raycast reach adjustment, and procedural motion-state pose application.
+- Rust-built `BoxMesh` character parts for head, chest, belt, hands, and feet.
+- Focused Rust unit tests and a gate that proves no packet, storage, world generation, or Godot scene/resource dependency is introduced.
 
 Out of scope:
 
@@ -28,19 +27,20 @@ Out of scope:
 
 - `V` toggles first-person and third-person camera mode.
 - First-person mode keeps the existing camera height and hides the character visual.
-- Third-person mode moves the camera behind the player and shows `PlayerCharacterVisual`.
+- Third-person mode moves the camera behind the player and shows `PlayerVoxelCharacter`.
 - The block raycast target is extended by the third-person camera offset and a small reach padding so current targeting still reaches the same gameplay envelope.
 - `Player.is_third_person_camera_enabled()` exposes the current camera mode to Godot/tests.
-- The character scene accepts `set_motion_state("idle" | "run" | "jump")`.
-- Idle, run, and jump labels stay stable because the Rust enum labels are unit-guarded and the Godot animation map uses the same names.
+- The character visual is built in Rust from named `Node3D` pivots and `BoxMesh` children.
+- Idle, run, and jump poses are applied procedurally to the same body pivots.
+- Animation time wraps at a bounded interval so long sessions do not grow the pose timer without bound.
 
-## Asset Contract
+## Visual Contract
 
-- The model scene path is `res://assets/characters/kenney_animated_characters_3/Model/characterMedium.fbx`.
-- The default skin path is `res://assets/characters/kenney_animated_characters_3/Skins/humanMaleA.png`.
-- Animation clips are loaded from `Animations/idle.fbx`, `Animations/run.fbx`, and `Animations/jump.fbx`.
-- `client/assets/characters/kenney_animated_characters_3/License.txt` must stay with the imported asset pack.
-- Godot `.import` files remain generated local artifacts under the existing project ignore policy.
+- The visual root name is `PlayerVoxelCharacter`.
+- The visual root is hidden in first-person mode and visible in third-person mode.
+- The Rust player source owns all visual dimensions, colors, animation rates, and motion-state thresholds.
+- No FBX, PNG, Godot scene, Godot script, `.import`, `.uid`, external asset pack, or runtime resource loader path is required for the character visual.
+- The visual remains client presentation only and must not affect server authority.
 
 ## Checks
 
@@ -55,10 +55,11 @@ Expected current result:
 - `status=pass`
 - `third_person_visual=guarded`
 - `camera_toggle=rust_guarded`
-- `character_assets=kenney_guarded`
-- `character_animation=idle_run_jump_guarded`
-- `godot_scene_load=pass`
+- `character_visual=voxel_rust_guarded`
+- `character_assets=not_required`
+- `character_animation=procedural_idle_run_jump_guarded`
 - `rust_tests=pass`
+- `godot_smoke=pass`
 - `active_protocol_change=0`
 - `active_storage_change=0`
 - `active_worldgen_change=0`
@@ -68,5 +69,5 @@ Expected current result:
 - Do not change protocol or server authority for camera mode.
 - Do not make third-person mode affect server reach validation.
 - Do not remove first-person behavior.
-- Do not hand-edit generated `.import` files.
+- Do not reintroduce a required Godot scene/resource/import path for the player character visual without a separate visual asset gate.
 - Do not reduce render quality, draw distance, lighting, shadows, or texture quality for this visual slice.

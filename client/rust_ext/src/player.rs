@@ -1,7 +1,7 @@
 use godot::classes::{
-    ArrayMesh, Camera3D, CharacterBody3D, ICharacterBody3D, Input, InputEvent, InputEventKey,
-    InputEventMouseButton, InputEventMouseMotion, MeshInstance3D, Node3D, PackedScene,
-    ResourceLoader, StandardMaterial3D, base_material_3d,
+    ArrayMesh, BoxMesh, Camera3D, CharacterBody3D, ICharacterBody3D, Input, InputEvent,
+    InputEventKey, InputEventMouseButton, InputEventMouseMotion, MeshInstance3D, Node3D,
+    StandardMaterial3D, base_material_3d,
 };
 use godot::global::{Key, MouseButton};
 use godot::prelude::*;
@@ -19,12 +19,23 @@ const GROUND_SAFETY_RAYCAST_NAME: &str = "GroundSafetyRayCast";
 const VISUAL_SMOKE_DISABLE_PLAYER_INPUT_ENV: &str = "RUMPELMC_VISUAL_SMOKE_DISABLE_PLAYER_INPUT";
 const PLAYER_HOTBAR_SLOTS: usize = 5;
 const CREATIVE_HOTBAR_STACK_COUNT: u32 = 999;
-const PLAYER_CHARACTER_SCENE_PATH: &str = "res://kenney_character_preview.tscn";
-const PLAYER_CHARACTER_VISUAL_NAME: &str = "PlayerCharacterVisual";
+const PLAYER_CHARACTER_VISUAL_NAME: &str = "PlayerVoxelCharacter";
 const THIRD_PERSON_CAMERA_DISTANCE: f32 = 4.0;
 const THIRD_PERSON_BLOCK_REACH_PADDING: f32 = 0.5;
 const CHARACTER_RUN_SPEED_THRESHOLD: f32 = 0.25;
 const CHARACTER_JUMP_SPEED_THRESHOLD: f32 = 0.5;
+const CHARACTER_ANIMATION_WRAP_SECONDS: f32 = 4096.0;
+const CHARACTER_IDLE_ANIMATION_RATE: f32 = 2.0;
+const CHARACTER_RUN_ANIMATION_RATE: f32 = 9.0;
+const CHARACTER_JUMP_ANIMATION_RATE: f32 = 4.0;
+const CHARACTER_ROOT_YAW_DEGREES: f32 = 180.0;
+const CHARACTER_HEAD_Y: f32 = 1.62;
+const CHARACTER_CHEST_Y: f32 = 1.12;
+const CHARACTER_BELT_Y: f32 = 0.74;
+const CHARACTER_SHOULDER_Y: f32 = 1.34;
+const CHARACTER_HIP_Y: f32 = 0.78;
+const CHARACTER_LIMB_X: f32 = 0.43;
+const CHARACTER_LEG_X: f32 = 0.18;
 
 struct BlockHit {
     block: (i32, i32, i32),
@@ -44,14 +55,15 @@ enum CharacterMotionState {
     Jump,
 }
 
-impl CharacterMotionState {
-    fn as_str(self) -> &'static str {
-        match self {
-            CharacterMotionState::Idle => "idle",
-            CharacterMotionState::Run => "run",
-            CharacterMotionState::Jump => "jump",
-        }
-    }
+struct VoxelCharacterVisual {
+    root: Gd<Node3D>,
+    head: Gd<Node3D>,
+    chest: Gd<Node3D>,
+    belt: Gd<Node3D>,
+    hand_l: Gd<Node3D>,
+    hand_r: Gd<Node3D>,
+    foot_l: Gd<Node3D>,
+    foot_r: Gd<Node3D>,
 }
 
 #[derive(GodotClass)]
@@ -60,7 +72,7 @@ pub struct Player {
     base: Base<CharacterBody3D>,
     camera: Option<Gd<Camera3D>>,
     selection_outline: Option<Gd<MeshInstance3D>>,
-    character_visual: Option<Gd<Node3D>>,
+    character_visual: Option<VoxelCharacterVisual>,
     mouse_sensitivity: f32,
     selected_block: i32,
     selected_hotbar_slot: usize,
@@ -68,6 +80,7 @@ pub struct Player {
     fly_mode: bool,
     third_person_camera: bool,
     character_motion_state: CharacterMotionState,
+    character_animation_time_sec: f32,
     default_collision_layer: u32,
     default_collision_mask: u32,
 }
@@ -92,6 +105,7 @@ impl ICharacterBody3D for Player {
             fly_mode: false,
             third_person_camera: false,
             character_motion_state: CharacterMotionState::Idle,
+            character_animation_time_sec: 0.0,
             default_collision_layer: 1,
             default_collision_mask: 1,
         }
@@ -333,7 +347,7 @@ impl ICharacterBody3D for Player {
         self.base_mut().move_and_slide();
         let velocity_after_slide = self.base().get_velocity();
         let on_floor = self.base().is_on_floor();
-        self.update_character_motion_state(velocity_after_slide, on_floor);
+        self.update_character_visual(velocity_after_slide, on_floor, delta as f32);
     }
 }
 
@@ -397,36 +411,9 @@ impl Player {
     }
 
     fn attach_character_visual(&mut self) {
-        let Some(resource) = ResourceLoader::singleton().load(PLAYER_CHARACTER_SCENE_PATH) else {
-            self.emit_debug_log(&format!(
-                "Player character scene not found: {PLAYER_CHARACTER_SCENE_PATH}"
-            ));
-            return;
-        };
-
-        let Ok(scene) = resource.try_cast::<PackedScene>() else {
-            self.emit_debug_log(&format!(
-                "Player character resource is not a PackedScene: {PLAYER_CHARACTER_SCENE_PATH}"
-            ));
-            return;
-        };
-
-        let Some(node) = scene.instantiate() else {
-            self.emit_debug_log("Failed to instantiate player character scene");
-            return;
-        };
-
-        let Ok(mut visual) = node.try_cast::<Node3D>() else {
-            self.emit_debug_log("Player character scene root is not Node3D");
-            return;
-        };
-
-        visual.set_name(&StringName::from(PLAYER_CHARACTER_VISUAL_NAME));
-        visual.set_position(Vector3::ZERO);
-        visual.set_rotation_degrees(Vector3::new(0.0, 180.0, 0.0));
-        visual.set_visible(false);
+        let visual = create_voxel_character_visual();
         self.base_mut()
-            .add_child(&visual.clone().upcast::<godot::classes::Node>());
+            .add_child(&visual.root.clone().upcast::<godot::classes::Node>());
         self.character_visual = Some(visual);
     }
 
@@ -462,22 +449,19 @@ impl Player {
         }
 
         if let Some(visual) = &mut self.character_visual {
-            visual.set_visible(self.third_person_camera);
+            visual.root.set_visible(self.third_person_camera);
         }
     }
 
-    fn update_character_motion_state(&mut self, velocity: Vector3, on_floor: bool) {
+    fn update_character_visual(&mut self, velocity: Vector3, on_floor: bool, delta_sec: f32) {
         let motion_state = character_motion_state_for_velocity(velocity, on_floor);
-        if self.character_motion_state == motion_state {
-            return;
-        }
-
         self.character_motion_state = motion_state;
+
+        self.character_animation_time_sec =
+            next_character_animation_time(self.character_animation_time_sec, delta_sec);
+
         if let Some(visual) = &mut self.character_visual {
-            visual.call(
-                &StringName::from("set_motion_state"),
-                &[motion_state.as_str().to_variant()],
-            );
+            apply_voxel_character_pose(visual, motion_state, self.character_animation_time_sec);
         }
     }
 
@@ -666,6 +650,266 @@ fn character_motion_state_for_velocity(velocity: Vector3, on_floor: bool) -> Cha
     }
 }
 
+fn next_character_animation_time(current_time_sec: f32, delta_sec: f32) -> f32 {
+    if !current_time_sec.is_finite() {
+        return 0.0;
+    }
+    if !delta_sec.is_finite() || delta_sec <= 0.0 {
+        return current_time_sec;
+    }
+    (current_time_sec + delta_sec) % CHARACTER_ANIMATION_WRAP_SECONDS
+}
+
+fn create_voxel_character_visual() -> VoxelCharacterVisual {
+    let mut root = Node3D::new_alloc();
+    root.set_name(&StringName::from(PLAYER_CHARACTER_VISUAL_NAME));
+    root.set_position(Vector3::ZERO);
+    root.set_rotation_degrees(Vector3::new(0.0, CHARACTER_ROOT_YAW_DEGREES, 0.0));
+    root.set_visible(false);
+
+    let head = create_voxel_character_part(
+        "Head",
+        Vector3::new(0.0, CHARACTER_HEAD_Y, 0.0),
+        Vector3::new(0.46, 0.46, 0.46),
+        Vector3::ZERO,
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let chest = create_voxel_character_part(
+        "Chest",
+        Vector3::new(0.0, CHARACTER_CHEST_Y, 0.0),
+        Vector3::new(0.68, 0.68, 0.34),
+        Vector3::ZERO,
+        Color::from_rgb(0.18, 0.45, 0.78),
+    );
+    let belt = create_voxel_character_part(
+        "Belt",
+        Vector3::new(0.0, CHARACTER_BELT_Y, 0.0),
+        Vector3::new(0.58, 0.28, 0.34),
+        Vector3::ZERO,
+        Color::from_rgb(0.12, 0.16, 0.20),
+    );
+    let hand_l = create_voxel_character_part(
+        "HandL",
+        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+        Vector3::new(0.20, 0.62, 0.20),
+        Vector3::new(0.0, -0.31, 0.0),
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let hand_r = create_voxel_character_part(
+        "HandR",
+        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+        Vector3::new(0.20, 0.62, 0.20),
+        Vector3::new(0.0, -0.31, 0.0),
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let foot_l = create_voxel_character_part(
+        "FootL",
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
+        Vector3::new(0.22, 0.72, 0.24),
+        Vector3::new(0.0, -0.36, 0.0),
+        Color::from_rgb(0.16, 0.22, 0.32),
+    );
+    let foot_r = create_voxel_character_part(
+        "FootR",
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
+        Vector3::new(0.22, 0.72, 0.24),
+        Vector3::new(0.0, -0.36, 0.0),
+        Color::from_rgb(0.16, 0.22, 0.32),
+    );
+
+    root.add_child(&head.clone().upcast::<godot::classes::Node>());
+    root.add_child(&chest.clone().upcast::<godot::classes::Node>());
+    root.add_child(&belt.clone().upcast::<godot::classes::Node>());
+    root.add_child(&hand_l.clone().upcast::<godot::classes::Node>());
+    root.add_child(&hand_r.clone().upcast::<godot::classes::Node>());
+    root.add_child(&foot_l.clone().upcast::<godot::classes::Node>());
+    root.add_child(&foot_r.clone().upcast::<godot::classes::Node>());
+
+    let mut visual = VoxelCharacterVisual {
+        root,
+        head,
+        chest,
+        belt,
+        hand_l,
+        hand_r,
+        foot_l,
+        foot_r,
+    };
+    apply_voxel_character_pose(&mut visual, CharacterMotionState::Idle, 0.0);
+    visual
+}
+
+fn create_voxel_character_part(
+    name: &str,
+    pivot_position: Vector3,
+    mesh_size: Vector3,
+    mesh_offset: Vector3,
+    color: Color,
+) -> Gd<Node3D> {
+    let mut pivot = Node3D::new_alloc();
+    pivot.set_name(&StringName::from(name));
+    pivot.set_position(pivot_position);
+
+    let mut box_mesh = BoxMesh::new_gd();
+    box_mesh.set_size(mesh_size);
+
+    let mut mesh = MeshInstance3D::new_alloc();
+    mesh.set_position(mesh_offset);
+    mesh.set_mesh(&box_mesh.upcast::<godot::classes::Mesh>());
+    mesh.set_material_override(&create_voxel_character_material(color));
+
+    pivot.add_child(&mesh.upcast::<godot::classes::Node>());
+    pivot
+}
+
+fn create_voxel_character_material(color: Color) -> Gd<godot::classes::Material> {
+    let mut material = StandardMaterial3D::new_gd();
+    material.set_albedo(color);
+    material.set_shading_mode(base_material_3d::ShadingMode::UNSHADED);
+    material.upcast::<godot::classes::Material>()
+}
+
+fn apply_voxel_character_pose(
+    visual: &mut VoxelCharacterVisual,
+    motion_state: CharacterMotionState,
+    animation_time_sec: f32,
+) {
+    match motion_state {
+        CharacterMotionState::Idle => apply_voxel_idle_pose(visual, animation_time_sec),
+        CharacterMotionState::Run => apply_voxel_run_pose(visual, animation_time_sec),
+        CharacterMotionState::Jump => apply_voxel_jump_pose(visual, animation_time_sec),
+    }
+}
+
+fn apply_voxel_idle_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: f32) {
+    let wave = (animation_time_sec * CHARACTER_IDLE_ANIMATION_RATE).sin();
+    let bob = wave * 0.012;
+
+    set_node_transform(
+        &mut visual.head,
+        Vector3::new(0.0, CHARACTER_HEAD_Y + bob * 0.5, 0.0),
+        Vector3::new(wave * 1.0, wave * 1.5, 0.0),
+    );
+    set_node_transform(
+        &mut visual.chest,
+        Vector3::new(0.0, CHARACTER_CHEST_Y + bob, 0.0),
+        Vector3::new(wave * 1.4, 0.0, wave * 0.6),
+    );
+    set_node_transform(
+        &mut visual.belt,
+        Vector3::new(0.0, CHARACTER_BELT_Y + bob * 0.5, 0.0),
+        Vector3::ZERO,
+    );
+    set_node_transform(
+        &mut visual.hand_l,
+        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
+        Vector3::new(0.0, 0.0, -3.0 + wave * 1.2),
+    );
+    set_node_transform(
+        &mut visual.hand_r,
+        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
+        Vector3::new(0.0, 0.0, 3.0 - wave * 1.2),
+    );
+    set_node_transform(
+        &mut visual.foot_l,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
+        Vector3::ZERO,
+    );
+    set_node_transform(
+        &mut visual.foot_r,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y, 0.0),
+        Vector3::ZERO,
+    );
+}
+
+fn apply_voxel_run_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: f32) {
+    let cycle = animation_time_sec * CHARACTER_RUN_ANIMATION_RATE;
+    let swing = cycle.sin();
+    let counter_swing = -swing;
+    let bob = swing.abs() * 0.045;
+
+    set_node_transform(
+        &mut visual.head,
+        Vector3::new(0.0, CHARACTER_HEAD_Y + bob * 0.35, -0.02),
+        Vector3::new(3.0, counter_swing * 2.0, 0.0),
+    );
+    set_node_transform(
+        &mut visual.chest,
+        Vector3::new(0.0, CHARACTER_CHEST_Y + bob, -0.02),
+        Vector3::new(-7.0, 0.0, counter_swing * 1.8),
+    );
+    set_node_transform(
+        &mut visual.belt,
+        Vector3::new(0.0, CHARACTER_BELT_Y + bob * 0.6, 0.0),
+        Vector3::new(-3.0, 0.0, swing * 1.4),
+    );
+    set_node_transform(
+        &mut visual.hand_l,
+        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
+        Vector3::new(counter_swing * 44.0, 0.0, -5.0),
+    );
+    set_node_transform(
+        &mut visual.hand_r,
+        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
+        Vector3::new(swing * 44.0, 0.0, 5.0),
+    );
+    set_node_transform(
+        &mut visual.foot_l,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + bob * 0.25, 0.0),
+        Vector3::new(swing * 34.0, 0.0, 0.0),
+    );
+    set_node_transform(
+        &mut visual.foot_r,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + bob * 0.25, 0.0),
+        Vector3::new(counter_swing * 34.0, 0.0, 0.0),
+    );
+}
+
+fn apply_voxel_jump_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: f32) {
+    let float = (animation_time_sec * CHARACTER_JUMP_ANIMATION_RATE).sin() * 0.01;
+
+    set_node_transform(
+        &mut visual.head,
+        Vector3::new(0.0, CHARACTER_HEAD_Y + 0.02 + float, 0.0),
+        Vector3::new(-2.0, 0.0, 0.0),
+    );
+    set_node_transform(
+        &mut visual.chest,
+        Vector3::new(0.0, CHARACTER_CHEST_Y + 0.03 + float, 0.0),
+        Vector3::new(-4.0, 0.0, 0.0),
+    );
+    set_node_transform(
+        &mut visual.belt,
+        Vector3::new(0.0, CHARACTER_BELT_Y + 0.02 + float, 0.0),
+        Vector3::new(3.0, 0.0, 0.0),
+    );
+    set_node_transform(
+        &mut visual.hand_l,
+        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + 0.02 + float, 0.0),
+        Vector3::new(-34.0, 0.0, -8.0),
+    );
+    set_node_transform(
+        &mut visual.hand_r,
+        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + 0.02 + float, 0.0),
+        Vector3::new(-34.0, 0.0, 8.0),
+    );
+    set_node_transform(
+        &mut visual.foot_l,
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + float, 0.0),
+        Vector3::new(18.0, 0.0, -2.0),
+    );
+    set_node_transform(
+        &mut visual.foot_r,
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + float, 0.0),
+        Vector3::new(18.0, 0.0, 2.0),
+    );
+}
+
+fn set_node_transform(node: &mut Gd<Node3D>, position: Vector3, rotation_degrees: Vector3) {
+    node.set_position(position);
+    node.set_rotation_degrees(rotation_degrees);
+}
+
 fn create_selection_outline() -> Gd<MeshInstance3D> {
     let min = -SELECTION_OUTLINE_PADDING;
     let max = 1.0 + SELECTION_OUTLINE_PADDING;
@@ -841,10 +1085,19 @@ mod tests {
     }
 
     #[test]
-    fn character_motion_state_labels_are_stable_for_godot_script() {
-        assert_eq!(CharacterMotionState::Idle.as_str(), "idle");
-        assert_eq!(CharacterMotionState::Run.as_str(), "run");
-        assert_eq!(CharacterMotionState::Jump.as_str(), "jump");
+    fn voxel_character_visual_name_is_stable_for_godot_smoke() {
+        assert_eq!(PLAYER_CHARACTER_VISUAL_NAME, "PlayerVoxelCharacter");
+    }
+
+    #[test]
+    fn voxel_character_animation_time_wraps_and_ignores_invalid_delta() {
+        assert_eq!(next_character_animation_time(1.0, 0.0), 1.0);
+        assert_eq!(next_character_animation_time(1.0, f32::NAN), 1.0);
+        assert_eq!(next_character_animation_time(f32::NAN, 1.0), 0.0);
+        assert_eq!(
+            next_character_animation_time(CHARACTER_ANIMATION_WRAP_SECONDS - 0.25, 0.5),
+            0.25
+        );
     }
 
     #[test]
