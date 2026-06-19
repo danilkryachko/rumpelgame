@@ -6,7 +6,10 @@ use godot::classes::{
 use godot::global::{Key, MouseButton};
 use godot::prelude::*;
 
-use crate::biomes_avatar::{BiomesAnimationCatalog, BiomesAvatarAppearance, BiomesAvatarJoint};
+use crate::biomes_avatar::{
+    BiomesAnimationCatalog, BiomesAvatarAppearance, BiomesAvatarJoint, BiomesJointRestPose,
+    BiomesPlayerAnimation, BiomesSampledJointPose, BiomesSampledPose, BiomesTransform,
+};
 
 const BLOCK_REACH: f32 = 5.0;
 const SELECTION_OUTLINE_PADDING: f32 = 0.01;
@@ -29,26 +32,50 @@ const PLAYER_COLLISION_RADIUS: f32 = 0.4;
 const THIRD_PERSON_CAMERA_DISTANCE: f32 = 4.0;
 const THIRD_PERSON_CAMERA_HEIGHT: f32 = PLAYER_EYE_HEIGHT_METERS + 0.4;
 const THIRD_PERSON_BLOCK_REACH_PADDING: f32 = 0.5;
-const CHARACTER_RUN_SPEED_THRESHOLD: f32 = 0.25;
+const CHARACTER_WALK_SPEED_THRESHOLD: f32 = 0.25;
 const CHARACTER_JUMP_SPEED_THRESHOLD: f32 = 0.5;
 const CHARACTER_ANIMATION_WRAP_SECONDS: f32 = 4096.0;
+const CHARACTER_ACTION_FALLBACK_SECONDS: f32 = 0.45;
 const CHARACTER_IDLE_ANIMATION_RATE: f32 = 2.0;
 const CHARACTER_RUN_ANIMATION_RATE: f32 = 9.0;
 const CHARACTER_JUMP_ANIMATION_RATE: f32 = 4.0;
 const CHARACTER_ROOT_YAW_DEGREES: f32 = 0.0;
-const CHARACTER_VOXEL_SCALE: f32 = 0.030;
+const CHARACTER_VISUAL_HEIGHT_METERS: f32 = 2.10;
+const CHARACTER_VOXEL_SCALE: f32 = CHARACTER_VISUAL_HEIGHT_METERS / 56.5;
+const CHARACTER_ARM_MESH_OVERLAP_SCALE: f32 = 1.35;
+const CHARACTER_HAND_MESH_OVERLAP_SCALE: f32 = 1.18;
+const CHARACTER_LEG_MESH_OVERLAP_SCALE: f32 = 1.18;
+const CHARACTER_FOOT_MESH_OVERLAP_SCALE: f32 = 1.14;
+const CHARACTER_ARM_ROOT_WELD_INSET_METERS: f32 = 0.08;
+const CHARACTER_LEFT_LEG_ROOT_WELD_INSET_METERS: f32 = 0.020;
+const CHARACTER_RIGHT_LEG_ROOT_WELD_INSET_METERS: f32 = 0.012;
+const CHARACTER_ARM_MESH_STITCH_INSET_METERS: f32 = 0.09;
+const CHARACTER_LEFT_LEG_MESH_STITCH_INSET_METERS: f32 = 0.045;
+const CHARACTER_LEFT_FOOT_MESH_STITCH_INSET_METERS: f32 = 0.040;
 const CHARACTER_HEAD_VOXEL_HEIGHT: f32 = 18.0;
-const CHARACTER_HEAD_Y: f32 =
-    PLAYER_HEIGHT_METERS - CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE;
-const CHARACTER_CHEST_Y: f32 = 0.96;
-const CHARACTER_BELT_Y: f32 = 0.78;
-const CHARACTER_SHOULDER_Y: f32 = 1.23;
-const CHARACTER_FOREARM_Y: f32 = 1.04;
-const CHARACTER_HIP_Y: f32 = 0.42;
-const CHARACTER_LIMB_X: f32 = 0.36;
-const CHARACTER_FOREARM_X: f32 = 0.42;
-const CHARACTER_LEG_X: f32 = 0.17;
-const CHARACTER_LOWER_LEG_Y: f32 = 0.19;
+const CHARACTER_HEAD_NECK_OVERLAP: f32 = 2.0 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_HEAD_Y: f32 = CHARACTER_VISUAL_HEIGHT_METERS
+    - CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE * 0.5
+    - CHARACTER_HEAD_NECK_OVERLAP;
+const CHARACTER_CHEST_Y: f32 = 29.5 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_BELT_Y: f32 = 19.5 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_SHOULDER_Y: f32 = 35.5 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_FOREARM_Y: f32 = 35.5 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_THIGH_Y: f32 = 14.5 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_HIP_Y: f32 = CHARACTER_THIGH_Y - 0.23;
+const CHARACTER_LIMB_X: f32 = 9.5 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_FOREARM_X: f32 = 17.5 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_ARM_REST_X: f32 = 7.7 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_FOREARM_REST_X: f32 = 7.9 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_HAND_REST_X: f32 = 8.0 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_ARM_REST_Y: f32 = 33.8 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_FOREARM_REST_Y: f32 = 27.3 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_HAND_REST_Y: f32 = 22.2 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_LEFT_ARM_REST_Z_DEGREES: f32 = -86.0;
+const CHARACTER_RIGHT_ARM_REST_Z_DEGREES: f32 = 86.0;
+const CHARACTER_LEG_X: f32 = 4.5 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_LOWER_LEG_Y: f32 = 5.5 * CHARACTER_VOXEL_SCALE;
+const CHARACTER_FOOT_Y: f32 = 1.5 * CHARACTER_VOXEL_SCALE;
 
 struct BlockHit {
     block: (i32, i32, i32),
@@ -64,8 +91,18 @@ struct InventorySlot {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CharacterMotionState {
     Idle,
-    Run,
+    WalkForward,
+    RunForward,
+    RunBackward,
+    StrafeLeftSlow,
+    StrafeLeftFast,
+    StrafeRightSlow,
+    StrafeRightFast,
     Jump,
+    Fall,
+    FlyIdle,
+    FlyForwards,
+    FlyBackwards,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -98,6 +135,7 @@ enum CharacterClipPreviewKind {
 
 struct VoxelCharacterVisual {
     root: Gd<Node3D>,
+    uses_biomes_skeleton_hierarchy: bool,
     head: Gd<Node3D>,
     chest: Gd<Node3D>,
     waist: Gd<Node3D>,
@@ -129,12 +167,14 @@ pub struct Player {
     hotbar: [InventorySlot; PLAYER_HOTBAR_SLOTS],
     fly_mode: bool,
     third_person_camera: bool,
-    character_appearance_preset: usize,
+    gameplay_input_blocked: bool,
     character_appearance: BiomesAvatarAppearance,
     character_animation_catalog: Option<BiomesAnimationCatalog>,
     character_preview_animation_index: usize,
     character_preview_animation_enabled: bool,
     character_motion_state: CharacterMotionState,
+    character_action_animation: Option<BiomesPlayerAnimation>,
+    character_action_animation_remaining_sec: f32,
     character_animation_time_sec: f32,
     default_collision_layer: u32,
     default_collision_mask: u32,
@@ -160,12 +200,14 @@ impl ICharacterBody3D for Player {
             hotbar,
             fly_mode: false,
             third_person_camera: false,
-            character_appearance_preset: 0,
+            gameplay_input_blocked: false,
             character_appearance: crate::biomes_avatar::default_avatar_appearance(),
             character_animation_catalog: None,
             character_preview_animation_index: 0,
             character_preview_animation_enabled: false,
             character_motion_state: CharacterMotionState::Idle,
+            character_action_animation: None,
+            character_action_animation_remaining_sec: 0.0,
             character_animation_time_sec: 0.0,
             default_collision_layer: 1,
             default_collision_mask: 1,
@@ -239,6 +281,12 @@ impl ICharacterBody3D for Player {
         }
 
         let input = Input::singleton();
+        if self.gameplay_input_blocked {
+            if input.get_mouse_mode() == godot::classes::input::MouseMode::CAPTURED {
+                Self::release_mouse();
+            }
+            return;
+        }
 
         if let Ok(key) = event.clone().try_cast::<InputEventKey>()
             && key.is_pressed()
@@ -255,10 +303,6 @@ impl ICharacterBody3D for Player {
                 }
                 Key::V => {
                     self.set_third_person_camera(!self.third_person_camera);
-                    return;
-                }
-                Key::B => {
-                    self.cycle_character_appearance();
                     return;
                 }
                 _ => {}
@@ -304,6 +348,12 @@ impl ICharacterBody3D for Player {
             match mouse_button.get_button_index() {
                 MouseButton::LEFT => {
                     if let Some(hit) = self.aimed_block_hit() {
+                        let animation = if self.selected_tool_slot == 0 {
+                            BiomesPlayerAnimation::DiggingHand
+                        } else {
+                            BiomesPlayerAnimation::DiggingTool
+                        };
+                        self.trigger_character_action_animation(animation);
                         let (bx, by, bz) = hit.block;
                         godot_print!("Player breaks block at: {}, {}, {}", bx, by, bz);
                         self.base_mut().emit_signal(
@@ -324,6 +374,7 @@ impl ICharacterBody3D for Player {
                             self.emit_debug_log(&format!("Skipped invalid block id={block_id}"));
                             return;
                         }
+                        self.trigger_character_action_animation(BiomesPlayerAnimation::Place);
                         godot_print!(
                             "Player places block at: {}, {}, {} ID: {}",
                             bx,
@@ -376,6 +427,8 @@ impl ICharacterBody3D for Player {
         if dir != Vector3::ZERO {
             dir = dir.normalized();
         }
+        let mut local_movement_input = dir;
+        let sprint_requested = !self.fly_mode && input.is_physical_key_pressed(Key::SHIFT);
 
         let basis = self.base().get_transform().basis;
 
@@ -391,6 +444,7 @@ impl ICharacterBody3D for Player {
             if dir != Vector3::ZERO {
                 dir = dir.normalized();
             }
+            local_movement_input = dir;
 
             let movement = basis * dir * FLY_SPEED;
             velocity = movement;
@@ -414,7 +468,14 @@ impl ICharacterBody3D for Player {
         self.base_mut().move_and_slide();
         let velocity_after_slide = self.base().get_velocity();
         let on_floor = self.base().is_on_floor();
-        self.update_character_visual(velocity_after_slide, on_floor, delta as f32);
+        self.update_character_visual(
+            local_movement_input,
+            sprint_requested,
+            self.fly_mode,
+            velocity_after_slide,
+            on_floor,
+            delta as f32,
+        );
     }
 }
 
@@ -499,7 +560,19 @@ impl Player {
     }
 
     fn attach_character_visual(&mut self) {
-        let visual = create_voxel_character_visual(self.character_appearance);
+        let mut visual = create_voxel_character_visual(
+            &self.character_appearance,
+            self.character_animation_catalog.as_ref(),
+        );
+        if visual.uses_biomes_skeleton_hierarchy {
+            if let Some(pose) = self
+                .character_animation_catalog
+                .as_ref()
+                .and_then(|catalog| catalog.sample_clip_pose("Idle", 0.0))
+            {
+                apply_biomes_sampled_pose(&mut visual, &pose);
+            }
+        }
         self.base_mut()
             .add_child(&visual.root.clone().upcast::<godot::classes::Node>());
         self.character_visual = Some(visual);
@@ -513,40 +586,6 @@ impl Player {
         }
         self.attach_character_visual();
         self.apply_camera_mode();
-    }
-
-    fn cycle_character_appearance(&mut self) {
-        let count = crate::biomes_avatar::avatar_appearance_preset_count();
-        if count == 0 {
-            return;
-        }
-        self.character_appearance_preset = (self.character_appearance_preset + 1) % count;
-        self.character_appearance =
-            crate::biomes_avatar::avatar_appearance_preset(self.character_appearance_preset);
-        self.rebuild_character_visual();
-        self.emit_debug_log(&format!(
-            "Character appearance: {}",
-            self.character_appearance.label
-        ));
-    }
-
-    fn set_character_appearance_preset_index(&mut self, index: usize) {
-        let count = crate::biomes_avatar::avatar_appearance_preset_count();
-        if count == 0 {
-            return;
-        }
-        let normalized_index = index % count;
-        if self.character_appearance_preset == normalized_index {
-            return;
-        }
-        self.character_appearance_preset = normalized_index;
-        self.character_appearance =
-            crate::biomes_avatar::avatar_appearance_preset(self.character_appearance_preset);
-        self.rebuild_character_visual();
-        self.emit_debug_log(&format!(
-            "Character appearance: {}",
-            self.character_appearance.label
-        ));
     }
 
     fn set_character_preview_animation_index(&mut self, index: usize, enable_preview: bool) {
@@ -621,8 +660,22 @@ impl Player {
         }
     }
 
-    fn update_character_visual(&mut self, velocity: Vector3, on_floor: bool, delta_sec: f32) {
-        let motion_state = character_motion_state_for_velocity(velocity, on_floor);
+    fn update_character_visual(
+        &mut self,
+        local_movement_input: Vector3,
+        sprint_requested: bool,
+        fly_mode: bool,
+        velocity: Vector3,
+        on_floor: bool,
+        delta_sec: f32,
+    ) {
+        let motion_state = character_motion_state_for_velocity(
+            local_movement_input,
+            sprint_requested,
+            fly_mode,
+            velocity,
+            on_floor,
+        );
         self.character_motion_state = motion_state;
 
         self.character_animation_time_sec =
@@ -634,9 +687,56 @@ impl Player {
                     .map(str::to_string)
             })
             .flatten();
+        let active_action_animation =
+            if preview_clip_name.is_none() && self.character_action_animation_remaining_sec > 0.0 {
+                self.character_action_animation
+            } else {
+                None
+            };
+        if self.character_action_animation_remaining_sec > 0.0 {
+            self.character_action_animation_remaining_sec =
+                (self.character_action_animation_remaining_sec - delta_sec.max(0.0)).max(0.0);
+            if self.character_action_animation_remaining_sec <= f32::EPSILON {
+                self.character_action_animation = None;
+            }
+        }
+        let gameplay_clip_name = preview_clip_name.is_none().then(|| {
+            active_action_animation
+                .unwrap_or_else(|| character_motion_biomes_animation(motion_state))
+                .file_animation_name()
+        });
+        let sampled_clip_name = preview_clip_name.as_deref().or(gameplay_clip_name);
+        let sampled_pose = sampled_clip_name.and_then(|clip_name| {
+            self.character_animation_catalog
+                .as_ref()
+                .and_then(|catalog| {
+                    catalog.sample_clip_pose(clip_name, self.character_animation_time_sec)
+                })
+        });
 
         if let Some(visual) = &mut self.character_visual {
-            if let Some(clip_name) = preview_clip_name {
+            if let Some(pose) = sampled_pose {
+                if visual.uses_biomes_skeleton_hierarchy {
+                    apply_biomes_sampled_pose(visual, &pose);
+                } else {
+                    if let Some(clip_name) = sampled_clip_name {
+                        apply_voxel_character_clip_pose(
+                            visual,
+                            clip_name,
+                            self.character_animation_time_sec,
+                        );
+                    } else {
+                        apply_voxel_character_pose(
+                            visual,
+                            motion_state,
+                            self.character_animation_time_sec,
+                        );
+                    }
+                    if should_apply_raw_biomes_sampled_pose_to_flat_avatar() {
+                        apply_biomes_sampled_pose(visual, &pose);
+                    }
+                }
+            } else if let Some(clip_name) = preview_clip_name {
                 apply_voxel_character_clip_pose(
                     visual,
                     &clip_name,
@@ -646,6 +746,15 @@ impl Player {
                 apply_voxel_character_pose(visual, motion_state, self.character_animation_time_sec);
             }
         }
+    }
+
+    fn trigger_character_action_animation(&mut self, animation: BiomesPlayerAnimation) {
+        self.character_action_animation = Some(animation);
+        self.character_action_animation_remaining_sec = character_action_animation_duration(
+            self.character_animation_catalog.as_ref(),
+            animation,
+        );
+        self.character_animation_time_sec = 0.0;
     }
 
     fn update_selected_block_from_hotbar(&mut self, input: &Gd<Input>) {
@@ -864,15 +973,78 @@ fn block_raycast_target(third_person_camera: bool) -> Vector3 {
     Vector3::new(0.0, 0.0, -reach)
 }
 
-fn character_motion_state_for_velocity(velocity: Vector3, on_floor: bool) -> CharacterMotionState {
+fn character_motion_state_for_velocity(
+    local_movement_input: Vector3,
+    sprint_requested: bool,
+    fly_mode: bool,
+    velocity: Vector3,
+    on_floor: bool,
+) -> CharacterMotionState {
     let horizontal_speed = (velocity.x * velocity.x + velocity.z * velocity.z).sqrt();
-    if !on_floor && velocity.y.abs() > CHARACTER_JUMP_SPEED_THRESHOLD {
+    if fly_mode {
+        if local_movement_input.z > 0.35 {
+            CharacterMotionState::FlyBackwards
+        } else if local_movement_input.z < -0.35
+            || local_movement_input.x.abs() > 0.35
+            || local_movement_input.y.abs() > 0.35
+        {
+            CharacterMotionState::FlyForwards
+        } else {
+            CharacterMotionState::FlyIdle
+        }
+    } else if !on_floor && velocity.y < -CHARACTER_JUMP_SPEED_THRESHOLD {
+        CharacterMotionState::Fall
+    } else if !on_floor && velocity.y.abs() > CHARACTER_JUMP_SPEED_THRESHOLD {
         CharacterMotionState::Jump
-    } else if horizontal_speed > CHARACTER_RUN_SPEED_THRESHOLD {
-        CharacterMotionState::Run
-    } else {
+    } else if horizontal_speed <= CHARACTER_WALK_SPEED_THRESHOLD {
         CharacterMotionState::Idle
+    } else if local_movement_input.z > 0.35 {
+        CharacterMotionState::RunBackward
+    } else if local_movement_input.x < -0.35 {
+        if sprint_requested {
+            CharacterMotionState::StrafeLeftFast
+        } else {
+            CharacterMotionState::StrafeLeftSlow
+        }
+    } else if local_movement_input.x > 0.35 {
+        if sprint_requested {
+            CharacterMotionState::StrafeRightFast
+        } else {
+            CharacterMotionState::StrafeRightSlow
+        }
+    } else if sprint_requested {
+        CharacterMotionState::RunForward
+    } else {
+        CharacterMotionState::WalkForward
     }
+}
+
+fn character_motion_biomes_animation(motion_state: CharacterMotionState) -> BiomesPlayerAnimation {
+    match motion_state {
+        CharacterMotionState::Idle => BiomesPlayerAnimation::Idle,
+        CharacterMotionState::WalkForward => BiomesPlayerAnimation::Walk,
+        CharacterMotionState::RunForward => BiomesPlayerAnimation::Run,
+        CharacterMotionState::RunBackward => BiomesPlayerAnimation::RunBackwards,
+        CharacterMotionState::StrafeLeftSlow => BiomesPlayerAnimation::StrafeLeftSlow,
+        CharacterMotionState::StrafeLeftFast => BiomesPlayerAnimation::StrafeLeftFast,
+        CharacterMotionState::StrafeRightSlow => BiomesPlayerAnimation::StrafeRightSlow,
+        CharacterMotionState::StrafeRightFast => BiomesPlayerAnimation::StrafeRightFast,
+        CharacterMotionState::Jump => BiomesPlayerAnimation::Jump,
+        CharacterMotionState::Fall => BiomesPlayerAnimation::Fall,
+        CharacterMotionState::FlyIdle => BiomesPlayerAnimation::FlyIdle,
+        CharacterMotionState::FlyForwards => BiomesPlayerAnimation::FlyForwards,
+        CharacterMotionState::FlyBackwards => BiomesPlayerAnimation::SwimBackwards,
+    }
+}
+
+fn character_action_animation_duration(
+    catalog: Option<&BiomesAnimationCatalog>,
+    animation: BiomesPlayerAnimation,
+) -> f32 {
+    catalog
+        .and_then(|catalog| catalog.duration_for_animation(animation))
+        .filter(|duration| duration.is_finite() && *duration > 0.0)
+        .unwrap_or(CHARACTER_ACTION_FALLBACK_SECONDS)
 }
 
 fn next_character_animation_time(current_time_sec: f32, delta_sec: f32) -> f32 {
@@ -885,7 +1057,205 @@ fn next_character_animation_time(current_time_sec: f32, delta_sec: f32) -> f32 {
     (current_time_sec + delta_sec) % CHARACTER_ANIMATION_WRAP_SECONDS
 }
 
-fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCharacterVisual {
+fn biomes_avatar_joint_bind_position(joint: BiomesAvatarJoint) -> Vector3 {
+    let [x, y, z] = crate::biomes_avatar::avatar_joint_bind_position(joint, CHARACTER_VOXEL_SCALE);
+    Vector3::new(x, y, z)
+}
+
+fn create_voxel_character_visual(
+    appearance: &BiomesAvatarAppearance,
+    catalog: Option<&BiomesAnimationCatalog>,
+) -> VoxelCharacterVisual {
+    if let Some(catalog) = catalog {
+        if let Some(visual) = create_biomes_skeleton_character_visual(appearance, catalog) {
+            return visual;
+        }
+    }
+    create_flat_voxel_character_visual(appearance)
+}
+
+fn create_biomes_skeleton_character_visual(
+    appearance: &BiomesAvatarAppearance,
+    catalog: &BiomesAnimationCatalog,
+) -> Option<VoxelCharacterVisual> {
+    let armature_rest = catalog.armature_rest_pose()?;
+    let rest_poses = catalog.joint_rest_poses();
+    if rest_poses.len() != crate::biomes_avatar::BIOMES_CHARACTER_JOINT_ORDERING.len() {
+        return None;
+    }
+
+    let mut root = Node3D::new_alloc();
+    root.set_name(&StringName::from(PLAYER_CHARACTER_VISUAL_NAME));
+    root.set_position(Vector3::ZERO);
+    root.set_rotation_degrees(Vector3::new(0.0, CHARACTER_ROOT_YAW_DEGREES, 0.0));
+    root.set_visible(false);
+
+    let mut armature = Node3D::new_alloc();
+    armature.set_name(&StringName::from("Armature"));
+    set_node_biomes_transform(&mut armature, armature_rest);
+
+    let head = create_biomes_skeleton_character_part(
+        "Head",
+        BiomesAvatarJoint::Head,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::Head)?,
+        Vector3::new(0.76, 0.44, 0.44),
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let mut chest = create_biomes_skeleton_character_part(
+        "Chest",
+        BiomesAvatarJoint::Chest,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::Chest)?,
+        Vector3::new(0.68, 0.68, 0.34),
+        Color::from_rgb(0.18, 0.45, 0.78),
+    );
+    let mut waist = create_biomes_skeleton_character_part(
+        "Waist",
+        BiomesAvatarJoint::Waist,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::Waist)?,
+        Vector3::new(0.58, 0.32, 0.34),
+        Color::from_rgb(0.12, 0.16, 0.20),
+    );
+    let mut l_arm = create_biomes_skeleton_character_part(
+        "L_Arm",
+        BiomesAvatarJoint::LArm,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::LArm)?,
+        Vector3::new(0.20, 0.34, 0.20),
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let mut l_forearm = create_biomes_skeleton_character_part(
+        "L_Forearm",
+        BiomesAvatarJoint::LForearm,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::LForearm)?,
+        Vector3::new(0.20, 0.34, 0.20),
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let hand_l = create_biomes_skeleton_character_part(
+        "L_Hand",
+        BiomesAvatarJoint::LHand,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::LHand)?,
+        Vector3::new(0.20, 0.18, 0.20),
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let mut r_arm = create_biomes_skeleton_character_part(
+        "R_Arm",
+        BiomesAvatarJoint::RArm,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::RArm)?,
+        Vector3::new(0.20, 0.34, 0.20),
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let mut r_forearm = create_biomes_skeleton_character_part(
+        "R_Forearm",
+        BiomesAvatarJoint::RForearm,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::RForearm)?,
+        Vector3::new(0.20, 0.34, 0.20),
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let hand_r = create_biomes_skeleton_character_part(
+        "R_Hand",
+        BiomesAvatarJoint::RHand,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::RHand)?,
+        Vector3::new(0.20, 0.18, 0.20),
+        Color::from_rgb(0.78, 0.55, 0.38),
+    );
+    let mut l_thigh = create_biomes_skeleton_character_part(
+        "L_Thigh",
+        BiomesAvatarJoint::LThigh,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::LThigh)?,
+        Vector3::new(0.22, 0.32, 0.24),
+        Color::from_rgb(0.10, 0.16, 0.25),
+    );
+    let mut l_leg = create_biomes_skeleton_character_part(
+        "L_Leg",
+        BiomesAvatarJoint::LLeg,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::LLeg)?,
+        Vector3::new(0.22, 0.32, 0.24),
+        Color::from_rgb(0.10, 0.16, 0.25),
+    );
+    let foot_l = create_biomes_skeleton_character_part(
+        "L_Foot",
+        BiomesAvatarJoint::LFoot,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::LFoot)?,
+        Vector3::new(0.22, 0.14, 0.28),
+        Color::from_rgb(0.16, 0.22, 0.32),
+    );
+    let mut r_thigh = create_biomes_skeleton_character_part(
+        "R_Thigh",
+        BiomesAvatarJoint::RThigh,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::RThigh)?,
+        Vector3::new(0.22, 0.32, 0.24),
+        Color::from_rgb(0.10, 0.16, 0.25),
+    );
+    let mut r_leg = create_biomes_skeleton_character_part(
+        "R_Leg",
+        BiomesAvatarJoint::RLeg,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::RLeg)?,
+        Vector3::new(0.22, 0.32, 0.24),
+        Color::from_rgb(0.10, 0.16, 0.25),
+    );
+    let foot_r = create_biomes_skeleton_character_part(
+        "R_Foot",
+        BiomesAvatarJoint::RFoot,
+        appearance,
+        biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::RFoot)?,
+        Vector3::new(0.22, 0.14, 0.28),
+        Color::from_rgb(0.16, 0.22, 0.32),
+    );
+
+    l_leg.add_child(&foot_l.clone().upcast::<godot::classes::Node>());
+    l_thigh.add_child(&l_leg.clone().upcast::<godot::classes::Node>());
+    waist.add_child(&l_thigh.clone().upcast::<godot::classes::Node>());
+    r_leg.add_child(&foot_r.clone().upcast::<godot::classes::Node>());
+    r_thigh.add_child(&r_leg.clone().upcast::<godot::classes::Node>());
+    waist.add_child(&r_thigh.clone().upcast::<godot::classes::Node>());
+
+    l_forearm.add_child(&hand_l.clone().upcast::<godot::classes::Node>());
+    l_arm.add_child(&l_forearm.clone().upcast::<godot::classes::Node>());
+    chest.add_child(&l_arm.clone().upcast::<godot::classes::Node>());
+    r_forearm.add_child(&hand_r.clone().upcast::<godot::classes::Node>());
+    r_arm.add_child(&r_forearm.clone().upcast::<godot::classes::Node>());
+    chest.add_child(&r_arm.clone().upcast::<godot::classes::Node>());
+    chest.add_child(&head.clone().upcast::<godot::classes::Node>());
+
+    armature.add_child(&chest.clone().upcast::<godot::classes::Node>());
+    armature.add_child(&waist.clone().upcast::<godot::classes::Node>());
+    root.add_child(&armature.upcast::<godot::classes::Node>());
+
+    Some(VoxelCharacterVisual {
+        root,
+        uses_biomes_skeleton_hierarchy: true,
+        head,
+        chest,
+        waist,
+        l_arm,
+        l_forearm,
+        hand_l,
+        r_arm,
+        r_forearm,
+        hand_r,
+        l_thigh,
+        l_leg,
+        foot_l,
+        r_thigh,
+        r_leg,
+        foot_r,
+    })
+}
+
+fn create_flat_voxel_character_visual(appearance: &BiomesAvatarAppearance) -> VoxelCharacterVisual {
     let mut root = Node3D::new_alloc();
     root.set_name(&StringName::from(PLAYER_CHARACTER_VISUAL_NAME));
     root.set_position(Vector3::ZERO);
@@ -896,7 +1266,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "Head",
         BiomesAvatarJoint::Head,
         appearance,
-        Vector3::new(0.0, CHARACTER_HEAD_Y, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::Head),
         Vector3::ZERO,
         Vector3::new(0.76, 0.44, 0.44),
         Vector3::ZERO,
@@ -906,7 +1276,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "Chest",
         BiomesAvatarJoint::Chest,
         appearance,
-        Vector3::new(0.0, CHARACTER_CHEST_Y, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::Chest),
         Vector3::ZERO,
         Vector3::new(0.68, 0.68, 0.34),
         Vector3::ZERO,
@@ -916,7 +1286,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "Waist",
         BiomesAvatarJoint::Waist,
         appearance,
-        Vector3::new(0.0, CHARACTER_BELT_Y, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::Waist),
         Vector3::ZERO,
         Vector3::new(0.58, 0.32, 0.34),
         Vector3::ZERO,
@@ -926,7 +1296,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "L_Arm",
         BiomesAvatarJoint::LArm,
         appearance,
-        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::LArm),
         Vector3::ZERO,
         Vector3::new(0.20, 0.34, 0.20),
         Vector3::ZERO,
@@ -936,7 +1306,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "L_Forearm",
         BiomesAvatarJoint::LForearm,
         appearance,
-        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::LForearm),
         Vector3::ZERO,
         Vector3::new(0.20, 0.34, 0.20),
         Vector3::ZERO,
@@ -946,7 +1316,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "HandL",
         BiomesAvatarJoint::LHand,
         appearance,
-        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::LHand),
         Vector3::ZERO,
         Vector3::new(0.20, 0.18, 0.20),
         Vector3::ZERO,
@@ -956,7 +1326,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "R_Arm",
         BiomesAvatarJoint::RArm,
         appearance,
-        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::RArm),
         Vector3::ZERO,
         Vector3::new(0.20, 0.34, 0.20),
         Vector3::ZERO,
@@ -966,7 +1336,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "R_Forearm",
         BiomesAvatarJoint::RForearm,
         appearance,
-        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::RForearm),
         Vector3::ZERO,
         Vector3::new(0.20, 0.34, 0.20),
         Vector3::ZERO,
@@ -976,7 +1346,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "HandR",
         BiomesAvatarJoint::RHand,
         appearance,
-        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::RHand),
         Vector3::ZERO,
         Vector3::new(0.20, 0.18, 0.20),
         Vector3::ZERO,
@@ -986,7 +1356,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "L_Thigh",
         BiomesAvatarJoint::LThigh,
         appearance,
-        Vector3::new(-CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::LThigh),
         Vector3::ZERO,
         Vector3::new(0.22, 0.32, 0.24),
         Vector3::ZERO,
@@ -996,7 +1366,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "L_Leg",
         BiomesAvatarJoint::LLeg,
         appearance,
-        Vector3::new(-CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::LLeg),
         Vector3::ZERO,
         Vector3::new(0.22, 0.32, 0.24),
         Vector3::ZERO,
@@ -1006,7 +1376,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "FootL",
         BiomesAvatarJoint::LFoot,
         appearance,
-        Vector3::new(-CHARACTER_LEG_X, 0.0, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::LFoot),
         Vector3::ZERO,
         Vector3::new(0.22, 0.14, 0.28),
         Vector3::ZERO,
@@ -1016,7 +1386,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "R_Thigh",
         BiomesAvatarJoint::RThigh,
         appearance,
-        Vector3::new(CHARACTER_LEG_X, CHARACTER_HIP_Y + 0.23, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::RThigh),
         Vector3::ZERO,
         Vector3::new(0.22, 0.32, 0.24),
         Vector3::ZERO,
@@ -1026,7 +1396,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "R_Leg",
         BiomesAvatarJoint::RLeg,
         appearance,
-        Vector3::new(CHARACTER_LEG_X, CHARACTER_LOWER_LEG_Y, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::RLeg),
         Vector3::ZERO,
         Vector3::new(0.22, 0.32, 0.24),
         Vector3::ZERO,
@@ -1036,7 +1406,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
         "FootR",
         BiomesAvatarJoint::RFoot,
         appearance,
-        Vector3::new(CHARACTER_LEG_X, 0.0, 0.0),
+        biomes_avatar_joint_bind_position(BiomesAvatarJoint::RFoot),
         Vector3::ZERO,
         Vector3::new(0.22, 0.14, 0.28),
         Vector3::ZERO,
@@ -1061,6 +1431,7 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
 
     let mut visual = VoxelCharacterVisual {
         root,
+        uses_biomes_skeleton_hierarchy: false,
         head,
         chest,
         waist,
@@ -1081,13 +1452,204 @@ fn create_voxel_character_visual(appearance: BiomesAvatarAppearance) -> VoxelCha
     visual
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BiomesMeshInverseBindTransform {
+    position: Vector3,
+    rotation: [f32; 4],
+    scale: Vector3,
+}
+
+fn biomes_joint_rest_pose(
+    rest_poses: &[BiomesJointRestPose],
+    joint: BiomesAvatarJoint,
+) -> Option<BiomesJointRestPose> {
+    rest_poses.iter().find(|pose| pose.joint == joint).copied()
+}
+
+fn biomes_visual_joint_rest_pose(
+    rest_poses: &[BiomesJointRestPose],
+    visual_joint: BiomesAvatarJoint,
+) -> Option<BiomesJointRestPose> {
+    biomes_joint_rest_pose(
+        rest_poses,
+        biomes_skeleton_joint_for_visual_joint(visual_joint),
+    )
+}
+
+fn biomes_skeleton_joint_for_visual_joint(visual_joint: BiomesAvatarJoint) -> BiomesAvatarJoint {
+    visual_joint
+}
+
+fn biomes_visual_joint_for_skeleton_joint(skeleton_joint: BiomesAvatarJoint) -> BiomesAvatarJoint {
+    skeleton_joint
+}
+
+fn create_biomes_skeleton_character_part(
+    name: &str,
+    joint: BiomesAvatarJoint,
+    appearance: &BiomesAvatarAppearance,
+    rest_pose: BiomesJointRestPose,
+    fallback_mesh_size: Vector3,
+    fallback_color: Color,
+) -> Gd<Node3D> {
+    let mut pivot = Node3D::new_alloc();
+    pivot.set_name(&StringName::from(name));
+    set_biomes_joint_node_transform(&mut pivot, joint, rest_pose.local);
+
+    let mesh_inverse_bind = biomes_joint_mesh_inverse_bind_transform(joint, rest_pose.global);
+    let mut mesh = MeshInstance3D::new_alloc();
+    mesh.set_position(mesh_inverse_bind.position);
+    mesh.set_quaternion(quaternion_from_array(mesh_inverse_bind.rotation));
+    mesh.set_scale(mesh_inverse_bind.scale);
+    match crate::biomes_avatar::load_avatar_joint_mesh(joint, appearance, CHARACTER_VOXEL_SCALE) {
+        Ok(composed_mesh) => {
+            mesh.set_mesh(&composed_mesh);
+            mesh.set_material_override(&create_vox_vertex_color_material());
+        }
+        Err(err) => {
+            godot_print!(
+                "Biomes avatar character part fallback for {name}/{}: {err}",
+                joint.name()
+            );
+            let mut box_mesh = BoxMesh::new_gd();
+            box_mesh.set_size(fallback_mesh_size);
+            mesh.set_mesh(&box_mesh.upcast::<godot::classes::Mesh>());
+            mesh.set_material_override(&create_voxel_character_material(fallback_color));
+        }
+    }
+
+    pivot.add_child(&mesh.upcast::<godot::classes::Node>());
+    pivot
+}
+
+fn set_node_biomes_transform(node: &mut Gd<Node3D>, transform: BiomesTransform) {
+    node.set_position(biomes_pose_translation_to_godot(transform.translation));
+    node.set_quaternion(quaternion_from_array(biomes_pose_rotation_to_godot(
+        transform.rotation,
+    )));
+    node.set_scale(biomes_pose_scale_to_godot(transform.scale));
+}
+
+fn set_biomes_joint_node_transform(
+    node: &mut Gd<Node3D>,
+    joint: BiomesAvatarJoint,
+    transform: BiomesTransform,
+) {
+    node.set_position(
+        biomes_pose_translation_to_godot(transform.translation)
+            + biomes_joint_root_weld_offset(joint),
+    );
+    node.set_quaternion(quaternion_from_array(biomes_pose_rotation_to_godot(
+        transform.rotation,
+    )));
+    node.set_scale(biomes_pose_scale_to_godot(transform.scale));
+}
+
+fn biomes_joint_mesh_inverse_bind_transform(
+    joint: BiomesAvatarJoint,
+    rest_global: BiomesTransform,
+) -> BiomesMeshInverseBindTransform {
+    let rest_position = biomes_pose_translation_to_godot(rest_global.translation);
+    let rest_rotation = biomes_pose_rotation_to_godot(rest_global.rotation);
+    let rest_scale = biomes_pose_scale_to_godot(rest_global.scale);
+    let inverse_rotation = quaternion_inverse4(rest_rotation);
+    let mesh_bind_position =
+        biomes_avatar_joint_bind_position(joint) + biomes_joint_mesh_stitch_offset(joint);
+    let unrotated_offset =
+        rotate_vector3_by_quaternion4(inverse_rotation, mesh_bind_position - rest_position);
+
+    BiomesMeshInverseBindTransform {
+        position: divide_vector3_components(unrotated_offset, rest_scale),
+        rotation: inverse_rotation,
+        scale: multiply_vector3_components(
+            reciprocal_vector3_components(rest_scale),
+            biomes_joint_mesh_overlap_scale(joint),
+        ),
+    }
+}
+
+fn biomes_joint_mesh_overlap_scale(joint: BiomesAvatarJoint) -> Vector3 {
+    match joint {
+        BiomesAvatarJoint::LArm
+        | BiomesAvatarJoint::RArm
+        | BiomesAvatarJoint::LForearm
+        | BiomesAvatarJoint::RForearm => Vector3::new(CHARACTER_ARM_MESH_OVERLAP_SCALE, 1.0, 1.0),
+        BiomesAvatarJoint::LHand | BiomesAvatarJoint::RHand => {
+            Vector3::new(CHARACTER_HAND_MESH_OVERLAP_SCALE, 1.0, 1.0)
+        }
+        BiomesAvatarJoint::LThigh
+        | BiomesAvatarJoint::RThigh
+        | BiomesAvatarJoint::LLeg
+        | BiomesAvatarJoint::RLeg => Vector3::new(1.0, CHARACTER_LEG_MESH_OVERLAP_SCALE, 1.0),
+        BiomesAvatarJoint::LFoot | BiomesAvatarJoint::RFoot => {
+            Vector3::new(1.0, CHARACTER_FOOT_MESH_OVERLAP_SCALE, 1.0)
+        }
+        _ => Vector3::ONE,
+    }
+}
+
+fn biomes_joint_root_weld_offset(joint: BiomesAvatarJoint) -> Vector3 {
+    match joint {
+        BiomesAvatarJoint::LArm => Vector3::new(CHARACTER_ARM_ROOT_WELD_INSET_METERS, 0.0, 0.0),
+        BiomesAvatarJoint::RArm => Vector3::new(-CHARACTER_ARM_ROOT_WELD_INSET_METERS, 0.0, 0.0),
+        BiomesAvatarJoint::LThigh => {
+            Vector3::new(CHARACTER_LEFT_LEG_ROOT_WELD_INSET_METERS, 0.0, 0.0)
+        }
+        BiomesAvatarJoint::RThigh => {
+            Vector3::new(-CHARACTER_RIGHT_LEG_ROOT_WELD_INSET_METERS, 0.0, 0.0)
+        }
+        _ => Vector3::ZERO,
+    }
+}
+
+fn biomes_joint_mesh_stitch_offset(joint: BiomesAvatarJoint) -> Vector3 {
+    match joint {
+        BiomesAvatarJoint::LArm | BiomesAvatarJoint::LForearm | BiomesAvatarJoint::LHand => {
+            Vector3::new(CHARACTER_ARM_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        }
+        BiomesAvatarJoint::RArm | BiomesAvatarJoint::RForearm | BiomesAvatarJoint::RHand => {
+            Vector3::new(-CHARACTER_ARM_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        }
+        BiomesAvatarJoint::LThigh | BiomesAvatarJoint::LLeg => {
+            Vector3::new(CHARACTER_LEFT_LEG_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        }
+        BiomesAvatarJoint::LFoot => {
+            Vector3::new(CHARACTER_LEFT_FOOT_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        }
+        _ => Vector3::ZERO,
+    }
+}
+
 fn create_biomes_avatar_character_part(
     name: &str,
     joint: BiomesAvatarJoint,
-    appearance: BiomesAvatarAppearance,
+    appearance: &BiomesAvatarAppearance,
     pivot_position: Vector3,
     mesh_offset: Vector3,
+    fallback_mesh_size: Vector3,
+    fallback_mesh_offset: Vector3,
+    fallback_color: Color,
+) -> Gd<Node3D> {
+    create_biomes_avatar_character_part_with_mesh_rotation(
+        name,
+        joint,
+        appearance,
+        pivot_position,
+        mesh_offset,
+        Vector3::ZERO,
+        fallback_mesh_size,
+        fallback_mesh_offset,
+        fallback_color,
+    )
+}
+
+fn create_biomes_avatar_character_part_with_mesh_rotation(
+    name: &str,
+    joint: BiomesAvatarJoint,
+    appearance: &BiomesAvatarAppearance,
+    pivot_position: Vector3,
+    mesh_offset: Vector3,
+    mesh_rotation_degrees: Vector3,
     fallback_mesh_size: Vector3,
     fallback_mesh_offset: Vector3,
     fallback_color: Color,
@@ -1098,6 +1660,7 @@ fn create_biomes_avatar_character_part(
 
     let mut mesh = MeshInstance3D::new_alloc();
     mesh.set_position(mesh_offset);
+    mesh.set_rotation_degrees(mesh_rotation_degrees);
     match crate::biomes_avatar::load_avatar_joint_mesh(joint, appearance, CHARACTER_VOXEL_SCALE) {
         Ok(composed_mesh) => {
             mesh.set_mesh(&composed_mesh);
@@ -1131,6 +1694,7 @@ fn create_vox_vertex_color_material() -> Gd<godot::classes::Material> {
     let mut material = StandardMaterial3D::new_gd();
     material.set_albedo(Color::WHITE);
     material.set_shading_mode(base_material_3d::ShadingMode::UNSHADED);
+    material.set_cull_mode(base_material_3d::CullMode::DISABLED);
     material.set_flag(base_material_3d::Flags::ALBEDO_FROM_VERTEX_COLOR, true);
     material.upcast::<godot::classes::Material>()
 }
@@ -1142,9 +1706,210 @@ fn apply_voxel_character_pose(
 ) {
     match motion_state {
         CharacterMotionState::Idle => apply_voxel_idle_pose(visual, animation_time_sec),
-        CharacterMotionState::Run => apply_voxel_run_pose(visual, animation_time_sec),
-        CharacterMotionState::Jump => apply_voxel_jump_pose(visual, animation_time_sec),
+        CharacterMotionState::WalkForward
+        | CharacterMotionState::RunForward
+        | CharacterMotionState::RunBackward
+        | CharacterMotionState::StrafeLeftSlow
+        | CharacterMotionState::StrafeLeftFast
+        | CharacterMotionState::StrafeRightSlow
+        | CharacterMotionState::StrafeRightFast
+        | CharacterMotionState::FlyForwards
+        | CharacterMotionState::FlyBackwards => apply_voxel_run_pose(visual, animation_time_sec),
+        CharacterMotionState::Jump | CharacterMotionState::Fall => {
+            apply_voxel_jump_pose(visual, animation_time_sec)
+        }
+        CharacterMotionState::FlyIdle => apply_voxel_idle_pose(visual, animation_time_sec),
     }
+}
+
+fn should_apply_raw_biomes_sampled_pose_to_flat_avatar() -> bool {
+    false
+}
+
+fn apply_biomes_sampled_pose(visual: &mut VoxelCharacterVisual, pose: &BiomesSampledPose) {
+    for joint_pose in &pose.joints {
+        let visual_joint = biomes_visual_joint_for_skeleton_joint(joint_pose.joint);
+        if let Some(node) = biomes_visual_node_for_joint_mut(visual, visual_joint) {
+            apply_biomes_sampled_joint_pose(node, visual_joint, joint_pose);
+        }
+    }
+}
+
+fn biomes_visual_node_for_joint_mut<'a>(
+    visual: &'a mut VoxelCharacterVisual,
+    joint: BiomesAvatarJoint,
+) -> Option<&'a mut Gd<Node3D>> {
+    match joint {
+        BiomesAvatarJoint::Head => Some(&mut visual.head),
+        BiomesAvatarJoint::Chest => Some(&mut visual.chest),
+        BiomesAvatarJoint::Waist => Some(&mut visual.waist),
+        BiomesAvatarJoint::LArm => Some(&mut visual.l_arm),
+        BiomesAvatarJoint::LForearm => Some(&mut visual.l_forearm),
+        BiomesAvatarJoint::LHand => Some(&mut visual.hand_l),
+        BiomesAvatarJoint::RArm => Some(&mut visual.r_arm),
+        BiomesAvatarJoint::RForearm => Some(&mut visual.r_forearm),
+        BiomesAvatarJoint::RHand => Some(&mut visual.hand_r),
+        BiomesAvatarJoint::LThigh => Some(&mut visual.l_thigh),
+        BiomesAvatarJoint::LLeg => Some(&mut visual.l_leg),
+        BiomesAvatarJoint::LFoot => Some(&mut visual.foot_l),
+        BiomesAvatarJoint::RThigh => Some(&mut visual.r_thigh),
+        BiomesAvatarJoint::RLeg => Some(&mut visual.r_leg),
+        BiomesAvatarJoint::RFoot => Some(&mut visual.foot_r),
+    }
+}
+
+fn apply_biomes_sampled_joint_pose(
+    node: &mut Gd<Node3D>,
+    visual_joint: BiomesAvatarJoint,
+    joint_pose: &BiomesSampledJointPose,
+) {
+    node.set_position(
+        biomes_pose_translation_to_godot(joint_pose.local_translation)
+            + biomes_joint_root_weld_offset(visual_joint),
+    );
+    node.set_quaternion(quaternion_from_array(biomes_pose_rotation_to_godot(
+        joint_pose.local_rotation,
+    )));
+    node.set_scale(biomes_pose_scale_to_godot(joint_pose.local_scale));
+}
+
+#[allow(dead_code)]
+fn biomes_sampled_joint_position(joint: BiomesAvatarJoint, translation_delta: [f32; 3]) -> Vector3 {
+    let _source_delta = biomes_pose_translation_delta_to_godot(translation_delta);
+    // The source GLTF translations belong to a hierarchical skeleton. This runtime
+    // avatar is a flat set of modular voxel parts, so applying those translations
+    // to each joint separately pulls arms and legs away from the skin.
+    biomes_avatar_joint_bind_position(joint)
+}
+
+fn biomes_pose_translation_to_godot(translation: [f32; 3]) -> Vector3 {
+    let scale = CHARACTER_VOXEL_SCALE / crate::biomes_avatar::BIOMES_ANIMATION_VOX_TO_POSE_SCALE;
+    Vector3::new(
+        translation[2] * scale,
+        translation[1] * scale,
+        -translation[0] * scale,
+    )
+}
+
+#[allow(dead_code)]
+fn biomes_pose_translation_delta_to_godot(delta: [f32; 3]) -> Vector3 {
+    biomes_pose_translation_to_godot(delta)
+}
+
+fn biomes_pose_rotation_to_godot(rotation: [f32; 4]) -> [f32; 4] {
+    let pose_to_godot = [
+        0.0,
+        std::f32::consts::FRAC_1_SQRT_2,
+        0.0,
+        std::f32::consts::FRAC_1_SQRT_2,
+    ];
+    quaternion_mul4(
+        quaternion_mul4(pose_to_godot, normalize_quaternion4(rotation)),
+        quaternion_inverse4(pose_to_godot),
+    )
+}
+
+#[allow(dead_code)]
+fn biomes_pose_rotation_delta_to_godot(rotation_delta: [f32; 4]) -> [f32; 4] {
+    biomes_pose_rotation_to_godot(rotation_delta)
+}
+
+fn biomes_pose_scale_to_godot(scale: [f32; 3]) -> Vector3 {
+    Vector3::new(
+        safe_biomes_pose_scale(scale[2]),
+        safe_biomes_pose_scale(scale[1]),
+        safe_biomes_pose_scale(scale[0]),
+    )
+}
+
+fn safe_biomes_pose_scale(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0.25, 4.0)
+    } else {
+        1.0
+    }
+}
+
+fn quaternion_from_array(value: [f32; 4]) -> Quaternion {
+    Quaternion::new(value[0], value[1], value[2], value[3])
+}
+
+fn rotate_vector3_by_quaternion4(rotation: [f32; 4], value: Vector3) -> Vector3 {
+    let q = normalize_quaternion4(rotation);
+    let u = Vector3::new(q[0], q[1], q[2]);
+    let uv = u.cross(value);
+    let uuv = u.cross(uv);
+    value + uv * (2.0 * q[3]) + uuv * 2.0
+}
+
+fn divide_vector3_components(value: Vector3, divisor: Vector3) -> Vector3 {
+    Vector3::new(
+        divide_component(value.x, divisor.x),
+        divide_component(value.y, divisor.y),
+        divide_component(value.z, divisor.z),
+    )
+}
+
+fn reciprocal_vector3_components(value: Vector3) -> Vector3 {
+    Vector3::new(
+        reciprocal_component(value.x),
+        reciprocal_component(value.y),
+        reciprocal_component(value.z),
+    )
+}
+
+fn multiply_vector3_components(a: Vector3, b: Vector3) -> Vector3 {
+    Vector3::new(a.x * b.x, a.y * b.y, a.z * b.z)
+}
+
+fn divide_component(value: f32, divisor: f32) -> f32 {
+    if divisor.is_finite() && divisor.abs() > f32::EPSILON {
+        value / divisor
+    } else {
+        value
+    }
+}
+
+fn reciprocal_component(value: f32) -> f32 {
+    if value.is_finite() && value.abs() > f32::EPSILON {
+        1.0 / value
+    } else {
+        1.0
+    }
+}
+
+fn normalize_quaternion4(value: [f32; 4]) -> [f32; 4] {
+    let length =
+        (value[0] * value[0] + value[1] * value[1] + value[2] * value[2] + value[3] * value[3])
+            .sqrt();
+    if !length.is_finite() || length <= f32::EPSILON {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
+    [
+        value[0] / length,
+        value[1] / length,
+        value[2] / length,
+        value[3] / length,
+    ]
+}
+
+fn quaternion_inverse4(value: [f32; 4]) -> [f32; 4] {
+    let normalized = normalize_quaternion4(value);
+    [
+        -normalized[0],
+        -normalized[1],
+        -normalized[2],
+        normalized[3],
+    ]
+}
+
+fn quaternion_mul4(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    normalize_quaternion4([
+        a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+        a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+        a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+        a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+    ])
 }
 
 fn apply_voxel_character_clip_pose(
@@ -1565,33 +2330,41 @@ fn apply_voxel_idle_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
     );
     set_node_transform(
         &mut visual.l_arm,
-        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
-        Vector3::new(0.0, 0.0, -3.0 + wave * 1.2),
+        Vector3::new(-CHARACTER_ARM_REST_X, CHARACTER_ARM_REST_Y + bob, 0.0),
+        Vector3::new(0.0, 0.0, CHARACTER_LEFT_ARM_REST_Z_DEGREES + wave * 1.0),
     );
     set_node_transform(
         &mut visual.l_forearm,
-        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + bob, 0.0),
-        Vector3::new(0.0, 0.0, -3.0 + wave * 1.2),
+        Vector3::new(
+            -CHARACTER_FOREARM_REST_X,
+            CHARACTER_FOREARM_REST_Y + bob,
+            0.0,
+        ),
+        Vector3::new(0.0, 0.0, CHARACTER_LEFT_ARM_REST_Z_DEGREES + wave * 1.0),
     );
     set_node_transform(
         &mut visual.hand_l,
-        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22 + bob, 0.0),
-        Vector3::new(0.0, 0.0, -3.0 + wave * 1.2),
+        Vector3::new(-CHARACTER_HAND_REST_X, CHARACTER_HAND_REST_Y + bob, 0.0),
+        Vector3::new(0.0, 0.0, CHARACTER_LEFT_ARM_REST_Z_DEGREES + wave * 1.0),
     );
     set_node_transform(
         &mut visual.r_arm,
-        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
-        Vector3::new(0.0, 0.0, 3.0 - wave * 1.2),
+        Vector3::new(CHARACTER_ARM_REST_X, CHARACTER_ARM_REST_Y + bob, 0.0),
+        Vector3::new(0.0, 0.0, CHARACTER_RIGHT_ARM_REST_Z_DEGREES - wave * 1.0),
     );
     set_node_transform(
         &mut visual.r_forearm,
-        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + bob, 0.0),
-        Vector3::new(0.0, 0.0, 3.0 - wave * 1.2),
+        Vector3::new(
+            CHARACTER_FOREARM_REST_X,
+            CHARACTER_FOREARM_REST_Y + bob,
+            0.0,
+        ),
+        Vector3::new(0.0, 0.0, CHARACTER_RIGHT_ARM_REST_Z_DEGREES - wave * 1.0),
     );
     set_node_transform(
         &mut visual.hand_r,
-        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22 + bob, 0.0),
-        Vector3::new(0.0, 0.0, 3.0 - wave * 1.2),
+        Vector3::new(CHARACTER_HAND_REST_X, CHARACTER_HAND_REST_Y + bob, 0.0),
+        Vector3::new(0.0, 0.0, CHARACTER_RIGHT_ARM_REST_Z_DEGREES - wave * 1.0),
     );
     set_node_transform(
         &mut visual.l_thigh,
@@ -1605,7 +2378,7 @@ fn apply_voxel_idle_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
     );
     set_node_transform(
         &mut visual.foot_l,
-        Vector3::new(-CHARACTER_LEG_X, 0.0, 0.0),
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_FOOT_Y, 0.0),
         Vector3::ZERO,
     );
     set_node_transform(
@@ -1620,7 +2393,7 @@ fn apply_voxel_idle_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
     );
     set_node_transform(
         &mut visual.foot_r,
-        Vector3::new(CHARACTER_LEG_X, 0.0, 0.0),
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_FOOT_Y, 0.0),
         Vector3::ZERO,
     );
 }
@@ -1648,33 +2421,53 @@ fn apply_voxel_run_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: f
     );
     set_node_transform(
         &mut visual.l_arm,
-        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
-        Vector3::new(counter_swing * 34.0, 0.0, -5.0),
+        Vector3::new(-CHARACTER_ARM_REST_X, CHARACTER_ARM_REST_Y + bob, 0.0),
+        Vector3::new(
+            counter_swing * 34.0,
+            0.0,
+            CHARACTER_LEFT_ARM_REST_Z_DEGREES - 2.0,
+        ),
     );
     set_node_transform(
         &mut visual.l_forearm,
-        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + bob, 0.0),
-        Vector3::new(counter_swing * 40.0, 0.0, -5.0),
+        Vector3::new(
+            -CHARACTER_FOREARM_REST_X,
+            CHARACTER_FOREARM_REST_Y + bob,
+            0.0,
+        ),
+        Vector3::new(
+            counter_swing * 40.0,
+            0.0,
+            CHARACTER_LEFT_ARM_REST_Z_DEGREES - 2.0,
+        ),
     );
     set_node_transform(
         &mut visual.hand_l,
-        Vector3::new(-CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22 + bob, 0.0),
-        Vector3::new(counter_swing * 44.0, 0.0, -5.0),
+        Vector3::new(-CHARACTER_HAND_REST_X, CHARACTER_HAND_REST_Y + bob, 0.0),
+        Vector3::new(
+            counter_swing * 44.0,
+            0.0,
+            CHARACTER_LEFT_ARM_REST_Z_DEGREES - 2.0,
+        ),
     );
     set_node_transform(
         &mut visual.r_arm,
-        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + bob, 0.0),
-        Vector3::new(swing * 34.0, 0.0, 5.0),
+        Vector3::new(CHARACTER_ARM_REST_X, CHARACTER_ARM_REST_Y + bob, 0.0),
+        Vector3::new(swing * 34.0, 0.0, CHARACTER_RIGHT_ARM_REST_Z_DEGREES + 2.0),
     );
     set_node_transform(
         &mut visual.r_forearm,
-        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + bob, 0.0),
-        Vector3::new(swing * 40.0, 0.0, 5.0),
+        Vector3::new(
+            CHARACTER_FOREARM_REST_X,
+            CHARACTER_FOREARM_REST_Y + bob,
+            0.0,
+        ),
+        Vector3::new(swing * 40.0, 0.0, CHARACTER_RIGHT_ARM_REST_Z_DEGREES + 2.0),
     );
     set_node_transform(
         &mut visual.hand_r,
-        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y - 0.22 + bob, 0.0),
-        Vector3::new(swing * 44.0, 0.0, 5.0),
+        Vector3::new(CHARACTER_HAND_REST_X, CHARACTER_HAND_REST_Y + bob, 0.0),
+        Vector3::new(swing * 44.0, 0.0, CHARACTER_RIGHT_ARM_REST_Z_DEGREES + 2.0),
     );
     set_node_transform(
         &mut visual.l_thigh,
@@ -1688,7 +2481,7 @@ fn apply_voxel_run_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: f
     );
     set_node_transform(
         &mut visual.foot_l,
-        Vector3::new(-CHARACTER_LEG_X, bob * 0.25, 0.0),
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_FOOT_Y + bob * 0.25, 0.0),
         Vector3::new(swing * 34.0, 0.0, 0.0),
     );
     set_node_transform(
@@ -1703,7 +2496,7 @@ fn apply_voxel_run_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: f
     );
     set_node_transform(
         &mut visual.foot_r,
-        Vector3::new(CHARACTER_LEG_X, bob * 0.25, 0.0),
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_FOOT_Y + bob * 0.25, 0.0),
         Vector3::new(counter_swing * 34.0, 0.0, 0.0),
     );
 }
@@ -1728,45 +2521,57 @@ fn apply_voxel_jump_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
     );
     set_node_transform(
         &mut visual.l_arm,
-        Vector3::new(-CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + 0.02 + float, 0.0),
-        Vector3::new(-26.0, 0.0, -8.0),
+        Vector3::new(
+            -CHARACTER_ARM_REST_X,
+            CHARACTER_ARM_REST_Y + 0.02 + float,
+            0.0,
+        ),
+        Vector3::new(-26.0, 0.0, CHARACTER_LEFT_ARM_REST_Z_DEGREES - 6.0),
     );
     set_node_transform(
         &mut visual.l_forearm,
         Vector3::new(
-            -CHARACTER_FOREARM_X,
-            CHARACTER_FOREARM_Y + 0.02 + float,
+            -CHARACTER_FOREARM_REST_X,
+            CHARACTER_FOREARM_REST_Y + 0.02 + float,
             0.0,
         ),
-        Vector3::new(-32.0, 0.0, -8.0),
+        Vector3::new(-32.0, 0.0, CHARACTER_LEFT_ARM_REST_Z_DEGREES - 6.0),
     );
     set_node_transform(
         &mut visual.hand_l,
         Vector3::new(
-            -CHARACTER_FOREARM_X,
-            CHARACTER_FOREARM_Y - 0.22 + 0.02 + float,
+            -CHARACTER_HAND_REST_X,
+            CHARACTER_HAND_REST_Y + 0.02 + float,
             0.0,
         ),
-        Vector3::new(-34.0, 0.0, -8.0),
+        Vector3::new(-34.0, 0.0, CHARACTER_LEFT_ARM_REST_Z_DEGREES - 6.0),
     );
     set_node_transform(
         &mut visual.r_arm,
-        Vector3::new(CHARACTER_LIMB_X, CHARACTER_SHOULDER_Y + 0.02 + float, 0.0),
-        Vector3::new(-26.0, 0.0, 8.0),
+        Vector3::new(
+            CHARACTER_ARM_REST_X,
+            CHARACTER_ARM_REST_Y + 0.02 + float,
+            0.0,
+        ),
+        Vector3::new(-26.0, 0.0, CHARACTER_RIGHT_ARM_REST_Z_DEGREES + 6.0),
     );
     set_node_transform(
         &mut visual.r_forearm,
-        Vector3::new(CHARACTER_FOREARM_X, CHARACTER_FOREARM_Y + 0.02 + float, 0.0),
-        Vector3::new(-32.0, 0.0, 8.0),
+        Vector3::new(
+            CHARACTER_FOREARM_REST_X,
+            CHARACTER_FOREARM_REST_Y + 0.02 + float,
+            0.0,
+        ),
+        Vector3::new(-32.0, 0.0, CHARACTER_RIGHT_ARM_REST_Z_DEGREES + 6.0),
     );
     set_node_transform(
         &mut visual.hand_r,
         Vector3::new(
-            CHARACTER_FOREARM_X,
-            CHARACTER_FOREARM_Y - 0.22 + 0.02 + float,
+            CHARACTER_HAND_REST_X,
+            CHARACTER_HAND_REST_Y + 0.02 + float,
             0.0,
         ),
-        Vector3::new(-34.0, 0.0, 8.0),
+        Vector3::new(-34.0, 0.0, CHARACTER_RIGHT_ARM_REST_Z_DEGREES + 6.0),
     );
     set_node_transform(
         &mut visual.l_thigh,
@@ -1780,7 +2585,7 @@ fn apply_voxel_jump_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
     );
     set_node_transform(
         &mut visual.foot_l,
-        Vector3::new(-CHARACTER_LEG_X, float, 0.0),
+        Vector3::new(-CHARACTER_LEG_X, CHARACTER_FOOT_Y + float, 0.0),
         Vector3::new(18.0, 0.0, -2.0),
     );
     set_node_transform(
@@ -1795,7 +2600,7 @@ fn apply_voxel_jump_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
     );
     set_node_transform(
         &mut visual.foot_r,
-        Vector3::new(CHARACTER_LEG_X, float, 0.0),
+        Vector3::new(CHARACTER_LEG_X, CHARACTER_FOOT_Y + float, 0.0),
         Vector3::new(18.0, 0.0, 2.0),
     );
 }
@@ -1803,6 +2608,7 @@ fn apply_voxel_jump_pose(visual: &mut VoxelCharacterVisual, animation_time_sec: 
 fn set_node_transform(node: &mut Gd<Node3D>, position: Vector3, rotation_degrees: Vector3) {
     node.set_position(position);
     node.set_rotation_degrees(rotation_degrees);
+    node.set_scale(Vector3::ONE);
 }
 
 fn create_selection_outline() -> Gd<MeshInstance3D> {
@@ -1883,37 +2689,126 @@ impl Player {
     }
 
     #[func]
+    fn is_gameplay_input_blocked(&self) -> bool {
+        self.gameplay_input_blocked
+    }
+
+    #[func]
+    fn set_gameplay_input_blocked(&mut self, blocked: bool) {
+        self.gameplay_input_blocked = blocked;
+        if blocked {
+            Self::release_mouse();
+        }
+    }
+
+    #[func]
     fn character_appearance_label(&self) -> GString {
-        self.character_appearance.label.into()
+        let label = crate::biomes_avatar::avatar_appearance_label(&self.character_appearance);
+        label.as_str().into()
     }
 
     #[func]
-    fn character_appearance_preset_count(&self) -> i32 {
-        crate::biomes_avatar::avatar_appearance_preset_count() as i32
+    fn character_creator_category_count(&self) -> i32 {
+        crate::biomes_avatar::avatar_creator_category_count() as i32
     }
 
     #[func]
-    fn character_appearance_preset_index(&self) -> i32 {
-        self.character_appearance_preset as i32
-    }
-
-    #[func]
-    fn character_appearance_preset_label(&self, index: i32) -> GString {
-        let count = crate::biomes_avatar::avatar_appearance_preset_count();
-        if index < 0 || count == 0 {
+    fn character_creator_category_key(&self, index: i32) -> GString {
+        if index < 0 {
             return GString::new();
         }
-        crate::biomes_avatar::avatar_appearance_preset(index as usize)
-            .label
+        crate::biomes_avatar::avatar_creator_category_key(index as usize)
+            .unwrap_or_default()
             .into()
     }
 
     #[func]
-    fn select_character_appearance_preset(&mut self, index: i32) {
+    fn character_creator_category_label(&self, index: i32) -> GString {
         if index < 0 {
+            return GString::new();
+        }
+        crate::biomes_avatar::avatar_creator_category_label(index as usize)
+            .unwrap_or_default()
+            .into()
+    }
+
+    #[func]
+    fn character_creator_option_count(&self, category_index: i32) -> i32 {
+        if category_index < 0 {
+            return 0;
+        }
+        crate::biomes_avatar::avatar_creator_option_count(category_index as usize) as i32
+    }
+
+    #[func]
+    fn character_creator_option_label(&self, category_index: i32, option_index: i32) -> GString {
+        if category_index < 0 || option_index < 0 {
+            return GString::new();
+        }
+        let label = crate::biomes_avatar::avatar_creator_option_label(
+            category_index as usize,
+            option_index as usize,
+        )
+        .unwrap_or_default();
+        label.as_str().into()
+    }
+
+    #[func]
+    fn character_creator_option_color(&self, category_index: i32, option_index: i32) -> Color {
+        if category_index < 0 || option_index < 0 {
+            return Color::from_rgba(0.0, 0.0, 0.0, 0.0);
+        }
+        crate::biomes_avatar::avatar_creator_option_color(
+            category_index as usize,
+            option_index as usize,
+        )
+        .unwrap_or(Color::from_rgba(0.0, 0.0, 0.0, 0.0))
+    }
+
+    #[func]
+    fn character_creator_option_thumbnail_path(
+        &self,
+        category_index: i32,
+        option_index: i32,
+    ) -> GString {
+        if category_index < 0 || option_index < 0 {
+            return GString::new();
+        }
+        crate::biomes_avatar::avatar_creator_option_thumbnail_path(
+            category_index as usize,
+            option_index as usize,
+        )
+        .map(|path| path.as_str().into())
+        .unwrap_or_else(GString::new)
+    }
+
+    #[func]
+    fn character_creator_selected_option_index(&self, category_index: i32) -> i32 {
+        if category_index < 0 {
+            return -1;
+        }
+        crate::biomes_avatar::avatar_creator_selected_option_index(
+            &self.character_appearance,
+            category_index as usize,
+        )
+    }
+
+    #[func]
+    fn select_character_creator_option(&mut self, category_index: i32, option_index: i32) {
+        if category_index < 0 || option_index < 0 {
             return;
         }
-        self.set_character_appearance_preset_index(index as usize);
+        if crate::biomes_avatar::avatar_creator_select_option(
+            &mut self.character_appearance,
+            category_index as usize,
+            option_index as usize,
+        ) {
+            self.rebuild_character_visual();
+            self.emit_debug_log(&format!(
+                "Character appearance: {}",
+                crate::biomes_avatar::avatar_appearance_label(&self.character_appearance)
+            ));
+        }
     }
 
     #[func]
@@ -1933,7 +2828,7 @@ impl Player {
             .as_ref()
             .and_then(|catalog| catalog.clips().get(index as usize))
             .map(|clip| clip.file_animation_name.as_str().into())
-            .unwrap_or_default()
+            .unwrap_or_else(GString::new)
     }
 
     #[func]
@@ -1957,7 +2852,7 @@ impl Player {
     fn selected_character_animation_clip_name(&self) -> GString {
         self.selected_character_animation_clip_name_str()
             .map(Into::into)
-            .unwrap_or_default()
+            .unwrap_or_else(GString::new)
     }
 
     #[func]
@@ -1995,6 +2890,18 @@ impl Player {
     }
 
     #[func]
+    fn selected_character_animation_sample_track_count(&self) -> i32 {
+        self.character_animation_catalog
+            .as_ref()
+            .and_then(|catalog| {
+                self.selected_character_animation_clip_name_str()
+                    .and_then(|name| catalog.clip_by_file_animation_name(name))
+            })
+            .map(|clip| clip.track_count() as i32)
+            .unwrap_or(0)
+    }
+
+    #[func]
     fn set_third_person_camera_enabled(&mut self, enabled: bool) {
         self.set_third_person_camera(enabled);
     }
@@ -2018,6 +2925,7 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn initial_hotbar_inventory_contains_placeable_blocks() {
@@ -2101,25 +3009,354 @@ mod tests {
 
     #[test]
     fn character_visual_scale_tracks_player_height_and_eye_height() {
-        let head_top_y = CHARACTER_HEAD_Y + CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE;
+        let head_top_y =
+            CHARACTER_HEAD_Y + CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE * 0.5;
+        let head_bottom_y =
+            CHARACTER_HEAD_Y - CHARACTER_HEAD_VOXEL_HEIGHT * CHARACTER_VOXEL_SCALE * 0.5;
+        let chest_top_y = CHARACTER_CHEST_Y + 8.5 * CHARACTER_VOXEL_SCALE;
 
-        assert!((head_top_y - PLAYER_HEIGHT_METERS).abs() < 0.001);
+        assert!(
+            (head_top_y - (CHARACTER_VISUAL_HEIGHT_METERS - CHARACTER_HEAD_NECK_OVERLAP)).abs()
+                < 0.001
+        );
+        assert!(head_bottom_y < chest_top_y);
+        assert!(head_top_y > PLAYER_HEIGHT_METERS);
+        assert!(CHARACTER_VISUAL_HEIGHT_METERS > PLAYER_HEIGHT_METERS);
         assert_eq!(first_person_camera_position().y, PLAYER_EYE_HEIGHT_METERS);
+    }
+
+    #[test]
+    fn character_rest_pose_keeps_arm_segments_proportional() {
+        assert!(CHARACTER_ARM_REST_X < CHARACTER_LIMB_X);
+        assert!(CHARACTER_ARM_REST_X > 7.0 * CHARACTER_VOXEL_SCALE);
+        assert!(CHARACTER_FOREARM_REST_X >= CHARACTER_ARM_REST_X);
+        assert!(CHARACTER_FOREARM_REST_X <= CHARACTER_ARM_REST_X + CHARACTER_VOXEL_SCALE);
+        assert!(CHARACTER_HAND_REST_X >= CHARACTER_FOREARM_REST_X);
+        assert!(CHARACTER_HAND_REST_X <= CHARACTER_FOREARM_REST_X + CHARACTER_VOXEL_SCALE);
+        assert!(CHARACTER_FOREARM_REST_Y < CHARACTER_ARM_REST_Y);
+        assert!(CHARACTER_HAND_REST_Y < CHARACTER_FOREARM_REST_Y);
+        assert!(CHARACTER_LEFT_ARM_REST_Z_DEGREES < -80.0);
+        assert!(CHARACTER_RIGHT_ARM_REST_Z_DEGREES > 80.0);
+    }
+
+    #[test]
+    fn biomes_joint_mesh_overlap_scales_cover_rigid_limb_gaps() {
+        let arm_scale = Vector3::new(CHARACTER_ARM_MESH_OVERLAP_SCALE, 1.0, 1.0);
+        let hand_scale = Vector3::new(CHARACTER_HAND_MESH_OVERLAP_SCALE, 1.0, 1.0);
+        let leg_scale = Vector3::new(1.0, CHARACTER_LEG_MESH_OVERLAP_SCALE, 1.0);
+        let foot_scale = Vector3::new(1.0, CHARACTER_FOOT_MESH_OVERLAP_SCALE, 1.0);
+
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::LArm),
+            arm_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::RArm),
+            arm_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::LForearm),
+            arm_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::RForearm),
+            arm_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::LHand),
+            hand_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::RHand),
+            hand_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::LThigh),
+            leg_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::RThigh),
+            leg_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::LLeg),
+            leg_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::RLeg),
+            leg_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::LFoot),
+            foot_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::RFoot),
+            foot_scale
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::Chest),
+            Vector3::ONE
+        );
+        assert_eq!(
+            biomes_joint_mesh_overlap_scale(BiomesAvatarJoint::Head),
+            Vector3::ONE
+        );
+    }
+
+    #[test]
+    fn biomes_joint_mesh_stitch_offsets_keep_leg_chain_aligned() {
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::LArm),
+            Vector3::new(CHARACTER_ARM_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::LForearm),
+            Vector3::new(CHARACTER_ARM_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::RArm),
+            Vector3::new(-CHARACTER_ARM_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::RForearm),
+            Vector3::new(-CHARACTER_ARM_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::LThigh),
+            Vector3::new(CHARACTER_LEFT_LEG_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::RThigh),
+            Vector3::ZERO
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::LLeg),
+            Vector3::new(CHARACTER_LEFT_LEG_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::RLeg),
+            Vector3::ZERO
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::LFoot),
+            Vector3::new(CHARACTER_LEFT_FOOT_MESH_STITCH_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::RFoot),
+            Vector3::ZERO
+        );
+        assert_eq!(
+            biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::Chest),
+            Vector3::ZERO
+        );
+    }
+
+    #[test]
+    fn biomes_left_leg_mesh_stitch_pulls_visible_mesh_toward_torso() {
+        let left_bind = biomes_avatar_joint_bind_position(BiomesAvatarJoint::LThigh);
+        let left_stitched = left_bind + biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::LThigh);
+        let right_bind = biomes_avatar_joint_bind_position(BiomesAvatarJoint::RThigh);
+        let right_stitched =
+            right_bind + biomes_joint_mesh_stitch_offset(BiomesAvatarJoint::RThigh);
+
+        assert!(left_bind.x < 0.0);
+        assert!(left_stitched.x > left_bind.x);
+        assert_eq!(right_stitched, right_bind);
+    }
+
+    #[test]
+    fn biomes_leg_visual_joints_keep_source_skeleton_sides() {
+        assert_eq!(
+            biomes_skeleton_joint_for_visual_joint(BiomesAvatarJoint::LThigh),
+            BiomesAvatarJoint::LThigh
+        );
+        assert_eq!(
+            biomes_skeleton_joint_for_visual_joint(BiomesAvatarJoint::LLeg),
+            BiomesAvatarJoint::LLeg
+        );
+        assert_eq!(
+            biomes_skeleton_joint_for_visual_joint(BiomesAvatarJoint::LFoot),
+            BiomesAvatarJoint::LFoot
+        );
+        assert_eq!(
+            biomes_skeleton_joint_for_visual_joint(BiomesAvatarJoint::RThigh),
+            BiomesAvatarJoint::RThigh
+        );
+        assert_eq!(
+            biomes_skeleton_joint_for_visual_joint(BiomesAvatarJoint::RLeg),
+            BiomesAvatarJoint::RLeg
+        );
+        assert_eq!(
+            biomes_skeleton_joint_for_visual_joint(BiomesAvatarJoint::RFoot),
+            BiomesAvatarJoint::RFoot
+        );
+        assert_eq!(
+            biomes_skeleton_joint_for_visual_joint(BiomesAvatarJoint::LArm),
+            BiomesAvatarJoint::LArm
+        );
+        assert_eq!(
+            biomes_visual_joint_for_skeleton_joint(BiomesAvatarJoint::RThigh),
+            BiomesAvatarJoint::RThigh
+        );
+    }
+
+    #[test]
+    fn biomes_leg_visual_rest_poses_match_vox_bind_sides() {
+        let animations = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../assets/biomes/animations/character-animations.gltf");
+        let gltf = std::fs::read_to_string(&animations)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", animations.display()));
+        let catalog = crate::biomes_avatar::parse_biomes_animation_catalog(&gltf)
+            .unwrap_or_else(|err| panic!("failed to parse {}: {err}", animations.display()));
+        let rest_poses = catalog.joint_rest_poses();
+        let visual_left_rest =
+            biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::LThigh).unwrap();
+        let visual_right_rest =
+            biomes_visual_joint_rest_pose(&rest_poses, BiomesAvatarJoint::RThigh).unwrap();
+
+        assert!(biomes_pose_translation_to_godot(visual_left_rest.global.translation).x < 0.0);
+        assert!(biomes_avatar_joint_bind_position(BiomesAvatarJoint::LThigh).x < 0.0);
+        assert!(biomes_pose_translation_to_godot(visual_right_rest.global.translation).x > 0.0);
+        assert!(biomes_avatar_joint_bind_position(BiomesAvatarJoint::RThigh).x > 0.0);
+    }
+
+    #[test]
+    fn biomes_joint_root_weld_offsets_pull_root_limb_chains_toward_torso() {
+        assert_eq!(
+            biomes_joint_root_weld_offset(BiomesAvatarJoint::LArm),
+            Vector3::new(CHARACTER_ARM_ROOT_WELD_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_root_weld_offset(BiomesAvatarJoint::RArm),
+            Vector3::new(-CHARACTER_ARM_ROOT_WELD_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_root_weld_offset(BiomesAvatarJoint::LThigh),
+            Vector3::new(CHARACTER_LEFT_LEG_ROOT_WELD_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_root_weld_offset(BiomesAvatarJoint::RThigh),
+            Vector3::new(-CHARACTER_RIGHT_LEG_ROOT_WELD_INSET_METERS, 0.0, 0.0)
+        );
+        assert_eq!(
+            biomes_joint_root_weld_offset(BiomesAvatarJoint::LForearm),
+            Vector3::ZERO
+        );
+        assert_eq!(
+            biomes_joint_root_weld_offset(BiomesAvatarJoint::LFoot),
+            Vector3::ZERO
+        );
+        assert_eq!(
+            biomes_joint_root_weld_offset(BiomesAvatarJoint::Chest),
+            Vector3::ZERO
+        );
+    }
+
+    #[test]
+    fn third_person_character_root_faces_away_from_camera() {
+        assert_eq!(CHARACTER_ROOT_YAW_DEGREES, 0.0);
     }
 
     #[test]
     fn character_motion_state_follows_velocity() {
         assert_eq!(
-            character_motion_state_for_velocity(Vector3::ZERO, true),
+            character_motion_state_for_velocity(Vector3::ZERO, false, false, Vector3::ZERO, true),
             CharacterMotionState::Idle
         );
         assert_eq!(
-            character_motion_state_for_velocity(Vector3::new(1.0, 0.0, 0.0), true),
-            CharacterMotionState::Run
+            character_motion_state_for_velocity(
+                Vector3::new(0.0, 0.0, -1.0),
+                false,
+                false,
+                Vector3::new(0.0, 0.0, 5.0),
+                true,
+            ),
+            CharacterMotionState::WalkForward
         );
         assert_eq!(
-            character_motion_state_for_velocity(Vector3::new(0.0, 2.0, 0.0), false),
+            character_motion_state_for_velocity(
+                Vector3::new(0.0, 0.0, -1.0),
+                true,
+                false,
+                Vector3::new(0.0, 0.0, 5.0),
+                true,
+            ),
+            CharacterMotionState::RunForward
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(
+                Vector3::new(0.0, 0.0, 1.0),
+                false,
+                false,
+                Vector3::new(0.0, 0.0, 5.0),
+                true,
+            ),
+            CharacterMotionState::RunBackward
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(
+                Vector3::new(-1.0, 0.0, 0.0),
+                false,
+                false,
+                Vector3::new(5.0, 0.0, 0.0),
+                true,
+            ),
+            CharacterMotionState::StrafeLeftSlow
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(
+                Vector3::new(1.0, 0.0, 0.0),
+                true,
+                false,
+                Vector3::new(5.0, 0.0, 0.0),
+                true,
+            ),
+            CharacterMotionState::StrafeRightFast
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(
+                Vector3::ZERO,
+                false,
+                false,
+                Vector3::new(0.0, 2.0, 0.0),
+                false,
+            ),
             CharacterMotionState::Jump
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(
+                Vector3::ZERO,
+                false,
+                false,
+                Vector3::new(0.0, -2.0, 0.0),
+                false,
+            ),
+            CharacterMotionState::Fall
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(Vector3::ZERO, false, true, Vector3::ZERO, false,),
+            CharacterMotionState::FlyIdle
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(
+                Vector3::new(0.0, 0.0, -1.0),
+                false,
+                true,
+                Vector3::new(0.0, 0.0, 5.0),
+                false,
+            ),
+            CharacterMotionState::FlyForwards
+        );
+        assert_eq!(
+            character_motion_state_for_velocity(
+                Vector3::new(0.0, 1.0, 0.0),
+                false,
+                true,
+                Vector3::new(0.0, 5.0, 0.0),
+                false,
+            ),
+            CharacterMotionState::FlyForwards
         );
     }
 
@@ -2161,6 +3398,80 @@ mod tests {
             next_character_animation_time(CHARACTER_ANIMATION_WRAP_SECONDS - 0.25, 0.5),
             0.25
         );
+    }
+
+    #[test]
+    fn character_motion_states_select_biomes_source_animation_clips() {
+        let cases = [
+            (CharacterMotionState::Idle, "Idle"),
+            (CharacterMotionState::WalkForward, "Walking"),
+            (CharacterMotionState::RunForward, "Running"),
+            (CharacterMotionState::RunBackward, "RunningBackward"),
+            (CharacterMotionState::StrafeLeftSlow, "StrafeLeftWalking"),
+            (CharacterMotionState::StrafeLeftFast, "StrafeLeftRunning"),
+            (CharacterMotionState::StrafeRightSlow, "StrafeRightWalking"),
+            (CharacterMotionState::StrafeRightFast, "StrafeRightRunning"),
+            (CharacterMotionState::Jump, "Jump"),
+            (CharacterMotionState::Fall, "Fall"),
+            (CharacterMotionState::FlyIdle, "SwimmingIdle"),
+            (CharacterMotionState::FlyForwards, "SwimmingForward"),
+            (CharacterMotionState::FlyBackwards, "SwimmingBackward"),
+        ];
+        for (state, clip_name) in cases {
+            assert_eq!(
+                character_motion_biomes_animation(state).file_animation_name(),
+                clip_name
+            );
+        }
+    }
+
+    #[test]
+    fn character_action_animation_duration_uses_bounded_fallback_without_catalog() {
+        assert_eq!(
+            character_action_animation_duration(None, BiomesPlayerAnimation::DiggingHand),
+            CHARACTER_ACTION_FALLBACK_SECONDS
+        );
+    }
+
+    #[test]
+    fn biomes_pose_retarget_converts_animation_axes_to_godot_axes() {
+        let scale =
+            CHARACTER_VOXEL_SCALE / crate::biomes_avatar::BIOMES_ANIMATION_VOX_TO_POSE_SCALE;
+        assert_eq!(
+            biomes_pose_translation_delta_to_godot([0.0, 1.0, 0.0]),
+            Vector3::new(0.0, scale, 0.0)
+        );
+        assert_eq!(
+            biomes_pose_translation_delta_to_godot([1.0, 0.0, 0.0]),
+            Vector3::new(0.0, 0.0, -scale)
+        );
+        assert_eq!(
+            biomes_pose_translation_delta_to_godot([0.0, 0.0, 1.0]),
+            Vector3::new(scale, 0.0, 0.0)
+        );
+
+        let rotation = biomes_pose_rotation_delta_to_godot([0.0, 0.0, 0.0, 1.0]);
+        let length = (rotation[0] * rotation[0]
+            + rotation[1] * rotation[1]
+            + rotation[2] * rotation[2]
+            + rotation[3] * rotation[3])
+            .sqrt();
+        assert!((length - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn biomes_sampled_joint_positions_stay_bound_for_modular_skin() {
+        let joint = BiomesAvatarJoint::LHand;
+
+        assert_eq!(
+            biomes_sampled_joint_position(joint, [3.0, -2.0, 1.0]),
+            biomes_avatar_joint_bind_position(joint)
+        );
+    }
+
+    #[test]
+    fn raw_biomes_sampled_pose_is_disabled_for_flat_modular_avatar() {
+        assert!(!should_apply_raw_biomes_sampled_pose_to_flat_avatar());
     }
 
     #[test]

@@ -43,10 +43,20 @@ done
 
 for token in \
   'Attach a visible modular voxel character only in third-person mode' \
-  'Biomes character skeleton, wearable slots, reserved palette ranges, MagicaVoxel `.vox` base model, and source character animation GLTF' \
-  'Drive procedural idle/run/jump poses' \
-  'Expose a HUD character creator menu for local appearance and all Biomes source animation clips' \
+  'Biomes character skeleton, wearable slots, reserved palette ranges, MagicaVoxel `.vox` base model, source wearable `.vox` slots, and source character animation GLTF' \
+  'Drive directional movement, airborne/fall, fly, and block-action poses from the Biomes source animation clips' \
+  'Expose a fullscreen HUD character creator page for local appearance categories, thumbnail-based wearable selection, a live draggable 3D character preview, and all Biomes source animation clips' \
   '44 Biomes source animation clips' \
+  'embedded GLTF animation accessor/bufferView sampling' \
+  'source GLTF translation, rotation, and scale keyframes through the source skeleton hierarchy' \
+  'Biomes-style `Armature` `Node3D` hierarchy' \
+  'source pose `+X` maps to authored/game `-Z` front' \
+  'scene voxel `+X` maps to authored/game `-Z`' \
+  'applies sampled GLTF local translation/rotation/scale transforms to the Biomes `Armature -> Chest/Waist -> limb` hierarchy' \
+  'small axis-specific joint-local rigid limb overlap' \
+  'side-specific parent-space thigh root weld offsets' \
+  'side-specific upper-limb stitch offsets' \
+  'item-only wearable voxels' \
   '1.90m' \
   '1.80m' \
   'PlayerVoxelCharacter' \
@@ -55,47 +65,104 @@ for token in \
 done
 
 for token in \
-  'use crate::biomes_avatar::{BiomesAnimationCatalog, BiomesAvatarAppearance, BiomesAvatarJoint}' \
+  'BiomesSampledPose' \
   'const PLAYER_CHARACTER_VISUAL_NAME: &str = "PlayerVoxelCharacter"' \
   'const PLAYER_HEIGHT_METERS: f32 = 1.90' \
   'const PLAYER_EYE_HEIGHT_METERS: f32 = 1.80' \
   'const CHARACTER_ROOT_YAW_DEGREES: f32 = 0.0' \
+  'const CHARACTER_LEFT_ARM_REST_Z_DEGREES: f32 = -86.0' \
+  'const CHARACTER_ARM_MESH_OVERLAP_SCALE: f32 = 1.35' \
+  'const CHARACTER_LEG_MESH_OVERLAP_SCALE: f32 = 1.18' \
+  'const CHARACTER_ARM_ROOT_WELD_INSET_METERS: f32 = 0.08' \
+  'const CHARACTER_LEFT_LEG_ROOT_WELD_INSET_METERS: f32 = 0.020' \
+  'const CHARACTER_RIGHT_LEG_ROOT_WELD_INSET_METERS: f32 = 0.012' \
+  'const CHARACTER_ARM_MESH_STITCH_INSET_METERS: f32 = 0.09' \
   'const CHARACTER_HEAD_VOXEL_HEIGHT: f32 = 18.0' \
   'struct VoxelCharacterVisual' \
   'character_visual: Option<VoxelCharacterVisual>' \
   'character_appearance: BiomesAvatarAppearance' \
   'character_animation_catalog: Option<BiomesAnimationCatalog>' \
   'character_preview_animation_enabled: bool' \
+  'character_action_animation: Option<BiomesPlayerAnimation>' \
+  'character_action_animation_remaining_sec: f32' \
+  'uses_biomes_skeleton_hierarchy: bool' \
   'fn create_voxel_character_visual' \
+  'fn create_biomes_skeleton_character_visual' \
+  'fn create_biomes_skeleton_character_part' \
+  'fn set_biomes_joint_node_transform' \
+  'fn biomes_skeleton_joint_for_visual_joint' \
+  'fn biomes_visual_joint_for_skeleton_joint' \
   'fn create_biomes_avatar_character_part' \
+  'fn biomes_joint_mesh_inverse_bind_transform' \
+  'fn biomes_joint_mesh_overlap_scale' \
+  'fn biomes_joint_root_weld_offset' \
+  'fn biomes_joint_mesh_stitch_offset' \
+  '"HandL"' \
+  '"HandR"' \
   'crate::biomes_avatar::load_avatar_joint_mesh' \
   'BiomesAvatarJoint::Head' \
   'BiomesAvatarJoint::Chest' \
   'BiomesAvatarJoint::LForearm' \
   'BiomesAvatarJoint::RFoot' \
-  'fn cycle_character_appearance' \
-  'Key::B' \
   'BoxMesh::new_gd()' \
   'ALBEDO_FROM_VERTEX_COLOR' \
   'fn update_character_visual' \
   'fn next_character_animation_time' \
+  'fn character_motion_biomes_animation' \
+  'fn trigger_character_action_animation' \
+  'fn character_action_animation_duration' \
   'fn apply_voxel_character_pose' \
+  'fn apply_biomes_sampled_pose' \
+  'fn apply_biomes_sampled_joint_pose' \
+  'fn should_apply_raw_biomes_sampled_pose_to_flat_avatar' \
+  'fn biomes_sampled_joint_position' \
+  'fn biomes_pose_translation_to_godot' \
+  'fn biomes_pose_translation_delta_to_godot' \
+  'fn biomes_pose_rotation_to_godot' \
+  'fn rotate_vector3_by_quaternion4' \
   'fn apply_voxel_character_clip_pose' \
   'fn character_clip_preview_kind' \
   'fn set_character_preview_animation_index' \
   'fn character_animation_clip_count' \
   'fn select_character_animation_clip' \
   'fn set_character_animation_preview_enabled' \
+  'fn selected_character_animation_sample_track_count' \
+  'fn character_creator_category_count' \
+  'fn character_creator_option_count' \
+  'fn character_creator_option_color' \
+  'fn character_creator_option_thumbnail_path' \
+  'fn select_character_creator_option' \
   'biomes_clip_preview_kind_covers_all_source_animation_names' \
   'CharacterMotionState::Idle' \
-  'CharacterMotionState::Run' \
+  'CharacterMotionState::WalkForward' \
+  'CharacterMotionState::RunForward' \
+  'CharacterMotionState::RunBackward' \
+  'CharacterMotionState::StrafeLeftSlow' \
+  'CharacterMotionState::StrafeLeftFast' \
+  'CharacterMotionState::StrafeRightSlow' \
+  'CharacterMotionState::StrafeRightFast' \
   'CharacterMotionState::Jump' \
+  'CharacterMotionState::Fall' \
+  'CharacterMotionState::FlyIdle' \
+  'CharacterMotionState::FlyForwards' \
+  'CharacterMotionState::FlyBackwards' \
   'Key::V' \
   'fn is_third_person_camera_enabled' \
+  'fn set_gameplay_input_blocked' \
   'fn character_appearance_label' \
   'third_person_camera_position()' \
   'block_raycast_target(self.third_person_camera)' \
   'voxel_character_animation_time_wraps_and_ignores_invalid_delta' \
+  'character_motion_states_select_biomes_source_animation_clips' \
+  'character_action_animation_duration_uses_bounded_fallback_without_catalog' \
+  'biomes_pose_retarget_converts_animation_axes_to_godot_axes' \
+  'biomes_joint_mesh_overlap_scales_cover_rigid_limb_gaps' \
+  'biomes_joint_mesh_stitch_offsets_keep_leg_chain_aligned' \
+  'biomes_leg_visual_joints_keep_source_skeleton_sides' \
+  'biomes_leg_visual_rest_poses_match_vox_bind_sides' \
+  'biomes_joint_root_weld_offsets_pull_root_limb_chains_toward_torso' \
+  'biomes_sampled_joint_positions_stay_bound_for_modular_skin' \
+  'raw_biomes_sampled_pose_is_disabled_for_flat_modular_avatar' \
   'character_visual_scale_tracks_player_height_and_eye_height' \
   'voxel_character_visual_name_is_stable_for_godot_smoke'; do
   require_token "$PLAYER_SOURCE" "$token"
@@ -107,12 +174,23 @@ for token in \
   'CharacterCreator' \
   'KEY_C' \
   'OptionButton.new()' \
-  'character_appearance_preset_count' \
+  'SubViewportContainer.new()' \
+  'handle_character_preview_input' \
+  'character_preview_yaw_degrees' \
+  'own_world_3d' \
+  'character_preview_model' \
+  'character_creator_category_count' \
+  'character_creator_option_count' \
+  'character_creator_option_color' \
+  'character_creator_option_thumbnail_path' \
+  'load_character_thumbnail' \
   'character_animation_clip_count' \
-  'select_character_appearance_preset' \
+  'selected_character_animation_sample_track_count' \
+  'select_character_creator_option' \
   'select_character_animation_clip' \
   'set_character_animation_preview_enabled' \
-  'set_third_person_camera_enabled'; do
+  'set_third_person_camera_enabled' \
+  'set_gameplay_input_blocked'; do
   require_token "$HUD_SOURCE" "$token"
 done
 
@@ -124,12 +202,14 @@ for token in \
   'fn parse_vox_model_index' \
   'fn parse_vox_models' \
   'pub(crate) fn build_colored_voxels_mesh' \
+  'fn scene_voxel_corner_to_godot' \
   'pub(crate) fn model_palette_color' \
   'b"SIZE"' \
   'b"XYZI"' \
   'b"RGBA"' \
   'PackedColorArray' \
   'parse_vox_models_reads_size_voxels_and_palette' \
+  'scene_voxel_axes_match_biomes_pose_to_game_transform' \
   'parse_vox_models_rejects_truncated_input'; do
   require_token "$VOX_SOURCE" "$token"
 done
@@ -141,33 +221,84 @@ for token in \
   'pub(crate) struct BiomesAvatarAppearance' \
   'pub(crate) const BIOMES_CHARACTER_SKELETON_ROOT: &str = "Armature"' \
   'pub(crate) const BIOMES_CHARACTER_ANIMATIONS_PATH' \
+  'pub(crate) const BIOMES_ANIMATION_VOX_TO_POSE_SCALE' \
   'pub(crate) const BIOMES_CHARACTER_JOINT_ORDERING' \
   'pub(crate) const BIOMES_CHARACTER_WEARABLE_SLOTS' \
   'pub(crate) const BIOMES_CHARACTER_ANIMATION_CLIP_NAMES' \
   'pub(crate) struct BiomesAnimationClip' \
+  'pub(crate) enum BiomesAnimationTransformPath' \
+  'pub(crate) struct BiomesAnimationTrack' \
+  'pub(crate) struct BiomesSampledJointPose' \
+  'pub(crate) struct BiomesSampledPose' \
+  'pub(crate) struct BiomesTransform' \
+  'pub(crate) struct BiomesJointRestPose' \
   'pub(crate) struct BiomesAnimationCatalog' \
+  'pub(crate) fn skeleton_parent' \
+  'pub(crate) fn armature_rest_pose' \
+  'pub(crate) fn joint_rest_poses' \
+  'pub(crate) local_translation: [f32; 3]' \
+  'pub(crate) enum BiomesAvatarOptionCategory' \
+  'pub(crate) fn avatar_creator_category_count' \
+  'pub(crate) fn avatar_creator_option_count' \
+  'pub(crate) fn avatar_creator_option_thumbnail_path' \
+  'pub(crate) fn avatar_creator_select_option' \
+  'fn available_wearable_ids' \
+  'fn wearable_joint_voxels' \
+  'WEARABLE_BASE_OCCLUSION_RADIUS' \
+  'fn compose_avatar_joint_voxels' \
+  'fn wearable_slot_masks_lower_layers' \
+  'wearable_body_mask_removes_base_voxels_under_clothing_shells' \
+  'hair_and_hat_layers_mask_lower_head_layers' \
   'fn base_model_index' \
   'fn file_animation_name' \
   'pub(crate) fn load_biomes_animation_catalog_from_res' \
   'fn parse_biomes_animation_catalog' \
+  'fn parse_gltf_nodes' \
+  'fn parse_gltf_animation_track' \
+  'struct GltfNodeTransform' \
+  'fn compute_gltf_global_transforms' \
+  'fn parse_json_optional_f32_array_field' \
+  'fn read_gltf_accessor_f32_components' \
+  'fn decode_base64' \
+  'fn sample_pose' \
   'pub(crate) fn load_avatar_joint_mesh' \
-  'fn colored_voxels_from_biomes_model' \
+  'fn scene_colored_voxels_from_biomes_model_transform' \
+  'fn scene_model_is_visible_joint_layer' \
+  'fn wearable_asset_has_visible_joint_layer' \
+  'fn is_biomes_joint_layer_name' \
   'fn biomes_palette_color' \
   'const SKIN_PALETTE_START: u8 = 241' \
   'const HAIR_PALETTE_START: u8 = 233' \
   'const EYE_PALETTE_START: u8 = 249' \
-  'build_colored_voxels_mesh' \
+  'build_scene_colored_voxels_mesh' \
   'biomes_skeleton_contract_matches_player_wearable_pipeline' \
   'biomes_wearable_slots_include_base_and_character_slots' \
   'base_model_indices_match_biomes_vox_layers' \
+  'base_hand_scene_models_keep_source_mirrored_rotations' \
+  'base_joint_scene_voxels_are_local_to_their_joint' \
   'reserved_palette_ranges_follow_biomes_character_appearance' \
+  'wearable_scene_model_filter_uses_visible_joint_layers' \
+  'available_wearables_exclude_reference_only_assets' \
+  'creator_visual_options_expose_thumbnail_paths' \
   'biomes_animation_catalog_reads_all_source_clips' \
+  'biomes_animation_catalog_preserves_source_skeleton_for_retargeting' \
+  'biomes_animation_samples_all_source_clips_into_bounded_joint_poses' \
   'biomes_player_animation_names_cover_source_clip_catalog'; do
   require_token "$AVATAR_SOURCE" "$token"
 done
 
+require_token "$VOX_SOURCE" 'parse_vox_scene_models_reads_layers_and_hidden_flags'
+
 if grep -Fq 'veloren_composer' "$LIB_SOURCE" || grep -Fq 'VelorenHumanoidPart' "$PLAYER_SOURCE"; then
   fail "third-person character visual must not use the old Veloren composer"
+fi
+
+if grep -Fq 'character_appearance_preset' "$PLAYER_SOURCE" || grep -Fq 'select_character_appearance_preset' "$HUD_SOURCE"; then
+  fail "third-person character creator must use Biomes categories, not local appearance presets"
+fi
+
+if grep -Fq 'CHARACTER_HAND_MESH_YAW_DEGREES' "$PLAYER_SOURCE"; then
+  fail "Biomes hand meshes must keep source mirrored orientation without an extra shared yaw flip"
 fi
 
 if grep -Eq '^[[:space:]]*(ron|serde|three|gltf)[[:space:]]*=' "$CARGO_MANIFEST"; then
@@ -180,7 +311,10 @@ for token in \
   '669da235acbc5ec19720b047889c4aaa1c013ce2' \
   'License: MIT' \
   'src/galois/data/wearables/base_model.vox' \
+  'src/galois/data/wearables/{head,hair,hair_with_hat,face,ears,hat,neck,top,bottoms,outerwear,hands,feet,robot}/*.vox' \
   'src/galois/data/animations/character-animations.gltf' \
+  'thumbnails/.../*.png' \
+  'reference mannequin layers' \
   'client/rust_ext/src/biomes_avatar.rs'; do
   require_token "$ATTRIBUTION_PATH" "$token"
 done
@@ -190,6 +324,12 @@ for asset in \
   "$ASSET_ROOT/animations/character-animations.gltf" \
   "$ASSET_ROOT/licenses/BIOMES-MIT-LICENSE.txt"; do
   test -s "$asset" || fail "missing Biomes character asset $asset"
+done
+
+for slot in head hair hair_with_hat face ears hat neck top bottoms outerwear hands feet robot; do
+  if [ -d "$ASSET_ROOT/wearables/$slot" ]; then
+    find "$ASSET_ROOT/wearables/$slot" -type f -name '*.vox' | grep -q . || fail "missing Biomes wearable vox assets for $slot"
+  fi
 done
 
 if git -C "$ROOT_DIR" status --short -- client/assets/biomes/animations/character-animations_*.png | grep -q .; then
@@ -244,6 +384,7 @@ func _run():
 		quit(1)
 		return
 
+	player.name = "Player"
 	root.add_child(player)
 	await process_frame
 
@@ -272,18 +413,146 @@ func _run():
 		push_error("PlayerVoxelCharacter did not become visible in third person")
 		quit(1)
 		return
+if absf(visual.rotation_degrees.y) > 0.01:
+		push_error("PlayerVoxelCharacter must face away from the third-person camera")
+		quit(1)
+		return
 
-	var appearance_before = player.character_appearance_label()
-	var skin_event = InputEventKey.new()
-	skin_event.physical_keycode = KEY_B
-	skin_event.keycode = KEY_B
-	skin_event.pressed = true
-	root.get_viewport().push_input(skin_event)
+	if player.has_method("character_appearance_preset_count") or player.has_method("select_character_appearance_preset"):
+		push_error("Character creator still exposes local appearance presets")
+		quit(1)
+		return
+
+	if player.character_creator_category_count() < 15:
+		push_error("Biomes creator did not expose all appearance categories")
+		quit(1)
+		return
+	var skin_category = -1
+	var eye_category = -1
+	var hair_category = -1
+	var hair_color_category = -1
+	var face_category = -1
+	var hat_category = -1
+	for index in range(player.character_creator_category_count()):
+		match player.character_creator_category_key(index):
+			"skin_color":
+				skin_category = index
+			"eye_color":
+				eye_category = index
+			"hair_style":
+				hair_category = index
+			"hair_color":
+				hair_color_category = index
+			"face":
+				face_category = index
+			"hat":
+				hat_category = index
+	if skin_category < 0 or eye_category < 0 or hair_category < 0 or hair_color_category < 0 or face_category < 0 or hat_category < 0:
+		push_error("Biomes creator is missing a required category")
+		quit(1)
+		return
+	if player.character_creator_option_count(skin_category) != 18 or player.character_creator_option_count(eye_category) != 18 or player.character_creator_option_count(hair_color_category) != 18:
+		push_error("Biomes creator must expose 18 skin, eye, and hair color options")
+		quit(1)
+		return
+	if player.character_creator_option_count(hair_category) < 20 or player.character_creator_option_count(face_category) < 19 or player.character_creator_option_count(hat_category) < 32:
+		push_error("Biomes creator must expose source hair, face, and hat wearable options")
+		quit(1)
+		return
+	var skin_swatch = player.character_creator_option_color(skin_category, 17)
+	if typeof(skin_swatch) != TYPE_COLOR or skin_swatch.a <= 0.0:
+		push_error("Biomes creator skin swatch is missing")
+		quit(1)
+		return
+	if not player.has_method("character_creator_option_thumbnail_path"):
+		push_error("Biomes creator thumbnail path API is missing")
+		quit(1)
+		return
+	var skin_thumbnail = str(player.character_creator_option_thumbnail_path(skin_category, 0))
+	if not skin_thumbnail.is_empty():
+		push_error("Biomes creator color swatches must not use wearable thumbnails")
+		quit(1)
+		return
+	var hair_thumbnail = str(player.character_creator_option_thumbnail_path(hair_category, 1))
+	if not hair_thumbnail.begins_with("res://assets/biomes/thumbnails/hair/") or not hair_thumbnail.ends_with(".png"):
+		push_error("Biomes creator hair thumbnail path is missing")
+		quit(1)
+		return
+
+	var hud_script = load("res://hud.gd")
+	var hud = hud_script.new()
+	root.add_child(hud)
 	await process_frame
+	hud.toggle_character_menu()
+	await process_frame
+	if not player.has_method("is_gameplay_input_blocked") or not player.is_gameplay_input_blocked():
+		push_error("HUD character creator did not block gameplay input")
+		quit(1)
+		return
+	var menu_click = InputEventMouseButton.new()
+	menu_click.button_index = MOUSE_BUTTON_LEFT
+	menu_click.pressed = true
+	root.get_viewport().push_input(menu_click)
+	await process_frame
+	if Input.get_mouse_mode() != Input.MOUSE_MODE_VISIBLE:
+		push_error("HUD character creator click captured the mouse")
+		quit(1)
+		return
+	menu_click.pressed = false
+	root.get_viewport().push_input(menu_click)
+	await process_frame
+	hud.select_character_creator_category(hair_category)
+	await process_frame
+	if not hud.character_panel.visible:
+		push_error("HUD character creator page did not open")
+		quit(1)
+		return
+	if hud.character_preview_viewport == null or hud.character_preview_model == null:
+		push_error("HUD character creator preview is missing")
+		quit(1)
+		return
+	if not hud.character_preview_viewport.own_world_3d:
+		push_error("HUD character creator preview must use an isolated 3D world")
+		quit(1)
+		return
+if absf(hud.character_preview_model.rotation_degrees.y - 180.0) > 0.01:
+		push_error("HUD character creator preview must open facing the viewer")
+		quit(1)
+		return
+	var preview_press = InputEventMouseButton.new()
+	preview_press.button_index = MOUSE_BUTTON_LEFT
+	preview_press.pressed = true
+	hud.handle_character_preview_input(preview_press)
+	var preview_drag = InputEventMouseMotion.new()
+	preview_drag.relative = Vector2(120.0, 0.0)
+	hud.handle_character_preview_input(preview_drag)
+	var preview_release = InputEventMouseButton.new()
+	preview_release.button_index = MOUSE_BUTTON_LEFT
+	preview_release.pressed = false
+	hud.handle_character_preview_input(preview_release)
+	await process_frame
+	if absf(hud.character_preview_model.rotation_degrees.y - 180.0) < 1.0:
+		push_error("HUD character creator preview drag did not rotate the model")
+		quit(1)
+		return
+	if hud.character_option_buttons.size() < 20:
+		push_error("HUD character creator hair option tiles were not built")
+		quit(1)
+		return
+	if not _has_thumbnail_texture(hud.character_option_grid):
+		push_error("HUD character creator hair thumbnails were not loaded")
+		quit(1)
+		return
 
-	var appearance_after = player.character_appearance_label()
-	if appearance_before == appearance_after:
-		push_error("B did not cycle character appearance")
+	player.select_character_creator_option(skin_category, 17)
+	player.select_character_creator_option(hair_category, 0)
+	await process_frame
+	if player.character_creator_selected_option_index(skin_category) != 17:
+		push_error("Biomes creator skin selection did not update")
+		quit(1)
+		return
+	if player.character_creator_selected_option_index(hair_category) != 0:
+		push_error("Biomes creator hair None selection did not update")
 		quit(1)
 		return
 
@@ -312,9 +581,21 @@ func _run():
 		push_error("Biomes animation preview did not enable preview mode")
 		quit(1)
 		return
+	if player.selected_character_animation_sample_track_count() <= 0:
+		push_error("Biomes animation preview did not expose sampled GLTF tracks")
+		quit(1)
+		return
 
 	print("player voxel smoke ok")
 	quit(0)
+
+func _has_thumbnail_texture(node: Node) -> bool:
+	if node is TextureRect and node.texture != null:
+		return true
+	for child in node.get_children():
+		if _has_thumbnail_texture(child):
+			return true
+	return false
 GDSCRIPT
 
     if (
@@ -368,7 +649,7 @@ awk \
       reason = "worldgen_diff"
     }
 
-    printf("third_person_character_visual status=%s reason=%s third_person_visual=guarded camera_toggle=rust_guarded character_visual=biomes_avatar_guarded character_creator=godot_hud_guarded character_assets=biomes_vox_guarded character_asset_license=mit_attributed character_animation=biomes_44_clip_preview_guarded biomes_avatar=palette_wearable_guarded vox_loader=magica_vox_guarded rust_tests=%s godot_smoke=%s active_protocol_change=%d active_storage_change=%d active_worldgen_change=%d design_doc=%s player_source=%s\n", status, reason, rust_tests, godot_smoke, protocol_diff_count, storage_diff_count, worldgen_diff_count, design_doc, player_source)
+    printf("third_person_character_visual status=%s reason=%s third_person_visual=guarded camera_toggle=rust_guarded character_visual=biomes_avatar_guarded character_creator=godot_hud_guarded character_assets=biomes_vox_guarded character_asset_license=mit_attributed character_animation=biomes_44_clip_keyframes_guarded biomes_avatar=palette_wearable_guarded vox_loader=magica_vox_guarded rust_tests=%s godot_smoke=%s active_protocol_change=%d active_storage_change=%d active_worldgen_change=%d design_doc=%s player_source=%s\n", status, reason, rust_tests, godot_smoke, protocol_diff_count, storage_diff_count, worldgen_diff_count, design_doc, player_source)
     if (status != "pass") {
       exit 1
     }

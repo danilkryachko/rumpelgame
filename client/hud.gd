@@ -8,6 +8,11 @@ const PERF_LOG_PATH = "res://../logs/perf.log"
 const RUN_ID_ENV = "RUMPELMC_RUN_ID"
 const DEV_TABS = ["Summary", "Streaming", "Render", "Events", "Logs"]
 const CHARACTER_MENU_UPDATE_INTERVAL = 0.2
+const CHARACTER_PREVIEW_VIEWPORT_SIZE = Vector2i(720, 880)
+const CHARACTER_OPTION_TILE_SIZE = Vector2(138, 122)
+const CHARACTER_OPTION_THUMB_SIZE = Vector2(92, 76)
+const CHARACTER_PREVIEW_ROTATE_SPEED = 0.35
+const CHARACTER_PREVIEW_BASE_YAW_DEGREES = 180.0
 
 var selected_block: int = 1
 var block_names = {
@@ -29,14 +34,27 @@ var dev_logs: Array[String] = []
 var selected_dev_tab: String = "Summary"
 var dev_update_timer: float = 0.0
 var character_panel: PanelContainer
-var character_appearance_row: HBoxContainer
-var character_appearance_buttons = []
+var character_category_grid: GridContainer
+var character_category_buttons = []
+var character_option_scroll: ScrollContainer
+var character_option_grid: GridContainer
+var character_option_buttons = []
+var character_selected_category: int = 0
+var character_selected_category_label: Label
 var character_animation_option: OptionButton
 var character_preview_toggle: CheckBox
 var character_third_person_toggle: CheckBox
 var character_status_label: Label
+var character_preview_viewport: SubViewport
+var character_preview_scene_root: Node3D
+var character_preview_model: Node3D
+var character_preview_signature: String = ""
+var character_preview_yaw_degrees: float = 0.0
+var character_preview_dragging: bool = false
+var character_thumbnail_cache = {}
 var character_update_timer: float = 0.0
-var character_known_appearance_count: int = -1
+var character_known_category_count: int = -1
+var character_known_option_signature: String = ""
 var character_known_animation_count: int = -1
 var perf_log_timer: float = 0.0
 var perf_log_path: String = ""
@@ -108,6 +126,8 @@ func _process(delta):
 	if character_update_timer <= 0.0:
 		character_update_timer = CHARACTER_MENU_UPDATE_INTERVAL
 		update_character_menu()
+	if character_panel and character_panel.visible:
+		update_character_preview_model(false)
 
 	perf_log_timer -= delta
 	if perf_log_timer <= 0.0:
@@ -137,6 +157,8 @@ func _input(event):
 			selected_block = event.keycode - KEY_0
 			add_log("Selected block: %s" % get_block_name(selected_block))
 			update_ui()
+	if character_preview_dragging and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		character_preview_dragging = false
 
 func create_fps_counter():
 	var panel = PanelContainer.new()
@@ -216,26 +238,105 @@ func create_character_menu():
 	character_panel = PanelContainer.new()
 	character_panel.name = "CharacterCreator"
 	character_panel.visible = false
-	character_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	character_panel.offset_left = -430
-	character_panel.offset_top = 56
-	character_panel.offset_right = -12
-	character_panel.offset_bottom = 408
-	character_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.025, 0.026, 0.03, 0.88), 6))
+	character_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	character_panel.offset_left = 0
+	character_panel.offset_top = 0
+	character_panel.offset_right = 0
+	character_panel.offset_bottom = 0
+	character_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	character_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.012, 0.014, 0.017, 0.94), 0))
+
+	var margin = MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 34)
+	margin.add_theme_constant_override("margin_top", 28)
+	margin.add_theme_constant_override("margin_right", 34)
+	margin.add_theme_constant_override("margin_bottom", 28)
+	character_panel.add_child(margin)
 
 	var root = VBoxContainer.new()
-	root.add_theme_constant_override("separation", 8)
-	character_panel.add_child(root)
+	root.add_theme_constant_override("separation", 16)
+	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(root)
+
+	var header = HBoxContainer.new()
+	header.add_theme_constant_override("separation", 12)
+	root.add_child(header)
 
 	var title = Label.new()
-	title.text = "CHARACTER"
-	title.add_theme_font_size_override("font_size", 15)
+	title.text = "Character"
+	title.add_theme_font_size_override("font_size", 28)
 	title.add_theme_color_override("font_color", Color(0.94, 0.96, 0.98, 0.98))
-	root.add_child(title)
+	header.add_child(title)
+
+	var header_spacer = Control.new()
+	header_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(header_spacer)
+
+	var close_button = Button.new()
+	close_button.text = "Close"
+	close_button.focus_mode = Control.FOCUS_NONE
+	close_button.custom_minimum_size = Vector2(92, 40)
+	close_button.pressed.connect(Callable(self, "toggle_character_menu"))
+	header.add_child(close_button)
+
+	var body = HBoxContainer.new()
+	body.add_theme_constant_override("separation", 18)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(body)
+
+	var preview_panel = PanelContainer.new()
+	preview_panel.custom_minimum_size = Vector2(470, 0)
+	preview_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	preview_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.055, 0.062, 0.068, 0.96), 6))
+	body.add_child(preview_panel)
+
+	var preview_root = VBoxContainer.new()
+	preview_root.add_theme_constant_override("separation", 10)
+	preview_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	preview_panel.add_child(preview_root)
+
+	var preview_title = Label.new()
+	preview_title.text = "Preview"
+	preview_title.add_theme_font_size_override("font_size", 16)
+	preview_title.add_theme_color_override("font_color", Color(0.84, 0.89, 0.92, 0.96))
+	preview_root.add_child(preview_title)
+
+	var preview_container = SubViewportContainer.new()
+	preview_container.custom_minimum_size = Vector2(430, 540)
+	preview_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	preview_container.stretch = true
+	preview_container.mouse_filter = Control.MOUSE_FILTER_STOP
+	preview_container.gui_input.connect(Callable(self, "handle_character_preview_input"))
+	preview_root.add_child(preview_container)
+
+	character_preview_viewport = SubViewport.new()
+	character_preview_viewport.size = CHARACTER_PREVIEW_VIEWPORT_SIZE
+	character_preview_viewport.own_world_3d = true
+	character_preview_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	preview_container.add_child(character_preview_viewport)
+	create_character_preview_scene()
+
+	var editor_panel = PanelContainer.new()
+	editor_panel.custom_minimum_size = Vector2(620, 0)
+	editor_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	editor_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	editor_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.026, 0.029, 0.034, 0.98), 6))
+	body.add_child(editor_panel)
+
+	var editor_root = VBoxContainer.new()
+	editor_root.add_theme_constant_override("separation", 10)
+	editor_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	editor_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	editor_panel.add_child(editor_root)
 
 	var camera_row = HBoxContainer.new()
 	camera_row.add_theme_constant_override("separation", 10)
-	root.add_child(camera_row)
+	editor_root.add_child(camera_row)
 
 	character_third_person_toggle = CheckBox.new()
 	character_third_person_toggle.text = "Third person"
@@ -244,7 +345,7 @@ func create_character_menu():
 	camera_row.add_child(character_third_person_toggle)
 
 	character_preview_toggle = CheckBox.new()
-	character_preview_toggle.text = "Preview"
+	character_preview_toggle.text = "Animate"
 	character_preview_toggle.focus_mode = Control.FOCUS_NONE
 	character_preview_toggle.toggled.connect(Callable(self, "set_character_animation_preview"))
 	camera_row.add_child(character_preview_toggle)
@@ -253,32 +354,163 @@ func create_character_menu():
 	appearance_title.text = "APPEARANCE"
 	appearance_title.add_theme_font_size_override("font_size", 12)
 	appearance_title.add_theme_color_override("font_color", Color(0.66, 0.78, 0.88, 0.94))
-	root.add_child(appearance_title)
+	editor_root.add_child(appearance_title)
 
-	character_appearance_row = HBoxContainer.new()
-	character_appearance_row.add_theme_constant_override("separation", 6)
-	root.add_child(character_appearance_row)
+	character_category_grid = GridContainer.new()
+	character_category_grid.columns = 5
+	character_category_grid.add_theme_constant_override("h_separation", 7)
+	character_category_grid.add_theme_constant_override("v_separation", 7)
+	editor_root.add_child(character_category_grid)
+
+	character_selected_category_label = Label.new()
+	character_selected_category_label.text = ""
+	character_selected_category_label.add_theme_font_size_override("font_size", 18)
+	character_selected_category_label.add_theme_color_override("font_color", Color(0.94, 0.96, 0.98, 0.98))
+	editor_root.add_child(character_selected_category_label)
+
+	character_option_scroll = ScrollContainer.new()
+	character_option_scroll.custom_minimum_size = Vector2(0, 280)
+	character_option_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	character_option_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	editor_root.add_child(character_option_scroll)
+
+	character_option_grid = GridContainer.new()
+	character_option_grid.columns = 4
+	character_option_grid.add_theme_constant_override("h_separation", 10)
+	character_option_grid.add_theme_constant_override("v_separation", 10)
+	character_option_scroll.add_child(character_option_grid)
 
 	var animation_title = Label.new()
 	animation_title.text = "ANIMATION"
 	animation_title.add_theme_font_size_override("font_size", 12)
 	animation_title.add_theme_color_override("font_color", Color(0.66, 0.78, 0.88, 0.94))
-	root.add_child(animation_title)
+	editor_root.add_child(animation_title)
 
 	character_animation_option = OptionButton.new()
-	character_animation_option.custom_minimum_size = Vector2(388, 34)
+	character_animation_option.custom_minimum_size = Vector2(0, 38)
+	character_animation_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	character_animation_option.focus_mode = Control.FOCUS_NONE
 	character_animation_option.item_selected.connect(Callable(self, "select_character_animation_clip"))
-	root.add_child(character_animation_option)
+	editor_root.add_child(character_animation_option)
 
 	character_status_label = Label.new()
 	character_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	character_status_label.add_theme_font_size_override("font_size", 12)
 	character_status_label.add_theme_color_override("font_color", Color(0.82, 0.87, 0.90, 0.95))
-	root.add_child(character_status_label)
+	editor_root.add_child(character_status_label)
 
 	add_child(character_panel)
 	update_character_menu(true)
+
+func create_character_preview_scene():
+	if not character_preview_viewport:
+		return
+
+	character_preview_scene_root = Node3D.new()
+	character_preview_scene_root.name = "CharacterPreviewScene"
+	character_preview_viewport.add_child(character_preview_scene_root)
+
+	var world_environment = WorldEnvironment.new()
+	world_environment.name = "CharacterPreviewEnvironment"
+	var environment = Environment.new()
+	environment.background_mode = Environment.BG_COLOR
+	environment.background_color = Color(0.08, 0.10, 0.12)
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color(0.28, 0.30, 0.32)
+	environment.ambient_light_energy = 0.75
+	environment.tonemap_mode = Environment.TONE_MAPPER_REINHARDT
+	world_environment.environment = environment
+	character_preview_viewport.add_child(world_environment)
+
+	var camera = Camera3D.new()
+	camera.name = "CharacterPreviewCamera"
+	camera.look_at_from_position(Vector3(0.0, 1.15, 4.25), Vector3(0.0, 1.05, 0.0), Vector3.UP)
+	camera.current = true
+	character_preview_viewport.add_child(camera)
+
+	var key_light = DirectionalLight3D.new()
+	key_light.name = "CharacterPreviewKeyLight"
+	key_light.rotation_degrees = Vector3(-45.0, -28.0, 0.0)
+	character_preview_viewport.add_child(key_light)
+
+	var floor_mesh = PlaneMesh.new()
+	floor_mesh.size = Vector2(2.8, 2.8)
+
+	var floor_material = StandardMaterial3D.new()
+	floor_material.albedo_color = Color(0.12, 0.14, 0.15, 1.0)
+	floor_material.roughness = 0.9
+
+	var floor = MeshInstance3D.new()
+	floor.name = "CharacterPreviewFloor"
+	floor.position = Vector3(0.0, -0.01, 0.0)
+	floor.mesh = floor_mesh
+	floor.material_override = floor_material
+	character_preview_scene_root.add_child(floor)
+
+func update_character_preview_model(force_rebuild: bool):
+	if not character_preview_scene_root:
+		return
+
+	var player = get_character_player()
+	var source = null
+	var source_id = 0
+	if player:
+		source = player.find_child("PlayerVoxelCharacter", true, false)
+		if source:
+			source_id = source.get_instance_id()
+
+	var signature = "%s:%d" % [
+		get_player_text(player, "character_appearance_label", "n/a"),
+		source_id
+	]
+	if not force_rebuild and signature == character_preview_signature:
+		return
+	character_preview_signature = signature
+
+	if character_preview_model and is_instance_valid(character_preview_model):
+		character_preview_model.queue_free()
+		character_preview_model = null
+
+	if not source:
+		return
+
+	var clone = source.duplicate()
+	if clone is Node3D:
+		character_preview_model = clone
+		character_preview_model.name = "CharacterPreviewModel"
+		character_preview_model.visible = true
+		character_preview_model.position = Vector3.ZERO
+		character_preview_model.scale = Vector3.ONE
+		apply_character_preview_rotation()
+		force_node3d_tree_visible(character_preview_model)
+		character_preview_scene_root.add_child(character_preview_model)
+
+func handle_character_preview_input(event):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		character_preview_dragging = event.pressed
+		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and character_preview_dragging:
+		character_preview_yaw_degrees = wrapf(
+			character_preview_yaw_degrees + event.relative.x * CHARACTER_PREVIEW_ROTATE_SPEED,
+			-180.0,
+			180.0
+		)
+		apply_character_preview_rotation()
+		get_viewport().set_input_as_handled()
+
+func apply_character_preview_rotation():
+	if character_preview_model and is_instance_valid(character_preview_model):
+		character_preview_model.rotation_degrees = Vector3(
+			0.0,
+			CHARACTER_PREVIEW_BASE_YAW_DEGREES + character_preview_yaw_degrees,
+			0.0
+		)
+
+func force_node3d_tree_visible(node: Node):
+	if node is Node3D:
+		node.visible = true
+	for child in node.get_children():
+		force_node3d_tree_visible(child)
 
 func create_dev_tabs(root: VBoxContainer):
 	var tabs = HBoxContainer.new()
@@ -368,19 +600,34 @@ func update_character_menu(force_rebuild: bool = false):
 	character_preview_toggle.disabled = false
 	character_third_person_toggle.disabled = false
 
-	var appearance_count = get_player_int(player, "character_appearance_preset_count", 0)
-	if force_rebuild or appearance_count != character_known_appearance_count:
-		rebuild_character_appearance_buttons(player, appearance_count)
-		character_known_appearance_count = appearance_count
+	var category_count = get_player_int(player, "character_creator_category_count", 0)
+	if character_selected_category >= category_count:
+		character_selected_category = 0
+	if force_rebuild or category_count != character_known_category_count:
+		rebuild_character_creator_categories(player, category_count)
+		character_known_category_count = category_count
+	if character_selected_category_label:
+		character_selected_category_label.text = get_player_text_arg(player, "character_creator_category_label", character_selected_category, "")
+
+	var option_count = 0
+	if player.has_method("character_creator_option_count"):
+		option_count = int(player.character_creator_option_count(character_selected_category))
+	var option_signature = "%d:%d" % [character_selected_category, option_count]
+	if force_rebuild or option_signature != character_known_option_signature:
+		rebuild_character_creator_options(player, character_selected_category, option_count)
+		character_known_option_signature = option_signature
 
 	var animation_count = get_player_int(player, "character_animation_clip_count", 0)
 	if force_rebuild or animation_count != character_known_animation_count:
 		rebuild_character_animation_options(player, animation_count)
 		character_known_animation_count = animation_count
 
-	var selected_appearance = get_player_int(player, "character_appearance_preset_index", -1)
-	for i in range(character_appearance_buttons.size()):
-		character_appearance_buttons[i].button_pressed = i == selected_appearance
+	for i in range(character_category_buttons.size()):
+		character_category_buttons[i].button_pressed = i == character_selected_category
+
+	var selected_option = get_player_int_arg(player, "character_creator_selected_option_index", character_selected_category, -1)
+	for i in range(character_option_buttons.size()):
+		character_option_buttons[i].button_pressed = i == selected_option
 
 	var selected_clip = get_player_int(player, "selected_character_animation_clip_index", -1)
 	if selected_clip >= 0 and selected_clip < character_animation_option.get_item_count():
@@ -401,28 +648,132 @@ func update_character_menu(force_rebuild: bool = false):
 
 	var clip_name = get_player_text(player, "selected_character_animation_clip_name", "n/a")
 	var clip_duration = get_player_float(player, "selected_character_animation_clip_duration", 0.0)
-	character_status_label.text = "Appearance: %s\nAnimation: %s (%.2fs)\nClips: %d" % [
+	var sample_tracks = get_player_int(player, "selected_character_animation_sample_track_count", 0)
+	character_status_label.text = "Appearance: %s\nAnimation: %s (%.2fs, %d tracks)\nClips: %d" % [
 		get_player_text(player, "character_appearance_label", "n/a"),
 		clip_name,
 		clip_duration,
+		sample_tracks,
 		animation_count
 	]
+	update_character_preview_model(force_rebuild)
 
-func rebuild_character_appearance_buttons(player: Node, appearance_count: int):
-	for child in character_appearance_row.get_children():
-		character_appearance_row.remove_child(child)
+func rebuild_character_creator_categories(player: Node, category_count: int):
+	for child in character_category_grid.get_children():
+		character_category_grid.remove_child(child)
 		child.queue_free()
-	character_appearance_buttons.clear()
+	character_category_buttons.clear()
 
-	for index in range(appearance_count):
+	for index in range(category_count):
 		var button = Button.new()
-		button.text = get_player_text_arg(player, "character_appearance_preset_label", index, "Preset %d" % [index + 1])
+		button.text = get_player_text_arg(player, "character_creator_category_label", index, "Tab %d" % [index + 1])
 		button.toggle_mode = true
 		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(92, 32)
-		button.pressed.connect(Callable(self, "select_character_appearance_preset").bind(index))
-		character_appearance_row.add_child(button)
-		character_appearance_buttons.append(button)
+		button.custom_minimum_size = Vector2(112, 34)
+		button.add_theme_stylebox_override("normal", make_tab_button_style(false, false))
+		button.add_theme_stylebox_override("hover", make_tab_button_style(false, true))
+		button.add_theme_stylebox_override("pressed", make_tab_button_style(true, false))
+		button.pressed.connect(Callable(self, "select_character_creator_category").bind(index))
+		character_category_grid.add_child(button)
+		character_category_buttons.append(button)
+
+func rebuild_character_creator_options(player: Node, category_index: int, option_count: int):
+	for child in character_option_grid.get_children():
+		character_option_grid.remove_child(child)
+		child.queue_free()
+	character_option_buttons.clear()
+
+	for index in range(option_count):
+		var label = get_player_text_arg2(player, "character_creator_option_label", category_index, index, "Option %d" % [index + 1])
+		var color = get_player_color_arg2(player, "character_creator_option_color", category_index, index, Color(0, 0, 0, 0))
+		var thumbnail_path = get_player_text_arg2(player, "character_creator_option_thumbnail_path", category_index, index, "")
+		var button = make_character_option_button(label, color, thumbnail_path)
+		button.pressed.connect(Callable(self, "select_character_creator_option").bind(category_index, index))
+		character_option_grid.add_child(button)
+		character_option_buttons.append(button)
+
+func make_character_option_button(label: String, color: Color, thumbnail_path: String) -> Button:
+	var button = Button.new()
+	button.text = ""
+	button.tooltip_text = label
+	button.toggle_mode = true
+	button.focus_mode = Control.FOCUS_NONE
+	button.custom_minimum_size = CHARACTER_OPTION_TILE_SIZE
+	button.add_theme_stylebox_override("normal", make_tile_button_style(false, false))
+	button.add_theme_stylebox_override("hover", make_tile_button_style(false, true))
+	button.add_theme_stylebox_override("pressed", make_tile_button_style(true, false))
+
+	var tile = VBoxContainer.new()
+	tile.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tile.offset_left = 8
+	tile.offset_top = 8
+	tile.offset_right = -8
+	tile.offset_bottom = -8
+	tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tile.alignment = BoxContainer.ALIGNMENT_CENTER
+	tile.add_theme_constant_override("separation", 6)
+	button.add_child(tile)
+
+	var visual = CenterContainer.new()
+	visual.custom_minimum_size = CHARACTER_OPTION_THUMB_SIZE
+	visual.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tile.add_child(visual)
+
+	if color.a > 0.0:
+		var swatch = ColorRect.new()
+		swatch.custom_minimum_size = Vector2(82, 58)
+		swatch.color = color
+		swatch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		visual.add_child(swatch)
+	else:
+		var texture = load_character_thumbnail(thumbnail_path)
+		if texture:
+			var thumbnail = TextureRect.new()
+			thumbnail.custom_minimum_size = CHARACTER_OPTION_THUMB_SIZE
+			thumbnail.texture = texture
+			thumbnail.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			thumbnail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			visual.add_child(thumbnail)
+		else:
+			var empty_label = Label.new()
+			empty_label.text = "None"
+			empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			empty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			empty_label.add_theme_font_size_override("font_size", 15)
+			empty_label.add_theme_color_override("font_color", Color(0.76, 0.80, 0.84, 0.86))
+			empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			visual.add_child(empty_label)
+
+	var text_label = Label.new()
+	text_label.text = label
+	text_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	text_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	text_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text_label.clip_text = true
+	text_label.custom_minimum_size = Vector2(0, 30)
+	text_label.add_theme_font_size_override("font_size", 12)
+	text_label.add_theme_color_override("font_color", Color(0.90, 0.93, 0.95, 0.96))
+	text_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tile.add_child(text_label)
+
+	return button
+
+func load_character_thumbnail(path: String):
+	if path.is_empty():
+		return null
+	if character_thumbnail_cache.has(path):
+		return character_thumbnail_cache[path]
+
+	var image = Image.new()
+	var err = image.load(ProjectSettings.globalize_path(path))
+	if err != OK:
+		err = image.load(path)
+	if err != OK:
+		return null
+
+	var texture = ImageTexture.create_from_image(image)
+	character_thumbnail_cache[path] = texture
+	return texture
 
 func rebuild_character_animation_options(player: Node, animation_count: int):
 	character_animation_option.clear()
@@ -439,7 +790,9 @@ func toggle_dev_menu():
 		mouse_mode_before_dev_menu = Input.get_mouse_mode()
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	else:
-		Input.set_mouse_mode(mouse_mode_before_dev_menu)
+		if not character_panel.visible:
+			Input.set_mouse_mode(mouse_mode_before_dev_menu)
+	sync_gameplay_input_blocked()
 	add_log("Dev menu %s" % ("opened" if dev_panel.visible else "closed"))
 	update_dev_menu()
 
@@ -451,15 +804,36 @@ func toggle_character_menu():
 		var player = get_character_player()
 		if player and player.has_method("set_third_person_camera_enabled"):
 			player.set_third_person_camera_enabled(true)
+		character_preview_signature = ""
+		character_preview_yaw_degrees = 0.0
+		character_preview_dragging = false
 	else:
-		Input.set_mouse_mode(mouse_mode_before_character_menu)
+		if not dev_panel.visible:
+			Input.set_mouse_mode(mouse_mode_before_character_menu)
+		character_preview_dragging = false
+	sync_gameplay_input_blocked()
 	add_log("Character menu %s" % ("opened" if character_panel.visible else "closed"))
 	update_character_menu(true)
 
-func select_character_appearance_preset(index: int):
+func sync_gameplay_input_blocked():
+	var blocked = false
+	if dev_panel and dev_panel.visible:
+		blocked = true
+	if character_panel and character_panel.visible:
+		blocked = true
 	var player = get_character_player()
-	if player and player.has_method("select_character_appearance_preset"):
-		player.select_character_appearance_preset(index)
+	if player and player.has_method("set_gameplay_input_blocked"):
+		player.set_gameplay_input_blocked(blocked)
+
+func select_character_creator_category(index: int):
+	character_selected_category = index
+	character_known_option_signature = ""
+	update_character_menu(true)
+
+func select_character_creator_option(category_index: int, option_index: int):
+	var player = get_character_player()
+	if player and player.has_method("select_character_creator_option"):
+		player.select_character_creator_option(category_index, option_index)
 		add_log("Character appearance: %s" % get_player_text(player, "character_appearance_label", "n/a"))
 	update_character_menu(true)
 
@@ -597,6 +971,23 @@ func get_player_text(player: Node, method: String, fallback: String) -> String:
 func get_player_text_arg(player: Node, method: String, index: int, fallback: String) -> String:
 	if player and player.has_method(method):
 		return str(player.call(method, index))
+	return fallback
+
+func get_player_int_arg(player: Node, method: String, arg: int, fallback: int) -> int:
+	if player and player.has_method(method):
+		return int(player.call(method, arg))
+	return fallback
+
+func get_player_text_arg2(player: Node, method: String, first: int, second: int, fallback: String) -> String:
+	if player and player.has_method(method):
+		return str(player.call(method, first, second))
+	return fallback
+
+func get_player_color_arg2(player: Node, method: String, first: int, second: int, fallback: Color) -> Color:
+	if player and player.has_method(method):
+		var value = player.call(method, first, second)
+		if typeof(value) == TYPE_COLOR:
+			return value
 	return fallback
 
 func get_player_position_text() -> String:
@@ -751,6 +1142,60 @@ func make_panel_style(color: Color, radius: int) -> StyleBoxFlat:
 	style.content_margin_right = 8
 	style.content_margin_top = 5
 	style.content_margin_bottom = 5
+	return style
+
+func make_swatch_style(color: Color, selected: bool) -> StyleBoxFlat:
+	var style = StyleBoxFlat.new()
+	style.bg_color = color
+	style.corner_radius_top_left = 4
+	style.corner_radius_top_right = 4
+	style.corner_radius_bottom_left = 4
+	style.corner_radius_bottom_right = 4
+	style.border_width_left = 2
+	style.border_width_right = 2
+	style.border_width_top = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(1, 1, 1, 0.95) if selected else Color(0, 0, 0, 0.45)
+	return style
+
+func make_tab_button_style(selected: bool, hovered: bool) -> StyleBoxFlat:
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.13, 0.16, 0.19, 0.96) if selected else Color(0.07, 0.08, 0.10, 0.92)
+	if hovered and not selected:
+		style.bg_color = Color(0.10, 0.12, 0.14, 0.96)
+	style.corner_radius_top_left = 5
+	style.corner_radius_top_right = 5
+	style.corner_radius_bottom_left = 5
+	style.corner_radius_bottom_right = 5
+	style.border_width_left = 1
+	style.border_width_right = 1
+	style.border_width_top = 1
+	style.border_width_bottom = 1
+	style.border_color = Color(0.82, 0.88, 0.92, 0.86) if selected else Color(0.22, 0.26, 0.30, 0.82)
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 5
+	style.content_margin_bottom = 5
+	return style
+
+func make_tile_button_style(selected: bool, hovered: bool) -> StyleBoxFlat:
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.13, 0.15, 0.16, 0.98) if selected else Color(0.055, 0.062, 0.070, 0.95)
+	if hovered and not selected:
+		style.bg_color = Color(0.075, 0.085, 0.095, 0.98)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	style.border_width_left = 2
+	style.border_width_right = 2
+	style.border_width_top = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.92, 0.96, 1.0, 0.96) if selected else Color(0.18, 0.21, 0.24, 0.92)
+	style.content_margin_left = 6
+	style.content_margin_right = 6
+	style.content_margin_top = 6
+	style.content_margin_bottom = 6
 	return style
 
 func get_selected_block() -> int:
